@@ -38,13 +38,15 @@ concurrency:
 jobs:
   validate:
     if: ${{ inputs.approve_runner_usage }}
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      CARGO_BUILD_JOBS: 2
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
         include:
-          - os: macos-15
+          - os: macos-26
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
@@ -89,6 +91,23 @@ jobs:
           PACKAGE_SOURCE: ${{ inputs.source_commit }}
           PACKAGE_TARGET: ${{ matrix.target }}
         run: python validation-tools/scripts/release/repack-macos-signature.py --directory packages --output repaired-packages --version "$PACKAGE_VERSION" --source-commit "$PACKAGE_SOURCE" --target "$PACKAGE_TARGET"
+      - name: Recover the exact bundled server from the preserved app
+        env:
+          PACKAGE_DIRECTORY: ${{ inputs.repair_signature && 'repaired-packages' || 'packages' }}
+        run: |
+          mkdir -p /tmp/kindred-validation-volume
+          hdiutil attach -readonly -nobrowse -mountpoint /tmp/kindred-validation-volume "$PACKAGE_DIRECTORY"/*.dmg
+          cp /tmp/kindred-validation-volume/*.app/Contents/Resources/standalone.zip application-source/desktop/standalone.zip
+          hdiutil detach /tmp/kindred-validation-volume
+      - name: Reuse native compiler dependencies for installation checks
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            application-source/desktop/target
+          key: kindred-native-v1-${{ matrix.target }}-${{ hashFiles('application-source/desktop/Cargo.lock', 'application-source/desktop/build.rs', 'application-source/desktop/dictation/**') }}
+          restore-keys: kindred-native-v1-${{ matrix.target }}-
       - name: Launch the shipped app and inspect its real windows
         env:
           PACKAGE_VERSION: ${{ inputs.version }}
@@ -98,7 +117,9 @@ jobs:
           PRESERVED_PACKAGE: ${{ inputs.preserved_package }}
         run: |
           extra=()
-          if [ "$PRESERVED_PACKAGE" = "true" ]; then extra+=(--reuse-installation-validation previous-validation/macos-validation.json); fi
+          if [ "$PRESERVED_PACKAGE" = "true" ] && python3 -c 'import json,sys; sys.exit(not json.load(open("previous-validation/macos-validation.json")).get("native_client_replacement_and_failure_preservation",False))'; then
+            extra+=(--reuse-installation-validation previous-validation/macos-validation.json)
+          fi
           python validation-tools/scripts/release/test-macos-package.py --directory "$PACKAGE_DIRECTORY" --source application-source --version "$PACKAGE_VERSION" --source-commit "$PACKAGE_SOURCE" --target "$PACKAGE_TARGET" --output results "${extra[@]}"
       - name: Retain the unchanged package after successful validation
         if: ${{ success() && inputs.preserved_package && !inputs.repair_signature }}

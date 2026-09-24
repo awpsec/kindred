@@ -94,7 +94,7 @@ try:
   home=temp/'home';home.mkdir();env.update(HOME=str(home),CFFIXED_USER_HOME=str(home))
   with (out/'onboarding-process.log').open('w') as log:
    child=subprocess.Popen([str(executable),'--profiles'],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
-   time.sleep(12);capture(child,'onboarding',['Accounts','Add account','Standalone'])
+   time.sleep(12);capture(child,'onboarding',(['Welcome to Kindred','On this computer','Connect to a server'] if tuple(map(int,a.version.split('.'))) >= (0,80,0) else ['Accounts','Add account','Standalone']))
    stop(child);child=None
   data=home/'Library/Application Support/Kindred';data.mkdir(parents=True,exist_ok=True)
   test_env={**os.environ,'KINDRED_TEST_MAC_APP':str(app),'KINDRED_TEST_MAC_DMG':str(dmg),'KINDRED_TEST_MAC_DATA':str(data)}

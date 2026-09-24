@@ -9,7 +9,8 @@ def prepare(directory, report, output, version, source, run):
     prior = json.loads(report.read_text())
     assert prior['version'] == version and prior['source_commit'] == source
     assert prior['target'] == 'aarch64-apple-darwin'
-    assert prior['native_client_replacement_and_failure_preservation'] is True
+    # A failure before the installation check still leaves valid package bytes.
+    # The validation workflow must run that missing check instead of reusing it.
     assert prior['codesign_verify_exit'] == 0 and prior['standalone_payload_exact'] is True
     images = list(directory.rglob('*.dmg'))
     assert len(images) == 1, 'Expected one preserved Apple Silicon DMG'
