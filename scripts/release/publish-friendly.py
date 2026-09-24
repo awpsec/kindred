@@ -10,6 +10,7 @@ from github_api import request
 spec=importlib.util.spec_from_file_location('gate',Path(__file__).with_name('verify-release.py'))
 gate=importlib.util.module_from_spec(spec);spec.loader.exec_module(gate)
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+sha_bytes=lambda b:hashlib.sha256(b).hexdigest()
 
 def prepare(candidate,output,version,source):
  proof=gate.verify(candidate/'complete',version,source)
@@ -44,7 +45,21 @@ def prepare(candidate,output,version,source):
   shutil.copy2(candidate/'complete'/manifest,desktop/manifest)
  shutil.copy2(candidate/'installation/linux-setup.sh',desktop/f'Kindred-{version}-Linux-Setup.sh')
  shutil.copy2(candidate/'installation/linux-update.py',desktop/f'Kindred-{version}-Linux-Update.py')
- shutil.copy2(bundle,server_dir/f'Kindred-{version}-Server-Bundle.zip')
+ # Hosted downloads use pullable images; the desktop's embedded bundle keeps
+ # its local build workflow. Both contain the same verified server binary.
+ hosted=server_dir/f'Kindred-{version}-Server-Bundle.zip'
+ server_repo=workspace/'kindred-server'
+ with zipfile.ZipFile(bundle) as original,zipfile.ZipFile(hosted,'w',zipfile.ZIP_DEFLATED) as target:
+  for info in original.infolist():
+   data=original.read(info.filename)
+   if info.filename=='compose.yaml':data=(server_repo/'compose.yaml').read_bytes()
+   target.writestr(info,data)
+  target.writestr('compose.build.yaml',(server_repo/'compose.build.yaml').read_bytes())
+  target.writestr('README.md','# Kindred Server\n\nRun `docker compose up -d`. To update, back up your data, then run `docker compose pull && docker compose up -d`. Keep the same project name and data volume; never use `down -v` to update. Set KINDRED_VERSION in .env to pin a release. For a local build from the included binary, use `docker compose -f compose.yaml -f compose.build.yaml up -d --build`.\n')
+ server['hosted_bundle_sha256']=sha(hosted)
+ with zipfile.ZipFile(hosted) as z:
+  assert z.testzip() is None and sha_bytes(z.read('kindred'))==server['server_sha256']
+
  root=Path(__file__).resolve().parents[2]
  verification=desktop/f'Kindred-{version}-Verification.zip'
  with zipfile.ZipFile(verification,'w',zipfile.ZIP_DEFLATED) as z:
@@ -61,7 +76,7 @@ def prepare(candidate,output,version,source):
   acceptance=candidate/'verification/public-acceptance.json'
   assert acceptance.exists(), 'Provide a reviewed public acceptance summary'
   z.write(acceptance,'verification/acceptance.json')
-  z.write(candidate/'server/SOURCE.json','server/SOURCE.json')
+  z.writestr('server/SOURCE.json',json.dumps(server,indent=2))
   for p in sorted((candidate/'installation').iterdir()):
    if p.is_file() and p.suffix in ('.sh','.py'):z.write(p,'installation/'+p.name)
   for p in sorted((candidate/'complete').glob('*.json')):z.write(p,'package-manifests/'+p.name)
