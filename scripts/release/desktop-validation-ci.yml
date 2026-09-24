@@ -6,6 +6,10 @@ on:
         description: 'Completed build containing the exact existing DMGs.'
         type: string
         required: true
+      validation_run_id:
+        description: 'Optional completed run containing a newer installation receipt for the exact same DMG.'
+        type: string
+        required: false
       source_commit:
         description: 'Exact application source commit recorded in those packages.'
         type: string
@@ -38,7 +42,7 @@ concurrency:
 jobs:
   validate:
     if: ${{ inputs.approve_runner_usage }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.validation_run_id && 5 || 15 }}
     env:
       CARGO_BUILD_JOBS: 2
     strategy:
@@ -74,7 +78,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ inputs.build_run_id }}
+          run-id: ${{ inputs.validation_run_id || inputs.build_run_id }}
           name: mac-validation-${{ inputs.version }}-${{ matrix.target }}
           path: previous-validation
       - name: Recover the preserved package without rebuilding or resigning

@@ -127,6 +127,8 @@ try:
     assert server.poll() is None,'Fixture server exited';time.sleep(.1)
    url=json.loads((fixture/'fixture.json').read_text())['url']
    env['KINDRED_CLIENT_ONLY']='1'
+   # Keep public-feed discovery local and deterministic; signatures are still verified.
+   env.update(HTTPS_PROXY=url,https_proxy=url,NO_PROXY='localhost,127.0.0.1,::1',no_proxy='localhost,127.0.0.1,::1')
    env['KINDRED_UPDATE_SESSION']=json.dumps({'server':url,'profile_id':'legacy','token':'native-test-token-only','remember':False,'expires':int(time.time())+300})
    child=subprocess.Popen([str(executable)],env=env,stdout=app_log,stderr=subprocess.STDOUT,start_new_session=True)
    chat=wait_report(fixture,'chat',child);assert chat['clientVersion']==a.version and chat['errors']==[],chat
@@ -197,8 +199,9 @@ try:
    request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"updater"}',headers={'Content-Type':'application/json'},method='POST')
    with urllib.request.urlopen(request) as response:response.read()
    wait_report(fixture,'updater',child);time.sleep(3)
-   capture(child,'client-updater',['Update could not finish','client updates yet'])
-   proof['native_client_update_window_and_feed_error']=True
+   capture(child,'client-updater',['up to date','Kindred update'])
+   assert json.loads((fixture/'signed-feed.json').read_text())['served']
+   proof['native_client_update_window_and_signed_feed']=True
    request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"accounts"}',headers={'Content-Type':'application/json'},method='POST')
    with urllib.request.urlopen(request) as response:response.read()
    wait_report(fixture,'accounts',child);time.sleep(3)
