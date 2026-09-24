@@ -1,4 +1,4 @@
-import {workspaceArtifactCard,artifactStudio} from './workspace-artifacts.js';
+import {workspaceArtifactCard,artifactStudio,artifactUpdateRow,artifactUpdateBatches} from './workspace-artifacts.js';
 import {groupActivity,transitionGroupActivity,visibleGroupWorkers,sharedConversationWorkers} from './group-activity.js';
 import { decisionReceipt } from './decision-receipts.js';
 import {installThemedSelects} from "./select-menu.js";
@@ -4824,7 +4824,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   let sequenceAvatar = null, previousSender = null,
     previousTime = 0;
   const boundary=unreadBoundaries.get(id);let unreadInserted=false;
-  const batches=connectorBatches(data.messages,boundary,runs),stacked=new Set();
+  const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set();
   for (const m of data.messages) {
     if(stacked.has(m.seq))continue;
     if (!m.text?.trim()) continue;
@@ -4841,6 +4841,17 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     if(m.visual_panel){
       const group=node('article','message-group visual-message');group.dataset.message=String(m.seq);
       group.append(visualPanel(m.visual_panel,{...workflowOptions(chat.id,m.visual_panel),onDiscuss:pick=>{const text=`Let's discuss ${pick.name} (${pick.url}) from the saved comparison “${m.visual_panel.title}” (panel ${pick.panel_key}, product ${pick.product_id}).`; $('prompt').value=text;resizeComposer();$('prompt').dispatchEvent(new Event('input',{bubbles:true}));$('prompt').focus();}}));
+      area.append(group);previousSender=null;continue;
+    }
+    if(m.workspace_artifact&&m.artifact_action==='updated'){
+      const batch=artifactBatches.get(m.seq),group=node('article','message-group artifact-update-message');group.dataset.message=String(m.seq);
+      const options={baseUrl:state.status.public_url||location.origin};
+      if(batch){for(const item of batch)stacked.add(item.seq);const details=node('details','artifact-update-stack'),summary=node('summary');
+        entry.openArtifactStacks??=new Set();details.open=entry.openArtifactStacks.has(String(m.seq));
+        summary.append(artifactUpdateRow(batch.at(-1).workspace_artifact,{...options,label:batch.length+' artifact updates ·'}));
+        const body=node('div','artifact-update-stack-body');for(const item of batch)body.append(artifactUpdateRow(item.workspace_artifact,options));
+        details.append(summary,body);details.addEventListener('toggle',()=>{if(details.isConnected){if(details.open)entry.openArtifactStacks.add(String(m.seq));else entry.openArtifactStacks.delete(String(m.seq));}});group.append(details);
+      }else group.append(artifactUpdateRow(m.workspace_artifact,options));
       area.append(group);previousSender=null;continue;
     }
     if(m.workspace_artifact){const group=node('article','message-group');group.dataset.message=String(m.seq);group.append(workspaceArtifactCard(m.workspace_artifact,{api,markdown,baseUrl:state.status.public_url||location.origin}));area.append(group);previousSender=null;continue;}
@@ -5163,8 +5174,8 @@ function reconcileConversation(target,desired){
   }
   const old=new Map([...target.children].filter(n=>n.dataset.message).map(n=>[n.dataset.message,n]));
   const nodes=[...desired.children].map(next=>{
-    const artifact=next.querySelector('[data-workspace-artifact]');
-    if(artifact){const previous=[...target.children].find(n=>n.querySelector('[data-workspace-artifact]')?.dataset.workspaceArtifact===artifact.dataset.workspaceArtifact);if(previous){previous.dataset.message=next.dataset.message;const data=conversationHistory(currentConversationId()).messages.find(m=>String(m.seq)===next.dataset.message)?.workspace_artifact;if(data)void previous.querySelector('[data-workspace-artifact]').syncArtifact(data);return previous;}}
+    const artifact=next.querySelector('.workspace-artifact[data-workspace-artifact]');
+    if(artifact){const previous=[...target.children].find(n=>n.querySelector('.workspace-artifact[data-workspace-artifact]')?.dataset.workspaceArtifact===artifact.dataset.workspaceArtifact);if(previous){previous.dataset.message=next.dataset.message;const data=conversationHistory(currentConversationId()).messages.find(m=>String(m.seq)===next.dataset.message)?.workspace_artifact;if(data)void previous.querySelector('[data-workspace-artifact]').syncArtifact(data);return previous;}}
     const signature=conversationSignature(next),previous=old.get(next.dataset.message);
     if(previous&&conversationRenderSignatures.get(previous)===signature)return previous;
     if(previous?.classList.contains('group-activity')&&next.classList.contains('group-activity')){transitionGroupActivity(previous,next,motionAllowed(),a=>trackMotion(a,280));conversationRenderSignatures.set(previous,signature);return previous;}

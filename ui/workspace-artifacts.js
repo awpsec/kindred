@@ -15,6 +15,17 @@ function trackSizing(effect){
 addEventListener('blur',settleSizing);document.addEventListener('visibilitychange',settleSizing);motionQuery.addEventListener('change',settleSizing);
 new MutationObserver(settleSizing).observe(document.documentElement,{attributes:true,attributeFilter:['data-motion']});
 function workspaceIconButton(label,icon,fn){const button=btn('',fn);button.setAttribute('aria-label',label);button.title=label;button.append(workspaceIcon(icon));return button;}
+export function artifactUpdateBatches(messages){
+ const batches=new Map();let pending=[];
+ const flush=()=>{if(pending.length>1)batches.set(pending[0].seq,pending);pending=[];};
+ for(const message of messages){if(message.workspace_artifact&&message.artifact_action==='updated')pending.push(message);else flush();}flush();return batches;
+}
+export function artifactUpdateRow(value,{baseUrl,label='Updated artifact'}={}){
+ const row=el('div','artifact-update-row');row.dataset.workspaceArtifact=value.id;
+ const link=el('a','workspace-artifact-link artifact-update-link');link.href=new URL(value.path,baseUrl||location.origin).href;link.target='_blank';link.rel='noopener noreferrer';link.setAttribute('aria-label','Open '+value.title+' in Kindred');
+ const title=el('span','artifact-update-title',value.title),open=document.createElementNS('http://www.w3.org/2000/svg','svg');open.setAttribute('viewBox','0 0 24 24');open.setAttribute('fill','none');open.setAttribute('stroke','currentColor');open.setAttribute('stroke-width','1.6');open.setAttribute('aria-hidden','true');const path=document.createElementNS(open.namespaceURI,'path');path.setAttribute('d','M14 4h6v6 M20 4 10 14 M10 4H4v16h16v-6');open.append(path);
+ link.append(title,open);row.append(artifactSymbol(artifactKind(value)),el('span','artifact-update-label',label),link);return row;
+}
 export function workspaceArtifactCard(initial,{api,markdown,baseUrl,onChange=()=>{}}){
  let value=initial,frame=null,timer=null,frameTimer=null,editing=false,busy=false,disposed=false,generation=0,frameDirty=false;
  const card=el('section','workspace-artifact'),head=el('header','workspace-artifact-header'),title=el('strong','',value.title),actions=el('div','workspace-artifact-actions'),stage=el('div','workspace-artifact-stage'),status=el('p','workspace-artifact-status');
