@@ -1,4 +1,17 @@
-# Update a Linux client from a downloaded AppImage
+# Update Kindred on Linux
+
+For current AppImage and DEB installations, click **Update** when the app offers
+an update, wait for installation, then click **Restart Kindred**. You can also
+check in **Settings → General → Check for app updates**. Downloads come from
+GitHub Releases and are checked against signed metadata before installation.
+
+Both formats use the same per-user updater. For a DEB installation, this creates
+a user-level Kindred application entry that takes precedence over the system
+entry; it does not change the package version recorded by apt. Open Kindred from
+Applications after updating, rather than invoking the older `/usr/bin` binary.
+Accounts and local server data stay in place.
+
+## Install a downloaded AppImage (fallback)
 
 For the new public release transport, see [GitHub release updates](GITHUB_UPDATES.md).
 The server-hosted feed instructions below remain relevant to older clients and fallback hosting.
@@ -36,16 +49,11 @@ own existing startup behavior.
 
 ## Use the helper with an older client
 
-Download **Kindred-0.51.0-Linux-Update.py** from the [release downloads](https://github.com/awpsec/kindred/releases/tag/v0.51.0) alongside the new AppImage, then run it as your normal desktop user:
-
-```bash
-python3 Kindred-0.51.0-Linux-Update.py "$HOME/Downloads/Kindred-0.51.0-Linux-x64.AppImage"
-```
-
-Use the filename of the release you actually downloaded. When it finishes, quit
-the old Kindred client and reopen **Kindred** from Applications. The helper never
-kills a running process. Python 3 is the only helper dependency for the bundled
-runtime. You can keep this script and reuse it for later AppImages.
+Download the Linux update helper and matching AppImage from the
+[latest release](https://github.com/awpsec/kindred/releases/latest), then run the
+helper as your normal desktop user with the AppImage path as its argument.
+Quit the old client and reopen **Kindred** from Applications when it finishes.
+Python 3 is required; the bundled runtime needs no FUSE or Docker build.
 
 The script is also available with the source; this command does not fetch source,
 require GitHub credentials, or rebuild the app. A manually selected AppImage is

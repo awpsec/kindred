@@ -12,6 +12,14 @@ if(embedded){
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.querySelector('dialog[open]')){e.preventDefault();void invoke('close_profile_home');}});
 }
 function statusReply(){let timer;return Promise.race([invoke('standalone_status'),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('The setup status did not respond.')),8000);})]).finally(()=>clearTimeout(timer));}
+let firstRun=false;
+function chooseSetup(choice){
+ document.documentElement.dataset.setupChoice=choice;
+ for(const name of ['local','server'])$('choose-'+name).setAttribute('aria-pressed',String(choice===name));
+ if(choice==='server'){$('server-form').hidden=false;$('address').focus();}
+}
+$('choose-local').onclick=()=>chooseSetup('local');
+$('choose-server').onclick=()=>chooseSetup('server');
 let loading=false,pollTimer=null,resumeKey=null,showAccountsAfterUpdate=false,hasLocalAccounts=false,setupState=null,setupRequest=null,setupEpoch=0;
 const localServer=address=>{try{const u=new URL(address);return u.protocol==='http:'&&u.port==='9444'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname);}catch{return false;}};
 function profileReadiness(){
@@ -32,6 +40,9 @@ function elapsedSetup(){
 async function perform(action,button){if(button?.disabled)return;if(button){button.disabled=true;button.dataset.profileBusy='true';}$('error').textContent='';try{return await action();}catch(e){$('error').textContent=String(e.message||e);}finally{if(button){button.disabled=false;delete button.dataset.profileBusy;}profileReadiness();}}
 async function load(){
  const data=await invoke('profile_home_state');hasLocalAccounts=data.entries.some(p=>localServer(p.server));if(data.intent?.mode==='standalone-update')showAccountsAfterUpdate=true;platform=data.platform||(data.linux_client_updates?'linux':null);$('update-client').hidden=platform!=='linux'||!data.linux_client_updates;$('update-client').onclick=()=>perform(()=>invoke('open_linux_update'),$('update-client'));$('version').textContent='Desktop app '+data.version;document.documentElement.dataset.theme=(requestedTheme||data.theme)==='light'?'light':'dark';
+ firstRun=!embedded&&!document.documentElement.dataset.accountSection&&!data.entries.length&&!data.intent;
+ document.documentElement.toggleAttribute('data-first-run',firstRun);$('setup-choices').hidden=!firstRun;
+ if(firstRun){document.querySelector('.dialog-chrome span').textContent='Welcome';$('home-title').textContent='Welcome to Kindred';$('home-intro').textContent='Choose where your bots will live.';}
  const moving=data.intent?.mode==='transfer';$('connections-view').hidden=moving;$('transfer-view').hidden=!moving;if(moving){$('transfer-source').textContent=data.intent.name+' · '+data.intent.server;const pending=data.transfer_request;if(pending?.source===data.intent.source){$('transfer-address').value=pending.destination;$('transfer-username').value=pending.username;}return;}
  const connection=data.intent?.mode==='connection'?data.intent:null;$('connection-recovery').hidden=!connection;
  if(connection){$('connection-title').textContent=connection.failed?'Couldn’t open your workspace':'Opening your workspace…';$('connection-address').textContent=connection.server;$('connection-help').textContent=connection.failed?'Check your connection and that the server is running, then try again. '+(data.entries.length?'You can also choose another account below.':'You can also connect to another server below.'):'Connecting to your saved server.';$('connection-retry').hidden=!connection.failed;$('connection-retry').dataset.profileServer=connection.server;$('connection-retry').onclick=()=>perform(()=>connection.key?invoke('switch_native_profile',{key:connection.key}):invoke('connect_profile_server',{address:connection.server}),$('connection-retry'));}
@@ -52,7 +63,7 @@ async function counts(){if(loading)return;loading=true;try{const values=await in
 $('server-form').onsubmit=e=>{e.preventDefault();perform(()=>invoke('connect_profile_server',{address:$('address').value}),e.currentTarget.querySelector('button'));};
 $('add-account').onclick=()=>{const hidden=!$('server-form').hidden;$('server-form').hidden=hidden;$('add-account').setAttribute('aria-expanded',String(!hidden));if(!hidden)$('address').focus();};
 function renderSetup(status={}){
- status=status||{};const previous=setupState;setupState=status;const working=status.status==='working',server=status.local_server;
+ status=status||{};if(firstRun&&!document.documentElement.dataset.setupChoice&&(status.local_server||['working','error','ready'].includes(status.status)))chooseSetup('local');const previous=setupState;setupState=status;const working=status.status==='working',server=status.local_server;
  let versions=$('standalone-versions');if(!versions){versions=document.createElement('p');versions.id='standalone-versions';versions.className='hint';versions.setAttribute('role','status');$('standalone').before(versions);}
  // Keep the detected versions visible while setup is running.
  if(!working){versions.hidden=!server;versions.textContent=server?'Desktop app '+server.desktop_version+' · Local server '+server.version+(server.update_available?'. A local server update is available. This updates this computer’s server only; hosted accounts are unchanged. Finish active bot tasks first.':''):'';}
