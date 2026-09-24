@@ -9,8 +9,8 @@ InstallDir "$LOCALAPPDATA\Programs\Kindred"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 SetDatablockOptimize on
-ShowInstDetails show
-ShowUninstDetails show
+ShowInstDetails hide
+ShowUninstDetails hide
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey /LANG=1033 "ProductName" "Kindred"
 VIAddVersionKey /LANG=1033 "FileDescription" "Kindred Setup"
@@ -21,12 +21,17 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "Kindred contributors"
 !define MUI_UNICON "icon.ico"
 !define MUI_WELCOMEFINISHPAGE_BITMAP "banner.bmp"
 !define MUI_ABORTWARNING
+!define MUI_BGCOLOR "0D0D0D"
+!define MUI_TEXTCOLOR "EDEDED"
+!define MUI_INSTFILESPAGE_COLORS "EDEDED 0D0D0D"
+!define MUI_INSTFILESPAGE_HEADER_TEXT "Installing Kindred"
+!define MUI_INSTFILESPAGE_HEADER_SUBTEXT "Getting your app ready."
 !define MUI_WELCOMEPAGE_TITLE "Welcome to Kindred"
-!define MUI_WELCOMEPAGE_TEXT "Install or update Kindred ${VERSION} on this computer.$\r$\n$\r$\nYour profiles, settings, and local server data will be kept.$\r$\n$\r$\nIf Microsoft Edge WebView2 is missing, setup will install it. This requires an internet connection."
+!define MUI_WELCOMEPAGE_TEXT "Your bots, apps, and workspace — together.$\r$\n$\r$\nSetup will install Kindred ${VERSION}. Existing accounts and data stay in place.$\r$\n$\r$\nAn internet connection may be needed to prepare the app."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_TITLE "Kindred is ready"
-!define MUI_FINISHPAGE_TEXT "Kindred ${VERSION} is installed. Open Kindred to connect to a server or set up your own local workspace."
+!define MUI_FINISHPAGE_TEXT "Choose a workspace on this computer or connect to your server when Kindred opens."
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Open Kindred"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenKindred

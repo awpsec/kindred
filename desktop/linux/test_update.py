@@ -95,6 +95,22 @@ class ClientUpdates(unittest.TestCase):
         self.assertEqual((self.base / 'current').resolve(), first)
         self.assertTrue((second / 'launch').is_file())
 
+    def test_deb_install_gets_same_desktop_id_and_restarts_updated_client(self):
+        # The DEB installs /usr/share/applications/Kindred.desktop. A per-user
+        # entry with that same ID shadows it without modifying package files.
+        system = self.home / 'usr/share/applications/Kindred.desktop'
+        system.parent.mkdir(parents=True)
+        original = '[Desktop Entry]\nType=Application\nName=Kindred\nExec=kindred-desktop\n'
+        system.write_text(original)
+        self.install()
+        user = self.data / 'applications' / system.name
+        self.assertEqual(u.entry_command(user), [str(self.root / 'bin/kindred')])
+        subprocess.run(u.entry_command(user), check=True)
+        self.assertTrue((self.home / 'launched').exists())
+        self.assertEqual(system.read_text(), original)
+        for path, contents in self.canaries.items():
+            self.assertEqual(path.read_bytes(), contents)
+
     def test_invalid_image_checksum_and_extraction_keep_active_client(self):
         self.install()
         selected = (self.base / 'current').resolve()

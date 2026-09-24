@@ -41,7 +41,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await p.evaluate(()=>{fixture.statusFailure=false;});
   await p.waitForFunction(()=>document.querySelector('#setup-stage').textContent==='Step 1 of 5 · Checking Docker');
   await p.evaluate(()=>{fixture.status={...fixture.status,status:'ready',completed_stages:5,message:'Your local server is ready.',local_server:{version:'fixture',desktop_version:'fixture',update_available:false}};});
-  await p.locator('#open-local').waitFor();assert(await local.isEnabled());assert.equal(await p.locator('#setup-progress').getAttribute('value'),'5');
+  await p.waitForFunction(()=>document.documentElement.dataset.accountSection==='accounts');assert(await local.isEnabled());assert.equal(await p.locator('#setup-progress').getAttribute('value'),'5');
   assert.deepEqual(await p.evaluate(()=>fixture.switches),['remote'],'Setup must not auto-switch to an unrelated saved account');
   await local.click();assert.deepEqual(await p.evaluate(()=>fixture.switches),['remote','local']);
   assert.equal(await p.evaluate(()=>fixture.maximum),1,'Status polls must not overlap');assert.deepEqual(errors,[]);

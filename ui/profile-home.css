@@ -80,3 +80,25 @@ html[data-motion='off'] :is(#setup-details,#linux-recovery)>summary::before{tran
 html[data-account-section=accounts] .standalone{display:none}html[data-account-section=standalone] #connections-view>:not(.standalone):not(#error):not(h1){display:none}html[data-account-section=standalone] .standalone{border:0;padding-top:0}
 
 html[data-account-section] main>h1,html[data-account-section] footer{display:none}html[data-account-section] .dialog-chrome{font-size:17px;font-weight:600;color:var(--fg);padding-left:28px}
+
+/* First launch shares the account and setup machinery, with one choice at a time. */
+.welcome-brand{display:none}
+html[data-first-run] main{max-width:660px;padding-top:44px}
+html[data-first-run] .welcome-brand{display:block;font-size:28px;font-weight:650;letter-spacing:-1.3px;margin-bottom:34px}
+#setup-choices{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:26px 0}
+.setup-choice{display:flex;flex-direction:column;gap:8px;text-align:left;padding:22px;border-radius:14px;background:var(--panel);transition:border-color .18s,background .18s}
+.setup-choice strong{font-size:14px;font-weight:550}
+.setup-choice>span:last-child{font-size:12px;color:var(--muted);line-height:1.5}
+.setup-choice .choice-icon{font-size:24px;line-height:1;margin-bottom:8px}
+.setup-choice[aria-pressed=true]{border-color:var(--fg);background:var(--hover)}
+html[data-first-run]:not([data-setup-choice=local]) .standalone,html[data-first-run]:not([data-setup-choice=server]) #server-choice{display:none}
+html[data-first-run] #add-account{display:none}
+html[data-first-run] #server-choice .hint{display:none}
+html[data-first-run] .standalone h2{font-size:17px;margin-bottom:8px}
+html[data-first-run] :is(.standalone,#server-choice){animation:setup-reveal .2s ease-out}
+html[data-first-run] #standalone{background:var(--button);color:var(--button-fg);padding:11px 18px}
+#setup-progress{height:6px}
+#setup-progress::-webkit-progress-value{transition:width .35s ease}
+@keyframes setup-reveal{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media(max-width:480px){#setup-choices{grid-template-columns:1fr}.setup-choice{padding:18px}html[data-first-run] main{padding:24px}}
+@media(prefers-reduced-motion:reduce){html[data-first-run] :is(.standalone,#server-choice){animation:none}.setup-choice,#setup-progress::-webkit-progress-value{transition:none}}
