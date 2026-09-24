@@ -8,4 +8,4 @@ Choose one installer from the [desktop releases](https://github.com/awpsec/kindr
 
 Choose Standalone with Docker running, or connect to a hosted Kindred server.
 
-The public repositories start with a clean source history. Downloads will appear with the first public release. Earlier private builds may need one manual client upgrade to adopt the public update channel; preserve your existing profile and server data.
+The public repositories start with a clean source history. Earlier private builds may need one manual client upgrade to adopt the public update channel; preserve your existing profile and server data.

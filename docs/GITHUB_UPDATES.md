@@ -45,4 +45,4 @@ publishing. GitHub update plumbing does not substitute for OS signing/notarizati
 
 ## Public repository transition
 
-New packages and signed manifests are published in `awpsec/kindred`; server packages live in `awpsec/kindred-server`. Old private release assets and history are not copied here. Until the first approved public release, this repository has no downloadable update. Older installed clients may need a manual upgrade to change their built-in repository URL; the existing signed server-feed fallback remains supported. Do not remove a working legacy feed during migration.
+New packages and signed manifests are published in `awpsec/kindred`; server packages live in `awpsec/kindred-server`. Old private release assets and history are not copied here. Older installed clients may need a manual upgrade to change their built-in repository URL; the existing signed server-feed fallback remains supported. Do not remove a working legacy feed during migration.

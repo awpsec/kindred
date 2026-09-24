@@ -20,8 +20,6 @@ with shared documents and interactive artifacts you can keep working on together
 
 ## Install
 
-Public packages will appear with the first public release. You can [build from source](docs/BUILD_DESKTOP.md) now.
-
 | Platform | Choose this download |
 | --- | --- |
 | Windows x64 | Windows Setup `.exe` |
