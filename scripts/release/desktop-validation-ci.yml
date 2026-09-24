@@ -105,9 +105,13 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            application-source/desktop/target
+            desktop/target
           key: kindred-native-v1-${{ matrix.target }}-${{ hashFiles('application-source/desktop/Cargo.lock', 'application-source/desktop/build.rs', 'application-source/desktop/dictation/**') }}
           restore-keys: kindred-native-v1-${{ matrix.target }}-
+      - name: Use the restored native build cache
+        run: |
+          mkdir -p desktop/target
+          ln -s "$PWD/desktop/target" application-source/desktop/target
       - name: Launch the shipped app and inspect its real windows
         env:
           PACKAGE_VERSION: ${{ inputs.version }}
