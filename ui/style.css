@@ -4787,6 +4787,8 @@ details.composio-service>summary.composio-service-summary::before{display:none}
 /* A pinned library owns its pane control; the page control fades away. */
 .artifact-library-reveal{transition:opacity .16s ease,width .16s,padding .16s,margin .16s}
 .artifact-studio.sidebar-pinned .artifact-library-reveal{opacity:0;visibility:hidden;pointer-events:none;width:0;padding:0;margin-right:-12px}
+/* Keep the Mac page control clear of native traffic lights and the edge reveal zone. */
+.artifact-studio-macos .artifact-library-reveal{position:fixed;left:12px;bottom:12px;z-index:4;width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;background:var(--bg);margin:0}
 @media(prefers-reduced-motion:reduce){.artifact-library-reveal{transition:none}}
 
 .artifact-folder{display:flex;flex-direction:column;position:relative;flex-shrink:0}

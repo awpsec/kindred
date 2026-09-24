@@ -16,6 +16,20 @@ const assert=require('node:assert/strict');
    document.querySelector('#app').append(studio.root);await studio.open(doc.id);
   });
   await page.getByLabel('Document title',{exact:true}).waitFor();
+  const reveal=page.locator('.artifact-library-reveal'),viewport=page.viewportSize();
+  const box=await reveal.boundingBox();assert(box);
+  if(platform==='macos'){
+   assert(box.x<20&&box.y>viewport.height-60,'Mac page pin belongs in the bottom left');
+   await page.mouse.move(3,viewport.height-25);await page.waitForTimeout(250);
+   assert.equal(await page.locator('.artifact-studio').evaluate(n=>n.classList.contains('sidebar-open')),false,'Bottom corner must not reveal the pane over the pin');
+  }else assert(box.y<100,platform+' keeps the page pin at the top');
+  await reveal.click();assert(await page.locator('.artifact-studio').evaluate(n=>n.classList.contains('sidebar-pinned')));
+  assert.equal(await reveal.isVisible(),false);
+  await page.waitForFunction(()=>document.querySelector('.artifact-studio-library').getBoundingClientRect().left>=0);
+  const pin=page.locator('.artifact-library-pin'),pinBox=await pin.boundingBox();assert(pinBox.y<130&&pinBox.x>180,'Pane pin remains at its top right');
+  await pin.click();await page.waitForFunction(()=>document.querySelector('.artifact-studio-library').getBoundingClientRect().right<=1);
+  await page.mouse.move(3,300);await page.waitForFunction(()=>document.querySelector('.artifact-studio-library').getBoundingClientRect().left>=0);
+  await page.mouse.move(700,400);await page.waitForFunction(()=>document.querySelector('.artifact-studio-library').getBoundingClientRect().right<=1);
   const actions=await page.evaluate(()=>{
    const header=document.querySelector('.artifact-workbench-header');
    const fire=(target,type,button=0)=>target.dispatchEvent(new MouseEvent(type,{bubbles:true,button,detail:type==='dblclick'?2:1}));
