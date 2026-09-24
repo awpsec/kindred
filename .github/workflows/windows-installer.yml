@@ -64,7 +64,7 @@ jobs:
           New-Item -ItemType Directory -Path installer-input,installer-output | Out-Null
           gh release download $env:INPUT_RELEASE --dir installer-input --pattern "kindred-windows-$env:RELEASE_VERSION.zip" --pattern stable.json --pattern MicrosoftEdgeWebview2Setup.exe
           if ($LASTEXITCODE -ne 0) { throw 'Input download failed' }
-          gh release download "v$env:PREVIOUS_VERSION" --dir installer-input --pattern "Kindred-$env:PREVIOUS_VERSION-Windows-Update.zip"
+          gh release download $env:INPUT_RELEASE --dir installer-input --pattern "Kindred-$env:PREVIOUS_VERSION-Windows-Update.zip"
           if ($LASTEXITCODE -ne 0) { throw 'Previous package download failed' }
           python -m pip install cryptography==46.0.5
           if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }

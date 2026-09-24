@@ -2,7 +2,7 @@
 
 ## Local server
 
-Use `docker compose up -d --build` at the repository root, then visit
+Use `docker compose up -d` at the repository root, then visit
 `http://127.0.0.1:9444`. The Compose default binds only to localhost. The first
 account is the administrator; sign up before exposing a fresh server to a team.
 Registration can then be closed and invitations issued from the profile menu.
@@ -24,7 +24,7 @@ KINDRED_DOMAIN=kindred.example.com
 KINDRED_PUBLIC_URL=https://kindred.example.com
 ```
 
-Start the included HTTPS proxy with `docker compose --profile public up -d --build`.
+Start the included HTTPS proxy with `docker compose --profile public up -d`.
 For KVM, also supply `-f compose.yaml -f compose.kvm.yaml`. Caddy obtains and renews
 the certificate. Keep the application port bound to localhost. Alternatively use
 an existing HTTPS reverse proxy with WebSocket support and set the matching public
@@ -48,7 +48,16 @@ credentials, disks, guest keys and image cache. A normal `docker compose down`
 followed by `up -d` preserves it. Do not use `down -v` to update. Container shutdown
 stops scheduling and requests guest shutdown, with a bounded final QEMU disk flush.
 
-To update: back up, pull the source and run `docker compose up -d --build`. Existing
+To update, back up your data, then run:
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+The default image is `ghcr.io/awpsec/kindred-server:latest`, updated with each stable release. Set `KINDRED_VERSION=0.75.0` in `.env` to pin a version. Keep the same project directory/name and named volume when updating. Do not use `down -v`. Existing source-build installations need the current `compose.yaml` once to switch to registry images. For development builds, use `docker compose -f compose.yaml -f compose.build.yaml up -d --build` instead. Desktop Standalone continues to use its bundled server and in-app update controls.
+
+Existing
 guest disks and accounts are retained. Software already installed inside existing
 guest disks is retained too; this release does not silently rebuild those computers.
 New computers use a software image matched to the current guest bundle. Older

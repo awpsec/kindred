@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -78,11 +79,16 @@ class ReleaseControls(unittest.TestCase):
             s = (Path(__file__).parent / name).read_text()
             self.assertIn('  workflow_dispatch:', s)
             for event in ['push:', 'pull_request:', 'schedule:', 'release:', 'workflow_run:']:
-                self.assertNotIn(event, s)
+                self.assertIsNone(re.search(r"^  " + re.escape(event), s, re.M))
             self.assertIn('default: false', s)
             self.assertIn('inputs.approve_runner_usage', s)
             self.assertIn('contents: read', s)
-            self.assertNotIn('contents: write', s)
+            if name == 'desktop-ci.yml':
+                self.assertIn('persist-credentials: false', s)
+                self.assertIn('BUNDLE_SHA256', s)
+                self.assertNotIn('gh release create', s)
+            else:
+                self.assertNotIn('contents: write', s)
 
     def test_windows_only_release_is_blocked(self):
         with tempfile.TemporaryDirectory() as folder:

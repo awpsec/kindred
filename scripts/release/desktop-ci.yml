@@ -10,6 +10,14 @@ on:
         description: 'Exact public kindred-server commit for the bundled server.'
         required: true
         type: string
+      bundle_release:
+        description: 'Private draft containing the verified standalone.zip.'
+        required: true
+        type: string
+      bundle_sha256:
+        description: 'SHA-256 of the verified standalone.zip.'
+        required: true
+        type: string
       approve_runner_usage:
         description: 'I approve this one cross-platform build and its runner charges.'
         required: true
@@ -31,42 +39,9 @@ concurrency:
   group: kindred-desktop-manual-packages-${{ inputs.platforms }}
   cancel-in-progress: false
 jobs:
-  server-bundle:
-    if: ${{ inputs.approve_runner_usage }}
-    runs-on: ubuntu-22.04
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          repository: awpsec/kindred-server
-          ref: ${{ inputs.server_source_commit }}
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: '3.12'
-      - name: Verify pinned server source
-        env:
-          SERVER_SOURCE: ${{ inputs.server_source_commit }}
-          RELEASE_VERSION: ${{ inputs.version }}
-        run: |
-          python3 - <<'PYCODE'
-          import os, re, subprocess, tomllib
-          sha = os.environ['SERVER_SOURCE']
-          assert re.fullmatch(r'[0-9a-f]{40}', sha), 'Pin a full server commit'
-          assert subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip() == sha
-          assert tomllib.load(open('Cargo.toml','rb'))['package']['version'] == os.environ['RELEASE_VERSION']
-          PYCODE
-      - name: Build server bundle
-        run: |
-          cargo build --release --locked
-          python3 scripts/release/package-server.py --binary target/release/kindred --output /tmp/server-bundle
-          cp /tmp/server-bundle/kindred-standalone-*.zip /tmp/standalone.zip
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: standalone-server
-          path: /tmp/standalone.zip
-          retention-days: 7
   packages:
-    needs: server-bundle
+    permissions:
+      contents: write
     if: ${{ inputs.approve_runner_usage }}
     strategy:
       fail-fast: false
@@ -84,15 +59,38 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ inputs.source_commit || github.sha }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: standalone-server
-          path: desktop
+          persist-credentials: false
+      - name: Download verified standalone bundle
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE_RELEASE: ${{ inputs.bundle_release }}
+          BUNDLE_SHA256: ${{ inputs.bundle_sha256 }}
+          SERVER_SOURCE: ${{ inputs.server_source_commit }}
+        run: |
+          python - <<'PYBUNDLE'
+          import os, re, json, hashlib, subprocess, zipfile
+          from pathlib import Path
+          tag=os.environ['BUNDLE_RELEASE']
+          assert re.fullmatch(r'build-inputs-[0-9A-Za-z.-]+',tag)
+          assert re.fullmatch(r'[0-9a-f]{64}',os.environ['BUNDLE_SHA256'])
+          assert re.fullmatch(r'[0-9a-f]{40}',os.environ['SERVER_SOURCE'])
+          assert json.loads(subprocess.check_output(['gh','release','view',tag,'--json','isDraft']))['isDraft']
+          subprocess.run(['gh','release','download',tag,'--dir','desktop','--pattern','standalone.zip'],check=True)
+          data=Path('desktop/standalone.zip').read_bytes()
+          assert hashlib.sha256(data).hexdigest()==os.environ['BUNDLE_SHA256']
+          with zipfile.ZipFile('desktop/standalone.zip') as z:
+              meta=json.loads(z.read('bundle.json'))
+              assert meta['version']==os.environ['RELEASE_VERSION']
+              assert meta['source_commit']==os.environ['SERVER_SOURCE']
+              assert hashlib.sha256(z.read('kindred')).hexdigest()==meta['server_sha256']
+          PYBUNDLE
       - name: Check out current packaging tools separately from pinned application source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.sha }}
           path: .release-tools
+          persist-credentials: false
           sparse-checkout: scripts/release
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
@@ -230,11 +228,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ inputs.source_commit || github.sha }}
+          persist-credentials: false
       - name: Check out current packaging tools separately from pinned application source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.sha }}
           path: .release-tools
+          persist-credentials: false
           sparse-checkout: scripts/release
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:

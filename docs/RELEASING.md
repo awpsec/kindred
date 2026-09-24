@@ -39,8 +39,7 @@ python scripts/release/package-server.py --binary /absolute/path/to/kindred --ou
 It includes the tracked deployment scripts and licenses, checks the native binary
 version, and records the server commit and binary/archive hashes in SOURCE.json.
 Copy the resulting kindred-standalone-VERSION.zip to the desktop repository's
-`desktop/standalone.zip` before committing and building the desktop candidate.
-The desktop source commit then identifies its exact embedded server payload.
+`desktop/standalone.zip` before building the desktop candidate. The generated archive is not tracked; its SHA-256 and server source commit are verified by native CI and recorded with the candidate.
 The helper never deploys a server or changes an existing desktop installation.
 
 ## Complete-platform gate
