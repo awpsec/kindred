@@ -4852,3 +4852,5 @@ details.composio-service>summary.composio-service-summary::before{display:none}
 .routine-calendar-day[aria-pressed="true"] {background:var(--hover);border-color:var(--muted);}
 #routine-form textarea[name="prompt"] {height:110px;min-height:80px;}
 #routine-form .routine-fields > label {margin-top:8px;margin-bottom:12px;}
+
+.vm-resource-settings{border-bottom:1px solid var(--line);padding:0 0 24px;margin-bottom:24px}.vm-resource-settings h3{font-size:14px;margin:0 0 12px}.vm-resource-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.vm-resource-form label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)}.vm-resource-form input{width:100%;min-width:0}.vm-resource-form>p,.vm-resource-form>.row-actions{grid-column:1/-1}.vm-resource-form[hidden]{display:none}@media(max-width:420px){.vm-resource-form{grid-template-columns:1fr}}
