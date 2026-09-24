@@ -1,0 +1,20 @@
+const {server,token}=require('./fixtures/desktop.cjs');
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict');
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await(process.env.WEBKIT?webkit:chromium).launch();try{
+ const p=await browser.newPage(),errors=[],external=[];p.on('pageerror',e=>errors.push(e.message));
+ await p.exposeFunction('openExternal',args=>external.push(args.url));
+ await p.addInitScript(t=>{sessionStorage.setItem('kindred-token',t);window.__KINDRED_EXTERNAL_LINKS=true;window.__TAURI__={core:{invoke:(name,args)=>name==='open_external_url'?window.openExternal(args):Promise.resolve()}};},token);
+ const artifact={id:'brief',title:'Daily brief',kind:'document',language:'markdown',source:'# Brief',state:{},revision:3,path:'/artifacts/brief',updated:1};
+ const messages=[{seq:1,sender:'piper',text:'Daily brief',kind:'workspace_artifact',artifact_action:'created',workspace_artifact:artifact,created:1},...[2,3].map(seq=>({seq,sender:'piper',text:'Daily brief',kind:'workspace_artifact',artifact_action:'updated',workspace_artifact:artifact,created:seq}))];
+ await p.route(origin+'/api/chats/dm-piper*',r=>r.fulfill({json:{chat:{id:'dm-piper',name:'Piper',members:['piper']},messages}}));
+ await p.route(origin+'/api/workspace-artifacts**',r=>r.fulfill({json:new URL(r.request().url()).pathname==='/api/workspace-artifacts'?[artifact]:artifact}));
+ await p.goto(origin);await p.locator('.artifact-update-stack').waitFor();
+ assert.equal(await p.locator('.workspace-artifact').count(),1);
+ const stack=p.locator('.artifact-update-stack');assert.equal(await stack.getAttribute('open'),null);assert.equal(await stack.locator('.artifact-update-row:visible').count(),1);
+ await stack.locator('summary .artifact-update-label').click();assert.equal(await stack.locator('.artifact-update-stack-body .artifact-update-row:visible').count(),2);await stack.locator('summary .artifact-update-label').click();
+ await stack.locator('summary a').click({modifiers:['Control']});assert.equal(external.length,1);assert.match(external[0],/\/artifacts\/brief$/);assert(!p.url().includes('/artifacts/brief'));assert.equal(await stack.getAttribute('open'),null);
+ const batches=await p.evaluate(async()=>{const {artifactUpdateBatches}=await import('/workspace-artifacts.js');const m=(seq,action)=>({seq,artifact_action:action,workspace_artifact:{id:'x'}});return [artifactUpdateBatches([m(1,'updated')]).size,[...artifactUpdateBatches([m(1,'created'),m(2,'updated'),m(3,'updated'),{seq:4,text:'Hi'},m(5,'updated')]).values()].map(b=>b.map(m=>m.seq))];});assert.deepEqual(batches,[0,[[2,3]]]);
+ messages.push({...messages[2],seq:4,created:4});await p.reload();await p.getByText('3 artifact updates ·',{exact:true}).waitFor();assert.equal(await p.locator('.artifact-update-row:visible').count(),1);await stack.locator('summary a').click();await p.waitForURL('**/artifacts/brief');await p.locator('.artifact-studio').waitFor();assert.equal(external.length,1);assert.deepEqual(errors,[]);
+ console.log('Creation card, compact updates, two-update stack, expansion and native/browser links passed');
+}finally{await browser.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});
