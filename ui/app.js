@@ -271,6 +271,40 @@ function hiddenCompletionMessage(message) {
 function visibleRunPreview(run) {
   return run && (run.status!=='completed' || run.error || (run.output?.trim() && !quietCompletionMarker(run.output)));
 }
+// Measure the uncut text, so wrapping, font changes and rich text count toward
+// the visible length. Only the viewport clips; controls remain outside it.
+const longMessageObservers = new Map();
+function foldLongMessage(bubble, key, entry) {
+  const viewport=node('div','message-text-viewport'), text=node('div','message-text-content');
+  text.append(...bubble.childNodes);viewport.append(text);bubble.append(viewport);
+  entry.expandedMessages ||= new Set();
+  const toggle=button('Show more',()=>{
+    chatScroll.follow=false;captureChatAnchor();
+    if(entry.expandedMessages.has(key))entry.expandedMessages.delete(key);else entry.expandedMessages.add(key);
+    update();
+  },'message-expand');
+  toggle.hidden=true;bubble.append(toggle);
+  function update(){
+    if(!text.isConnected)return;
+    const line=parseFloat(getComputedStyle(text).lineHeight)||23.25;
+    const long=text.getBoundingClientRect().height>30*line+1;
+    const expanded=entry.expandedMessages.has(key);
+    viewport.style.maxHeight=long&&!expanded?`${15.5*line}px`:'';
+    viewport.classList.toggle('is-truncated',long&&!expanded);
+    toggle.hidden=!long;toggle.textContent=expanded?'Show less':'Show more';
+    toggle.setAttribute('aria-expanded',String(expanded));
+    // Clipped links must not remain invisible keyboard stops.
+    for(const link of text.querySelectorAll('a,button,input')){
+      if(long&&!expanded){if(!link.hasAttribute('data-fold-tabindex'))link.dataset.foldTabindex=link.getAttribute('tabindex')??'';link.tabIndex=-1;}
+      else if(link.hasAttribute('data-fold-tabindex')){const value=link.dataset.foldTabindex;if(value)link.setAttribute('tabindex',value);else link.removeAttribute('tabindex');delete link.dataset.foldTabindex;}
+    }
+  }
+  viewport._observeLongMessage=()=>{const observer=new ResizeObserver(update);observer.observe(text);longMessageObservers.set(viewport,observer);update();};
+}
+function observeLongMessages(target){
+  for(const [element,observer] of longMessageObservers)if(!element.isConnected){observer.disconnect();longMessageObservers.delete(element);}
+  for(const viewport of target.querySelectorAll('.message-text-viewport'))if(!longMessageObservers.has(viewport))viewport._observeLongMessage?.();
+}
 function markdown(text, mentions=false, preserveBreaks=false) {
   const n = node("div", "message-bubble");
   n.innerHTML = DOMPurify.sanitize(marked.parse(text || "",{breaks:preserveBreaks}), {
@@ -4971,7 +5005,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       if(m.command?.command){const badge=node("span","message-command-badge","/"+m.command.command);badge.title="Saved workflow · "+(m.command.source||"Skill");bubble.append(badge);}
       const formatted=markdown(m.text,true,true);
       if(quietCompletionMarker(m.text))formatted.textContent=m.text;
-      if(!attachmentOnly)bubble.append(...formatted.childNodes);
+      if(!attachmentOnly){bubble.append(...formatted.childNodes);foldLongMessage(bubble,String(m.seq),entry);}
       else {bubble.classList.add("attachment-only");bubble.append(fileLinks(m.files));}
       if(!chat.shared&&m.delivery?.length&&m.delivery.every(d=>d.status==='queued')){const controls=node('div','message-steering');controls.append(button('Edit queued message',()=>editQueuedMessage(m,chat.id),'subtle-button','edit'));group.prepend(controls);}
       for(const delivery of m.delivery||[]) {
@@ -4984,6 +5018,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       row.append(bubble);
     } else row.append(markdown(m.text));
     const bubble=row.lastElementChild;
+    if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));
     if(['message','assistant','result','handoff','question'].includes(m.kind)){
@@ -5023,7 +5058,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     for (const e of events.filter((e) => !durableReplies && e.kind === "assistant" && !persistedEvents.has(e.seq))) {
       const row = node("div", "message-row assistant");
       if(e.body.status_notice==='provider_error'){group.append(chatStatusNotice('Provider error',e.body.text));continue;}
-      row.append(markdown(e.body.text));
+      const bubble=markdown(e.body.text);foldLongMessage(bubble,`event:${run.id}:${e.seq}`,entry);row.append(bubble);
       group.append(row);
     }
     renderAttachments(group, state.details.get(run.id)?.attachments || []);
@@ -5209,6 +5244,7 @@ function reconcileConversation(target,desired){
   let cursor=target.firstChild;
   for(const next of nodes){if(next===cursor){cursor=cursor.nextSibling;continue;}target.insertBefore(next,cursor);}
   for(const formation of formations)animateConnectorFormation(formation);
+  observeLongMessages(target);
   continueLoops(target);
 }
 function animateChatDisclosure(history,body,falling=false){
