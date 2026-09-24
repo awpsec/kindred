@@ -3,7 +3,7 @@
 Preserves all package bytes and immutable existing releases. Metadata and build
 evidence live in one verification archive instead of cluttering the downloads.
 """
-import argparse,hashlib,importlib.util,json,shutil,urllib.parse,zipfile
+import argparse,hashlib,importlib.util,json,shutil,subprocess,urllib.parse,zipfile
 from pathlib import Path
 from github_api import request
 
@@ -49,12 +49,13 @@ def prepare(candidate,output,version,source):
  # its local build workflow. Both contain the same verified server binary.
  hosted=server_dir/f'Kindred-{version}-Server-Bundle.zip'
  server_repo=workspace/'kindred-server'
+ def server_file(name):return subprocess.check_output(['git','-C',str(server_repo),'show',server['source_commit']+':'+name])
  with zipfile.ZipFile(bundle) as original,zipfile.ZipFile(hosted,'w',zipfile.ZIP_DEFLATED) as target:
   for info in original.infolist():
    data=original.read(info.filename)
-   if info.filename=='compose.yaml':data=(server_repo/'compose.yaml').read_bytes()
+   if info.filename=='compose.yaml':data=server_file('compose.yaml')
    target.writestr(info,data)
-  target.writestr('compose.build.yaml',(server_repo/'compose.build.yaml').read_bytes())
+  target.writestr('compose.build.yaml',server_file('compose.build.yaml'))
   target.writestr('README.md','# Kindred Server\n\nRun `docker compose up -d`. To update, back up your data, then run `docker compose pull && docker compose up -d`. Keep the same project name and data volume; never use `down -v` to update. Set KINDRED_VERSION in .env to pin a release. For a local build from the included binary, use `docker compose -f compose.yaml -f compose.build.yaml up -d --build`.\n')
  server['hosted_bundle_sha256']=sha(hosted)
  with zipfile.ZipFile(hosted) as z:
