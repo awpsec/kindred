@@ -103,3 +103,21 @@ the deadline. It does not stop or modify the separately managed legacy libvirt V
 Back up the existing config, binary, database and credential files before enabling
 migration. Claim the owner account from an already authenticated device; old tokens
 remain restricted to the original profile. New installations should use Compose.
+
+## Change computer resources
+
+In **Server administration → Bot computer resources**, administrators can change
+CPU count, RAM and disk capacity for their current workspace. Shut down the
+computer there, save the resources, then start it again. Stop active bot work and
+return any controlled screens first. Existing disks and sign-ins are retained;
+disks can grow but cannot shrink. The managed Debian guest uses
+[cloud-init growth modules](https://docs.cloud-init.io/en/latest/reference/modules.html)
+to expand its root filesystem on boot.
+
+This works for managed computers on standalone and hosted installations. Compose
+variables `KINDRED_VM_CPUS`, `KINDRED_VM_MEMORY_MB` and `KINDRED_VM_DISK_GB` are
+defaults for **new** computers, not resize commands for existing ones. After
+editing Compose or its `.env`, run `docker compose up -d` to apply the new
+configuration; `docker compose restart` alone does not apply it. Docker Desktop
+and the host must also have enough available RAM and disk space. Externally
+managed VMs remain configurable through their host VM manager.

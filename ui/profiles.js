@@ -193,6 +193,32 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       const local=el('section','local-server-admin');local.append(el('h3','','Local server'),button('Manage local server',()=>nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark',section:'standalone'}),'outline-button'));d.append(local);
     }
 
+    const hardware=el('section','vm-resource-settings'),heading=el('h3','','Bot computer resources');
+    const status=el('p','muted','Loading computer settings…');status.setAttribute('role','status');
+    hardware.append(heading,status);d.append(hardware);
+    const form=el('form','vm-resource-form'),fields={};
+    for(const [key,title,min,max,step] of [['cpus','CPUs',1,32,1],['memory_mb','RAM (GB)',1,256,0.5],['disk_gb','Disk (GB)',8,2048,1]]){
+      const f=label(title,'number','');f.input.min=min;f.input.max=max;f.input.step=step;f.input.required=true;fields[key]=f.input;form.append(f.root);
+    }
+    const help=el('p','muted small','For this workspace. Shut down the computer, save changes, then start it again. Disk space can only increase.');
+    const actions=el('div','row-actions'),save=el('button','outline-button','Save resources');save.type='submit';
+    let resourceBusy=false,resourceState=null,provisioned=true;
+    const power=button('Shut down',async()=>{
+      if(resourceBusy)return;resourceBusy=true;renderResourceControls();status.textContent=resourceState==='running'?'Shutting down…':'Starting…';
+      try{const response=await fetch('/api/vm/'+(resourceState==='running'?'shutdown':'start'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getToken()},body:'{}',signal:AbortSignal.timeout(120000)});const value=await response.json();if(!response.ok)throw Error(value.error||'Computer action failed');await loadResources();}
+      catch(e){status.textContent=e.message;}finally{resourceBusy=false;renderResourceControls();}
+    },'outline-button');actions.append(save,power);form.append(help,actions);hardware.append(form);form.hidden=true;
+    function renderResourceControls(){save.disabled=resourceBusy||resourceState==='running'||!provisioned;power.disabled=resourceBusy;power.textContent=resourceState==='running'?'Shut down':'Start computer';for(const input of Object.values(fields))input.disabled=resourceBusy||resourceState==='running'||!provisioned;}
+    async function loadResources(){
+      try{const value=await api('computer-settings');if(value.supported===false){status.textContent='This computer is managed by the host. Change its resources in your VM manager.';return;}
+        provisioned=value.provisioned!==false;resourceState=value.state;for(const [key,input] of Object.entries(fields))input.value=key==='memory_mb'?value.resources[key]/1024:value.resources[key];fields.disk_gb.min=value.resources.disk_gb;form.hidden=false;status.textContent=!provisioned?'Start this computer once to configure its resources.':resourceState==='running'?'Running':'Stopped';renderResourceControls();
+      }catch(e){status.textContent=e.message;}
+    }
+    form.onsubmit=async event=>{event.preventDefault();if(resourceBusy||resourceState==='running'||!form.reportValidity())return;resourceBusy=true;renderResourceControls();status.textContent='Saving resources…';
+      try{await api('computer-settings',Object.fromEntries(Object.entries(fields).map(([key,input])=>[key,Number(input.value)*(key==='memory_mb'?1024:1)])));await loadResources();status.textContent='Saved. Start the computer to use the new resources.';}
+      catch(e){status.textContent=e.message;}finally{resourceBusy=false;renderResourceControls();}
+    };void loadResources();
+
     d.append(el('p','muted',`Up to ${data.max_users} accounts.`));
     const open=el('label','remember-device'),check=el('input');check.type='checkbox';check.checked=data.registration;open.append(check,document.createTextNode('Allow new users to register'));d.append(open);
     check.onchange=()=>run(async()=>{try{await api('admin',{action:'registration',open:check.checked});}catch(e){check.checked=!check.checked;throw e;}},check);
