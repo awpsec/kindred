@@ -1,0 +1,1495 @@
+[
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "gmail",
+    "connector": "gmail",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "gmail-fixture",
+    "input": {},
+    "kind": "email",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "email": {
+          "body": {
+            "array": false,
+            "editable": true,
+            "key": "body",
+            "text": "Please review the attached agenda."
+          },
+          "from": {
+            "array": false,
+            "editable": false,
+            "key": "from",
+            "text": "casey@example.invalid"
+          },
+          "subject": {
+            "array": false,
+            "editable": true,
+            "key": "subject",
+            "text": "Quarterly review"
+          },
+          "to": {
+            "array": false,
+            "editable": true,
+            "key": "to",
+            "text": "jordan@example.invalid"
+          }
+        },
+        "fields": {
+          "id": null
+        },
+        "lines": [],
+        "title": "Quarterly review"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "googledrive",
+    "connector": "googledrive",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "googledrive-fixture",
+    "input": {},
+    "kind": "file",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Open source": "https://example.invalid/brief",
+          "Owner": "Casey",
+          "Type": "application/vnd.google-apps.document"
+        },
+        "kind": "file",
+        "lines": [],
+        "title": "Launch brief"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "googledocs",
+    "connector": "googledocs",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "googledocs-fixture",
+    "input": {},
+    "kind": "document",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Launch begins on Monday.\n",
+        "excerpt_html": false,
+        "fields": {
+          "Document ID": "doc-1"
+        },
+        "kind": "document",
+        "lines": [],
+        "title": "Launch brief"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "googlesheets",
+    "connector": "googlesheets",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "googlesheets-fixture",
+    "input": {},
+    "kind": "spreadsheet",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Range": "Forecast!A1:C3"
+        },
+        "kind": "spreadsheet",
+        "lines": [],
+        "table": {
+          "columns": [
+            "Column 1",
+            "Column 2",
+            "Column 3"
+          ],
+          "range": "Forecast!A1:C3",
+          "rows": [
+            [
+              "Month",
+              "Revenue",
+              "Costs"
+            ],
+            [
+              "September",
+              "12000",
+              "5000"
+            ],
+            [
+              "October",
+              "15000",
+              "6000"
+            ]
+          ],
+          "truncated": false
+        },
+        "title": "Forecast!A1:C3"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "googleslides",
+    "connector": "googleslides",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "googleslides-fixture",
+    "input": {},
+    "kind": "presentation",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Slide 1\nThree priorities for the quarter\n",
+        "excerpt_html": false,
+        "fields": {
+          "Presentation ID": "deck-1",
+          "Slides returned": 1
+        },
+        "kind": "presentation",
+        "lines": [],
+        "title": "Quarterly plan"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "googlecalendar",
+    "connector": "googlecalendar",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "googlecalendar-fixture",
+    "input": {},
+    "kind": "calendar",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "<p>Review <strong>milestones</strong>.</p>",
+        "excerpt_html": true,
+        "fields": {
+          "Attendees": "casey@example.invalid",
+          "Ends": "2026-09-14T11:00:00-04:00",
+          "Starts": "2026-09-14T10:00:00-04:00",
+          "Time zone": "America/New_York"
+        },
+        "kind": "calendar",
+        "lines": [],
+        "title": "Planning review"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "googlecontacts",
+    "connector": "googlecontacts",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "googlecontacts-fixture",
+    "input": {},
+    "kind": "contact",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Contact ID": "people/1",
+          "Email": "casey@example.invalid",
+          "Organization": "Example Company"
+        },
+        "kind": "contact",
+        "lines": [],
+        "title": "Casey Morgan"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "googletasks",
+    "connector": "googletasks",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "googletasks-fixture",
+    "input": {},
+    "kind": "task",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Due": "2026-09-14T00:00:00Z",
+          "Notes": "Compare the revised scope.",
+          "Status": "needsAction"
+        },
+        "kind": "task",
+        "lines": [],
+        "title": "Review proposal"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "googlechat",
+    "connector": "googlechat",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "googlechat-fixture",
+    "input": {},
+    "kind": "message",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "The brief is ready for review.",
+        "excerpt_html": false,
+        "fields": {
+          "Sender": "Jordan",
+          "Sent": "2026-09-10T17:00:00Z",
+          "Space": "Launch team"
+        },
+        "kind": "message",
+        "lines": [],
+        "title": "Google Chat message"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "googlemeet",
+    "connector": "googlemeet",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "googlemeet-fixture",
+    "input": {},
+    "kind": "meeting",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Join meeting": "https://meet.google.com/abc-defg-hij",
+          "Meeting code": "abc-defg-hij"
+        },
+        "kind": "meeting",
+        "lines": [],
+        "title": "abc-defg-hij"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "googleforms",
+    "connector": "googleforms",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "googleforms-fixture",
+    "input": {},
+    "kind": "form",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "How was your first week?\nWhat could we improve?",
+        "excerpt_html": false,
+        "fields": {
+          "Description": "Tell us about the onboarding experience.",
+          "Items returned": 2
+        },
+        "kind": "form",
+        "lines": [],
+        "title": "Customer feedback"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "zoom",
+    "connector": "zoom",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "zoom-fixture",
+    "input": {},
+    "kind": "meeting",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Confirm goals, owners and next steps.",
+        "excerpt_html": false,
+        "fields": {
+          "Duration in minutes": "45",
+          "Join meeting": "https://zoom.us/j/123456789",
+          "Starts": "2026-09-14T14:00:00Z",
+          "Time zone": "America/New_York"
+        },
+        "kind": "meeting",
+        "lines": [],
+        "title": "Customer kickoff"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "hubspot",
+    "connector": "hubspot",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "hubspot-fixture",
+    "input": {},
+    "kind": "crm",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Amount": "24000",
+          "Close date": "2026-09-30T00:00:00Z",
+          "Currency": "USD",
+          "Stage": "contractsent"
+        },
+        "kind": "crm",
+        "lines": [],
+        "title": "Example renewal"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "salesforce",
+    "connector": "salesforce",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "salesforce-fixture",
+    "input": {},
+    "kind": "crm",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Amount": "42000",
+          "Close date": "2026-10-01",
+          "Owner": "Casey",
+          "Record ID": "opp-1",
+          "Record type": "Opportunity",
+          "Stage": "Proposal"
+        },
+        "kind": "crm",
+        "lines": [],
+        "title": "Example expansion"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "slack",
+    "connector": "slack",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "slack-fixture",
+    "input": {},
+    "kind": "message",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "The revised scope is ready.",
+        "excerpt_html": false,
+        "fields": {
+          "Channel": "CPLANNING",
+          "Message timestamp": "1789050000.000001",
+          "Replies": "2",
+          "Sender ID": "UCASEY"
+        },
+        "kind": "message",
+        "lines": [],
+        "title": "Slack message"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "microsoftteams",
+    "connector": "microsoftteams",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "microsoftteams-fixture",
+    "input": {},
+    "kind": "message",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "<p>Review the <strong>delivery plan</strong>.</p><img src=\"https://example.invalid/tracker\"><script>alert(1)</script>",
+        "excerpt_html": true,
+        "fields": {
+          "Sender": "Jordan",
+          "Sent": "2026-09-10T17:00:00Z"
+        },
+        "kind": "message",
+        "lines": [],
+        "title": "Teams message"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "outlook",
+    "connector": "outlook",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "outlook-fixture",
+    "input": {},
+    "kind": "email",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "email": {
+          "body": {
+            "array": false,
+            "editable": true,
+            "key": "body",
+            "text": "Please confirm the schedule."
+          },
+          "from": {
+            "array": false,
+            "editable": false,
+            "key": "from",
+            "text": "Casey <casey@example.invalid>"
+          },
+          "subject": {
+            "array": false,
+            "editable": true,
+            "key": "subject",
+            "text": "Next steps"
+          },
+          "to": {
+            "array": false,
+            "editable": true,
+            "key": "to",
+            "text": "jordan@example.invalid"
+          }
+        },
+        "fields": {
+          "id": null
+        },
+        "lines": [],
+        "title": "Next steps"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "notion",
+    "connector": "notion",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "notion-fixture",
+    "input": {},
+    "kind": "document",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Decisions and follow-up actions.\n",
+        "excerpt_html": false,
+        "fields": {
+          "Due": "2026-09-14",
+          "Status": "In progress"
+        },
+        "kind": "document",
+        "lines": [],
+        "title": "Launch notes"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "asana",
+    "connector": "asana",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "asana-fixture",
+    "input": {},
+    "kind": "task",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Check responsibilities with the team.",
+        "excerpt_html": false,
+        "fields": {
+          "Assignee": "Jordan",
+          "Completed": "false",
+          "Due": "2026-09-14",
+          "Projects": "Launch"
+        },
+        "kind": "task",
+        "lines": [],
+        "title": "Confirm launch owners"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "trello",
+    "connector": "trello",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "trello-fixture",
+    "input": {},
+    "kind": "task",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Collect the agenda and participant list.",
+        "excerpt_html": false,
+        "fields": {
+          "Due": "2026-09-14T14:00:00Z",
+          "Labels": "Customer",
+          "Open source": "https://example.invalid/card"
+        },
+        "kind": "task",
+        "lines": [],
+        "title": "Prepare kickoff"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "monday",
+    "connector": "monday",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "monday-fixture",
+    "input": {},
+    "kind": "task",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Board": "Launch planning",
+          "Owner": "Casey",
+          "Status": "Working on it"
+        },
+        "kind": "task",
+        "lines": [],
+        "title": "Launch checklist"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "jira",
+    "connector": "jira",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "jira-fixture",
+    "input": {},
+    "kind": "task",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Verify the customer-facing changes.",
+        "excerpt_html": false,
+        "fields": {
+          "Assignee": "Casey",
+          "Issue": "DEMO-42",
+          "Status": "In review"
+        },
+        "kind": "task",
+        "lines": [],
+        "title": "Review deployment notes"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "confluence",
+    "connector": "confluence",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "confluence-fixture",
+    "input": {},
+    "kind": "document",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "<p>Follow the <strong>release checklist</strong>.</p>",
+        "excerpt_html": true,
+        "fields": {
+          "Open source": "https://example.invalid/wiki/spaces/OPS/pages/42",
+          "Status": "current",
+          "Version": "3"
+        },
+        "kind": "document",
+        "lines": [],
+        "title": "Release guide"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "github",
+    "connector": "github",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "github-fixture",
+    "input": {},
+    "kind": "repository",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Describe how to restore the saved profile.",
+        "excerpt_html": false,
+        "fields": {
+          "Assignees": "casey",
+          "Labels": "documentation",
+          "Number": "42",
+          "Open source": "https://example.invalid/issues/42",
+          "State": "open"
+        },
+        "kind": "task",
+        "lines": [],
+        "title": "Document recovery steps"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "zendesk",
+    "connector": "zendesk",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "zendesk-fixture",
+    "input": {},
+    "kind": "support",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "How do I invite the rest of my team?",
+        "excerpt_html": false,
+        "fields": {
+          "Priority": "normal",
+          "Requester ID": "7",
+          "Status": "open",
+          "Ticket": "42"
+        },
+        "kind": "support",
+        "lines": [],
+        "title": "Onboarding question"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "quickbooks",
+    "connector": "quickbooks",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "quickbooks-fixture",
+    "input": {},
+    "kind": "accounting",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Balance due": "100",
+          "Currency": "USD",
+          "Customer": "Example Company",
+          "Total": "300"
+        },
+        "kind": "accounting",
+        "lines": [
+          {
+            "amount": 300,
+            "description": "Project review",
+            "quantity": 2,
+            "rate": 150
+          }
+        ],
+        "title": "INV-42"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "linear",
+    "connector": "linear",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "linear-fixture",
+    "input": {},
+    "kind": "task",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Confirm the least privilege checklist.",
+        "excerpt_html": false,
+        "fields": {
+          "Assignee": "Casey",
+          "Identifier": "OPS-7",
+          "Open source": "https://linear.app/example/issue/OPS-7",
+          "Priority": "2",
+          "Status": "In Progress",
+          "Team": "Operations"
+        },
+        "kind": "task",
+        "lines": [],
+        "title": "Review access policy"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "clickup",
+    "connector": "clickup",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "clickup-fixture",
+    "input": {},
+    "kind": "task",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Attach the verified runbook.",
+        "excerpt_html": false,
+        "fields": {
+          "Assignees": "casey",
+          "Due": "1789394400000",
+          "Open source": "https://app.clickup.com/t/cu-7",
+          "Priority": "high",
+          "Status": "in progress",
+          "Task": "cu-7"
+        },
+        "kind": "task",
+        "lines": [],
+        "title": "Prepare handoff"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "airtable",
+    "connector": "airtable",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "airtable-fixture",
+    "input": {},
+    "kind": "record",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Created": "2026-09-10T17:00:00.000Z",
+          "Name": "Vendor review",
+          "Owner": "Casey",
+          "Record": "rec-7",
+          "Score": "4",
+          "Status": "Open"
+        },
+        "kind": "record",
+        "lines": [],
+        "title": "Vendor review"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "gitlab",
+    "connector": "gitlab",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "gitlab-fixture",
+    "input": {},
+    "kind": "repository",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Record the restore procedure.",
+        "excerpt_html": false,
+        "fields": {
+          "Assignees": "Casey",
+          "Due": "2026-09-14",
+          "Issue": "7",
+          "Labels": "docs",
+          "Open source": "https://gitlab.example.invalid/ops/issues/7",
+          "State": "opened"
+        },
+        "kind": "repository",
+        "lines": [],
+        "title": "Document recovery"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "dropbox",
+    "connector": "dropbox",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "dropbox-fixture",
+    "input": {},
+    "kind": "file",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "/Shared/runbook.pdf",
+        "excerpt_html": false,
+        "fields": {
+          "Modified": "2026-09-10T17:00:00Z",
+          "Path": "/Shared/runbook.pdf",
+          "Size in bytes": "2048",
+          "Type": "file"
+        },
+        "kind": "file",
+        "lines": [],
+        "title": "runbook.pdf"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "box",
+    "connector": "box",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "box-fixture",
+    "input": {},
+    "kind": "file",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "",
+        "excerpt_html": false,
+        "fields": {
+          "Modified": "2026-09-10T17:00:00Z",
+          "Open source": "https://app.box.com/s/example",
+          "Owner": "Casey",
+          "Size in bytes": "512",
+          "Type": "file"
+        },
+        "kind": "file",
+        "lines": [],
+        "title": "evidence.txt"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "todoist",
+    "connector": "todoist",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "todoist-fixture",
+    "input": {},
+    "kind": "task",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Check the escalation list.",
+        "excerpt_html": false,
+        "fields": {
+          "Due": "2026-09-14",
+          "Labels": "ops",
+          "Open source": "https://todoist.com/showTask?id=td-7",
+          "Priority": "3",
+          "Project": "p-1",
+          "Task": "td-7"
+        },
+        "kind": "task",
+        "lines": [],
+        "title": "Confirm owners"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  },
+  {
+    "account": "",
+    "approval_id": "",
+    "bot_id": "piper",
+    "chat_id": "dm-piper",
+    "connection": "stripe",
+    "connector": "stripe",
+    "created": 1789050000,
+    "display_read_only": true,
+    "edit_fields": {},
+    "email": {},
+    "email_send": false,
+    "forced": false,
+    "id": "stripe-fixture",
+    "input": {},
+    "kind": "payment",
+    "original_input": {},
+    "outcome": "The connector returned successfully.",
+    "preview_records": [],
+    "read_only": true,
+    "records": [
+      {
+        "excerpt": "Approved service review",
+        "excerpt_html": false,
+        "fields": {
+          "Amount (smallest currency unit)": "4200",
+          "Created": "1789050000",
+          "Currency": "usd",
+          "Customer": "cus_7",
+          "Payment": "pi_7",
+          "Status": "requires_capture"
+        },
+        "kind": "payment",
+        "lines": [],
+        "title": "Approved service review"
+      }
+    ],
+    "revision": 2,
+    "run_id": "run-fixture",
+    "source": "Kindred",
+    "status": "completed",
+    "title": "GET RECORD",
+    "tool": "GET_RECORD"
+  }
+]

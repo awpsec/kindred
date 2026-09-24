@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="frame-src 'self' blob: data:" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Kindred</title>
+    <link rel="icon" href="/favicon.svg?v=0.23.0" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  <link rel="stylesheet" href="/select-menu.css">
+</head>
+  <body>
+    <section id="connect" class="connect">
+      <form id="connect-form" class="connect-card">
+        <div id="connect-character"></div>
+        <h1>A little help, always here.</h1>
+        <p>Connect to your Kindred workspace.</p>
+        <label
+          >Access token<input
+            id="token"
+            type="password"
+            autocomplete="off"
+            required /></label
+        ><label class="remember-device"
+          ><input id="remember-device" type="checkbox" />Keep this device
+          connected</label
+        ><button class="primary">Connect</button
+        ><output id="connect-error" role="alert"></output>
+      </form>
+    </section>
+    <div id="app" class="shell" hidden>
+      <aside class="sidebar" aria-label="Bots">
+        <div class="sidebar-top">
+          <span class="wordmark"
+            >kindred<span class="wordmark-dot">.</span></span
+          ><button
+            id="new-bot"
+            class="icon-button"
+            aria-label="New bot or chat"
+            title="New bot or chat"
+          ></button>
+        </div>
+        <div id="new-menu" class="new-menu" hidden></div>
+        <label class="search"
+          ><span id="search-icon"></span
+          ><input
+            id="search"
+            placeholder="Search"
+            aria-label="Search bots and recent messages"
+            autocomplete="off"
+          /><kbd>Ctrl K</kbd></label
+        >
+        <div id="pinned-bots" class="pinned-bots" hidden></div>
+        <nav id="bots" aria-label="Conversations"></nav>
+        <div class="sidebar-bottom">
+          <button id="artifacts-button" class="sidebar-settings">Artifacts</button>
+          <button id="marketplace-button" class="sidebar-settings">
+            Marketplace</button
+          ><button id="settings-button" class="sidebar-settings"></button
+          ><div id="identity-row" class="identity-row"><button id="identity-button" class="identity-button" aria-expanded="false" aria-controls="identity-menu">
+            <span class="user-avatar" id="user-avatar">Y</span
+            ><span id="identity-name">You</span
+            >
+          </button></div>
+        </div>
+      </aside>
+      <main class="conversation">
+        <header class="conversation-header">
+          <button
+            id="mobile-menu"
+            class="icon-button mobile-only"
+            aria-label="Toggle sidebar"
+          >
+            ☰</button
+          ><button id="bot-details" class="bot-heading" disabled>
+            <span id="header-avatar"></span
+            ><span
+              ><strong id="heading">Kindred</strong></span>
+          </button>
+          <div class="header-actions">
+            <button
+              id="show-computer"
+              class="icon-button"
+              aria-label="Open bot computer"
+              title="Bot computer"
+            ></button>
+          </div>
+        </header>
+        <div class="conversation-history">
+          <section
+            id="content"
+            class="messages"
+            aria-label="Conversation"
+            aria-live="polite"
+          ></section>
+        </div>
+        <div id="composer-area" class="composer-area" hidden>
+          <div id="queue-status" class="queue-status" hidden></div>
+          <form id="composer">
+            <div
+              id="prompt"
+              contenteditable="true"
+              role="textbox"
+              aria-label="Message"
+              aria-multiline="true"
+              data-placeholder="Message your bot"
+            ></div>
+            <div id="mention-options" class="mention-options" hidden></div>
+            <div class="composer-bottom">
+              <button
+                id="composer-actions"
+                class="icon-button"
+                type="button"
+                aria-label="Conversation actions"
+                title="Conversation actions"
+              ></button
+              ><span id="composer-hint"></span
+              ><button
+                id="send"
+                class="send-button"
+                title="Send message"
+                aria-label="Send message"
+              ></button>
+            </div>
+          </form>
+          <div class="composer-caption" id="composer-caption"></div>
+        </div>
+      </main>
+      <aside
+        id="details-panel"
+        class="details-panel"
+        aria-label="Bot details"
+        hidden
+      >
+        <div class="panel-header">
+          <button
+            id="details-back"
+            class="icon-button"
+            aria-label="Back to bot details"
+            hidden
+          ></button
+          ><strong id="details-title">Details</strong>
+          <div>
+            <button
+              id="bot-settings"
+              class="icon-button"
+              aria-label="Bot settings"
+            ></button
+            ><button
+              id="details-close"
+              class="icon-button"
+              aria-label="Close bot details"
+            ></button>
+          </div>
+        </div>
+        <div id="details-content" class="panel-content"></div>
+      </aside>
+      <aside
+        id="computer-panel"
+        class="computer-panel"
+        aria-label="Bot computer"
+        hidden
+      >
+        <div class="panel-header">
+          <strong>Bot computer</strong>
+          <div>
+            <button
+              id="computer-expand"
+              class="icon-button"
+              aria-label="Full screen"
+            ></button
+            ><button
+              id="computer-close"
+              class="icon-button"
+              aria-label="Close computer"
+            ></button>
+          </div>
+        </div>
+        <div class="desktop-toolbar">
+          <button id="done-subtask" class="primary small-button" hidden>Done with subtask</button>
+          <span id="desktop-mode">Connecting…</span
+          ><button id="teach-task" class="outline-button small-button">Teach a task</button><button id="take-control" class="primary small-button">
+            Take control
+          </button>
+        </div>
+        <div id="teaching-bar" class="teaching-bar" hidden></div>
+        <div id="desktop" class="desktop" tabindex="-1"></div>
+        <div id="desktop-error" class="desktop-error" hidden></div>
+        <div class="desktop-footer">
+          <span id="desktop-address"></span
+          ><button
+            id="desktop-reconnect"
+            class="icon-button"
+            aria-label="Reconnect desktop"
+          ></button>
+        </div>
+        <div class="resource-stats" data-resources></div>
+        <div id="computer-routines" class="computer-routines"></div>
+        <div id="desktop-actions" class="desktop-actions">
+          <button id="desktop-paste" class="subtle-button">Paste clipboard</button
+          ><button id="computer-settings-link" class="subtle-button">
+            Computer settings
+          </button>
+        </div>
+      </aside>
+      <section id="control-notice" class="control-notice" aria-label="Bots waiting for control" aria-live="polite" hidden></section>
+    </div>
+    <div id="notice" class="toast" role="status" hidden></div>
+    <dialog id="settings-dialog" class="settings-dialog">
+      <aside class="settings-nav">
+        <h2>Settings</h2>
+        <nav id="settings-nav"></nav>
+        <div class="settings-version">
+          <div id="version">Client · Checking…</div><div id="server-version">Server · Connecting…</div>
+        </div>
+      </aside>
+      <section class="settings-main">
+        <header>
+          <h2 id="settings-title">General</h2>
+          <button
+            id="settings-close"
+            class="icon-button"
+            aria-label="Close settings"
+          ></button>
+        </header>
+        <div id="settings-content"></div>
+      </section>
+    </dialog>
+    <dialog id="bot-dialog" class="bot-dialog">
+      <form id="bot-form">
+        <header class="dialog-header">
+          <h2 id="bot-dialog-title">New bot</h2>
+          <button
+            class="icon-button"
+            type="button"
+            data-close="bot-dialog"
+            aria-label="Close new bot"
+          ></button>
+        </header>
+        <button
+          id="new-avatar-button"
+          class="avatar-edit"
+          type="button"
+          aria-label="Customize bot character"
+        ></button
+        ><label
+          >Name<input
+            name="name"
+            required
+            maxlength="80"
+            placeholder="Piper" /></label
+        ><label
+          >Role <span class="muted">optional</span
+          ><input
+            name="label"
+            maxlength="80"
+            placeholder="Personal, research, inbox…" /></label
+        ><label
+          >Description<textarea
+            name="description"
+            rows="2"
+            maxlength="2000"
+            placeholder="What is this bot here to help with?"
+          ></textarea>
+        </label>
+          <div class="two-col">
+          <label
+            >AI provider<select name="provider">
+              <option value="codex">Codex (Subscription)</option>
+              <option value="openrouter">OpenRouter</option>
+            </select></label
+          >
+        </div>
+        <div id="new-model-controls"></div>
+        <label>Instructions<textarea name="instructions" rows="5" required></textarea></label>
+        <button class="primary wide">Create bot</button>
+      </form>
+    </dialog>
+    <dialog id="avatar-dialog" class="avatar-dialog">
+      <header class="dialog-header">
+        <h2>Make it your own</h2>
+        <button
+          class="icon-button"
+          data-close="avatar-dialog"
+          aria-label="Close character picker"
+        ></button>
+      </header>
+      <div id="avatar-preview" class="avatar-preview"></div>
+      <div
+        id="shape-options"
+        class="shape-options"
+        aria-label="Character shape"
+      ></div>
+      <div
+        id="color-options"
+        class="color-options"
+        aria-label="Character color"
+      ></div>
+      <button id="save-avatar" class="subtle-button wide">Done</button>
+    </dialog>
+    <dialog id="routine-dialog" class="routine-dialog">
+      <form id="routine-form">
+        <header class="dialog-header">
+          <h2 id="routine-dialog-title">New routine</h2>
+          <button
+            class="icon-button"
+            type="button"
+            data-close="routine-dialog"
+            aria-label="Close routine"
+          ></button>
+        </header>
+          <label>Assigned bot<select name="bot_id" aria-label="Assigned bot" required></select></label>
+          <label
+            >Name<input
+            name="name"
+            required
+            maxlength="100"
+            placeholder="Morning catch-up" /></label
+        ><label
+          >What should your bot do?<textarea
+            name="prompt"
+            rows="5"
+            required
+            maxlength="64000"
+            placeholder="Describe the task, or enter a saved command such as /morning-brief work."
+          ></textarea>
+        </label>
+        <label>How often<select name="schedule_mode" id="routine-schedule-mode" aria-label="How often"><option value="daily">Every day</option><option value="weekly">Custom</option><option value="interval">Repeat at an interval</option><option value="once">One time</option><option value="window" hidden disabled>Existing time-window schedule</option><option value="activity">Monitor activity</option></select></label>
+        <fieldset id="routine-once-fields" class="routine-fields" hidden disabled>
+          <div id="routine-calendar" class="routine-calendar" aria-label="Run date"></div>
+          <input name="run_date" type="hidden" />
+          <label>Time<input name="once_time" type="time" required /></label>
+        </fieldset>
+        <fieldset id="routine-interval-fields" class="routine-fields" hidden disabled>
+          <label class="routine-inline-interval">Repeat every <input aria-label="Repeat every minutes" name="interval" type="number" required min="1" max="525600" value="60" /> <span>minutes</span></label>
+        </fieldset>
+        <fieldset id="routine-daily-fields" class="routine-fields">
+          <label>Time<input name="daily_time" type="time" required value="08:00" /></label>
+        </fieldset>
+        <fieldset id="routine-weekly-fields" class="routine-fields" hidden disabled>
+          <fieldset class="routine-days"><legend>Days</legend>
+            <label><input type="checkbox" name="weekday" value="1" checked />Mon</label>
+            <label><input type="checkbox" name="weekday" value="2" checked />Tue</label>
+            <label><input type="checkbox" name="weekday" value="3" checked />Wed</label>
+            <label><input type="checkbox" name="weekday" value="4" checked />Thu</label>
+            <label><input type="checkbox" name="weekday" value="5" checked />Fri</label>
+            <label><input type="checkbox" name="weekday" value="6" />Sat</label>
+            <label><input type="checkbox" name="weekday" value="7" />Sun</label>
+          </fieldset>
+          <label>Time<input name="start" type="time" required value="08:00" /></label>
+          <fieldset id="routine-window-fields" class="routine-fields" hidden disabled>
+            <label>Until<input name="end" type="time" required value="18:00" /></label>
+            <label class="routine-inline-interval">Repeat every <input aria-label="Window interval minutes" name="every_minutes" type="number" required min="1" max="1440" value="60" /> <span>minutes</span></label>
+          </fieldset>
+        </fieldset>
+        <label>Time zone<input name="timezone" required maxlength="100" list="routine-timezones" /></label>
+        <datalist id="routine-timezones"></datalist>
+        <label class="switch-row"
+          ><span>Enabled</span
+          ><input name="enabled" type="checkbox" checked role="switch"
+        /></label>
+        <button type="submit" class="primary wide">Save routine</button>
+      </form>
+    </dialog>
+    <dialog id="text-dialog" class="text-dialog">
+      <form id="text-form">
+        <header class="dialog-header">
+          <h2>Paste into the computer</h2>
+          <button
+            class="icon-button"
+            type="button"
+            data-close="text-dialog"
+            aria-label="Close paste text"
+          ></button>
+        </header>
+        <label
+          >Text<textarea
+            id="paste-text"
+            rows="6"
+            maxlength="16000"
+            autocomplete="off"
+          ></textarea>
+        </label>
+        <p class="muted small">
+          Pastes into the focused app. This text is not added to chat history.
+        </p>
+        <button class="primary wide">Paste</button>
+      </form>
+    </dialog>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Kindred notification</title>
+  <link rel="stylesheet" href="notch.css">
+</head>
+<body>
+  <button id="alert" type="button" aria-label="Open Kindred" hidden>
+    <span class="notch-bridge" aria-hidden="true"></span>
+    <span class="notch-card">
+      <span id="open">
+        <span id="avatar"></span>
+        <span class="notch-copy"><strong id="title"></strong><span id="message">sent you a message.</span></span>
+      </span>
+    </span>
+  </button>
+  <script type="module" src="notch.js"></script>
+</body>
+</html>

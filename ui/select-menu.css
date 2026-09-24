@@ -1,0 +1,21 @@
+select[data-themed-select]{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='m4 5 3 3 3-3' fill='none' stroke='%23919191' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-position:right 10px center;background-repeat:no-repeat;padding-right:30px;cursor:pointer;}
+select[data-themed-select]:disabled{cursor:default;opacity:.5;}
+.themed-select-menu{position:fixed;z-index:10000;padding:5px;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);box-shadow:0 12px 35px #0005;overflow-y:auto;overscroll-behavior:contain;font:calc(12px * var(--text-scale, 1))/1.4 Inter,"Segoe UI",system-ui,sans-serif;}
+.themed-select-option{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:34px;padding:8px 10px;box-sizing:border-box;border-radius:7px;cursor:pointer;}
+.themed-select-option>span:first-child{overflow-wrap:anywhere;}
+.themed-select-option.is-active{background:var(--hover);}
+.themed-select-option[aria-selected="true"]{font-weight:550;}
+.themed-select-option[aria-disabled="true"]{opacity:.4;cursor:default;}
+.themed-select-group{font-size:calc(10px * var(--text-scale, 1));font-weight:550;color:var(--muted);padding:10px 10px 5px;}
+.themed-select-group:first-child{padding-top:5px;}
+.select-check{font-size:calc(13px * var(--text-scale, 1));flex:none;}
+.themed-select-menu{animation:select-enter .14s ease-out;}
+.themed-select-option{transition:background-color .12s ease-out;}
+@keyframes select-enter{from{opacity:0}to{opacity:1}}
+:root[data-motion="off"] .themed-select-menu,:root[data-motion="off"] .themed-select-option{animation:none;transition:none;}
+@media(prefers-reduced-motion:reduce){.themed-select-menu,.themed-select-option{animation:none;transition:none;}}
+
+.themed-select-option[hidden],.themed-select-group[hidden],.themed-select-empty[hidden]{display:none}
+.themed-select-search{position:sticky;top:0;z-index:1;display:block;width:100%;box-sizing:border-box;min-height:36px;margin:0 0 5px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--fg);font:inherit}
+.themed-select-search:focus{outline:2px solid var(--muted);outline-offset:-2px}
+.themed-select-empty{padding:12px 10px;color:var(--muted)}

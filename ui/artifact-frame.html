@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<title>Kindred artifact</title>
+<script>
+// This response has its own restrictive CSP and an opaque sandbox origin.
+// Unlike srcdoc, it does not inherit the authenticated app's script policy.
+addEventListener('message',function loadDocument(event){
+  if(parent===window||event.source!==parent||event.data?.kind!=='kindred-artifact-document'||typeof event.data.document!=='string')return;
+  removeEventListener('message',loadDocument);
+  document.open();document.write(event.data.document);document.close();
+});
+</script>

@@ -1,0 +1,108 @@
+name: Windows installer verification (manual only)
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact version of the already built and locally signed release.'
+        required: true
+        type: string
+      source_commit:
+        description: 'Exact application build commit (40 hexadecimal characters).'
+        required: true
+        type: string
+      input_release:
+        description: 'Private draft release containing the signed ZIP, stable.json and Microsoft bootstrapper.'
+        required: true
+        type: string
+      previous_version:
+        description: 'Published version for the actual upgrade test.'
+        required: true
+        type: string
+      approve_runner_usage:
+        description: 'I approve this one Windows packaging/test job and its runner charges.'
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: kindred-windows-installer
+  cancel-in-progress: false
+jobs:
+  installer:
+    if: ${{ inputs.approve_runner_usage }}
+    # GitHub only exposes private draft releases to tokens with push access.
+    # The job uses this token only for reads; it has no publishing step.
+    permissions:
+      contents: write
+    runs-on: windows-2025
+    timeout-minutes: 4
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      BUILD_COMMIT: ${{ inputs.source_commit }}
+      INPUT_RELEASE: ${{ inputs.input_release }}
+      PREVIOUS_VERSION: ${{ inputs.previous_version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Validate inputs and fetch only public package material
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$' -or $env:PREVIOUS_VERSION -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
+          if ($env:BUILD_COMMIT -notmatch '^[0-9a-f]{40}$' -or (git rev-parse HEAD) -ne $env:BUILD_COMMIT) { throw 'Source commit mismatch' }
+          if ($env:INPUT_RELEASE -notmatch '^installer-inputs-[0-9A-Za-z.-]+$') { throw 'Use a dedicated installer input draft' }
+          $draft = gh release view $env:INPUT_RELEASE --json isDraft | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $draft.isDraft) { throw 'Installer inputs must be a private draft' }
+          New-Item -ItemType Directory -Path installer-input,installer-output | Out-Null
+          gh release download $env:INPUT_RELEASE --dir installer-input --pattern "kindred-windows-$env:RELEASE_VERSION.zip" --pattern stable.json --pattern MicrosoftEdgeWebview2Setup.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Input download failed' }
+          gh release download "v$env:PREVIOUS_VERSION" --dir installer-input --pattern "Kindred-$env:PREVIOUS_VERSION-Windows-Update.zip"
+          if ($LASTEXITCODE -ne 0) { throw 'Previous package download failed' }
+          python -m pip install cryptography==46.0.5
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+      - name: Prepare and compile the compatible installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Use the pinned portable compiler, avoiding Chocolatey's package-feed dependency.
+          $archive = 'installer-input/nsis-3.11.zip'
+          if (-not (Test-Path $archive)) {
+            gh release download $env:INPUT_RELEASE --dir installer-input --pattern nsis-3.11.zip
+            if ($LASTEXITCODE -ne 0) {
+              curl.exe --fail --location --retry 2 --connect-timeout 10 --max-time 40 --output $archive 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11.zip'
+              if ($LASTEXITCODE -ne 0) { throw 'Portable NSIS download failed' }
+            }
+          }
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'c7d27f780ddb6cffb4730138cd1591e841f4b7edb155856901cdf5f214394fa1') { throw 'Portable NSIS checksum mismatch' }
+          Expand-Archive -Path $archive -DestinationPath installer-tools
+          $nsis = (Resolve-Path 'installer-tools/nsis-3.11/makensis.exe').Path
+          python scripts/package-windows-installer.py --release-dir installer-input --bootstrapper installer-input/MicrosoftEdgeWebview2Setup.exe --stage installer-stage --makensis $nsis --output "installer-output/Kindred-$env:RELEASE_VERSION-Setup.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Installer preparation failed' }
+          Copy-Item installer-stage/BUILD.json installer-output/installer-build.json
+      - name: Verify fresh install, native launch, upgrade and preservation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python tools/test-windows-installer.py --installer "installer-output/Kindred-$env:RELEASE_VERSION-Setup.exe" --previous "installer-input/Kindred-$env:PREVIOUS_VERSION-Windows-Update.zip" --release "installer-input/kindred-windows-$env:RELEASE_VERSION.zip" --stage installer-stage 2>&1 | Tee-Object installer-output/installer-test.log
+          if ($LASTEXITCODE -ne 0) { throw 'Native installer verification failed' }
+          $results = @(Get-ChildItem test-results/windows-installer-*/result.json)
+          if ($results.Count -ne 1) { throw 'Expected one exact installer verification result' }
+          Copy-Item $results[0].FullName installer-output/installer-verification.json
+      - name: Retain installer and validation evidence without publishing
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-installer-${{ inputs.version }}
+          path: installer-output/*
+          if-no-files-found: warn
+          retention-days: 1

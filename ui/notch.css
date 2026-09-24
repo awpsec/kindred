@@ -1,0 +1,32 @@
+@charset "UTF-8";
+@import url("./fonts.css");
+:root{color-scheme:dark;font:12px/1.4 var(--font-sans);--notch-top:32px}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;background:transparent!important;overflow:hidden;-webkit-text-size-adjust:none}
+button{appearance:none;-webkit-appearance:none;font:inherit;color:inherit;cursor:pointer;border:0}
+button:focus-visible{outline:2px solid #8cb8ff;outline-offset:-3px}
+#alert{display:block;text-align:left;background:transparent;width:min(100%,calc(var(--notch-bridge,176px) + 64px));height:calc(var(--notch-top) + 40px);margin:0 auto;padding:0;position:relative;color:#f7f7f7;transform-origin:50% 0;transition:transform 160ms cubic-bezier(.2,.8,.2,1)}
+#alert.hovered{transform:scale(1.025)}
+#alert[hidden]{display:none}
+.notch-bridge{position:absolute;inset:0;background:#000;border-radius:0 0 18px 18px}
+.notch-card{position:absolute;top:var(--notch-top);left:8px;right:8px;height:32px;background:#000;border:0;border-radius:0 0 18px 18px;display:flex;align-items:center;min-height:32px;overflow:hidden}
+:root[data-notched=false] .notch-card{border-radius:20px}
+:root[data-notched=false] .notch-bridge{border-radius:0}
+#open{display:flex;height:32px;align-items:center;gap:6px;flex:1;min-width:0;padding:4px 10px 5px;text-align:left;background:transparent}
+#open:hover .notch-copy{color:#fff}
+#avatar{display:flex;flex:none;width:20px;height:20px}
+.character{--bot-ink:#000;position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.character svg{width:100%;height:100%;display:block;overflow:visible}
+.character.adaptive-white{--bot-fill:#f2f2f2!important}
+.character-face{fill:#101010}
+.notch-copy{min-width:0;flex:1;display:flex;align-items:baseline;gap:4px;white-space:nowrap}
+#title{font-size:12px;font-weight:650;min-width:0;flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#message{color:#d8d8da;flex:none;white-space:nowrap;font-size:11px}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+.character-body{transform-origin:50px 86px;animation:notch-breathe 4.8s ease-in-out infinite}
+@keyframes notch-breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.5px)}}
+:root[data-motion=off] .character-body{animation:none}
+@media(prefers-reduced-motion:reduce){.character-body{animation:none}}
+
+:root[data-motion=off] #alert{transition:none}

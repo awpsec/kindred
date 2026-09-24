@@ -1,0 +1,89 @@
+name: Resource refresh only (manual, bounded budget)
+on:
+  workflow_dispatch:
+    inputs:
+      input_release:
+        description: 'Private repack-inputs draft containing verified inputs; no private keys.'
+        required: true
+        type: string
+      approve_runner_usage:
+        description: 'Approve one six-minute-capped Mac and Windows packaging job; no native compilation.'
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: kindred-resource-refresh
+  cancel-in-progress: false
+jobs:
+  package:
+    if: ${{ inputs.approve_runner_usage }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 6
+    permissions:
+      contents: write
+    env:
+      INPUT_RELEASE: ${{ inputs.input_release }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch verified packaging inputs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$INPUT_RELEASE" =~ ^repack-inputs-[0-9A-Za-z.-]+$ ]]
+          test "$(gh release view "$INPUT_RELEASE" --json isDraft --jq .isDraft)" = true
+          gh release download "$INPUT_RELEASE" --dir repack-input --pattern inputs.zip
+          python -c "import zipfile; z=zipfile.ZipFile('repack-input/inputs.zip'); assert all(not n.startswith(('/', '\\\\')) and '..' not in n.replace('\\\\','/').split('/') for n in z.namelist()); z.extractall('repack-input')"
+          python -c "import hashlib,json,pathlib; p=pathlib.Path('repack-input'); m=json.loads((p/'input-hashes.json').read_text()); assert all(hashlib.sha256((p/n).read_bytes()).hexdigest()==h for n,h in m.items())"
+      - name: Refresh Mac resource, reseal and test the real app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/release/repack-standalone.py --input repack-input --output package-output --target aarch64-apple-darwin
+          python3 scripts/release/test-macos-package.py --directory package-output --source . --version 0.52.0 --source-commit "$(git rev-parse HEAD)" --target aarch64-apple-darwin --output mac-validation --reuse-native-validation repack-input/macos-validation.json
+      - name: Prepare Windows installer dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install cryptography==46.0.5
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
+          if (-not (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe')) {
+            choco install nsis --version=3.11 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'NSIS installation failed' }
+          }
+      - name: Package and validate Windows without recompiling
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path package-output | Out-Null
+          python scripts/package-windows-installer.py --release-dir repack-input --bootstrapper repack-input/MicrosoftEdgeWebview2Setup.exe --stage installer-stage --makensis 'C:\Program Files (x86)\NSIS\makensis.exe' --output package-output/Kindred-0.52.0-Setup.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Installer packaging failed' }
+          Copy-Item installer-stage/BUILD.json package-output/installer-build.json
+          python tools/test-windows-installer.py --installer package-output/Kindred-0.52.0-Setup.exe --previous repack-input/Kindred-0.51.0-Windows-Update.zip --release repack-input/kindred-windows-0.52.0.zip --stage installer-stage 2>&1 | Tee-Object package-output/installer-test.log
+          if ($LASTEXITCODE -ne 0) { throw 'Installer native checks failed' }
+          $results = @(Get-ChildItem test-results/windows-installer-*/result.json)
+          if ($results.Count -ne 1) { throw 'Expected exact installer verification result' }
+          Copy-Item $results[0].FullName package-output/installer-verification.json
+      - name: Preserve packages and validation
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: resource-refresh-${{ matrix.os }}
+          path: |
+            package-output/*
+            mac-validation/**
+          if-no-files-found: warn
+          retention-days: 1

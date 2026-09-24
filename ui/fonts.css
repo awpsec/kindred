@@ -1,0 +1,9 @@
+/* Bundled fonts: identical families and weights on every platform. */
+@font-face{font-family:Inter;src:url('./fonts/InterVariable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:Inter;src:url('./fonts/InterVariable-Italic.woff2') format('woff2');font-weight:100 900;font-style:italic;font-display:swap}
+@font-face{font-family:'Liberation Mono';src:url('./fonts/LiberationMono-Regular.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Liberation Mono';src:url('./fonts/LiberationMono-Bold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:'Liberation Mono';src:url('./fonts/LiberationMono-Italic.ttf') format('truetype');font-weight:400;font-style:italic;font-display:swap}
+@font-face{font-family:'Liberation Mono';src:url('./fonts/LiberationMono-BoldItalic.ttf') format('truetype');font-weight:700;font-style:italic;font-display:swap}
+:root{--font-sans:Inter,system-ui,sans-serif;--font-mono:"Liberation Mono",monospace}
+code,pre,kbd,samp{font-family:var(--font-mono)}

@@ -1,0 +1,27 @@
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const {server,token}=require('./fixtures/desktop.cjs'),assert=require('node:assert/strict');
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await(process.env.WEBKIT?webkit:chromium).launch();try{
+ const p=await browser.newPage();let mode='connected',calls=0;
+ const challenge='Codex rejected app/list: failed to list apps: Request failed with status 403 Forbidden: <html><style>'+'.x{width:9999px}'.repeat(2000)+'</style><script>window._cf_chl_opt="fixture-challenge-token"</script></html>';
+ await p.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
+ await p.route(origin+'/api/codex/connectors',async r=>{calls++;assert.equal(r.request().method(),'POST');await new Promise(resolve=>setTimeout(resolve,100));
+  if(['error','challenge','long'].includes(mode))return r.fulfill({status:502,json:{error:mode==='challenge'?challenge:mode==='long'?'Request details '.repeat(2000):'Connector refresh failed'}});
+  if(mode==='degraded')return r.fulfill({json:{warning:'Installed apps were found, but their tools could not be verified. OpenAI blocked this request with a browser security check (HTTP 403). These connectors are unavailable until a refresh succeeds.',connections:[{display_name:'Gmail',status:'unavailable',availability_message:'No callable tool binding is available.'}]}});
+  return r.fulfill({json:{connections:mode==='empty'?[]:[{display_name:'Gmail',status:'connected',availability_message:'Each call needs review; Codex does not identify the linked service account.'},{display_name:'Calendar',status:'unavailable',availability_message:'Refresh or reconnect this app in Codex.'}]}});
+ });
+ await p.route(origin+'/api/composio',r=>r.fulfill({json:{configured:false,apps:[]}}));
+ await p.goto(origin);await p.locator('#settings-button').click();await p.getByRole('button',{name:'Connections',exact:true}).click();
+ const account=p.locator('.ai-account').filter({has:p.locator('summary strong',{hasText:/^Codex$/})});await account.locator('summary').click();
+ const refresh=account.getByRole('button',{name:'Refresh Codex connectors',exact:true});await refresh.click();assert(await refresh.isDisabled());await account.getByRole('heading',{name:'Gmail (via Codex)',exact:true}).waitFor();assert((await account.innerText()).includes('Each call needs review'));assert((await account.innerText()).includes('Unavailable'));
+ mode='empty';await refresh.click();await account.getByText('No connectors were returned', {exact:false}).waitFor();assert.equal(await account.getByRole('heading',{name:'Gmail (via Codex)',exact:true}).count(),0);
+ mode='error';await refresh.click();await account.getByText('Connector refresh failed',{exact:false}).waitFor();assert.equal(await refresh.isDisabled(),false);assert.equal(calls,3);
+ const status=account.locator('.provider-catalog [role="status"]');
+ mode='challenge';await refresh.click();await status.filter({hasText:'browser security check (HTTP 403)'}).waitFor();assert((await status.innerText()).length<250);assert.equal(await refresh.isDisabled(),false);
+ assert(!(await account.innerText()).includes('fixture-challenge-token'));assert(!(await account.innerText()).includes('<html>'));assert.equal(await account.locator('.connector-setting-row').count(),0);
+ assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ mode='long';await refresh.click();await status.filter({hasText:'Request details'}).waitFor();assert((await status.innerText()).length<=480);
+ mode='degraded';await refresh.click();await status.filter({hasText:'unavailable until a refresh succeeds'}).waitFor();await account.getByRole('heading',{name:'Gmail (via Codex)',exact:true}).waitFor();assert.equal(await account.locator('.connector-setting-row').getByText('Unavailable',{exact:true}).count(),1);assert((await status.getAttribute('class')).includes('run-error'));
+ mode='connected';await refresh.click();await status.filter({hasText:'Available through'}).waitFor();assert(!(await status.getAttribute('class')).includes('run-error'));assert.equal(await refresh.isDisabled(),false);assert.equal(calls,7);
+ assert.equal(await p.getByRole('button',{name:'Refresh Claude connectors',exact:true,includeHidden:true}).count(),1);
+ console.log('Account connector panel: populated, unavailable, empty, bounded HTML/long errors, blocked metadata, successful recovery and Claude parity passed');
+}finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});
