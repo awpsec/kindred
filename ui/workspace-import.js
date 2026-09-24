@@ -156,7 +156,7 @@ export function createWorkspaceImportUI({api,node,button,field,select,modal:make
       }
       editing=true;
       const draft=structuredClone(v.draft),form=node('form','workspace-review'),name=field('Bot name',draft.name,'input',{required:true,maxLength:80});name.input.readOnly=sync;
-      const instructions=field('Instructions',draft.instructions,'textarea',{required:true,maxLength:32000,rows:10}),memory=field('Memories',draft.memory.split('\n\n[Kindred workspace origin]')[0],'textarea',{maxLength:14000,rows:6});
+      const instructions=field('Instructions',draft.instructions,'textarea',{required:true,maxLength:32000,rows:10}),memory=field('Memories',draft.memory.split('\n\n[Kindred workspace origin]')[0],'textarea',{maxLength:62000,rows:6});
       const role=field('Role',draft.role,'input',{maxLength:80}),description=field('Description',draft.description,'textarea',{maxLength:2000,rows:3});
       form.append(node('p','',sync?'Review the merged update. Changes made since preparation will block the sync until you prepare it again.':'Review and edit the conversion before creating your bot.'),name.label);
       if(!sync)form.append(role.label,description.label);

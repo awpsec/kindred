@@ -9,6 +9,6 @@ const {server,token}=require('./fixtures/desktop.cjs');const assert=require('nod
  await input.fill('é'.repeat(16000));assert(await input.evaluate(n=>n.checkValidity()));assert((await editor.textContent()).includes('32,000 / 32,000 bytes'));
  await input.fill('é'.repeat(16000)+'x');assert(!await input.evaluate(n=>n.checkValidity()));
  await input.fill('x'.repeat(32000));await editor.getByRole('button',{name:'Save',exact:true}).click();await editor.waitFor({state:'detached'});assert.equal(saved.value.length,32000);
- await p.locator('#details-content').getByRole('button',{name:'Memory',exact:true}).click();await input.fill('x'.repeat(16001));assert(!await input.evaluate(n=>n.checkValidity()));
- console.log('PASS: 32,000-byte instruction boundary, UTF-8 accounting, save, and unchanged memory cap');
+ await p.locator('#details-content').getByRole('button',{name:'Memory',exact:true}).click();await input.fill('é'.repeat(32000));assert(await input.evaluate(n=>n.checkValidity()));assert((await editor.textContent()).includes('64,000 / 64,000 bytes'));await input.fill('é'.repeat(32000)+'x');assert(!await input.evaluate(n=>n.checkValidity()));await input.fill('x'.repeat(64000));await editor.getByRole('button',{name:'Save',exact:true}).click();await editor.waitFor({state:'detached'});assert.equal(saved.field,'memory');assert.equal(saved.value.length,64000);
+ console.log('PASS: 32,000-byte instruction boundary, UTF-8 accounting, save, and 64,000-byte memory boundary');
  }finally{await browser.close();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
