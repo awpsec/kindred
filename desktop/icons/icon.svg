@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128">
+  <title>Kindred</title>
+  <defs>
+    <linearGradient id="apricot" x1="25" y1="12" x2="98" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffd180"/>
+      <stop offset=".5" stop-color="#ffb15b"/>
+      <stop offset="1" stop-color="#f38b51"/>
+    </linearGradient>
+  </defs>
+  <path d="M44 9C61 9 70 22 65 40L77 25C89 10 110 19 110 35C110 47 95 57 84 65C97 74 111 83 111 96C111 114 90 122 76 109L64 98C66 114 56 121 41 119C22 117 16 105 16 87V42C16 23 26 9 44 9Z" fill="url(#apricot)" stroke="#da8045" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="M44 13C55 13 62 20 62 30" fill="none" stroke="#fff4d7" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
+  <g fill="#29221e">
+    <path d="M38 48C41 47 43 51 43.5 55C44 59 43 62 40.7 62C38.1 62 36.5 58 36.1 54.5C35.6 51 35.9 48.7 38 48Z"/>
+    <path d="M56.8 47C59.5 47 61 50.4 61.1 54C61.4 58 60.5 60.6 58.3 60.8C55.8 61 54.3 57.9 54.1 54.1C53.8 50.2 54.5 47.4 56.8 47Z"/>
+  </g>
+</svg>

@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kindred · Update client</title><link rel="stylesheet" href="profile-home.css"><link rel="stylesheet" href="linux-update.css"><script src="linux-update.js" type="module"></script></head>
+<body><main>
+<h1>Update your Linux client</h1>
+<p class="intro">Choose a downloaded Kindred AppImage. Your accounts, settings and bot computers stay in place. Your standalone server keeps running.</p>
+<section class="package"><button id="choose" type="button">Choose AppImage…</button><p id="filename" class="hint">Use an AppImage downloaded from Kindred Releases.</p></section>
+<div id="status-panel" role="status" aria-live="polite"><p id="message">Choose a Kindred AppImage from your downloads.</p><progress id="progress" max="100" hidden aria-label="Client update progress"></progress><p id="runtime" class="hint" hidden></p></div>
+<p id="error" role="alert" hidden></p>
+<div class="actions"><button id="rollback" type="button" hidden>Restore previous client</button><button id="install" type="button" class="primary" disabled>Install client</button><button id="restart" type="button" class="primary" hidden>Restart Kindred</button></div>
+<p class="hint footnote">You can keep working while the client is prepared. Server and chat UI updates remain separate, under Accounts → Update local server.</p>
+</main></body></html>

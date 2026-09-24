@@ -1,0 +1,620 @@
+[
+  {
+    "service": "gmail",
+    "result": {
+      "messages": [
+        {
+          "subject": "Quarterly review",
+          "from": "casey@example.invalid",
+          "to": "jordan@example.invalid",
+          "body": "Please review the attached agenda."
+        }
+      ]
+    },
+    "title": "Quarterly review",
+    "contains": "Please review"
+  },
+  {
+    "service": "googledrive",
+    "result": {
+      "files": [
+        {
+          "name": "Launch brief",
+          "mimeType": "application/vnd.google-apps.document",
+          "owners": [
+            {
+              "displayName": "Casey"
+            }
+          ],
+          "webViewLink": "https://example.invalid/brief"
+        }
+      ]
+    },
+    "title": "Launch brief",
+    "contains": "Casey"
+  },
+  {
+    "service": "googledocs",
+    "result": {
+      "documentId": "doc-1",
+      "title": "Launch brief",
+      "tabs": [
+        {
+          "documentTab": {
+            "body": {
+              "content": [
+                {
+                  "paragraph": {
+                    "elements": [
+                      {
+                        "textRun": {
+                          "content": "Launch begins on Monday.\n"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "title": "Launch brief",
+    "contains": "Launch begins on Monday."
+  },
+  {
+    "service": "googlesheets",
+    "result": {
+      "range": "Forecast!A1:C3",
+      "values": [
+        [
+          "Month",
+          "Revenue",
+          "Costs"
+        ],
+        [
+          "September",
+          12000,
+          5000
+        ],
+        [
+          "October",
+          15000,
+          6000
+        ]
+      ]
+    },
+    "title": "Forecast!A1:C3",
+    "contains": "12000"
+  },
+  {
+    "service": "googleslides",
+    "result": {
+      "title": "Quarterly plan",
+      "presentationId": "deck-1",
+      "slides": [
+        {
+          "pageElements": [
+            {
+              "shape": {
+                "text": {
+                  "textElements": [
+                    {
+                      "textRun": {
+                        "content": "Three priorities for the quarter"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "title": "Quarterly plan",
+    "contains": "Three priorities"
+  },
+  {
+    "service": "googlecalendar",
+    "result": {
+      "summary": "Planning review",
+      "start": {
+        "dateTime": "2026-09-14T10:00:00-04:00",
+        "timeZone": "America/New_York"
+      },
+      "end": {
+        "dateTime": "2026-09-14T11:00:00-04:00"
+      },
+      "attendees": [
+        {
+          "email": "casey@example.invalid"
+        }
+      ],
+      "description": "<p>Review <strong>milestones</strong>.</p>"
+    },
+    "title": "Planning review",
+    "contains": "milestones"
+  },
+  {
+    "service": "googlecontacts",
+    "result": {
+      "connections": [
+        {
+          "resourceName": "people/1",
+          "names": [
+            {
+              "displayName": "Casey Morgan"
+            }
+          ],
+          "emailAddresses": [
+            {
+              "value": "casey@example.invalid"
+            }
+          ],
+          "organizations": [
+            {
+              "name": "Example Company"
+            }
+          ]
+        }
+      ]
+    },
+    "title": "Casey Morgan",
+    "contains": "Example Company"
+  },
+  {
+    "service": "googletasks",
+    "result": {
+      "items": [
+        {
+          "title": "Review proposal",
+          "status": "needsAction",
+          "due": "2026-09-14T00:00:00Z",
+          "notes": "Compare the revised scope."
+        }
+      ]
+    },
+    "title": "Review proposal",
+    "contains": "Compare the revised scope."
+  },
+  {
+    "service": "googlechat",
+    "result": {
+      "messages": [
+        {
+          "name": "spaces/1/messages/2",
+          "text": "The brief is ready for review.",
+          "sender": {
+            "displayName": "Jordan"
+          },
+          "space": {
+            "displayName": "Launch team"
+          },
+          "createTime": "2026-09-10T17:00:00Z"
+        }
+      ]
+    },
+    "title": "Google Chat message",
+    "contains": "Jordan"
+  },
+  {
+    "service": "googlemeet",
+    "result": {
+      "name": "spaces/meeting-1",
+      "meetingCode": "abc-defg-hij",
+      "meetingUri": "https://meet.google.com/abc-defg-hij"
+    },
+    "title": "abc-defg-hij",
+    "contains": "https://meet.google.com/"
+  },
+  {
+    "service": "googleforms",
+    "result": {
+      "info": {
+        "title": "Customer feedback",
+        "description": "Tell us about the onboarding experience."
+      },
+      "items": [
+        {
+          "title": "How was your first week?"
+        },
+        {
+          "title": "What could we improve?"
+        }
+      ]
+    },
+    "title": "Customer feedback",
+    "contains": "What could we improve?"
+  },
+  {
+    "service": "zoom",
+    "result": {
+      "meetings": [
+        {
+          "topic": "Customer kickoff",
+          "start_time": "2026-09-14T14:00:00Z",
+          "duration": 45,
+          "timezone": "America/New_York",
+          "agenda": "Confirm goals, owners and next steps.",
+          "join_url": "https://zoom.us/j/123456789",
+          "start_url": "secret-host-token",
+          "password": "secret-password"
+        }
+      ]
+    },
+    "title": "Customer kickoff",
+    "contains": "Confirm goals"
+  },
+  {
+    "service": "hubspot",
+    "result": {
+      "results": [
+        {
+          "id": "deal-1",
+          "properties": {
+            "dealname": "Example renewal",
+            "amount": "24000",
+            "deal_currency_code": "USD",
+            "dealstage": "contractsent",
+            "closedate": "2026-09-30T00:00:00Z"
+          }
+        }
+      ]
+    },
+    "title": "Example renewal",
+    "contains": "24000"
+  },
+  {
+    "service": "salesforce",
+    "result": {
+      "records": [
+        {
+          "attributes": {
+            "type": "Opportunity"
+          },
+          "Id": "opp-1",
+          "Name": "Example expansion",
+          "StageName": "Proposal",
+          "Amount": 42000,
+          "CloseDate": "2026-10-01",
+          "Owner": {
+            "Name": "Casey"
+          }
+        }
+      ]
+    },
+    "title": "Example expansion",
+    "contains": "Proposal"
+  },
+  {
+    "service": "slack",
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"messages\": [{\"text\": \"The revised scope is ready.\", \"user\": \"UCASEY\", \"channel\": \"CPLANNING\", \"ts\": \"1789050000.000001\", \"reply_count\": 2}]}"
+        }
+      ]
+    },
+    "title": "Slack message",
+    "contains": "The revised scope is ready."
+  },
+  {
+    "service": "microsoftteams",
+    "result": {
+      "value": [
+        {
+          "id": "msg-1",
+          "body": {
+            "contentType": "html",
+            "content": "<p>Review the <strong>delivery plan</strong>.</p><img src=\"https://example.invalid/tracker\"><script>alert(1)</script>"
+          },
+          "from": {
+            "user": {
+              "displayName": "Jordan"
+            }
+          },
+          "createdDateTime": "2026-09-10T17:00:00Z"
+        }
+      ]
+    },
+    "title": "Teams message",
+    "contains": "delivery plan"
+  },
+  {
+    "service": "outlook",
+    "result": {
+      "value": [
+        {
+          "subject": "Next steps",
+          "from": {
+            "emailAddress": {
+              "name": "Casey",
+              "address": "casey@example.invalid"
+            }
+          },
+          "toRecipients": [
+            {
+              "emailAddress": {
+                "address": "jordan@example.invalid"
+              }
+            }
+          ],
+          "body": {
+            "contentType": "text",
+            "content": "Please confirm the schedule."
+          }
+        }
+      ]
+    },
+    "title": "Next steps",
+    "contains": "Please confirm"
+  },
+  {
+    "service": "notion",
+    "result": {
+      "object": "page",
+      "properties": {
+        "Name": {
+          "type": "title",
+          "title": [
+            {
+              "plain_text": "Launch "
+            },
+            {
+              "plain_text": "notes"
+            }
+          ]
+        },
+        "Status": {
+          "type": "status",
+          "status": {
+            "name": "In progress"
+          }
+        },
+        "Due": {
+          "type": "date",
+          "date": {
+            "start": "2026-09-14"
+          }
+        }
+      },
+      "children": [
+        {
+          "type": "paragraph",
+          "paragraph": {
+            "rich_text": [
+              {
+                "plain_text": "Decisions and follow-up actions."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "title": "Launch notes",
+    "contains": "Decisions and follow-up actions."
+  },
+  {
+    "service": "asana",
+    "result": {
+      "data": {
+        "name": "Confirm launch owners",
+        "completed": false,
+        "assignee": {
+          "name": "Jordan"
+        },
+        "due_on": "2026-09-14",
+        "projects": [
+          {
+            "name": "Launch"
+          }
+        ],
+        "notes": "Check responsibilities with the team."
+      }
+    },
+    "title": "Confirm launch owners",
+    "contains": "Jordan"
+  },
+  {
+    "service": "trello",
+    "result": [
+      {
+        "name": "Prepare kickoff",
+        "due": "2026-09-14T14:00:00Z",
+        "labels": [
+          {
+            "name": "Customer"
+          }
+        ],
+        "desc": "Collect the agenda and participant list.",
+        "shortUrl": "https://example.invalid/card"
+      }
+    ],
+    "title": "Prepare kickoff",
+    "contains": "Customer"
+  },
+  {
+    "service": "monday",
+    "result": {
+      "data": {
+        "boards": [
+          {
+            "items_page": {
+              "items": [
+                {
+                  "name": "Launch checklist",
+                  "board": {
+                    "name": "Launch planning"
+                  },
+                  "column_values": [
+                    {
+                      "column": {
+                        "title": "Status"
+                      },
+                      "text": "Working on it"
+                    },
+                    {
+                      "column": {
+                        "title": "Owner"
+                      },
+                      "text": "Casey"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "title": "Launch checklist",
+    "contains": "Working on it"
+  },
+  {
+    "service": "jira",
+    "result": {
+      "issues": [
+        {
+          "key": "DEMO-42",
+          "fields": {
+            "summary": "Review deployment notes",
+            "status": {
+              "name": "In review"
+            },
+            "assignee": {
+              "displayName": "Casey"
+            },
+            "description": {
+              "type": "doc",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Verify the customer-facing changes."
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "title": "Review deployment notes",
+    "contains": "Verify the customer-facing changes."
+  },
+  {
+    "service": "confluence",
+    "result": {
+      "results": [
+        {
+          "title": "Release guide",
+          "status": "current",
+          "version": {
+            "number": 3
+          },
+          "body": {
+            "storage": {
+              "value": "<p>Follow the <strong>release checklist</strong>.</p>"
+            }
+          },
+          "_links": {
+            "base": "https://example.invalid/wiki",
+            "webui": "/spaces/OPS/pages/42"
+          }
+        }
+      ]
+    },
+    "title": "Release guide",
+    "contains": "release checklist"
+  },
+  {
+    "service": "github",
+    "result": {
+      "items": [
+        {
+          "number": 42,
+          "title": "Document recovery steps",
+          "state": "open",
+          "assignees": [
+            {
+              "login": "casey"
+            }
+          ],
+          "labels": [
+            {
+              "name": "documentation"
+            }
+          ],
+          "body": "Describe how to restore the saved profile.",
+          "html_url": "https://example.invalid/issues/42"
+        }
+      ]
+    },
+    "title": "Document recovery steps",
+    "contains": "documentation"
+  },
+  {
+    "service": "zendesk",
+    "result": {
+      "tickets": [
+        {
+          "id": 42,
+          "subject": "Onboarding question",
+          "status": "open",
+          "priority": "normal",
+          "description": "How do I invite the rest of my team?",
+          "requester_id": 7
+        }
+      ]
+    },
+    "title": "Onboarding question",
+    "contains": "How do I invite"
+  },
+  {
+    "service": "quickbooks",
+    "result": {
+      "QueryResponse": {
+        "Invoice": [
+          {
+            "DocNumber": "INV-42",
+            "CustomerRef": {
+              "name": "Example Company"
+            },
+            "TotalAmt": 300,
+            "Balance": 100,
+            "CurrencyRef": {
+              "value": "USD"
+            },
+            "Line": [
+              {
+                "DetailType": "SalesItemLineDetail",
+                "Description": "Project review",
+                "Amount": 300,
+                "SalesItemLineDetail": {
+                  "Qty": 2,
+                  "UnitPrice": 150
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "title": "INV-42",
+    "contains": "Project review"
+  },
+  {"service":"linear","result":{"issues":{"nodes":[{"identifier":"OPS-7","title":"Review access policy","description":"Confirm the least privilege checklist.","status":{"name":"In Progress"},"assignee":{"name":"Casey"},"priority":2,"team":{"name":"Operations"},"url":"https://linear.app/example/issue/OPS-7"}]}},"title":"Review access policy","contains":"least privilege"},
+  {"service":"clickup","result":{"tasks":[{"id":"cu-7","name":"Prepare handoff","description":"Attach the verified runbook.","status":{"status":"in progress"},"assignees":[{"username":"casey"}],"priority":{"priority":"high"},"due_date":"1789394400000","url":"https://app.clickup.com/t/cu-7"}]},"title":"Prepare handoff","contains":"verified runbook"},
+  {"service":"airtable","result":{"records":[{"id":"rec-7","createdTime":"2026-09-10T17:00:00.000Z","fields":{"Name":"Vendor review","Status":"Open","Owner":"Casey","Score":4}}]},"title":"Vendor review","contains":"Casey"},
+  {"service":"gitlab","result":[{"iid":7,"title":"Document recovery","state":"opened","description":"Record the restore procedure.","assignees":[{"name":"Casey"}],"labels":["docs"],"due_date":"2026-09-14","web_url":"https://gitlab.example.invalid/ops/issues/7"}],"title":"Document recovery","contains":"Record the restore"},
+  {"service":"dropbox","result":{"entries":[{".tag":"file","name":"runbook.pdf","path_display":"/Shared/runbook.pdf","size":2048,"server_modified":"2026-09-10T17:00:00Z","id":"id:abc"}]},"title":"runbook.pdf","contains":"2048"},
+  {"service":"box","result":{"entries":[{"id":"123","type":"file","name":"evidence.txt","size":512,"modified_at":"2026-09-10T17:00:00Z","owned_by":{"name":"Casey"},"shared_link":{"url":"https://app.box.com/s/example"}}]},"title":"evidence.txt","contains":"Casey"},
+  {"service":"todoist","result":{"results":[{"id":"td-7","content":"Confirm owners","description":"Check the escalation list.","priority":3,"due":{"date":"2026-09-14"},"labels":["ops"],"project_id":"p-1","url":"https://todoist.com/showTask?id=td-7"}]},"title":"Confirm owners","contains":"escalation list"},
+  {"service":"stripe","result":{"data":[{"id":"pi_7","object":"payment_intent","amount":4200,"currency":"usd","status":"requires_capture","description":"Approved service review","customer":"cus_7","created":1789050000}]},"title":"Approved service review","contains":"requires_capture"}
+]

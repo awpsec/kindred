@@ -1,0 +1,11 @@
+{
+  "project": "https://github.com/liberationfonts/liberation-fonts",
+  "package": "1:2.1.5-3",
+  "license": "SIL Open Font License 1.1",
+  "sha256": {
+    "LiberationMono-Regular.ttf": "5883330d94debd992952cd8f0571b225f478c2d797d3f36c7521b0a5c9bde0f2",
+    "LiberationMono-Bold.ttf": "ddce09ee3483b2d5faf61f0baba8592e76e0ac6dd4ab36683e5334c288bf5eef",
+    "LiberationMono-Italic.ttf": "016743fc425a1b61eb349c72c02f3da6a1349d1da7a5d9aded27321397eed955",
+    "LiberationMono-BoldItalic.ttf": "2ec6f3e5bd9b24c7fb04c229a1ee64f600e4072c03a041c96c2d62974c2ede2c"
+  }
+}

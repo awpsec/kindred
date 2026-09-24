@@ -1,0 +1,36 @@
+name: Server verification
+on:
+  workflow_dispatch:
+    inputs:
+      approve_runner_usage:
+        description: 'I approve this one manual verification run and its runner charges.'
+        required: true
+        default: false
+        type: boolean
+concurrency:
+  group: kindred-server-manual-verification
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: ${{ inputs.approve_runner_usage }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.14.0'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: harness/pi
+      - run: KINDRED_PI_TEST_NODE="$(command -v node)" cargo test --locked
+      - run: python3 -m unittest discover -s deploy -p 'test_*.py'
+      - run: docker compose build
+      - name: Check clean first startup
+        run: |
+          docker compose up -d
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:9444/identity/meta && break; sleep 2; done
+          python3 -c "import json,urllib.request; v=json.load(urllib.request.urlopen('http://127.0.0.1:9444/identity/meta')); assert v['first_user'] and v['profiles']"
+          docker compose down

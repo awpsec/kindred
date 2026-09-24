@@ -1,0 +1,3 @@
+document.addEventListener('pointerdown',()=>{document.documentElement.dataset.inputModality='pointer';},true);
+document.addEventListener('keydown',e=>{if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','Enter',' '].includes(e.key))document.documentElement.dataset.inputModality='keyboard';},true);
+(()=>{const bar=document.querySelector('.dialog-chrome');if(!bar)return;if(window.__KINDRED_NATIVE_FRAME){bar.hidden=true;document.documentElement.style.border='0';return;}const invoke=action=>window.__TAURI__.core.invoke('window_action',{action}).catch(()=>{});bar.addEventListener('pointerdown',e=>{if(e.button===0&&!e.target.closest('button'))invoke('drag');});bar.querySelector('button').onclick=()=>invoke('close');})();

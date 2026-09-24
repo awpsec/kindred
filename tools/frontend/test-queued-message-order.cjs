@@ -1,0 +1,27 @@
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const {server,token}=require('./fixtures/desktop.cjs');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
+const browser=await(process.env.WEBKIT?webkit:chromium).launch({headless:true});try{
+ const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
+ const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};
+ let phase=0;
+ const runs=()=>[1,2,3].map(i=>({id:'r'+i,bot_id:'piper',chat_id:chat.id,prompt:'Request '+i,created:now+i,status:i===1?(phase?'completed':'running'):i===2?(phase===2?'completed':phase?'running':'queued'):'queued',output:'',error:''}));
+ const input=i=>({seq:i,sender:'user',kind:'message',text:'Request '+i,created:now+i,source_event_seq:null,delivery:[{run_id:'r'+i,bot_id:'piper',status:runs()[i-1].status}]});
+ const reply=i=>({seq:3+i,sender:'piper',kind:'result',text:'Reply '+i,created:now+10+i,run_id:'r'+i,source_event_seq:100+i});
+ const messages=()=>[input(1),input(2),input(3),...(phase?[reply(1)]:[]),...(phase===2?[reply(2)]:[])];
+ await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nwindow.queueTest={orderedDirectMessages,refresh};'}));
+ await p.route(origin+'/api/**',r=>{const q=new URL(r.request().url()).pathname;let data;
+ if(q==='/api/chats')data=[chat];else if(q==='/api/chats/'+chat.id)data={chat,messages:messages()};else if(q==='/api/runs')data=runs();else if(q.startsWith('/api/runs/'))data={run:runs().find(x=>q.endsWith(x.id)),events:[],attachments:[],approvals:[]};else if(q==='/api/activity')data={};else return r.continue();return r.fulfill({json:data});});
+ await p.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);await p.goto(origin);await p.getByText('Request 3',{exact:true}).waitFor();
+ const order=()=>p.locator('#content > [data-message]').evaluateAll(nodes=>nodes.map(n=>n.dataset.message).filter(x=>/^\d+$/.test(x)));
+ assert.deepEqual(await order(),['1','2','3']);
+ phase=1;await p.evaluate(()=>queueTest.refresh(true));await p.getByText('Reply 1',{exact:true}).waitFor();assert.deepEqual(await order(),['1','4','2','3']);
+ phase=2;await p.evaluate(()=>queueTest.refresh(true));await p.getByText('Reply 2',{exact:true}).waitFor();assert.deepEqual(await order(),['1','4','2','5','3']);
+ await p.reload();await p.getByText('Reply 2',{exact:true}).waitFor();assert.deepEqual(await order(),['1','4','2','5','3']);
+ const checks=await p.evaluate(({messages,runs})=>{messages[1].delivery[0].status='steered';messages[1].delivery[0].into_run_id='r1';const steered=queueTest.orderedDirectMessages(messages,runs).map(m=>m.seq);const unchanged=JSON.stringify(messages);queueTest.orderedDirectMessages(messages,runs);return {steered,unchanged:unchanged===JSON.stringify(messages)};},{messages:messages(),runs:runs()});
+ assert(checks.steered.indexOf(2)<checks.steered.indexOf(4));assert(checks.unchanged);
+ const edge=await p.evaluate(({messages,runs})=>{for(const m of messages)m.created=1;for(const r of runs)r.created=1;const sameSecond=queueTest.orderedDirectMessages(messages,runs).map(m=>m.seq);runs[0].created=0;const partial=queueTest.orderedDirectMessages(messages.filter(m=>m.seq!==1),runs).map(m=>m.seq);return {sameSecond,partial};},{messages:messages(),runs:runs()});
+ assert.deepEqual(edge.sameSecond,[1,4,2,5,3]);assert.deepEqual(edge.partial,[4,2,5,3]);assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({passed:true,engine:process.env.WEBKIT?'webkit':'chromium',queuedTurns:true,multipleFollowups:true,reload:true,steeringPreserved:true}));
+}finally{await browser.close();server.close();}})().catch(e=>{console.error(e);server.close();process.exitCode=1;});

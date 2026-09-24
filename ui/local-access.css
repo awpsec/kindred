@@ -1,0 +1,14 @@
+@charset "UTF-8";
+@import url("./fonts.css");
+:root{color-scheme:dark;font:calc(14px * var(--text-scale, 1))/1.6 var(--font-sans);background:#0d0d0d;color:#ededed;--panel:#131313;--surface:#1c1c1c;--line:#303030;--muted:#929292;--hover:#272727;--fg:#ededed;--dialog-bg:#0d0d0d;--button:#ededed;--button-fg:#171717}
+*{box-sizing:border-box}body{margin:0}main{padding:28px 32px;max-width:700px;margin:auto}h1{font-size:calc(22px * var(--text-scale, 1));line-height:1.3;font-weight:600;letter-spacing:-.4px;margin:0 0 16px}h2{font-size:calc(17px * var(--text-scale, 1));font-weight:600}p{margin:14px 0}label{display:block;margin:24px 0 8px;font-weight:500}select,button{font:inherit;color:inherit;border:1px solid var(--line);border-radius:9px;background:var(--surface);padding:10px 12px}select{width:100%;min-height:42px}button{display:inline-flex;align-items:center;justify-content:center;min-height:38px;cursor:pointer;margin-top:12px}button:hover{background:var(--hover)}button:disabled{opacity:.45;cursor:default}button:focus-visible,select:focus-visible{outline:2px solid currentColor;outline-offset:3px}.subtle{color:var(--muted);overflow-wrap:anywhere}code,pre{display:block;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--panel);border:1px solid var(--line);padding:12px 14px;border-radius:9px;font-size:calc(12px * var(--text-scale, 1))}pre{max-height:220px;overflow:auto}section{border-top:1px solid var(--line);margin-top:24px;padding-top:16px}.actions{display:flex;gap:12px;justify-content:flex-end}#save,#allow{background:var(--button);color:var(--button-fg);border-color:transparent}#save:hover,#allow:hover{background:#fff}#message{color:var(--muted)}[hidden]{display:none!important}@media(max-width:450px){main{padding:24px 20px}}
+
+:root[data-theme="light"]{color-scheme:light;background:#fbfbfb;color:#202020;--fg:#202020;--panel:#fbfbfb;--surface:#f0f0f0;--line:#e1e1e1;--muted:#797979;--hover:#e8e8e8;--dialog-bg:#fbfbfb;--button:#252525;--button-fg:#fff}
+
+html[data-embedded]{background:#000;--dialog-bg:#000;}
+html[data-embedded][data-theme=light]{background:#fff;--dialog-bg:#fff;}
+html[data-embedded] main{max-width:none;padding:24px 32px;}
+html[data-embedded] h1{display:none;}
+html[data-embedded] main>p:first-of-type{margin-top:0;}
+html[data-embedded] #mode{font-size:calc(12px * var(--text-scale, 1));border-radius:8px;}
+html[data-embedded] #save{font-size:calc(12px * var(--text-scale, 1));padding:8px 14px;}

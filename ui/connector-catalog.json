@@ -1,0 +1,1042 @@
+[
+  {
+    "id": "gmail",
+    "name": "Gmail",
+    "family": "email",
+    "aliases": [
+      "googlemail"
+    ],
+    "titles": [
+      "subject"
+    ],
+    "fields": [],
+    "description": "Messages and email approvals",
+    "docs": "https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages"
+  },
+  {
+    "id": "googledrive",
+    "name": "Google Drive",
+    "family": "file",
+    "aliases": [
+      "drive"
+    ],
+    "titles": [
+      "name",
+      "title"
+    ],
+    "fields": [
+      [
+        "Type",
+        "mimeType"
+      ],
+      [
+        "Owner",
+        "owners"
+      ],
+      [
+        "Modified",
+        "modifiedTime"
+      ],
+      [
+        "Size in bytes",
+        "size"
+      ],
+      [
+        "Open source",
+        "webViewLink"
+      ],
+      [
+        "Description",
+        "description"
+      ]
+    ],
+    "description": "Files, folders and ownership",
+    "docs": "https://developers.google.com/workspace/drive/api/reference/rest/v3/files"
+  },
+  {
+    "id": "googledocs",
+    "name": "Google Docs",
+    "family": "document",
+    "aliases": [
+      "googledocuments"
+    ],
+    "titles": [
+      "title"
+    ],
+    "fields": [
+      [
+        "Document ID",
+        "documentId"
+      ],
+      [
+        "Revision",
+        "revisionId"
+      ]
+    ],
+    "description": "Document text and tab excerpts",
+    "docs": "https://developers.google.com/workspace/docs/api/reference/rest/v1/documents"
+  },
+  {
+    "id": "googlesheets",
+    "name": "Google Sheets",
+    "family": "spreadsheet",
+    "aliases": [
+      "googlespreadsheets"
+    ],
+    "titles": [
+      "properties/title",
+      "title",
+      "range"
+    ],
+    "fields": [
+      [
+        "Range",
+        "range"
+      ],
+      [
+        "Locale",
+        "properties/locale"
+      ],
+      [
+        "Time zone",
+        "properties/timeZone"
+      ],
+      [
+        "Open source",
+        "spreadsheetUrl"
+      ]
+    ],
+    "description": "Spreadsheet tabs and cell ranges",
+    "docs": "https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets"
+  },
+  {
+    "id": "googleslides",
+    "name": "Google Slides",
+    "family": "presentation",
+    "aliases": [],
+    "titles": [
+      "title"
+    ],
+    "fields": [
+      [
+        "Presentation ID",
+        "presentationId"
+      ],
+      [
+        "Locale",
+        "locale"
+      ]
+    ],
+    "description": "Presentations and slide text",
+    "docs": "https://developers.google.com/workspace/slides/api/reference/rest/v1/presentations"
+  },
+  {
+    "id": "googlecalendar",
+    "name": "Google Calendar",
+    "family": "calendar",
+    "aliases": [
+      "gcal"
+    ],
+    "titles": [
+      "summary",
+      "title"
+    ],
+    "fields": [
+      [
+        "Starts",
+        "start/dateTime",
+        "start/date",
+        "start_time"
+      ],
+      [
+        "Ends",
+        "end/dateTime",
+        "end/date",
+        "end_time"
+      ],
+      [
+        "Time zone",
+        "start/timeZone",
+        "time_zone"
+      ],
+      [
+        "Location",
+        "location"
+      ],
+      [
+        "Organizer",
+        "organizer"
+      ],
+      [
+        "Attendees",
+        "attendees"
+      ],
+      [
+        "Status",
+        "status"
+      ],
+      [
+        "Open source",
+        "htmlLink"
+      ],
+      [
+        "Join meeting",
+        "hangoutLink"
+      ]
+    ],
+    "description": "Events, dates and attendees",
+    "docs": "https://developers.google.com/workspace/calendar/api/v3/reference/events"
+  },
+  {
+    "id": "googlecontacts",
+    "name": "Google Contacts",
+    "family": "contact",
+    "aliases": [
+      "googlepeople",
+      "people"
+    ],
+    "titles": [
+      "names/0/displayName",
+      "displayName"
+    ],
+    "fields": [
+      [
+        "Email",
+        "emailAddresses"
+      ],
+      [
+        "Phone",
+        "phoneNumbers"
+      ],
+      [
+        "Organization",
+        "organizations"
+      ],
+      [
+        "Contact ID",
+        "resourceName"
+      ]
+    ],
+    "description": "People, email addresses and organizations",
+    "docs": "https://developers.google.com/people/api/rest/v1/people"
+  },
+  {
+    "id": "googletasks",
+    "name": "Google Tasks",
+    "family": "task",
+    "aliases": [],
+    "titles": [
+      "title"
+    ],
+    "fields": [
+      [
+        "Status",
+        "status"
+      ],
+      [
+        "Due",
+        "due"
+      ],
+      [
+        "Completed",
+        "completed"
+      ],
+      [
+        "Notes",
+        "notes"
+      ],
+      [
+        "Open source",
+        "webViewLink",
+        "selfLink"
+      ]
+    ],
+    "description": "Tasks, due dates and notes",
+    "docs": "https://developers.google.com/workspace/tasks/reference/rest/v1/tasks"
+  },
+  {
+    "id": "googlechat",
+    "name": "Google Chat",
+    "family": "message",
+    "aliases": [],
+    "titles": [
+      "text"
+    ],
+    "fields": [
+      [
+        "Sender",
+        "sender/displayName",
+        "sender/name"
+      ],
+      [
+        "Space",
+        "space/displayName",
+        "space/name"
+      ],
+      [
+        "Sent",
+        "createTime"
+      ],
+      [
+        "Thread",
+        "thread/name"
+      ],
+      [
+        "Open source",
+        "messageLink"
+      ]
+    ],
+    "description": "Space messages and threads",
+    "docs": "https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces.messages"
+  },
+  {
+    "id": "googlemeet",
+    "name": "Google Meet",
+    "family": "meeting",
+    "aliases": [],
+    "titles": [
+      "displayName",
+      "meetingCode",
+      "name"
+    ],
+    "fields": [
+      [
+        "Meeting code",
+        "meetingCode"
+      ],
+      [
+        "Starts",
+        "startTime"
+      ],
+      [
+        "Ends",
+        "endTime",
+        "expireTime"
+      ],
+      [
+        "Join meeting",
+        "meetingUri"
+      ],
+      [
+        "Space",
+        "space"
+      ]
+    ],
+    "description": "Meeting spaces and conference records",
+    "docs": "https://developers.google.com/workspace/meet/api/reference/rest/v2/spaces"
+  },
+  {
+    "id": "googleforms",
+    "name": "Google Forms",
+    "family": "form",
+    "aliases": [],
+    "titles": [
+      "info/title",
+      "info/documentTitle",
+      "title"
+    ],
+    "fields": [
+      [
+        "Description",
+        "info/description"
+      ],
+      [
+        "Open form",
+        "responderUri"
+      ],
+      [
+        "Linked sheet",
+        "linkedSheetId"
+      ]
+    ],
+    "description": "Forms and question outlines",
+    "docs": "https://developers.google.com/workspace/forms/api/reference/rest/v1/forms"
+  },
+  {
+    "id": "zoom",
+    "name": "Zoom",
+    "family": "meeting",
+    "aliases": [],
+    "titles": [
+      "topic",
+      "title"
+    ],
+    "fields": [
+      [
+        "Starts",
+        "start_time"
+      ],
+      [
+        "Duration in minutes",
+        "duration"
+      ],
+      [
+        "Time zone",
+        "timezone"
+      ],
+      [
+        "Host ID",
+        "host_id"
+      ],
+      [
+        "Status",
+        "status"
+      ],
+      [
+        "Join meeting",
+        "join_url"
+      ]
+    ],
+    "description": "Meetings, agenda and scheduling",
+    "docs": "https://developers.zoom.us/docs/api/meetings/"
+  },
+  {
+    "id": "hubspot",
+    "name": "HubSpot",
+    "family": "crm",
+    "aliases": [],
+    "titles": [
+      "properties/dealname",
+      "properties/name",
+      "properties/subject",
+      "properties/hs_task_subject",
+      "properties/email"
+    ],
+    "fields": [
+      [
+        "Email",
+        "properties/email"
+      ],
+      [
+        "Phone",
+        "properties/phone"
+      ],
+      [
+        "Company",
+        "properties/company"
+      ],
+      [
+        "Stage",
+        "properties/dealstage",
+        "properties/lifecyclestage",
+        "properties/hs_pipeline_stage"
+      ],
+      [
+        "Pipeline",
+        "properties/pipeline",
+        "properties/hs_pipeline"
+      ],
+      [
+        "Amount",
+        "properties/amount"
+      ],
+      [
+        "Currency",
+        "properties/deal_currency_code"
+      ],
+      [
+        "Close date",
+        "properties/closedate"
+      ],
+      [
+        "Owner ID",
+        "properties/hubspot_owner_id"
+      ],
+      [
+        "Open source",
+        "url"
+      ]
+    ],
+    "description": "Contacts, companies, deals and tickets",
+    "docs": "https://developers.hubspot.com/docs/api-reference/latest/crm/using-object-apis"
+  },
+  {
+    "id": "salesforce",
+    "name": "Salesforce",
+    "family": "crm",
+    "aliases": [],
+    "titles": [
+      "Name",
+      "Subject"
+    ],
+    "fields": [
+      [
+        "Record type",
+        "attributes/type"
+      ],
+      [
+        "Email",
+        "Email"
+      ],
+      [
+        "Company",
+        "Company",
+        "Account/Name"
+      ],
+      [
+        "Stage",
+        "StageName"
+      ],
+      [
+        "Status",
+        "Status"
+      ],
+      [
+        "Amount",
+        "Amount"
+      ],
+      [
+        "Currency",
+        "CurrencyIsoCode"
+      ],
+      [
+        "Close date",
+        "CloseDate"
+      ],
+      [
+        "Owner",
+        "Owner/Name"
+      ],
+      [
+        "Record ID",
+        "Id"
+      ]
+    ],
+    "description": "Accounts, contacts, opportunities and cases",
+    "docs": "https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/resources_query.htm"
+  },
+  {
+    "id": "slack",
+    "name": "Slack",
+    "family": "message",
+    "aliases": [],
+    "titles": [
+      "text"
+    ],
+    "fields": [
+      [
+        "Sender ID",
+        "user",
+        "bot_id"
+      ],
+      [
+        "Channel",
+        "channel/name",
+        "channel"
+      ],
+      [
+        "Message timestamp",
+        "ts"
+      ],
+      [
+        "Thread",
+        "thread_ts"
+      ],
+      [
+        "Replies",
+        "reply_count"
+      ],
+      [
+        "Open source",
+        "permalink"
+      ]
+    ],
+    "description": "Channel messages and threads",
+    "docs": "https://docs.slack.dev/messaging/retrieving-messages/"
+  },
+  {
+    "id": "microsoftteams",
+    "name": "Microsoft Teams",
+    "family": "message",
+    "aliases": [
+      "teams"
+    ],
+    "titles": [
+      "subject",
+      "body/content",
+      "displayName"
+    ],
+    "fields": [
+      [
+        "Sender",
+        "from/user/displayName"
+      ],
+      [
+        "Sent",
+        "createdDateTime"
+      ],
+      [
+        "Channel ID",
+        "channelIdentity/channelId"
+      ],
+      [
+        "Team ID",
+        "channelIdentity/teamId"
+      ],
+      [
+        "Open source",
+        "webUrl"
+      ]
+    ],
+    "description": "Chat messages and channel conversations",
+    "docs": "https://learn.microsoft.com/en-us/graph/api/resources/chatmessage?view=graph-rest-1.0"
+  },
+  {
+    "id": "outlook",
+    "name": "Outlook",
+    "family": "email",
+    "aliases": [
+      "microsoftoutlook"
+    ],
+    "titles": [
+      "subject"
+    ],
+    "fields": [],
+    "description": "Messages and email approvals",
+    "docs": "https://learn.microsoft.com/en-us/graph/api/resources/message?view=graph-rest-1.0"
+  },
+  {
+    "id": "notion",
+    "name": "Notion",
+    "family": "document",
+    "aliases": [],
+    "titles": [
+      "title"
+    ],
+    "fields": [
+      [
+        "Updated",
+        "last_edited_time"
+      ],
+      [
+        "Archived",
+        "archived"
+      ],
+      [
+        "Open source",
+        "url"
+      ]
+    ],
+    "description": "Pages, properties and block text",
+    "docs": "https://developers.notion.com/reference/page"
+  },
+  {
+    "id": "asana",
+    "name": "Asana",
+    "family": "task",
+    "aliases": [],
+    "titles": [
+      "name"
+    ],
+    "fields": [
+      [
+        "Completed",
+        "completed"
+      ],
+      [
+        "Assignee",
+        "assignee"
+      ],
+      [
+        "Due",
+        "due_on",
+        "due_at"
+      ],
+      [
+        "Projects",
+        "projects"
+      ],
+      [
+        "Open source",
+        "permalink_url"
+      ]
+    ],
+    "description": "Tasks, assignees and due dates",
+    "docs": "https://developers.asana.com/reference/tasks"
+  },
+  {
+    "id": "trello",
+    "name": "Trello",
+    "family": "task",
+    "aliases": [],
+    "titles": [
+      "name"
+    ],
+    "fields": [
+      [
+        "Due",
+        "due"
+      ],
+      [
+        "Due completed",
+        "dueComplete"
+      ],
+      [
+        "Archived",
+        "closed"
+      ],
+      [
+        "Members",
+        "members"
+      ],
+      [
+        "Member IDs",
+        "idMembers"
+      ],
+      [
+        "Labels",
+        "labels"
+      ],
+      [
+        "List ID",
+        "idList"
+      ],
+      [
+        "Board ID",
+        "idBoard"
+      ],
+      [
+        "Open source",
+        "shortUrl",
+        "url"
+      ]
+    ],
+    "description": "Cards, labels and deadlines",
+    "docs": "https://developer.atlassian.com/cloud/trello/rest/api-group-cards/"
+  },
+  {
+    "id": "monday",
+    "name": "Monday",
+    "family": "task",
+    "aliases": [
+      "mondaycom",
+      "mondaydotcom"
+    ],
+    "titles": [
+      "name",
+      "item_name"
+    ],
+    "fields": [
+      [
+        "Board",
+        "board/name"
+      ],
+      [
+        "Group",
+        "group/title"
+      ],
+      [
+        "Updated",
+        "updated_at"
+      ],
+      [
+        "Open source",
+        "url"
+      ]
+    ],
+    "description": "Items, boards and column values",
+    "docs": "https://developer.monday.com/api-reference/reference/items"
+  },
+  {
+    "id": "jira",
+    "name": "Jira",
+    "family": "task",
+    "aliases": [],
+    "titles": [
+      "fields/summary",
+      "summary"
+    ],
+    "fields": [
+      [
+        "Issue",
+        "key"
+      ],
+      [
+        "Status",
+        "fields/status"
+      ],
+      [
+        "Assignee",
+        "fields/assignee"
+      ],
+      [
+        "Priority",
+        "fields/priority"
+      ],
+      [
+        "Due",
+        "fields/duedate"
+      ],
+      [
+        "Project",
+        "fields/project"
+      ],
+      [
+        "Open source",
+        "url",
+        "webUrl"
+      ]
+    ],
+    "description": "Issues, status and assignment",
+    "docs": "https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/"
+  },
+  {
+    "id": "confluence",
+    "name": "Confluence",
+    "family": "document",
+    "aliases": [
+      "atlassian"
+    ],
+    "titles": [
+      "title"
+    ],
+    "fields": [
+      [
+        "Status",
+        "status"
+      ],
+      [
+        "Space",
+        "space/name",
+        "spaceId"
+      ],
+      [
+        "Version",
+        "version/number"
+      ],
+      [
+        "Updated",
+        "version/when",
+        "version/createdAt"
+      ],
+      [
+        "Open source",
+        "url"
+      ]
+    ],
+    "description": "Pages, versions and content excerpts",
+    "docs": "https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/"
+  },
+  {
+    "id": "github",
+    "name": "GitHub",
+    "family": "repository",
+    "aliases": [],
+    "titles": [
+      "title",
+      "full_name",
+      "name"
+    ],
+    "fields": [
+      [
+        "Number",
+        "number"
+      ],
+      [
+        "State",
+        "state"
+      ],
+      [
+        "Assignees",
+        "assignees"
+      ],
+      [
+        "Labels",
+        "labels"
+      ],
+      [
+        "Author",
+        "user/login"
+      ],
+      [
+        "Language",
+        "language"
+      ],
+      [
+        "Stars",
+        "stargazers_count"
+      ],
+      [
+        "Default branch",
+        "default_branch"
+      ],
+      [
+        "Open source",
+        "html_url"
+      ]
+    ],
+    "description": "Issues, pull requests and repositories",
+    "docs": "https://docs.github.com/en/rest/issues/issues"
+  },
+  {
+    "id": "zendesk",
+    "name": "Zendesk",
+    "family": "support",
+    "aliases": [],
+    "titles": [
+      "subject",
+      "raw_subject"
+    ],
+    "fields": [
+      [
+        "Ticket",
+        "id"
+      ],
+      [
+        "Status",
+        "status"
+      ],
+      [
+        "Priority",
+        "priority"
+      ],
+      [
+        "Type",
+        "type"
+      ],
+      [
+        "Requester ID",
+        "requester_id"
+      ],
+      [
+        "Assignee ID",
+        "assignee_id"
+      ],
+      [
+        "Tags",
+        "tags"
+      ],
+      [
+        "Updated",
+        "updated_at"
+      ],
+      [
+        "Open source",
+        "url"
+      ]
+    ],
+    "description": "Support tickets, priority and ownership",
+    "docs": "https://developer.zendesk.com/api-reference/ticketing/tickets/tickets/"
+  },
+  {
+    "id": "quickbooks",
+    "name": "QuickBooks",
+    "family": "accounting",
+    "aliases": [
+      "quickbooksonline"
+    ],
+    "titles": [
+      "DocNumber",
+      "DisplayName",
+      "Name"
+    ],
+    "fields": [
+      [
+        "Customer",
+        "CustomerRef"
+      ],
+      [
+        "Total",
+        "TotalAmt"
+      ],
+      [
+        "Balance due",
+        "Balance"
+      ],
+      [
+        "Currency",
+        "CurrencyRef"
+      ],
+      [
+        "Due",
+        "DueDate"
+      ],
+      [
+        "Date",
+        "TxnDate"
+      ]
+    ],
+    "description": "Invoices, customers and invoice lines",
+    "docs": "https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities/invoice"
+  },
+  {
+    "id": "linear",
+    "name": "Linear",
+    "family": "task",
+    "aliases": [],
+    "titles": ["title", "name", "identifier"],
+    "fields": [["Identifier", "identifier"], ["Status", "status/name", "state/name"], ["Assignee", "assignee/name"], ["Priority", "priority"], ["Team", "team/name"], ["Open source", "url"]],
+    "description": "Issues, status and assignment",
+    "docs": "https://linear.app/developers/graphql"
+  },
+  {
+    "id": "clickup",
+    "name": "ClickUp",
+    "family": "task",
+    "aliases": [],
+    "titles": ["name", "id"],
+    "fields": [["Task", "id"], ["Status", "status/status", "status"], ["Assignees", "assignees"], ["Priority", "priority/priority"], ["Due", "due_date"], ["Open source", "url"]],
+    "description": "Tasks, statuses and assignees",
+    "docs": "https://developer.clickup.com/reference/get-tasks"
+  },
+  {
+    "id": "airtable",
+    "name": "Airtable",
+    "family": "record",
+    "aliases": [],
+    "titles": ["fields/Name", "fields/Title", "id"],
+    "fields": [["Record", "id"], ["Created", "createdTime"]],
+    "description": "Base records and supplied field values",
+    "docs": "https://airtable.com/developers/web/api/list-records"
+  },
+  {
+    "id": "gitlab",
+    "name": "GitLab",
+    "family": "repository",
+    "aliases": [],
+    "titles": ["title"],
+    "fields": [["Issue", "iid"], ["State", "state"], ["Assignees", "assignees"], ["Labels", "labels"], ["Due", "due_date"], ["Open source", "web_url"]],
+    "description": "Issues, labels and project links",
+    "docs": "https://docs.gitlab.com/api/issues/"
+  },
+  {
+    "id": "dropbox",
+    "name": "Dropbox",
+    "family": "file",
+    "aliases": [],
+    "titles": ["name", "path_display", "id"],
+    "fields": [["Type", ".tag"], ["Path", "path_display"], ["Size in bytes", "size"], ["Modified", "server_modified"], ["Open source", "url"]],
+    "description": "Files, folders and paths",
+    "docs": "https://www.dropbox.com/developers/documentation/http/documentation"
+  },
+  {
+    "id": "box",
+    "name": "Box",
+    "family": "file",
+    "aliases": [],
+    "titles": ["name", "id"],
+    "fields": [["Type", "type"], ["Size in bytes", "size"], ["Modified", "modified_at"], ["Owner", "owned_by/name"], ["Open source", "shared_link/url"]],
+    "description": "Files, folders and shared links",
+    "docs": "https://developer.box.com/reference/get-folders-id-items/"
+  },
+  {
+    "id": "todoist",
+    "name": "Todoist",
+    "family": "task",
+    "aliases": [],
+    "titles": ["content", "id"],
+    "fields": [["Task", "id"], ["Due", "due/date", "due/datetime"], ["Priority", "priority"], ["Labels", "labels"], ["Project", "project_id"], ["Open source", "url"]],
+    "description": "Tasks, due dates and labels",
+    "docs": "https://developer.todoist.com/rest/v2/#overview"
+  },
+  {
+    "id": "stripe",
+    "name": "Stripe",
+    "family": "payment",
+    "aliases": [],
+    "titles": ["description", "id"],
+    "fields": [["Payment", "id"], ["Status", "status"], ["Amount (smallest currency unit)", "amount"], ["Currency", "currency"], ["Customer", "customer"], ["Created", "created"]],
+    "description": "Payment objects and source fields",
+    "docs": "https://docs.stripe.com/api/payment_intents/object"
+  }
+]

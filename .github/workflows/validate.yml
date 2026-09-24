@@ -1,0 +1,126 @@
+name: Existing Mac package validation (manual only)
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: 'Completed build containing the exact existing DMGs.'
+        type: string
+        required: true
+      source_commit:
+        description: 'Exact application source commit recorded in those packages.'
+        type: string
+        required: true
+      version:
+        description: 'Exact packaged version.'
+        type: string
+        required: true
+      approve_runner_usage:
+        description: 'Approve this one validation run and its runner charges.'
+        type: boolean
+        required: true
+        default: false
+      preserved_package:
+        description: 'Validate the unchanged DMG preserved by a failed GUI validation; reuse its completed installation subcheck.'
+        type: boolean
+        required: true
+        default: false
+      repair_signature:
+        description: 'Repackage existing DMGs with valid ad-hoc bundle signatures, without recompiling.'
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: kindred-existing-mac-validation
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: ${{ inputs.approve_runner_usage }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: validation-tools
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_commit }}
+          path: application-source
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.14.0'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.build_run_id }}
+          name: ${{ inputs.preserved_package && 'unverified-kindred' || 'kindred' }}-${{ inputs.version }}-${{ matrix.target }}
+          path: ${{ inputs.preserved_package && 'preserved' || 'packages' }}
+      - name: Download the original native verification receipt
+        if: ${{ inputs.preserved_package }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.build_run_id }}
+          name: mac-validation-${{ inputs.version }}-${{ matrix.target }}
+          path: previous-validation
+      - name: Recover the preserved package without rebuilding or resigning
+        if: ${{ inputs.preserved_package }}
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+          PACKAGE_SOURCE: ${{ inputs.source_commit }}
+          BUILD_RUN: ${{ inputs.build_run_id }}
+        run: python validation-tools/scripts/release/prepare-preserved-macos.py --directory preserved --report previous-validation/macos-validation.json --output packages --version "$PACKAGE_VERSION" --source "$PACKAGE_SOURCE" --run "$BUILD_RUN"
+      - name: Repair existing bundle signatures without recompiling
+        if: ${{ inputs.repair_signature }}
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+          PACKAGE_SOURCE: ${{ inputs.source_commit }}
+          PACKAGE_TARGET: ${{ matrix.target }}
+        run: python validation-tools/scripts/release/repack-macos-signature.py --directory packages --output repaired-packages --version "$PACKAGE_VERSION" --source-commit "$PACKAGE_SOURCE" --target "$PACKAGE_TARGET"
+      - name: Launch the shipped app and inspect its real windows
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
+          PACKAGE_SOURCE: ${{ inputs.source_commit }}
+          PACKAGE_TARGET: ${{ matrix.target }}
+          PACKAGE_DIRECTORY: ${{ inputs.repair_signature && 'repaired-packages' || 'packages' }}
+          PRESERVED_PACKAGE: ${{ inputs.preserved_package }}
+        run: |
+          extra=()
+          if [ "$PRESERVED_PACKAGE" = "true" ]; then extra+=(--reuse-installation-validation previous-validation/macos-validation.json); fi
+          python validation-tools/scripts/release/test-macos-package.py --directory "$PACKAGE_DIRECTORY" --source application-source --version "$PACKAGE_VERSION" --source-commit "$PACKAGE_SOURCE" --target "$PACKAGE_TARGET" --output results "${extra[@]}"
+      - name: Retain the unchanged package after successful validation
+        if: ${{ success() && inputs.preserved_package && !inputs.repair_signature }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kindred-${{ inputs.version }}-${{ matrix.target }}
+          path: packages
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain signature-repaired candidate packages
+        if: ${{ success() && inputs.repair_signature }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kindred-${{ inputs.version }}-${{ matrix.target }}-signature-repaired
+          path: repaired-packages
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain verification and screenshots without publishing
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mac-validation-${{ inputs.version }}-${{ matrix.target }}
+          path: results
+          if-no-files-found: warn
+          retention-days: 7

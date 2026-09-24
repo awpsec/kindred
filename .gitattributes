@@ -1,0 +1,17 @@
+* text=auto eol=lf
+*.rs text eol=lf
+*.sh text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.md text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.service text eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.ico binary
+# Bundled grammars contain significant whitespace inside template literals.
+ui/vendor.js whitespace=-blank-at-eol
+ui/artifact-vendor.js whitespace=-blank-at-eol

@@ -1,0 +1,248 @@
+name: Desktop packages (manual only)
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact desktop version; building does not publish a release.'
+        required: true
+        type: string
+      server_source_commit:
+        description: 'Exact public kindred-server commit for the bundled server.'
+        required: true
+        type: string
+      approve_runner_usage:
+        description: 'I approve this one cross-platform build and its runner charges.'
+        required: true
+        default: false
+        type: boolean
+      source_commit:
+        description: 'Optional exact source commit to reuse verified packages from the same build.'
+        required: false
+        type: string
+      platforms:
+        description: 'Reuse verified outputs and build only the necessary platforms.'
+        required: true
+        default: all
+        type: choice
+        options: [all, windows, macos]
+permissions:
+  contents: read
+concurrency:
+  group: kindred-desktop-manual-packages-${{ inputs.platforms }}
+  cancel-in-progress: false
+jobs:
+  server-bundle:
+    if: ${{ inputs.approve_runner_usage }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: awpsec/kindred-server
+          ref: ${{ inputs.server_source_commit }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Verify pinned server source
+        env:
+          SERVER_SOURCE: ${{ inputs.server_source_commit }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PYCODE'
+          import os, re, subprocess, tomllib
+          sha = os.environ['SERVER_SOURCE']
+          assert re.fullmatch(r'[0-9a-f]{40}', sha), 'Pin a full server commit'
+          assert subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip() == sha
+          assert tomllib.load(open('Cargo.toml','rb'))['package']['version'] == os.environ['RELEASE_VERSION']
+          PYCODE
+      - name: Build server bundle
+        run: |
+          cargo build --release --locked
+          python3 scripts/release/package-server.py --binary target/release/kindred --output /tmp/server-bundle
+          cp /tmp/server-bundle/kindred-standalone-*.zip /tmp/standalone.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: standalone-server
+          path: /tmp/standalone.zip
+          retention-days: 7
+  packages:
+    needs: server-bundle
+    if: ${{ inputs.approve_runner_usage }}
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"}]' || inputs.platforms == 'macos' && '[{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]' || '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"},{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"},{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.os == 'macos-26' && 9 || matrix.os == 'windows-2025' && 15 || 45 }}
+    env:
+      KINDRED_PACKAGE_SOURCE_ROOT: ${{ github.workspace }}
+      CARGO_BUILD_JOBS: 2
+      RELEASE_VERSION: ${{ inputs.version }}
+      NO_STRIP: "true"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_commit || github.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: standalone-server
+          path: desktop
+      - name: Check out current packaging tools separately from pinned application source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: .release-tools
+          sparse-checkout: scripts/release
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Check requested version before building
+        run: python .release-tools/scripts/release/collect-packages.py --check-version "$RELEASE_VERSION"
+        shell: bash
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.14.0'
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          targets: ${{ matrix.target }}
+      - name: Require current macOS control metrics in release builds
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # AppKit's modern appearance is also gated by the SDK linked at build
+          # time. Do not silently ship legacy-sized traffic lights on macOS 26.
+          python3 - <<'PYSDK'
+          import os, pathlib, subprocess
+          def sdk(developer=None):
+              env = dict(os.environ)
+              if developer: env['DEVELOPER_DIR'] = str(developer)
+              try:
+                  version = subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-version'], env=env, text=True).strip()
+                  return tuple(map(int, version.split('.')))
+              except (OSError, ValueError, subprocess.CalledProcessError):
+                  return (0,)
+          current = sdk()
+          if current < (26,):
+              choices = [(sdk(p), str(p)) for p in pathlib.Path('/Applications').glob('Xcode*.app/Contents/Developer')]
+              version, developer = max(choices, default=((0,), ''))
+              if version < (26,): raise SystemExit('Native macOS release requires Xcode with macOS SDK 26 or newer for standard window controls.')
+              with open(os.environ['GITHUB_ENV'], 'a') as f: f.write('DEVELOPER_DIR=' + developer + '\n')
+              current = version
+          print('macOS SDK:', '.'.join(map(str, current)))
+          PYSDK
+      - name: Reuse native compiler dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/target
+          key: kindred-native-v1-${{ matrix.target }}-${{ hashFiles('desktop/Cargo.lock', 'desktop/build.rs', 'desktop/dictation/**') }}
+          restore-keys: kindred-native-v1-${{ matrix.target }}-
+      - name: Clear old package outputs while keeping the compiler cache
+        shell: bash
+        run: python -c "import shutil; shutil.rmtree('desktop/target/${{ matrix.target }}/release/bundle', ignore_errors=True)"
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential python3 git libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils libfuse2 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio xvfb dbus-x11 xdotool
+      - name: Install pinned packaging CLI
+        run: npm install --global @tauri-apps/cli@2.11.4
+      - name: macOS dictation build dependencies
+        if: runner.os == 'macOS'
+        run: command -v cmake || brew install cmake
+      - name: Build macOS and Linux packages
+        if: runner.os != 'Windows'
+        working-directory: desktop
+        run: tauri build --verbose --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
+      - name: Create and verify the signed Mac app disk image
+        if: runner.os == 'macOS'
+        run: bash .release-tools/scripts/release/package-macos-dmg.sh "${{ matrix.target }}" "$RELEASE_VERSION"
+      - name: Build Windows client for local signed installer packaging
+        if: runner.os == 'Windows'
+        env:
+          RUSTFLAGS: '-C target-feature=+crt-static'
+        run: cargo build --manifest-path desktop/Cargo.toml --release --locked --target x86_64-pc-windows-msvc
+      - name: Verify native background command lifetime and cancellation
+        shell: bash
+        run: |
+          worker_binary="desktop/target/${{ matrix.target }}/release/kindred-desktop"
+          if [ "${{ runner.os }}" = "Windows" ]; then worker_binary="$worker_binary.exe"; fi
+          python .release-tools/scripts/release/test-command-worker.py --binary "$worker_binary"
+      - name: Verify audio startup in the Linux AppImage
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          kindred_linux_bundles=(desktop/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage)
+          test "${#kindred_linux_bundles[@]}" -eq 1
+          GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1 KINDRED_NATIVE_EXE="${kindred_linux_bundles[0]}" xvfb-run -a dbus-run-session node tools/frontend/test-native-linux-audio.cjs
+      - name: Verify and collect this platform
+        run: python .release-tools/scripts/release/collect-packages.py --target ${{ matrix.target }} --output package-artifacts
+      - name: Launch and validate the packaged Mac app on its native architecture
+        if: runner.os == 'macOS'
+        run: python .release-tools/scripts/release/test-macos-package.py --directory package-artifacts --source . --version "$RELEASE_VERSION" --source-commit "$(git rev-parse HEAD)" --target ${{ matrix.target }} --output mac-validation
+      - name: Upload verified packages without publishing
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kindred-${{ inputs.version }}-${{ matrix.target }}
+          path: package-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain Mac verification and screenshots
+        if: ${{ always() && runner.os == 'macOS' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mac-validation-${{ inputs.version }}-${{ matrix.target }}
+          path: mac-validation
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve the signed Mac app when later packaging or validation fails
+        if: ${{ failure() && runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          kindred_app="desktop/target/${{ matrix.target }}/release/bundle/macos/Kindred.app"
+          if test -d "$kindred_app"; then
+            mkdir -p unverified-macos-app
+            ditto -c -k --sequesterRsrc --keepParent "$kindred_app" unverified-macos-app/Kindred.app.zip
+          fi
+      - name: Preserve unverified completed bundles if collection fails
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: unverified-kindred-${{ inputs.version }}-${{ matrix.target }}
+          path: |
+            unverified-macos-app/*.zip
+            desktop/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            desktop/target/${{ matrix.target }}/release/bundle/deb/*.deb
+            desktop/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+          if-no-files-found: ignore
+          retention-days: 1
+  complete:
+    if: ${{ inputs.platforms == 'all' }}
+    needs: packages
+    env:
+      KINDRED_PACKAGE_SOURCE_ROOT: ${{ github.workspace }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_commit || github.sha }}
+      - name: Check out current packaging tools separately from pinned application source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: .release-tools
+          sparse-checkout: scripts/release
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: kindred-${{ inputs.version }}-*
+          path: package-artifacts
+          merge-multiple: true
+      - name: Require Windows, Linux and Apple Silicon builds
+        run: python .release-tools/scripts/release/collect-packages.py --verify-build-set package-artifacts

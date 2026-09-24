@@ -1,0 +1,138 @@
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const {server,token,setScreenshot}=require('./fixtures/desktop.cjs');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test-results');fs.mkdirSync(artifacts,{recursive:true});
+(async()=>{
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const origin='http://127.0.0.1:'+server.address().port;
+ const engine=process.env.WEBKIT?'webkit':process.env.KINDRED_TEST_BROWSER==='edge'?'edge':'chromium';
+ const browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:!process.env.KINDRED_HEADED}:{headless:!process.env.KINDRED_HEADED,...(engine==='edge'?{channel:'msedge'}:{})});
+ const errors=[];
+ for(const platform of ['windows','linux','macos']) {
+  const context=await browser.newContext({viewport:{width:1320,height:860},acceptDownloads:true});
+  await context.addInitScript(({token,platform})=>{
+   sessionStorage.setItem('kindred-token',token);window.__KINDRED_DESKTOP={platform};window.nativeCalls=[];let maximized=false;
+   window.__TAURI__={core:{invoke:async(command,args={})=>{nativeCalls.push({command,args});if(command==='window_action'){if(args.action==='maximize')maximized=!maximized;return maximized;}if(command==='notification_status')return {enabled:true,error:''};return null;}}};
+  },{token,platform});
+  const p=await context.newPage();p.setDefaultTimeout(12000);p.on('pageerror',e=>errors.push(e.message));
+  await context.route('**/*',r=>r.request().url().startsWith(origin)||r.request().url().startsWith('blob:')?r.continue():r.abort());
+  await p.setViewportSize({width:640,height:360});await p.goto(origin+'/fixture/site');const png=await p.screenshot();setScreenshot(png);
+  await p.setViewportSize({width:1320,height:860});await p.goto(origin);await p.locator('.screenshot-attachment img').waitFor();
+  await p.waitForFunction(()=>document.querySelector('.screenshot-attachment img')?.naturalWidth===640);
+  await p.locator('#identity-button').hover();
+  const identity=await p.locator('#identity-button').evaluate(row=>{
+   const center=node=>{const r=node.getBoundingClientRect();return r.y+r.height/2;};
+   return {row:center(row),avatar:center(row.querySelector('.user-avatar')),name:center(row.querySelector('#identity-name'))};
+  });
+  assert(Math.abs(identity.row-identity.avatar)<1&&Math.abs(identity.row-identity.name)<1,JSON.stringify(identity));
+  const screenshotControl=p.getByRole('link',{name:'Download screenshot',exact:true});
+  await p.waitForFunction(()=>getComputedStyle(document.querySelector('.screenshot-download')).opacity==='0');
+  await p.locator('.screenshot-frame').hover();
+  await p.waitForFunction(()=>getComputedStyle(document.querySelector('.screenshot-download')).opacity==='1');
+  const control=await screenshotControl.evaluate(n=>{const r=n.getBoundingClientRect();return {width:r.width,height:r.height,radius:getComputedStyle(n).borderRadius,text:n.textContent,svg:!!n.querySelector('svg')}});
+  assert.equal(control.width,32);assert.equal(control.height,32);assert.equal(control.radius,'50%');assert.equal(control.text,'');assert(control.svg);
+  await p.screenshot({path:path.join(artifacts,`${engine}-${platform}-screenshot-hover.png`)});
+  await p.locator('#identity-button').hover();
+  await p.locator('.screenshot-open').focus();await p.keyboard.press('Tab');
+  assert(await screenshotControl.evaluate(n=>n===document.activeElement));
+  await p.waitForFunction(()=>getComputedStyle(document.querySelector('.screenshot-download')).opacity==='1');
+  await p.locator('#identity-button').focus();
+  await p.waitForFunction(()=>getComputedStyle(document.querySelector('.screenshot-download')).opacity==='0');
+  for(const width of [1320,390]) {
+   await p.setViewportSize({width,height:860});
+   const placement=await p.locator('.screenshot-frame').evaluate(frame=>{
+    const image=frame.querySelector('img').getBoundingClientRect(),link=frame.querySelector('.screenshot-download').getBoundingClientRect();
+    return {inside:link.x>=image.x&&link.y>=image.y&&link.right<=image.right&&link.bottom<=image.bottom,right:image.right-link.right,bottom:image.bottom-link.bottom,nested:!!frame.querySelector('button a')};
+   });
+   assert(placement.inside&&!placement.nested&&placement.right<=12&&placement.bottom<=12,JSON.stringify(placement));
+  }
+  await p.screenshot({path:path.join(artifacts,`${engine}-${platform}-mobile-screenshot.png`)});
+  await p.setViewportSize({width:1320,height:860});
+  assert.equal(await p.locator('.window-control').count(),3);assert.equal(await p.locator('.desktop-titlebar.macos').count(),platform==='macos'?1:0);
+  if(platform==='macos')await p.getByRole('button',{name:'Toggle full screen',exact:true}).click();
+  else {await p.getByRole('button',{name:'Maximize window',exact:true}).click();await p.getByRole('button',{name:'Restore window',exact:true}).click();}
+  assert(await p.evaluate(()=>nativeCalls.some(c=>c.command==='start_desktop')));
+  await p.locator('.screenshot-frame').hover();
+  const downloaded=p.waitForEvent('download');await screenshotControl.click();
+  const download=await downloaded,downloadPath=path.join(artifacts,`${engine}-${platform}-screenshot.png`);await download.saveAs(downloadPath);assert.deepEqual(fs.readFileSync(downloadPath),png);
+  await p.getByRole('button',{name:'Open screenshot: Website screenshot',exact:true}).click();
+  await p.waitForFunction(()=>document.querySelector('.screenshot-dialog img')?.naturalWidth===640);
+  await p.locator('.screenshot-dialog').getByRole('button',{name:'Close',exact:true}).click();
+  await p.reload();await p.waitForFunction(()=>document.querySelector('.screenshot-attachment img')?.naturalWidth===640);
+  await p.screenshot({path:path.join(artifacts,`${engine}-${platform}-chat.png`)});
+  await p.locator('#bot-details').click();await p.locator('.avatar-customize').hover();
+  await p.waitForFunction(()=>getComputedStyle(document.querySelector('.avatar-customize .character-body > path')).strokeWidth==='6px');
+  const hover=await p.locator('.avatar-customize').evaluate(n=>({background:getComputedStyle(n).backgroundColor,stroke:getComputedStyle(n.querySelector('.character-body > path')).strokeWidth}));
+  assert.equal(hover.background,'rgba(0, 0, 0, 0)');assert.equal(hover.stroke,'6px');
+  for(const [theme,ink] of [['dark','rgb(0, 0, 0)'],['light','rgb(255, 255, 255)']]) {
+   await p.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await p.waitForTimeout(240);
+   assert.equal(await p.locator('.avatar-customize .character-eyes').evaluate(n=>getComputedStyle(n).fill),ink);
+   if(theme==='dark')assert.equal(await p.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(0, 0, 0)');
+  }
+  await p.locator('.avatar-customize').hover();
+  const picker=p.locator('.avatar-popover');
+  assert.equal(await picker.locator('.shape-option').count(),8);assert.equal(await picker.locator('.color-option').count(),14);
+  assert.equal(await p.getByRole('button',{name:'Shape & color',exact:true}).count(),0);
+  await picker.getByRole('button',{name:'hexagon',exact:true}).focus();await p.keyboard.press('Enter');
+  await p.waitForFunction(()=>document.querySelector('.quick-shapes .selected')?.getAttribute('aria-label')==='hexagon');
+  assert.equal((await(await fetch(origin+'/api/bots')).json())[0].profile.shape,'hexagon');
+  assert(await picker.getByRole('button',{name:'hexagon',exact:true}).evaluate(n=>n===document.activeElement));
+  await picker.getByRole('button',{name:'cloud',exact:true}).focus();await p.keyboard.press('Enter');
+  await p.waitForFunction(()=>document.querySelector('.quick-shapes .selected')?.getAttribute('aria-label')==='cloud');
+  await picker.locator('.color-option').last().click();
+  await p.waitForFunction(()=>document.querySelector('.quick-colors button:last-child')?.getAttribute('aria-pressed')==='true');
+  assert.equal((await(await fetch(origin+'/api/bots')).json())[0].profile.shape,'cloud');
+  assert.equal(await p.locator('#avatar-dialog').evaluate(n=>n.open),false);
+  await p.evaluate(()=>document.documentElement.dataset.theme='dark');await p.waitForTimeout(240);
+  await p.screenshot({path:path.join(artifacts,`${engine}-${platform}-picker.png`)});
+  let releaseBots,requestedBots;
+  const botsRequested=new Promise(resolve=>{requestedBots=resolve;}),botsGate=new Promise(resolve=>{releaseBots=resolve;});
+  const delayedBots=async route=>{requestedBots();await botsGate;await route.continue();};
+  await context.route(origin+'/api/bots',delayedBots);
+  await p.reload();await botsRequested;
+  assert(await p.locator('#bot-details').isDisabled(),'Details must wait for the conversation to load.');
+  releaseBots();await p.locator('#bot-details').click();await p.locator('.avatar-customize').hover();
+  await context.unroute(origin+'/api/bots',delayedBots);
+  assert.equal(await p.locator('.quick-shapes .selected').getAttribute('aria-label'),'cloud');
+  await p.locator('#bot-settings').click();
+  await p.getByRole('switch',{name:/Notifications/}).uncheck();
+  await p.waitForTimeout(850);assert.equal((await(await fetch(origin+'/api/bots')).json())[0].profile.notifications,false);
+  await p.getByRole('switch',{name:/Notifications/}).check();await p.waitForTimeout(850);
+  assert.equal((await(await fetch(origin+'/api/bots')).json())[0].profile.notifications,true);
+  assert.equal(await p.getByRole('button',{name:'Send test notification',exact:true}).count(),0);
+  await context.close();
+ }
+ const touchContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,acceptDownloads:true});
+ await touchContext.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
+ const touchPage=await touchContext.newPage();touchPage.on('pageerror',e=>errors.push(e.message));
+ await touchPage.goto(origin);const touchDownload=touchPage.getByRole('link',{name:'Download screenshot',exact:true});await touchDownload.waitFor();
+ assert(await touchPage.evaluate(()=>matchMedia('(hover:none)').matches));
+ await touchPage.waitForFunction(()=>getComputedStyle(document.querySelector('.screenshot-download')).opacity==='1');
+ const touched=touchPage.waitForEvent('download');await touchDownload.tap();assert.equal((await touched).suggestedFilename(),'kindred-screenshot.png');
+  await touchPage.screenshot({path:path.join(artifacts,`${engine}-touch-screenshot-control.png`)});
+  await touchPage.locator('#bot-details').tap();await touchPage.locator('.avatar-customize').tap();
+  await touchPage.locator('.quick-shapes').getByRole('button',{name:'pebble',exact:true}).tap();
+  await touchPage.waitForFunction(()=>document.querySelector('.quick-shapes .selected')?.getAttribute('aria-label')==='pebble');
+  const touchBounds=await touchPage.locator('.avatar-popover').evaluate(n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom,width:innerWidth,height:innerHeight,visible:getComputedStyle(n).visibility};});
+  assert(touchBounds.left>=0&&touchBounds.right<=touchBounds.width&&touchBounds.bottom<=touchBounds.height&&touchBounds.visible==='visible',JSON.stringify(touchBounds));
+  await touchPage.screenshot({path:path.join(artifacts,`${engine}-touch-avatar-picker.png`)});await touchContext.close();
+ const webContext=await browser.newContext({viewport:{width:1320,height:860}});
+ await webContext.addInitScript(token=>{
+  sessionStorage.setItem('kindred-token',token);window.browserNotices=[];
+  window.Notification=class {static permission='default';static async requestPermission(){this.permission='granted';return 'granted';}constructor(title,options){browserNotices.push({title,options});}close(){}};
+ },token);
+ const webPage=await webContext.newPage();webPage.on('pageerror',e=>errors.push(e.message));
+ await webPage.goto(origin);await webPage.locator('#bots .bot-link').waitFor();
+ assert.equal(await webPage.locator('.desktop-titlebar').count(),0);
+ await webPage.locator('#bot-details').click();await webPage.locator('#bot-settings').click();
+ await webPage.getByRole('switch',{name:'Notifications',exact:true}).uncheck();
+ await webPage.getByRole('switch',{name:'Notifications',exact:true}).check();
+ await webPage.waitForFunction(()=>Notification.permission==='granted');
+ assert.equal(await webPage.evaluate(()=>browserNotices.length),0);
+ await fetch(origin+'/fixture/finish',{method:'POST'});
+ await webPage.waitForFunction(()=>browserNotices.length===1);
+ await webPage.waitForTimeout(4200);assert.equal(await webPage.evaluate(()=>browserNotices.length),1);
+ await webContext.close();
+ assert.deepEqual(errors,[]);await browser.close();server.close();
+ console.log(JSON.stringify({passed:true,engine,checks:['authenticated image display, download, enlarge and reload','hover-only circular SVG download control with keyboard and touch access','black/white eyes and darker background','eight shapes and silhouette hover outline','no expression or reaction test controls','notification preference persistence','Windows, Linux and macOS chrome rendering and command dispatch']}));
+})().catch(e=>{console.error(e);server.close();process.exit(1);});

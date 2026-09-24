@@ -1,0 +1,23 @@
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');const fs=require('node:fs'),assert=require('node:assert/strict');
+(async()=>{const browser=await(process.env.WEBKIT?webkit:chromium).launch({headless:true});try{
+const script=fs.readFileSync('ui/local-server-admin.js','utf8');
+for(const [origin,existing,expected] of [['http://127.0.0.1:9444',false,1],['http://127.0.0.1:9444',true,1],['https://hosted.example',false,0]]){
+const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+await page.route('**/*',r=>r.fulfill({contentType:'text/html',body:'<html data-theme="dark"><style>:root{--line:#333;--muted:#999;--text:#eee}body{background:#090909;color:#eee;font:14px Arial}dialog{background:#131313;color:#eee;border:1px solid #333;border-radius:20px;padding:24px;width:390px;max-width:calc(100vw - 64px)}button{background:transparent;color:inherit;border:1px solid #444;border-radius:8px;padding:9px 12px}h2{font-size:18px;margin:4px 0 24px}.profile-admin-row{padding:20px 0;border-top:1px solid #333;margin-top:20px}</style><body></body></html>'}));
+await page.addInitScript(()=>{window.__KINDRED_PROFILE_HOST=true;window.calls=[];window.state={status:'idle',local_server:{version:'0.67.0',desktop_version:'0.68.0',update_available:true}};window.fail=false;window.__TAURI__={core:{invoke:async(command)=>{calls.push(command);if(command==='standalone_status')return state;if(fail)throw Error('Docker could not start');if(command==='prepare_local_server')state={status:'working',stage:'Downloading and building server software',stage_count:5,completed_stages:2,detail:'Building server image'};if(command==='restart_local_server')state={status:'working',stage:'Starting the local server',stage_count:5,completed_stages:3};}}};});
+await page.addInitScript({content:script});await page.goto(origin);
+await page.evaluate(existing=>{const d=document.createElement('dialog');d.className='profile-dialog';d.innerHTML='<div class="profile-dialog-heading"><h2>Server administration</h2></div>'+(existing?'<section class="local-server-admin">Existing controls</section>':'')+'<p>Up to 128 accounts.</p><label><input type="checkbox" checked> Allow new users to register</label><div class="profile-admin-row">owner · administrator</div>';document.body.append(d);d.showModal();},existing);
+await page.waitForTimeout(100);assert.equal(await page.locator('.local-server-admin').count(),expected);
+if(expected){
+ const update=page.getByRole('button',{name:'Update local server',exact:true});await update.click();assert(await page.getByRole('button',{name:'Updating…'}).isDisabled());assert.equal(await page.locator('progress').getAttribute('value'),'2');
+ assert.equal(await page.evaluate(()=>calls.filter(c=>c==='prepare_local_server').length),1);assert(!await page.evaluate(()=>calls.includes('restart_local_server')));
+ await page.evaluate(()=>state={status:'awaiting_restart',completed_stages:3,stage_count:5});const restart=page.getByRole('button',{name:'Restart Kindred and server'});await restart.waitFor();
+ for(const width of [690,360]){await page.setViewportSize({width,height:650});assert(await page.locator('.local-server-admin').evaluate(n=>n.scrollWidth<=n.clientWidth));fs.mkdirSync('test-results',{recursive:true});await page.screenshot({path:`test-results/local-server-inline-${process.env.WEBKIT?'webkit':'chromium'}-${width}.png`});}
+ await restart.click();assert(await page.getByRole('button',{name:'Updating…'}).isDisabled());assert.equal(await page.evaluate(()=>calls.filter(c=>c==='restart_local_server').length),1);
+ await page.evaluate(()=>state={status:'error',message:'Server readiness check failed',detail:'Preserved existing data'});await page.getByRole('button',{name:'Retry update'}).waitFor();assert(await page.getByText('Server readiness check failed',{exact:true}).isVisible());
+ await page.evaluate(()=>fail=true);await page.getByRole('button',{name:'Retry update'}).click();await page.getByText('Docker could not start',{exact:true}).waitFor();assert(await page.getByRole('button',{name:'Retry update'}).isEnabled());
+ await page.evaluate(()=>{const section=document.createElement('section');section.className='local-server-admin';document.querySelector('dialog').append(section);});await page.waitForTimeout(50);assert.equal(await page.locator('.local-server-admin').count(),1);
+}else assert.deepEqual(await page.evaluate(()=>calls),[]);
+assert.deepEqual(errors,[]);await page.close();}
+console.log('Inline prepare/progress/restart, retry, narrow layout, legacy UI, duplicate controls and hosted exclusion passed');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
