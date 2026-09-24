@@ -121,3 +121,17 @@ editing Compose or its `.env`, run `docker compose up -d` to apply the new
 configuration; `docker compose restart` alone does not apply it. Docker Desktop
 and the host must also have enough available RAM and disk space. Externally
 managed VMs remain configurable through their host VM manager.
+
+## Bot computers on a tailnet
+
+Install and sign into Tailscale inside the bot computer to give that workspace
+access to your tailnet. Its bots share that computer and its network access.
+Tailnet permissions still control which services the computer can reach.
+
+Kindred’s guest firewall permits traffic through `tailscale0`, including private
+subnet routes, while retaining its private-address restrictions on other interfaces.
+New computers receive this rule during setup. Existing managed computers receive
+it through **Settings → Bot Computer → Update now** after upgrading the server.
+The update preserves unrelated firewall rules and saves the rule for reboots; it
+does not sign into Tailscale or change your tailnet permissions. Custom external
+firewalls remain the operator’s responsibility.

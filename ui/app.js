@@ -1619,7 +1619,7 @@ async function editBotText(id, key) {
   const save = node('button', 'primary', 'Save');save.type = 'submit';
   const actions = node('div', 'bot-text-actions');
   actions.append(count, button('Cancel', () => d.close(), 'outline-button'), save);
-  const limit = key === 'instructions' ? 32000 : 16000;
+  const limit = key === 'instructions' ? 32000 : 64000;
   const validate = () => {const bytes = new TextEncoder().encode(editor.input.value).length;count.textContent=bytes.toLocaleString()+' / '+limit.toLocaleString()+' bytes';editor.input.setCustomValidity(bytes>limit?'Shorten this text to '+limit.toLocaleString()+' bytes.':'');};
   editor.input.addEventListener('input', validate);validate();
   form.append(editor.label,error,actions);d.append(form);
