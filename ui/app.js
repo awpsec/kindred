@@ -4673,6 +4673,18 @@ function connectorMessage(m,id){
   const body=node('div','chat-disclosure-body');body.append(receipt);
   disclosure.append(summary,body);animateChatDisclosure(disclosure,body);group.append(disclosure);return group;
 }
+function editQueuedMessage(message,chatId){
+ const dialog=modal('Edit queued message','queued-message-dialog'),form=node('form'),input=node('textarea'),status=node('p','muted small');input.value=message.text;input.required=true;input.maxLength=64000;input.setAttribute('aria-label','Queued message');input.rows=6;
+ const actions=node('div','row-actions'),save=button('Save changes',()=>{},'primary'),cancel=button('Cancel',()=>dialog.close(),'outline-button');save.type='submit';actions.append(cancel,save);form.append(input,status,actions);dialog.append(form);
+ let saving=false;
+ const available=()=>{const latest=conversationHistory(chatId).messages.find(m=>m.seq===message.seq);return latest?.delivery?.length&&latest.delivery.every(d=>d.status==='queued');};
+ const check=()=>{save.disabled=saving||!available();if(!available())status.textContent='This message has started sending. Your unsaved edit is still here to copy.';};
+ status.textContent='Recipients and attachments stay the same.';
+ const timer=setInterval(check,500);dialog.addEventListener('close',()=>clearInterval(timer),{once:true});
+ form.onsubmit=async event=>{event.preventDefault();if(saving||!available())return;saving=true;check();try{await api('/chats/'+encodeURIComponent(chatId)+'/messages/'+message.seq,'PATCH',{expected_text:message.text,text:input.value});dialog.close();await refresh(true);}catch(e){status.textContent=e.message;}finally{saving=false;save.disabled=!available();}};
+ input.focus();input.setSelectionRange(input.value.length,input.value.length);
+}
+
 function connectorCallSummary(card){
   const brand=connectorBrand(card.connection||card.connector,card.tool),summary=node('summary','connector-call-summary');
   const verbs={preparing:'Preparing',approved:'Queued',ready:'Queued',executing:'Calling',completed:card.email_send?'Sent via':'Called',denied:'Declined'};
@@ -4961,6 +4973,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       if(quietCompletionMarker(m.text))formatted.textContent=m.text;
       if(!attachmentOnly)bubble.append(...formatted.childNodes);
       else {bubble.classList.add("attachment-only");bubble.append(fileLinks(m.files));}
+      if(!chat.shared&&m.delivery?.length&&m.delivery.every(d=>d.status==='queued')){const controls=node('div','message-steering');controls.append(button('Edit queued message',()=>editQueuedMessage(m,chat.id),'subtle-button','edit'));group.prepend(controls);}
       for(const delivery of m.delivery||[]) {
         const recipient=state.bots.find(b=>b.id===delivery.bot_id)?.name||'Bot';
         const working=state.allRuns.find(r=>r.bot_id===delivery.bot_id&&r.chat_id===chat.id&&active(r));
