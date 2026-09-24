@@ -21,4 +21,4 @@ python3 scripts/release/package-server.py --binary target/release/kindred --outp
 cp ../server-candidate/kindred-standalone-*.zip ../kindred/desktop/standalone.zip
 ```
 
-Use matching desktop/server versions and shared UI sources. For macOS/Windows builds, copy this verified Linux bundle to `desktop/standalone.zip` before packaging. The manual packaging workflow builds the bundle from the explicitly selected server commit. Windows dictation includes a pinned, licensed Whisper runtime; its source and Docker build recipe are in `desktop/dictation/`.
+Use matching desktop/server versions and shared UI sources. For macOS/Windows builds, copy this verified Linux bundle to `desktop/standalone.zip` before packaging. The manual packaging workflow downloads the prepared bundle from a private build-inputs draft, verifies its hash and embedded server commit, then packages those exact bytes. Windows dictation includes a pinned, licensed Whisper runtime; its source and Docker build recipe are in `desktop/dictation/`.

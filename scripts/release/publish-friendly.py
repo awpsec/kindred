@@ -56,9 +56,14 @@ def prepare(candidate,output,version,source):
    hosted.update({f'kindred-linux-x86_64-{version}.AppImage':names[f'Kindred-{version}-x86_64-unknown-linux-gnu.AppImage'],f'kindred-macos-aarch64-{version}.dmg':names[f'Kindred-{version}-aarch64-apple-darwin.dmg']})
   z.writestr('hosted-update-names.json',json.dumps(hosted,indent=2))
   z.writestr('README.txt','Package filenames changed for clarity; bytes and signatures are unchanged. hosted-update-names.json maps server /updates filenames to release downloads. Stage these packages with package-manifests/stable.json and, when present, package-manifests/client-stable.json. Use deploy/client-updates.py to verify and atomically promote the Mac/Linux feed only after approval; keep the Windows feed beside it. Publishing does not deploy a server or feed.\n')
-  for folder in ['verification','installation','server']:
-   for p in sorted((candidate/folder).rglob('*')):
-    if p.is_file() and p.suffix!='.zip':z.write(p,p.relative_to(candidate).as_posix())
+  # Public evidence is explicitly curated. Keep operational logs, screenshots,
+  # host inventory and deployment receipts out of downloadable verification.
+  acceptance=candidate/'verification/public-acceptance.json'
+  assert acceptance.exists(), 'Provide a reviewed public acceptance summary'
+  z.write(acceptance,'verification/acceptance.json')
+  z.write(candidate/'server/SOURCE.json','server/SOURCE.json')
+  for p in sorted((candidate/'installation').iterdir()):
+   if p.is_file() and p.suffix in ('.sh','.py'):z.write(p,'installation/'+p.name)
   for p in sorted((candidate/'complete').glob('*.json')):z.write(p,'package-manifests/'+p.name)
   for name in ['LICENSE','THIRD_PARTY_NOTICES.md']:z.write(root/name,name)
  with zipfile.ZipFile(verification) as z:assert z.testzip() is None

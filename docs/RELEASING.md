@@ -157,3 +157,5 @@ release; keep partial test releases as prereleases. Never publish signing keys.
 ## Public release descriptions
 
 Use `# Kindred VERSION` followed by a few short bullets about changes people will notice (at most 200 words). Avoid internal project details, names, hosts, commit hashes and test logs. The publisher adds download guidance and links automatically. Store technical provenance and verification in the attached assets. Public repositories begin with fresh history: do not copy historical packages into them. Build and audit new packages from public source.
+
+Prepare a reviewed `verification/public-acceptance.json` with test outcomes and limitations for the public verification archive. Keep raw operational logs, host inventory, account details and deployment receipts private.
