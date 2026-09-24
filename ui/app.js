@@ -4707,6 +4707,12 @@ function connectorMessage(m,id){
   const body=node('div','chat-disclosure-body');body.append(receipt);
   disclosure.append(summary,body);animateChatDisclosure(disclosure,body);group.append(disclosure);return group;
 }
+function queuedMessageWaiting(message){
+ const deliveries=message.delivery||[];
+ return deliveries.length>0&&deliveries.every(d=>d.status==='queued')&&deliveries.some(d=>
+  pausedScreens().some(p=>p.bot_id===d.bot_id)||
+  state.allRuns.some(r=>r.bot_id===d.bot_id&&r.id!==d.run_id&&active(r)));
+}
 function editQueuedMessage(message,chatId){
  const dialog=modal('Edit queued message','queued-message-dialog'),form=node('form'),input=node('textarea'),status=node('p','muted small');input.value=message.text;input.required=true;input.maxLength=64000;input.setAttribute('aria-label','Queued message');input.rows=6;
  const actions=node('div','row-actions'),save=button('Save changes',()=>{},'primary'),cancel=button('Cancel',()=>dialog.close(),'outline-button');save.type='submit';actions.append(cancel,save);form.append(input,status,actions);dialog.append(form);
@@ -5007,7 +5013,6 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       if(quietCompletionMarker(m.text))formatted.textContent=m.text;
       if(!attachmentOnly){bubble.append(...formatted.childNodes);foldLongMessage(bubble,String(m.seq),entry);}
       else {bubble.classList.add("attachment-only");bubble.append(fileLinks(m.files));}
-      if(!chat.shared&&m.delivery?.length&&m.delivery.every(d=>d.status==='queued')){const controls=node('div','message-steering');controls.append(button('Edit queued message',()=>editQueuedMessage(m,chat.id),'subtle-button','edit'));group.prepend(controls);}
       for(const delivery of m.delivery||[]) {
         const recipient=state.bots.find(b=>b.id===delivery.bot_id)?.name||'Bot';
         const working=state.allRuns.find(r=>r.bot_id===delivery.bot_id&&r.chat_id===chat.id&&active(r));
@@ -5024,6 +5029,9 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     if(['message','assistant','result','handoff','question'].includes(m.kind)){
       group.tabIndex=0;group.dataset.messageFocus='group';
       const actions=messageActions(chat.id,m);if(attachmentOnly)actions.querySelector('[data-message-action="copy"]')?.remove();row.classList.add('has-message-actions');
+      if(isUser&&!chat.shared&&queuedMessageWaiting(m)){
+        const edit=iconButton('edit','Edit queued message',()=>editQueuedMessage(m,chat.id));edit.dataset.messageFocus='edit';edit.dataset.messageAction='edit';actions.append(edit);actions.classList.add('has-queued-edit');
+      }
       if(isUser)row.prepend(actions);else row.append(actions);
     }
     group.append(row);

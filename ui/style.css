@@ -3402,6 +3402,7 @@ html[data-motion='off'] .color-option {transition:none;scale:1;}
 .message-row.has-message-actions {align-items:center;gap:6px;}
 .has-message-actions > .message-bubble,.has-message-actions > .question-card {max-width:min(720px,calc(100% - 88px));min-width:0;}
 .message-actions {display:flex;align-items:center;flex:none;gap:1px;width:80px;opacity:0;transition:opacity .12s;}
+.message-actions.has-queued-edit {width:107px;}
 .message-actions .icon-button {width:26px;height:28px;padding:5px;color:var(--muted);border-radius:7px;}
 .message-actions .icon-button svg {width:16px;height:16px;}
 .message-actions .icon-button:hover,.message-actions .icon-button:focus-visible {color:var(--fg);background:var(--hover);}
@@ -3440,7 +3441,7 @@ html[data-motion='off'] .color-option {transition:none;scale:1;}
 @media(max-width:620px),(hover:none){
   .message-row.has-message-actions {flex-wrap:wrap;gap:2px 6px;}
   .has-message-actions > .message-bubble,.has-message-actions > .question-card {max-width:100%;}
-  .message-actions {opacity:1;order:2;width:100%;padding-left:6px;margin-top:2px;}
+  .message-actions,.message-actions.has-queued-edit {opacity:1;order:2;width:100%;padding-left:6px;margin-top:2px;}
   .message-row.user > .message-actions {justify-content:flex-end;padding-right:6px;}
   .message-actions .icon-button {width:32px;height:30px;}
   .message-group:has(.message-reactions) .message-actions {margin-top:19px;}
