@@ -79,9 +79,15 @@ try {
  }
 }catch(e){await report({passed:false,error:String(e),chat:chatState(),errors});}
 </script>`;
+// Block external HTTPS update discovery only for the test app’s proxy.
+server.on('connect',(_req,socket)=>socket.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n'));
 server.on('request',async(req,res)=>{
  const route=new URL(req.url,'http://localhost').pathname;
  const send=data=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
+ if(route==='/updates/client-stable.json'||route==='/updates/client-linux.json'){
+  fs.writeFileSync(path.join(folder,'signed-feed.json'),JSON.stringify({served:true}));
+  return send(JSON.parse(fs.readFileSync(path.join(__dirname,'native-client-feed-fixture.json'),'utf8')));
+ }
  if(route==='/fixture/report'){
   let body='';for await(const chunk of req)body+=chunk;
   reports.push(JSON.parse(body));fs.writeFileSync(path.join(folder,'reports.json'),JSON.stringify(reports,null,2));return send({ok:true});
