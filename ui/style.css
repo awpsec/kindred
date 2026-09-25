@@ -4903,3 +4903,11 @@ details.composio-service>summary.composio-service-summary::before{display:none}
 @keyframes continuation-confirmation{0%,85%{opacity:1}100%{opacity:0}}
 @media(prefers-reduced-motion:reduce){#notice.continuation-confirmation{animation:none}}
 html[data-motion=off] #notice.continuation-confirmation{animation:none}
+
+/* Keep the action icons slightly above center, with time revealed below them. */
+.message-actions{position:relative;transform:translateY(-8px)}
+.message-action-time{position:absolute;top:100%;left:0;width:100%;text-align:center;font-size:10px;line-height:14px;white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}
+@media(max-width:620px),(hover:none){
+ .message-actions{transform:none}
+ .message-action-time{position:static;width:auto;margin-left:6px;line-height:18px}
+}

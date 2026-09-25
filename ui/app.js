@@ -7261,7 +7261,14 @@ function messageActions(chatId,message){
     });
   for(const [control,name] of [[react,'react'],[reply,'reply'],[copy,'copy']]){control.dataset.messageFocus=name;control.dataset.messageAction=name;}
   for(const control of [react]){control.setAttribute('aria-haspopup','menu');control.setAttribute('aria-expanded',String(messageMenuContext?.chatId===chatId&&messageMenuContext.seq===message.seq&&messageMenuContext.kind===control.dataset.messageAction));}
-  actions.append(react,reply,copy);return actions;
+  actions.append(react,reply,copy);
+  const created=new Date(Number(message.created)*1000);
+  if(Number.isFinite(created.getTime())){
+    const timestamp=node('time','message-action-time',clock(message.created));timestamp.dateTime=created.toISOString();
+    timestamp.title=created.toLocaleString(undefined,{timeZone:botTimezone(),dateStyle:'full',timeStyle:'long'});timestamp.setAttribute('aria-label',timestamp.title);
+    actions.append(timestamp);
+  }
+  return actions;
 }
 function closeMessageMenu(restore=false){
   const old=messageMenuContext;messageMenu?.remove();messageMenu=null;messageMenuContext=null;
