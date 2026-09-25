@@ -397,7 +397,7 @@ function transitionFeatures(c, tr, t) {
   // faceless coffin lets it go, early enough for the archive lid to take over.
   c.face.style.opacity = g.face ? mix(f.face, 1) : f.face * (1 - smooth(t / .6));
   c.restWeight = mix(f.rest, g.rest);
-  c.spin = mix(f.spin, g.spin);
+  c.spin = tr.spin ? settledSpin(tr.spin, Date.now()) : mix(f.spin, g.spin);
   let mouth = f.mouth, mouthOpacity = f.mouthOpacity * out;
   if (g.mouthOpacity && f.mouthOpacity > .01) { mouth = f.mouth.map((v, i) => mix(v, g.mouth[i])); mouthOpacity = mix(f.mouthOpacity, 1); }
   else if (g.mouthOpacity) { mouth = g.mouth; mouthOpacity = inn; }
@@ -444,7 +444,7 @@ const hermiteSlope = (m, t) => m * (3*t*t - 4*t + 1) + 6*t - 6*t*t;
 function stopTransition(c) {
   cancelAnimationFrame(c.frame);
   c.bodySettle?.cancel(); c.bodySettle = null;
-  c.transition = null; c.finishTransition = null;
+  c.transition = null; c.finishTransition = null; c.spinSettle = null;
 }
 const loops = {
   terminal: 3.2,
@@ -541,6 +541,9 @@ export function setActivity(box, action = "idle", { immediate = false, startedAt
   const duration = reshape ? 520 : 360;
   // Release the previous working pose on the same clock; tools should not inherit its tilt.
   c.poseSettle?.cancel(); c.motion.removeAttribute("transform");
+  // A new working state rejoins the shared turn timeline; which of its turns
+  // may play is decided once the morph has finished.
+  c.turnShift = 0; c.turnGate = -Infinity; c.turnCutoff = null;
   if (animate && pose !== "none") c.poseSettle = c.motion.animate([{transform:pose},{transform:"matrix(1,0,0,1,0,0)"}],{duration,easing:"ease-in-out"});
   box.dataset.action = action;
   box.classList.toggle("working", !["idle", "rest", "success", "worry", "waiting", "coffin"].includes(action));
@@ -566,12 +569,25 @@ export function setActivity(box, action = "idle", { immediate = false, startedAt
   const begun = performance.now(), ease = hermite(m0);
   const tr = c.transition = {from, to, fromAction, k:0, ease,
     slope: now => hermiteSlope(m0, Math.min(1, Math.max(0, (now - begun) / duration))) / duration};
+  // A turn in progress finishes at its own pace rather than inside the morph.
+  tr.spin = c.spinSettle = animate ? spinSettle(from.spin, Date.now()) : null;
   // Independent loops (sweat, blink) keep their phase from the first frame.
   if (animate) syncCharacter(box);
   function frame(now) {
     const skip = !animate || motionReduced() || document.hidden || !box.isConnected || (c.motionSeen && !c.motionVisible);
     const t = skip ? 1 : Math.min(1, Math.max(0, (now - begun) / duration));
     if (c.transition !== tr) return;
+    if (skip) tr.spin = c.spinSettle = null;
+    if (tr.morphed) {
+      // The new pose is in place; only the unfinished turn is still settling.
+      if (tr.spin && Date.now() < tr.spin.until) {
+        c.spin = settledSpin(tr.spin, Date.now());renderGaze(box, Date.now());
+        c.frame = requestAnimationFrame(frame); return;
+      }
+      c.transition = null; c.finishTransition = null; c.spinSettle = null;
+      c.spin = 0; renderGaze(box, Date.now());
+      return;
+    }
     if (reshape) {
       const k = ease(t);
       c.points = start.map((p, i) => [p[0] + (target[i][0] - p[0]) * k, p[1] + (target[i][1] - p[1]) * k]);
@@ -582,18 +598,20 @@ export function setActivity(box, action = "idle", { immediate = false, startedAt
     transitionFeatures(c, tr, t);
     renderGaze(box, Date.now());
     if (t < 1) { c.frame = requestAnimationFrame(frame); return; }
+    tr.morphed = true;
     c.points = target;
-    c.transition = null; c.finishTransition = null;
-    c.spin = 0;
     c.loopStartedAt = Date.now();
     c.motionReadyAt = skip ? null : c.loopStartedAt;
+    // Only turns that can be watched from their start may play: never one
+    // already underway, nor one that would overlap the turn still settling.
+    if (!skip) c.turnGate = turnClock(c, Math.max(c.loopStartedAt, tr.spin?.until || 0));
     box.classList.remove("morphing");
     syncCharacter(box);
     c.bodySettle?.cancel(); c.bodySettle = null;
-    renderGaze(box, Date.now());
     if (action === "mail") delivery(box);
+    frame(now);
   }
-  c.finishTransition=()=>frame(begun+duration);
+  c.finishTransition=()=>{tr.spin = c.spinSettle = null;frame(begun+duration);};
   frame(begun);
 }
 
@@ -625,11 +643,12 @@ function animateCharacter(box) {
   queueCharacterFrame();
 }
 function tickCharacters() {
-  motionFrame=0;let visible=false;const reduced=motionReduced();
+  motionFrame=0;let visible=false;const reduced=motionReduced(),now=Date.now();
   for (const box of movingCharacters) {
     if (!box.isConnected || !box._character) {retireCharacter(box);continue;}
     if(document.hidden||(!reduced&&!box._character.motionVisible))continue;
-    renderCharacterMotion(box);
+    resumeTurn(box._character,now);
+    renderCharacterMotion(box,now);
     if (reduced || (box._character.tribute && (box._character.p.animated===false || !box.classList.contains('animated'))) || (box._character.action==='rest' && !box._character.transition && (!box._character.tribute || box._character.tribute==='vivienne') && box._character.revealAt==null && box._character.arrivalAt==null && box._character.departureAt==null))retireCharacter(box);
     else if(movingCharacters.has(box))visible=true;
   }
@@ -676,6 +695,8 @@ export function departCharacter(box, startedAt = Date.now()) {
   // A tool first morphs home to the bot's own body, then the body folds away.
   setActivity(box,'working',{immediate:startedAt+1100-Date.now()<560,startedAt:c.workStartedAt});
   c.departureAt=startedAt+1100;
+  // No new turn starts unless it can finish before the body folds away.
+  c.turnCutoff=Math.max(turnClock(c,Date.now()),turnClock(c,c.departureAt)-TURN.length);
   box.classList.add('departing');renderCharacterMotion(box);animateCharacter(box);
 }
 
@@ -689,7 +710,8 @@ export function renderCharacterMotion(box, now = Date.now()) {
   // Turn angle first: the eyes wrap around the body with it.
   const turning=c.action==='working'&&!box.classList.contains('morphing')&&c.arrivalAt==null&&!(c.departureAt!=null&&(reduced||now>=c.departureAt));
   const turn=turning&&!reduced?workingTurn(c,now):null;
-  if(turning)c.spin=turn?turn.angle*turn.gain:0;
+  // A turn carried over from before the morph keeps settling at its own pace.
+  if(turning)c.spin=!turn?0:c.spinSettle?settledSpin(c.spinSettle,now):turn.angle;
   renderGaze(box, now);
   if(c.departureAt != null && (reduced || now>=c.departureAt)) {
     const t=reduced?1:Math.max(0,Math.min(1,(now-c.departureAt)/650));
@@ -699,10 +721,12 @@ export function renderCharacterMotion(box, now = Date.now()) {
       c.departureSettled=true;const pose=getComputedStyle(c.motion).transform;
       c.poseSettle?.cancel();c.motion.removeAttribute('transform');
       if(!reduced&&pose!=='none')c.poseSettle=c.motion.animate([{transform:pose},{transform:'matrix(1,0,0,1,0,0)'}],{duration:320,easing:'ease-out'});
-      c.spinFrom=c.spin%(Math.PI*2);c.ribbonFrom=[opacityOf(c.ribbonBack),opacityOf(c.ribbonFront)];
+      c.spinSettle=reduced?null:spinSettle(((c.spin%(Math.PI*2))+Math.PI*2)%(Math.PI*2),now);c.ribbonFrom=[opacityOf(c.ribbonBack),opacityOf(c.ribbonFront)];
     }
     const settle=1-smooth(t/.35);
-    c.spin=(c.spinFrom>Math.PI?Math.PI*2:0)+(c.spinFrom-(c.spinFrom>Math.PI?Math.PI*2:0))*settle;
+    // An unfinished turn completes at its natural pace while the body folds;
+    // whatever remains when the avatar has faded out is no longer visible.
+    c.spin=c.spinSettle&&t<1?settledSpin(c.spinSettle,now):0;
     c.ribbonBack.setAttribute('opacity',c.ribbonFrom[0]*settle);c.ribbonFront.setAttribute('opacity',c.ribbonFrom[1]*settle);
     const shape=paths[c.p.shape] || paths.round,target=sample(shape);
     const blend=smooth((t-.05)/.7),scale=1-.88*smooth((t-.08)/.7);
@@ -756,8 +780,8 @@ export function renderCharacterMotion(box, now = Date.now()) {
   c.motion.setAttribute("transform",`translate(50 ${55+1.3*Math.sin(wave*2)*gain}) rotate(${roll}) scale(${1+(sx-1)*gain} ${1+(sy-1)*gain}) translate(-50 -55)`);
   // The trail follows the same rotation as the face: it sweeps right across
   // the front and left behind. Each tapered segment is layered by its own depth.
-  const trailAge=cycle-1.5;
-  const trailOpacity=smooth(trailAge/.28)*(1-smooth((trailAge-1.4)/.55));
+  const trailAge=cycle-TURN.start;
+  const trailOpacity=turn.plays&&!c.spinSettle?smooth(trailAge/.28)*(1-smooth((trailAge-1.4)/.55)):0;
   const head=angle+.45,tilt=.3,cosT=Math.cos(tilt),sinT=Math.sin(tilt),segments={front:[],back:[]};
   const point=(a,r)=>{
     const x=50*Math.sin(a)+r*Math.sin(a),y=15*Math.cos(a)+r*Math.cos(a);
@@ -776,11 +800,39 @@ export function renderCharacterMotion(box, now = Date.now()) {
   }
 }
 // One full turn in each 4.8 s cycle; 2π at the seam equals 0, so loops join.
+// The timeline is shared, so sidebar and chat turn together. A turn plays only
+// from its start: after a morph, a pause or ahead of a departure, one already
+// underway (or unable to finish) is skipped and the body waits for the next,
+// rather than racing to where the timeline has got to. The ramp-in gain eases
+// the bob and roll only; it never scales the angle into a fast spin.
+const TURN={cycle:4.8,start:1.5,length:1.65};
+const turnClock=(c,now)=>(now-c.workStartedAt)/1000+(c.turnShift||0);
 function workingTurn(c,now){
-  const elapsed=Math.max(0,(now-c.workStartedAt)/1000),cycle=elapsed%4.8;
+  const elapsed=Math.max(0,turnClock(c,now)),n=Math.floor(elapsed/TURN.cycle),cycle=elapsed-n*TURN.cycle,start=n*TURN.cycle+TURN.start;
   const gain=c.motionReadyAt==null?1:smooth((now-c.motionReadyAt)/450);
-  return {cycle,wave:elapsed*Math.PI*2/4.8,angle:smooth((cycle-1.5)/1.65)*Math.PI*2,gain};
+  const plays=start>=(c.turnGate??-Infinity)-1e-6&&start<=(c.turnCutoff??Infinity);
+  return {cycle,wave:elapsed*Math.PI*2/TURN.cycle,angle:plays?smooth((cycle-TURN.start)/TURN.length)*Math.PI*2:0,plays,gain};
 }
+// Frames stop while the page is hidden, the avatar is scrolled away or the
+// window is throttled. On return a turn that was showing continues from the
+// pose it left (the clock advances by a single frame); otherwise the body
+// waits for the next turn instead of jumping into the middle of one.
+function resumeTurn(c,now){
+  const last=c.tickedAt;c.tickedAt=now;
+  if(c.action!=='working'||c.tribute||last==null||now-last<=200)return;
+  const before=workingTurn(c,last),turning=before.plays&&before.cycle>TURN.start&&before.cycle<TURN.start+TURN.length;
+  if(turning)c.turnShift=(c.turnShift||0)-(now-last-16)/1000;
+  else c.turnGate=Math.max(c.turnGate??-Infinity,turnClock(c,now));
+}
+// Finish a turn along its own curve at its natural pace; one that has barely
+// begun eases back instead. Angles are in [0, 2π).
+function spinSettle(angle,at){
+  const y=angle/(Math.PI*2);
+  if(!(y>1e-4&&y<1-1e-4))return null;
+  const u=.5-Math.sin(Math.asin(1-2*y)/3),dir=y<1/12?-1:1;
+  return {u,dir,at,until:at+(dir>0?1-u:u)*TURN.length*1000};
+}
+const settledSpin=(s,now)=>smooth(s.u+s.dir*Math.max(0,now-s.at)/(TURN.length*1000))*Math.PI*2;
 export function idleCompanion(box) {
   setActivity(box,"idle");
   const timer=setInterval(()=>{if(!box.isConnected){clearInterval(timer);return;}animateCharacter(box);},1000);
