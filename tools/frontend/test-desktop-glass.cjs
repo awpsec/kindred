@@ -23,7 +23,7 @@ export class RFB extends EventTarget {
   await context.route(origin+'/api/computer/session',r=>{sessions.push(r.request().postDataJSON());return r.fulfill({json:{ticket:'fixture',control:false}});});
   await context.route(origin+'/api/computer/resources',r=>r.fulfill({json:{}}));
   await context.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);await p.goto(origin);
-  const open=async()=>{await p.locator('#show-computer').click();await p.locator('.desktop-glass.ready').waitFor();assert.equal(await p.locator('#computer-panel').evaluate(n=>n.classList.contains('expanded')),false);await p.locator('.desktop-canvas canvas').click();assert.equal(await p.locator('#computer-panel').evaluate(n=>n.classList.contains('expanded')),true);};await open();
+  const open=async()=>{await p.locator('#show-computer').click();await p.locator('.desktop-glass.ready').waitFor();assert.equal(await p.locator('#computer-panel').evaluate(n=>n.classList.contains('expanded')),false);await p.getByRole('button',{name:'Open computer screen',exact:true}).click();assert.equal(await p.locator('#computer-panel').evaluate(n=>n.classList.contains('expanded')),true);};await open();assert.deepEqual(await p.evaluate(()=>[fixtureRfb.qualityLevel,fixtureRfb.compressionLevel]),[9,2]);
   const pixel=()=>p.locator('.desktop-glass').evaluate(c=>[...c.getContext('2d').getImageData(10,100,1,1).data]);
   await p.waitForFunction(()=>{const c=document.querySelector('.desktop-canvas canvas').getBoundingClientRect(),b=document.querySelector('#desktop').getBoundingClientRect();return Math.abs(c.width-Math.min(b.width,b.height*1.6))<2;});
   assert.deepEqual(await pixel(),[113,154,153,255]);
