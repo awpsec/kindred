@@ -1,3 +1,4 @@
+import {settingsHeaderArt} from './settings-header-art.js';
 import {workspaceArtifactCard,artifactStudio,artifactUpdateRow,artifactUpdateBatches} from './workspace-artifacts.js';
 import {groupActivity,transitionGroupActivity,visibleGroupWorkers,sharedConversationWorkers} from './group-activity.js';
 import { decisionReceipt } from './decision-receipts.js';
@@ -3566,6 +3567,7 @@ $("search").oninput = renderSidebar;
 $("mobile-menu").onclick = () => $("app").classList.toggle("sidebar-open");
 $("settings-button").onclick = () => perform(() => openSettings());
 $("identity-button").onclick = toggleIdentityMenu;
+$("settings-title").parentElement.prepend(settingsHeaderArt());
 $("settings-close").onclick = () => $("settings-dialog").close();
 $('settings-dialog').addEventListener('close',()=>{if($('settings-dialog').open)return;settingsRevision++;settingsRequest?.abort('settings-navigation');settingsMotion?.cancel();settingsMotion=null;});
 $("bot-details").onclick = () =>

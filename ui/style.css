@@ -4911,3 +4911,14 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
  .message-actions{transform:none}
  .message-action-time{position:static;width:auto;margin-left:6px;line-height:18px}
 }
+/* Settings header art: a still pile of translucent bots between the title and close button. */
+.settings-main > header:has(.settings-header-art) {position:relative;isolation:isolate;overflow:hidden;}
+.settings-main > header:has(.settings-header-art) > :not(.settings-header-art) {position:relative;z-index:1;}
+.settings-header-art {position:absolute;z-index:0;top:0;right:72px;bottom:0;width:min(226px,42%);height:100%;pointer-events:none;user-select:none;-webkit-mask-image:linear-gradient(to right,transparent,#000 28%);mask-image:linear-gradient(to right,transparent,#000 28%);}
+.settings-header-bot {opacity:.2;}
+.settings-header-bot-body {fill:var(--art-grey);}
+.settings-header-bot-eye {fill:var(--panel,var(--bg));}
+:root[data-theme="light"] .settings-header-bot {opacity:.3;}
+:root[data-theme="light"] .settings-header-bot-body {fill:var(--art-tone);}
+@media(max-width:600px){.settings-main > header:has(.settings-header-art) .settings-header-art{right:60px;}}
+@media(max-width:420px),(forced-colors:active){.settings-header-art{display:none;}}
