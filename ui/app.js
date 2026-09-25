@@ -3376,6 +3376,8 @@ async function connectDesktop() {
     rfb.viewOnly = !control;
     rfb.scaleViewport = true;
     rfb.resizeSession = false;
+    rfb.qualityLevel = 9;
+    rfb.compressionLevel = 2;
     rfb.background = "transparent";
     state.desktopTimeout = setTimeout(() => {
       if (generation === state.desktopGeneration) {
@@ -3599,11 +3601,17 @@ async function pasteIntoComputer(value) {
   if (!state.rfb || !state.status.takeover || !state.desktopControlRequested)
     throw new Error("Take control of the computer first.");
   if (!value) throw new Error("Your clipboard has no text to paste.");
-  disconnectDesktop();
-  try {
-    await api("/computer", "POST", {tool:"computer_type",args:{text:value}});
-  } finally {
-    await connectDesktop();
+  if (value.length > 16000) throw new Error("Paste up to 16,000 characters at a time.");
+  // Use the current control session: the HTTP input path must evict its VNC lease.
+  const rfb = state.rfb;
+  let sent = 0;
+  for (const character of value.replace(/\r\n?/g, "\n")) {
+    if (state.rfb !== rfb || !state.desktopConnected || !state.status.takeover || !state.desktopControlRequested)
+      throw new Error("Computer control ended before the paste finished.");
+    const point = character.codePointAt(0);
+    const key = character === "\n" ? 0xff0d : character === "\t" ? 0xff09 : point <= 0xff ? point : 0x01000000 | point;
+    rfb.sendKey(key);
+    if (++sent % 32 === 0) await new Promise(resolve => setTimeout(resolve, 10));
   }
 }
 $("desktop-paste").onclick = () => perform(async () => {
