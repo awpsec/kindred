@@ -4888,3 +4888,12 @@ details.composio-service>summary.composio-service-summary::before{display:none}
 :root[data-motion=off] .desktop-preview-open>span{transition:none}
 
 .dictation-settings .microphone-setting select{margin-top:0}
+
+/* Native Mac controls stay on a clear header, even when the library slides away. */
+.mac-desktop:has(.artifact-studio) .desktop-titlebar.macos{background:transparent}
+.artifact-studio-macos:not(.sidebar-pinned) .artifact-workbench-header{padding-left:104px;min-height:65px}
+.artifact-studio-library>.sidebar-bottom{flex:none;padding:4px 0 0;margin-top:auto}
+.artifact-studio-library:has(>.sidebar-bottom) .artifact-studio-library-status:not(.error){display:none}
+.artifact-studio-library:has(>.sidebar-bottom) .artifact-studio-library-list{flex:1;min-height:0;overflow-y:auto}
+
+.mac-overlay:has(.artifact-studio) .desktop-titlebar.macos{pointer-events:none}
