@@ -19,6 +19,10 @@ const assert=require('node:assert/strict');
     await delay(250);
     boxes.forEach((b,i)=>{least=Math.min(least,area(b._character.points)/starts[i]);});
     await delay(400);
+    // Software WebKit can miss frames under load; timing is covered by the
+    // fake-clock turn test. Here wait for the final geometry, with a deadline.
+    const deadline=performance.now()+1500;
+    while(boxes.some(b=>b.classList.contains('morphing')||b._character.transition||b._character.bodySettle)&&performance.now()<deadline)await delay(25);
     if(boxes.some(b=>b.classList.contains('morphing')||b._character.transition||b._character.bodySettle))throw Error('Unsettled '+action);
     if(boxes.some(b=>Number(b._character.face.style.opacity)<.99))throw Error('Invisible face after '+action);
    }
