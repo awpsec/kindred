@@ -18,8 +18,8 @@ assert.equal(context.connectorBatches([...routineCalls.slice(0,2),{seq:4.5,sende
  try{
   const page=await browser.newPage({viewport:{width:1320,height:1000}});page.setDefaultTimeout(12000);const errors=[],writes=[];page.on('pageerror',e=>errors.push(e.message));
   let unread=false;const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};
-  const card=(seq,status='completed',sender='piper',run='review')=>({seq,sender,run_id:run,created:now+seq,kind:'connector_artifact',text:'Review record '+seq,connector_artifact:{id:'card-'+seq,bot_id:sender,kind:'task',connection:seq%2?'Google Drive':'Asana',connector:seq%2?'googledrive':'asana',source:seq%2?'Codex':'Kindred',tool:'read_record',title:'Review record '+seq,status,revision:1,records:[{title:'Review record '+seq,fields:{Owner:'Example owner',Description:'Verified source content for receipt '+seq}}]}});
-  const messages=[{seq:1,sender:'user',kind:'message',text:'Review these records',created:now},...Array.from({length:12},(_,i)=>({...card(i+2,'completed','piper','routine-'+i),created:now+i*3600})),card(14,'pending'),card(15,'failed'),card(16,'interrupted'),{seq:17,sender:'user',kind:'message',text:'Keep this separate',created:now+17},card(18),card(19,'completed','piper','another-run'),card(20,'completed','other','another-run')];
+  const card=(seq,status='completed',sender='piper',run='review')=>({seq,sender,run_id:run,created:now+12*3600+seq,kind:'connector_artifact',text:'Review record '+seq,connector_artifact:{id:'card-'+seq,bot_id:sender,kind:'task',connection:seq%2?'Google Drive':'Asana',connector:seq%2?'googledrive':'asana',source:seq%2?'Codex':'Kindred',tool:'read_record',title:'Review record '+seq,status,read_only:status==='interrupted',revision:1,records:[{title:'Review record '+seq,fields:{Owner:'Example owner',Description:'Verified source content for receipt '+seq}}]}});
+  const messages=[{seq:1,sender:'user',kind:'message',text:'Review these records',created:now},...Array.from({length:12},(_,i)=>({...card(i+2,'completed','piper','routine-'+i),created:now+i*3600})),card(14,'pending'),card(15,'failed'),card(16,'interrupted'),{seq:17,sender:'user',kind:'message',text:'Keep this separate',created:now+12*3600+17},card(18),card(19,'completed','piper','another-run'),card(20,'completed','other','another-run')];
   await page.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
   await page.route(origin+'/api/**',async route=>{
    const request=route.request(),name=new URL(request.url()).pathname.slice(4),send=json=>route.fulfill({json});
@@ -33,7 +33,9 @@ assert.equal(context.connectorBatches([...routineCalls.slice(0,2),{seq:4.5,sende
   assert.equal(await stack.getAttribute('open'),null);assert.equal(await stack.locator('.connector-message').count(),11);
   assert.match(await stack.locator(':scope > summary').innerText(),/12 tool calls/);
   assert.equal(await page.locator('[data-connector-artifact="card-2"]').isVisible(),false);
-  for(const seq of [14,15,16])assert(await page.locator('[data-connector-artifact="card-'+seq+'"]').isVisible());for(const seq of [13,18,19,20])assert(await page.locator('.connector-message[data-message="'+seq+'"] > .connector-call > summary').isVisible());
+  for(const seq of [14,15])assert(await page.locator('[data-connector-artifact="card-'+seq+'"]').isVisible());for(const seq of [13,16,18,19,20])assert(await page.locator('.connector-message[data-message="'+seq+'"] > .connector-call > summary').isVisible());
+  assert.match(await page.locator('.connector-message[data-message="16"] > .connector-call > summary').innerText(),/Interrupted/);assert.equal(await page.locator('[data-connector-artifact="card-16"]').isVisible(),false);
+  const interrupted=page.locator('.connector-message[data-message="16"] > .connector-call > summary');await interrupted.click();assert.equal(await page.locator('[data-connector-artifact="card-16"] .connector-outcome-warning').innerText(),'This lookup did not finish.');await interrupted.click();
   assert((await stack.boundingBox()).height<130,'collapsed stack stays compact');
   await stack.locator(':scope > summary').focus();await page.keyboard.press('Enter');await stack.locator('.connector-call > summary').first().click();await page.locator('[data-connector-artifact="card-2"]').waitFor({state:'visible'});
   // A live update must retain nested reading state, focus and scroll position.
@@ -64,6 +66,6 @@ assert.equal(context.connectorBatches([...routineCalls.slice(0,2),{seq:4.5,sende
   assert.equal(await page.locator('.connector-stack').count(),1,'Receipt cursors do not split call groups');
   assert.equal(await page.locator('.unread-divider').count(),0);
   assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({passed:true,engine,thirteenReceiptsOneStack:true,approvalFailureAndInterruptionVisible:true,crossRoutineAndLongGapStacking:true,senderAndMessageBoundaries:true,receiptCursorsStayGrouped:true,keyboardExpansion:true,refreshPreservesNestedReadingState:true,quoteOpensExactReceipt:true,sixLayouts:true,noConnectorWrites:true}));
+  console.log(JSON.stringify({passed:true,engine,thirteenReceiptsOneStack:true,approvalAndFailureVisibleInterruptionExpandable:true,crossRoutineAndLongGapStacking:true,senderAndMessageBoundaries:true,receiptCursorsStayGrouped:true,keyboardExpansion:true,refreshPreservesNestedReadingState:true,quoteOpensExactReceipt:true,sixLayouts:true,noConnectorWrites:true}));
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

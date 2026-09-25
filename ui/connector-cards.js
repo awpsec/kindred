@@ -50,7 +50,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   if(shown.length>5){const more=button('+'+(shown.length-5)+' more',()=>{expanded=!expanded;renderRecords();more.replaceChildren(el('span','',expanded?'Show fewer':'+'+(shown.length-5)+' more'));more.setAttribute('aria-expanded',String(expanded));},'subtle-button connector-show-more');more.setAttribute('aria-expanded','false');content.append(more);}
  }
  if(card.feedback)content.append(el('p','connector-feedback','Your feedback: '+card.feedback));
- if(['failed','interrupted'].includes(card.status))content.append(el('p','connector-outcome-warning','The final external state is unconfirmed. Check the connected service before retrying a change.'));
+ if(['failed','interrupted'].includes(card.status))content.append(el('p','connector-outcome-warning',card.read_only===true||card.display_read_only===true?'This lookup did not finish.': 'The final external state is unconfirmed. Check the connected service before retrying a change.'));
  if(card.edited_by_user)content.append(el('p','connector-edit-receipt','Includes your saved edits'));
  const footer=el('footer','connector-card-actions');let sending=false,editorOpen=false,editorOpener=null;
  const syncActionState=()=>{for(const b of root.querySelectorAll('button'))b.disabled=sending||(editorOpen&&!b.closest('.connector-card-editor'));};
