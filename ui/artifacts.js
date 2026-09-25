@@ -8,7 +8,7 @@ const escapeScript=s=>s.replace(/<\/script/gi,'<\\/script');
 export function loadArtifactFrame(frame,document){
  // Navigate to a sandboxed response with an independent CSP. Inline srcdoc
  // inherits the app's policy, which intentionally disallows inline scripts.
- frame.addEventListener('load',()=>frame.contentWindow?.postMessage({kind:'kindred-artifact-document',document},'*'),{once:true});
+ frame.addEventListener('load',()=>frame.contentWindow?.postMessage({kind:'kindred-artifact-document',document},'*'));
  frame.src=new URL('./artifact-frame.html',import.meta.url).href;
 }
 // Embed trusted bundled fonts so opaque-origin previews need no network access.
