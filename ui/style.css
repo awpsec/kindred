@@ -4873,3 +4873,18 @@ details.composio-service>summary.composio-service-summary::before{display:none}
 /* A temporary phone drawer closes on a tap outside it, including over an iframe. */
 .artifact-library-backdrop{display:none}
 @media(max-width:760px){.artifact-studio.sidebar-open .artifact-library-backdrop{display:block;position:absolute;inset:0;z-index:4;border:0;border-radius:0;padding:0;background:rgba(0,0,0,.12)}}
+
+/* Watching a remote screen must never hide the local pointer. */
+.computer-panel:not(.is-controlling) .desktop-canvas canvas{cursor:default!important}
+.computer-panel:not(.expanded) .desktop-canvas canvas{cursor:pointer!important}
+.desktop-preview-open{position:absolute;inset:0;z-index:3;border:0;border-radius:12px;padding:0;background:transparent;color:white;cursor:pointer;display:grid;place-items:center;translate:none!important}
+.desktop-preview-open:hover{background:transparent}
+.desktop-preview-open>span{padding:8px 16px;border:1px solid #ffffff38;border-radius:8px;background:#161616dd;opacity:0;transform:translateY(4px);transition:opacity .18s ease,transform .18s ease;pointer-events:none}
+.desktop-preview-open:hover>span,.desktop-preview-open:focus-visible>span{opacity:1;transform:none}
+.desktop-preview-open:focus-visible{outline:2px solid var(--fg);outline-offset:-4px}
+.computer-panel.expanded .desktop-preview-open{display:none}
+@media(hover:none){.desktop-preview-open>span{opacity:1;transform:none}.computer-preview>.preview-open{opacity:1;transform:translate(-50%,-50%)}}
+@media(prefers-reduced-motion:reduce){.desktop-preview-open>span{transition:none}}
+:root[data-motion=off] .desktop-preview-open>span{transition:none}
+
+.dictation-settings .microphone-setting select{margin-top:0}

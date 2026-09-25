@@ -181,9 +181,12 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     phase='finishing';void release();render();
     try{
       await deviceReply((async()=>{
-        if(pending)await pending;
+        // A failed live preview must not skip the final captured words. The final
+        // snapshot still includes any audio that has not decoded successfully.
+        let previewError;try{if(pending)await pending;}catch(error){previewError=error;}
         const finalSnapshot=thisGeneration===generation&&snapshot(true);
         if(finalSnapshot)await transcribeSnapshot(finalSnapshot,thisGeneration);
+        else if(previewError)throw previewError;
       })(),'Transcription took too long. The words already shown have been kept.',20000);
     }catch(e){if(thisGeneration===generation)notice(e.message||'Transcription failed. The words already shown have been kept.',true);}
     if(thisGeneration!==generation)return;

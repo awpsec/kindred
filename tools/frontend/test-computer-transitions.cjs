@@ -5,7 +5,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const vendor=`export * from './vendor.js?real';
 export class RFB extends EventTarget {
  constructor(host){super();this.host=host;this.screen=document.createElement('div');this.screen.style.cssText='display:flex;width:100%;height:100%;align-items:center;justify-content:center';
- this.canvas=document.createElement('canvas');this.canvas.width=1280;this.canvas.height=800;this.screen.append(this.canvas);host.append(this.screen);
+ this.canvas=document.createElement('canvas');this.canvas.width=1280;this.canvas.height=800;this.canvas.style.cursor='none';this.canvas.addEventListener('pointerdown',()=>window.remoteClicks=(window.remoteClicks||0)+1);this.screen.append(this.canvas);host.append(this.screen);
  const c=this.canvas.getContext('2d');c.fillStyle='#2475ff';c.fillRect(0,0,1280,800);
  setTimeout(()=>this.dispatchEvent(new Event('connect')),250);}
  set background(v){} set scaleViewport(v){const b=this.host.getBoundingClientRect(),s=Math.min(b.width/1280,b.height/800)||.2;this.canvas.style.width=1280*s+'px';this.canvas.style.height=800*s+'px';}
@@ -32,6 +32,18 @@ export class RFB extends EventTarget {
     if(canvas?.getAnimations().some(a=>a.effect.getKeyframes()[0].opacity==0))seen.fadeIn=true;
     if(canvas&&!loading&&!canvas.getAnimations().length)return resolve(seen);requestAnimationFrame(tick);};tick();}));
   assert.deepEqual(reveal,{overlap:true,fadeIn:true},'The live screen fades in over the connecting state');
+  const preview=p.getByRole('button',{name:'Open computer screen',exact:true});
+  await preview.hover();await p.waitForTimeout(220);
+  assert.equal(await preview.evaluate(n=>getComputedStyle(n).cursor),'pointer');
+  assert.equal(await preview.locator('span').evaluate(n=>getComputedStyle(n).opacity),'1','Open is visible over the live screen');
+  assert.equal(await p.locator('#desktop .desktop-canvas canvas').evaluate(n=>getComputedStyle(n).cursor),'pointer');
+  await preview.click();await p.waitForFunction(()=>document.querySelector('#computer-panel').classList.contains('expanded'));
+  assert.equal(await p.evaluate(()=>window.remoteClicks||0),0,'Opening the preview does not click the remote desktop');
+  assert.equal(await preview.isVisible(),false);
+  assert.equal(await p.locator('#desktop .desktop-canvas canvas').evaluate(n=>getComputedStyle(n).cursor),'default','Watching keeps the local pointer visible');
+  await p.locator('#computer-expand').click();await preview.waitFor();await preview.focus();await p.keyboard.press('Enter');
+  await p.waitForFunction(()=>document.querySelector('#computer-panel').classList.contains('expanded'));
+  await p.locator('#computer-expand').click();await preview.waitFor();
   // Closing keeps the last frame visible while the pane fades out.
   await p.locator('#computer-close').click();
   const closing=await p.evaluate(()=>{const still=document.querySelector('#desktop .desktop-still');return {still:!!still,painted:!!still&&still.width===1280};});
