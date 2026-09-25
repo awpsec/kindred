@@ -8,8 +8,13 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   const usesNative=()=>preferences.model==='native'&&nativeAvailable();
   const available=()=>window.__KINDRED_DICTATION_MODELS===true;
   const modelCatalogue=[['base','Base',59707625],['small','Small',190085487],['medium','Medium',539212467],['large-v3-turbo','Large v3 Turbo',574041195],['large-v3','Large v3',1081140203]];
-  let settingsEvents=null,microphoneEvents=null;
-  let generation=0,phase='idle',stream=null,context=null,processor=null,source=null,mute=null,chunks=[],samples=0,timer=null,native={phase:'off'},settings=null,poll=null,liveTimer=null,inflight=null,lastDecodedSpeech=0,lastAudibleSample=0,lastRequestAt=0,session=null;
+  let settingsEvents=null,microphoneEvents=null,renderedStop=null;
+  let generation=0,phase='idle',stream=null,context=null,processor=null,source=null,mute=null,chunks=[],samples=0,timer=null,native={phase:'off'},settings=null,poll=null,liveTimer=null,inflight=null,lastDecodedSpeech=0,lastAudibleSample=0,lastRequestAt=0,session=null,rate=16000;
+  // Utterance segmentation: completed utterances are kept as text and their audio
+  // is excluded from later decodes. Boundaries are only placed inside verified
+  // silence (every 20 ms frame below the floor), never between words.
+  let utteranceStart=0,decodedStart=0,decodedEnd=0,decodedText='',pauses=[];
+  const pauseSeconds=.8,padSeconds=.3;
   const mic=document.createElement('button');mic.type='button';mic.className='dictation-button';mic.hidden=true;send.before(mic);
   const status=document.createElement('span');status.className='dictation-status';status.setAttribute('role','status');status.hidden=true;mic.before(status);
   const cancelButton=document.createElement('button');cancelButton.type='button';cancelButton.className='icon-button dictation-cancel';cancelButton.title='Cancel dictation';cancelButton.setAttribute('aria-label','Cancel dictation');cancelButton.append(icon('close'));cancelButton.hidden=true;mic.before(cancelButton);
@@ -20,7 +25,9 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     mic.hidden=!preferences.enabled;send.hidden=primary||active;mic.classList.toggle('is-primary',primary);mic.classList.toggle('is-recording',phase==='recording');
     mic.disabled=phase==='starting'||phase==='finishing';send.disabled=active;
     const label=phase==='recording'?'Stop dictating':'Dictate';mic.title=label;mic.setAttribute('aria-label',label);mic.setAttribute('aria-pressed',String(phase==='recording'));
-    mic.replaceChildren(microphone(phase==='recording'));
+    const stopping=phase==='recording';
+    // Status polling must not replace the SVG between pointer-down and pointer-up.
+    if(renderedStop!==stopping){mic.replaceChildren(microphone(stopping));renderedStop=stopping;}
     status.hidden=!active;status.textContent=phase==='recording'?(inflight?'Listening · transcribing speech…':'Listening · live dictation'):phase==='starting'?'Opening microphone…':phase==='finishing'?'Finishing transcription…':'';cancelButton.hidden=!active;
     if(settings?.isConnected)renderSettingsStatus();
   }
@@ -35,9 +42,10 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   async function cancel(){
     generation++;phase='idle';chunks=[];samples=0;clearTimeout(liveTimer);liveTimer=null;
     if(session?.span?.isConnected){session.span.remove();editor.dispatchEvent(new Event('input',{bubbles:true}));}
-    session=null;inflight=null;lastDecodedSpeech=0;lastAudibleSample=0;
+    session=null;inflight=null;lastDecodedSpeech=0;lastAudibleSample=0;resetSegments();
     const closing=release(),stopping=available()?deviceReply(nativeInvoke('cancel_dictation'),'Cancellation timed out.',2000).catch(()=>{}):Promise.resolve();render();await Promise.all([closing,stopping]);
   }
+  function resetSegments(){utteranceStart=0;decodedStart=0;decodedEnd=0;decodedText='';pauses=[];}
   function beginTranscript(conversation,thisGeneration){
     // Empty contenteditables often contain a leftover <br> or <div><br></div>.
     // Clear only an empty draft so these placeholders cannot become a blank line.
@@ -47,12 +55,12 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     const before=range.cloneRange();before.selectNodeContents(editor);before.setEnd(range.startContainer,range.startOffset);
     const after=range.cloneRange();after.selectNodeContents(editor);after.setStart(range.endContainer,range.endOffset);
     const span=document.createElement('span');span.className='dictation-transcript';span.contentEditable='false';span.dataset.dictation='true';range.insertNode(span);
-    session={generation:thisGeneration,conversation,span,leading:before.toString()&&!/\s$/.test(before.toString())?' ':'',trailing:after.toString()&&!/^\s/.test(after.toString())?' ':'',text:''};
+    session={generation:thisGeneration,conversation,span,leading:before.toString()&&!/\s$/.test(before.toString())?' ':'',trailing:after.toString()&&!/^\s/.test(after.toString())?' ':'',committed:'',current:'',text:''};
   }
   function showTranscript(text,thisGeneration){
     if(thisGeneration!==generation||session?.generation!==thisGeneration||session.conversation!==chatId()||!preferences.enabled||!session.span.isConnected)return;
-    text=(text||'').trim();if(!text||text===session.text)return;
-    session.text=text;session.span.textContent=session.leading+text+session.trailing;editor.dispatchEvent(new Event('input',{bubbles:true}));
+    text=(text||'').trim();if(!text||text===session.current)return;
+    session.current=text;text=session.text=[session.committed,text].filter(Boolean).join(' ');session.span.textContent=session.leading+text+session.trailing;editor.dispatchEvent(new Event('input',{bubbles:true}));
     // Follow the dictated words inside the editor, including WebKit's scrollable
     // contenteditable. Do not scroll the chat or steal the user's selection.
     const range=document.createRange();range.selectNodeContents(session.span.firstChild);range.collapse(false);
@@ -69,22 +77,40 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     }
     session=null;if(!text&&showEmptyNotice)notice('No speech detected. Try again.');
   }
-  function snapshot(){
-    if(lastAudibleSample<=lastDecodedSpeech||samples<context.sampleRate*.2)return null;
-    const rate=context.sampleRate,count=Math.min(samples,lastAudibleSample+Math.ceil(rate*.3)),recorded=[];
-    let remaining=count;for(const chunk of chunks){if(!remaining)break;recorded.push(chunk.subarray(0,remaining));remaining-=recorded.at(-1).length;}
-    return {recorded,rate,speech:lastAudibleSample};
+  // Audio from the current utterance start to its last speech plus a short pad.
+  // Live previews also re-decode once when a confirmed pause needs its full pad
+  // before the utterance can be committed; the final drain decodes new speech only.
+  function snapshot(final=false){
+    const pad=Math.ceil(rate*padSeconds),speech=lastAudibleSample;
+    const fresh=speech>lastDecodedSpeech&&speech>utteranceStart;
+    const repad=!final&&speech===lastDecodedSpeech&&speech>utteranceStart&&decodedStart===utteranceStart&&decodedEnd<speech+pad&&samples-speech>=rate*pauseSeconds;
+    const end=Math.min(samples,speech+pad);
+    if((!fresh&&!repad)||end-utteranceStart<rate*.2)return null;
+    const recorded=[];let offset=0;
+    for(const chunk of chunks){const from=Math.max(0,utteranceStart-offset),to=Math.min(chunk.length,end-offset);if(to>from)recorded.push(chunk.subarray(from,to));offset+=chunk.length;if(offset>=end)break;}
+    return {recorded,start:utteranceStart,speech,end};
   }
-  async function transcribeSnapshot({recorded,rate,speech},thisGeneration){
+  async function transcribeSnapshot({recorded,start,speech,end},thisGeneration){
     const audio=encodeWav(recorded,rate);lastRequestAt=performance.now();
     const result=await nativeInvoke('transcribe_dictation',{audio});
-    if(thisGeneration!==generation)return;lastDecodedSpeech=speech;showTranscript(result.text,thisGeneration);
+    // A result for audio from before the current utterance boundary is stale.
+    if(thisGeneration!==generation||start!==utteranceStart)return;
+    lastDecodedSpeech=speech;decodedStart=start;decodedEnd=end;decodedText=(result.text||'').trim();showTranscript(decodedText,thisGeneration);commitUtterance();
+  }
+  // Commit only when the latest decode of this utterance produced visible text,
+  // covered all of its speech plus the pad, and that speech ended at a verified
+  // pause. Otherwise the utterance stays open and later decodes include it.
+  function commitUtterance(){
+    const pad=Math.ceil(rate*padSeconds),speech=lastDecodedSpeech;
+    if(!session||!decodedText||session.current!==decodedText||decodedStart!==utteranceStart||speech<=utteranceStart||decodedEnd<speech+pad)return;
+    if(!pauses.includes(speech)&&!(speech===lastAudibleSample&&samples-speech>=rate*pauseSeconds))return;
+    session.committed=session.text;session.current='';decodedText='';utteranceStart=speech+pad;pauses=pauses.filter(p=>p>utteranceStart);
   }
   function scheduleLive(thisGeneration,delay=Math.max(100,700-(performance.now()-lastRequestAt))){
     if(phase!=='recording'||generation!==thisGeneration)return;
     liveTimer=setTimeout(async()=>{
       if(phase!=='recording'||generation!==thisGeneration)return;
-      const next=snapshot();if(!next){scheduleLive(thisGeneration,500);return;}
+      commitUtterance();const next=snapshot();if(!next){scheduleLive(thisGeneration,500);return;}
       // One bounded decode at a time. New audio keeps recording while Whisper works.
       const job=transcribeSnapshot(next,thisGeneration);inflight=job;render();
       try{await job;}catch(e){if(generation===thisGeneration&&phase==='recording'){finishTranscript(false);await cancel();fail(e);return;}}
@@ -130,7 +156,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
       if(thisGeneration!==generation){acquired.getTracks().forEach(t=>t.stop());return;}
       stream=acquired;stage='audio';context=new (window.AudioContext||window.webkitAudioContext)();await deviceReply(context.resume(),'The audio system did not respond. Check your microphone and output device, then retry.',10000);
       if(thisGeneration!==generation)return;
-      source=context.createMediaStreamSource(stream);processor=context.createScriptProcessor(4096,1,1);mute=context.createGain();mute.gain.value=0;chunks=[];samples=0;
+      source=context.createMediaStreamSource(stream);processor=context.createScriptProcessor(4096,1,1);mute=context.createGain();mute.gain.value=0;chunks=[];samples=0;rate=context.sampleRate;
       processor.onaudioprocess=event=>{
         if(phase!=='recording')return;const data=event.inputBuffer.getChannelData(0),rate=context.sampleRate,remaining=Math.floor(rate*60)-samples;
         const chunk=new Float32Array(data.subarray(0,Math.max(0,remaining)));
@@ -138,10 +164,10 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
         // original audio, including quiet consonants; only trim the silent tail
         // of a decode and avoid decoding unchanged speech during a pause.
         const frame=Math.ceil(rate*.02);
-        for(let i=0;i<chunk.length;i+=frame){const end=Math.min(chunk.length,i+frame);let energy=0;for(let j=i;j<end;j++)energy+=chunk[j]*chunk[j];if(energy/(end-i)>=0.0000004)lastAudibleSample=samples+end;}
+        for(let i=0;i<chunk.length;i+=frame){const end=Math.min(chunk.length,i+frame);let energy=0;for(let j=i;j<end;j++)energy+=chunk[j]*chunk[j];if(energy/(end-i)>=0.0000004){if(lastAudibleSample&&samples+i-lastAudibleSample>=rate*pauseSeconds)pauses.push(lastAudibleSample);lastAudibleSample=samples+end;}}
         chunks.push(chunk);samples+=chunk.length;if(remaining<=data.length)void stop().catch(fail);
       };
-      source.connect(processor);processor.connect(mute);mute.connect(context.destination);lastDecodedSpeech=0;lastAudibleSample=0;lastRequestAt=performance.now();beginTranscript(chatId(),thisGeneration);phase='recording';render();scheduleLive(thisGeneration);timer=setTimeout(()=>void stop().catch(fail),60000);
+      source.connect(processor);processor.connect(mute);mute.connect(context.destination);lastDecodedSpeech=0;lastAudibleSample=0;resetSegments();lastRequestAt=performance.now();beginTranscript(chatId(),thisGeneration);phase='recording';render();scheduleLive(thisGeneration);timer=setTimeout(()=>void stop().catch(fail),60000);
     }catch(e){if(thisGeneration===generation){await cancel();throw new Error(e.name==='NotAllowedError'?'Microphone access was not allowed. Try again and allow it when prompted, or check microphone permissions in your device or browser settings.':['NotFoundError','OverconstrainedError'].includes(e.name)?'The selected microphone is unavailable. Choose another microphone or System Default in General settings.':stage==='audio'?'Microphone access was allowed, but the audio engine could not start. '+(window.__KINDRED_DESKTOP?.platform==='linux'?'Check the Linux GStreamer audio plugins and your output device. ':'Check your input and output devices. ')+(e.message?'Details: '+e.message.slice(0,200):'Then retry.'):e.message||'The microphone could not start.');}}
   }
   async function stop(){
@@ -149,13 +175,15 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     const thisGeneration=generation;
     // Freeze capture, then drain the in-flight result and any speech spoken
     // since its snapshot. Stop must not silently throw away the last words.
-    const finalSnapshot=snapshot(),pending=inflight;
+    // The final snapshot is taken after the in-flight result, which may have
+    // committed an utterance and moved the boundary.
+    const pending=inflight;
     phase='finishing';void release();render();
     try{
       await deviceReply((async()=>{
         if(pending)await pending;
-        if(thisGeneration===generation&&finalSnapshot&&finalSnapshot.speech>lastDecodedSpeech)
-          await transcribeSnapshot(finalSnapshot,thisGeneration);
+        const finalSnapshot=thisGeneration===generation&&snapshot(true);
+        if(finalSnapshot)await transcribeSnapshot(finalSnapshot,thisGeneration);
       })(),'Transcription took too long. The words already shown have been kept.',20000);
     }catch(e){if(thisGeneration===generation)notice(e.message||'Transcription failed. The words already shown have been kept.',true);}
     if(thisGeneration!==generation)return;

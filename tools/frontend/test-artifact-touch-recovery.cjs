@@ -1,0 +1,34 @@
+const {server}=require('./fixtures/desktop.cjs');
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict');
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await(process.env.WEBKIT?webkit:chromium).launch();try{
+ const p=await browser.newPage({viewport:{width:390,height:800},hasTouch:true});p.setDefaultTimeout(15000);
+ await p.goto('http://127.0.0.1:'+server.address().port);
+ await p.evaluate(async()=>{
+  window.artifactModule=await import('/workspace-artifacts.js');
+  window.sample={id:'test',title:'Test app',kind:'app',language:'html',source:'<h1>Ready</h1><input aria-label="Draft" value="Original">',state:{},revision:1,path:'/artifacts/test',updated:1};
+  window.options={api:async path=>path==='/workspace-artifact-folders'?[]:path==='/workspace-artifacts'?[sample]:sample,markdown:text=>{const p=document.createElement('p');p.textContent=text;return p;},onExit(){}};
+  localStorage.setItem('kindred-artifact-library-pinned','true');window.studio=artifactModule.artifactStudio(options);document.body.append(studio.root);
+ });
+ assert.equal(await p.locator('.artifact-studio').evaluate(n=>n.classList.contains('sidebar-pinned')),false,'Phones ignore the saved desktop pin');
+ await p.getByRole('button',{name:'Show artifact library',exact:true}).tap();await p.getByRole('button',{name:'Close artifact library',exact:true}).waitFor();
+ await p.waitForTimeout(250);assert.equal(await p.locator('.artifact-studio').evaluate(n=>n.classList.contains('sidebar-open')),true,'Touch leave does not collapse the drawer');
+ await p.getByRole('button',{name:'Close artifact library',exact:true}).tap();assert.equal(await p.locator('.artifact-studio').evaluate(n=>n.classList.contains('sidebar-open')),false);
+ await p.getByRole('button',{name:'Show artifact library',exact:true}).tap();await p.keyboard.press('Escape');assert.equal(await p.locator('.artifact-studio').evaluate(n=>n.classList.contains('sidebar-open')),false);
+ await p.getByRole('button',{name:'Show artifact library',exact:true}).tap();await p.getByRole('button',{name:'Dismiss artifact library'}).tap({position:{x:365,y:350}});assert.equal(await p.locator('.artifact-studio').evaluate(n=>n.classList.contains('sidebar-open')),false);
+ assert.equal(await p.evaluate(()=>localStorage.getItem('kindred-artifact-library-pinned')),'true','Touch navigation preserves the desktop preference');
+ await p.setViewportSize({width:1100,height:800});await p.waitForFunction(()=>document.querySelector('.artifact-studio').classList.contains('sidebar-pinned'));
+ await p.evaluate(()=>{studio.dispose();window.preview=artifactModule.openWorkspaceArtifact(sample,options);});
+ await p.waitForFunction(()=>{const c=document.querySelector('.workspace-artifact-dialog .workspace-artifact');return c&&!c.hasAttribute('aria-busy')&&c.querySelector('iframe:not(.artifact-frame-pending)');});
+ const input=p.frameLocator('.workspace-artifact-dialog iframe').getByRole('textbox',{name:'Draft'});await input.fill('Unsaved');
+ await p.waitForFunction(()=>document.querySelector('.workspace-artifact-dialog .workspace-artifact').hasArtifactDraft());
+ let prompts=0;p.on('dialog',async d=>{prompts++;await d.dismiss();});
+ await p.getByRole('button',{name:'Close',exact:true}).click();assert.equal(await p.locator('.workspace-artifact-dialog').count(),1);assert.equal(prompts,1);
+ await p.keyboard.press('Escape');assert.equal(await p.locator('.workspace-artifact-dialog').count(),1);assert.equal(prompts,2);
+ assert.equal(await input.inputValue(),'Unsaved');
+ p.removeAllListeners('dialog');p.once('dialog',d=>d.accept());await p.getByRole('button',{name:'Close',exact:true}).click();await p.locator('.workspace-artifact-dialog').waitFor({state:'detached'});
+ await p.evaluate(async()=>{const {loadArtifactFrame}=await import('/artifacts.js');const f=document.createElement('iframe');f.id='reload-test';f.sandbox='allow-scripts';document.body.append(f);loadArtifactFrame(f,'<h1>Reload survived</h1>');});
+ await p.frameLocator('#reload-test').getByText('Reload survived').waitFor();
+ await p.evaluate(()=>{document.querySelector('#reload-test').src='/artifact-frame.html?reload=1';});await p.frameLocator('#reload-test').getByText('Reload survived').waitFor();
+ console.log('Touch drawer, desktop pin restoration, unsaved preview protection and frame reload passed');
+}finally{await browser.close();server.closeAllConnections();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});

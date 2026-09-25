@@ -52,15 +52,15 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  if(card.feedback)content.append(el('p','connector-feedback','Your feedback: '+card.feedback));
  if(['failed','interrupted'].includes(card.status))content.append(el('p','connector-outcome-warning','The final external state is unconfirmed. Check the connected service before retrying a change.'));
  if(card.edited_by_user)content.append(el('p','connector-edit-receipt','Includes your saved edits'));
- const footer=el('footer','connector-card-actions');let sending=false,editorOpen=false;
+ const footer=el('footer','connector-card-actions');let sending=false,editorOpen=false,editorOpener=null;
  const syncActionState=()=>{for(const b of root.querySelectorAll('button'))b.disabled=sending||(editorOpen&&!b.closest('.connector-card-editor'));};
  const act=async(action,values={})=>{
   if(sending)return;sending=true;for(const b of root.querySelectorAll('button'))b.disabled=true;
   try{const next=await api('/connector-artifacts/'+encodeURIComponent(card.id),'POST',{action,revision:card.revision,...values});await onChange(next);}finally{sending=false;syncActionState();}
  };
  const showError=(form,error)=>{form.querySelector('[role=alert]')?.remove();const notice=el('p','connector-outcome-warning',error.message||String(error));notice.setAttribute('role','alert');form.append(notice);};
- const clearPanel=()=>{if(sending)return;root.querySelector('.connector-card-editor')?.remove();editorOpen=false;root.classList.remove('connector-editing');syncActionState();};
- const openEditor=(form)=>{editorOpen=true;root.classList.add('connector-editing');form.addEventListener('keydown',e=>{if(e.key==='Escape'&&!sending){e.preventDefault();clearPanel();}});syncActionState();root.append(form);form.querySelector('input,textarea,select')?.focus();};
+ const clearPanel=()=>{if(sending)return;const panel=root.querySelector('.connector-card-editor'),restore=panel?.contains(document.activeElement);panel?.remove();editorOpen=false;root.classList.remove('connector-editing');syncActionState();if(restore&&editorOpener?.isConnected)editorOpener.focus({preventScroll:true});editorOpener=null;};
+ const openEditor=(form)=>{editorOpener=root.contains(document.activeElement)?document.activeElement:null;editorOpen=true;root.classList.add('connector-editing');form.addEventListener('keydown',e=>{if(e.key==='Escape'&&!sending){e.preventDefault();clearPanel();}});syncActionState();root.append(form);form.querySelector('input,textarea,select')?.focus();};
  const editDescriptors=()=>{
   if(card.kind==='email')return Object.entries(email).filter(([,f])=>f?.editable).map(([key,f])=>({label:fieldNames[key]||key,key,text:f.text,type:key==='body'?'textarea':'text'}));
   return Object.entries(card.edit_fields||{}).filter(([,f])=>f&&f.text!==undefined&&f.key&&f.editable!==false).map(([key,f])=>({label:f.label||key,key:f.key,text:String(f.text??''),type:f.type||'text',options:Array.isArray(f.options)?f.options:[]}));

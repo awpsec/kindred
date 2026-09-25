@@ -27,6 +27,9 @@ try{
  await click('wrong-bot',{bot_id:'other'});await page.waitForTimeout(180);assert(!await page.locator('.computer-click-indicator').isVisible());
  await click('takeover');await page.evaluate(()=>window.pointerStatus.takeover=true);await page.waitForTimeout(180);assert(!await page.locator('.computer-click-indicator').isVisible());
  await page.emulateMedia({reducedMotion:'reduce'});await click('reduced');await page.waitForTimeout(180);assert.equal(await page.locator('.computer-click-indicator').evaluate(n=>getComputedStyle(n).animationName),'none');
+ await page.evaluate(()=>{const c=document.querySelector('#preview canvas');c.width=1920;c.height=1080;});
+ await click('wide-screen',{x:1440,y:810});await page.locator('.computer-click-indicator').waitFor({state:'visible'});
+ const wide=await page.locator('.computer-click-indicator').evaluate(n=>({left:parseFloat(n.style.left),top:parseFloat(n.style.top)}));assert.deepEqual(wide,{left:520,top:325},'Click feedback follows the real framebuffer dimensions');
  await page.evaluate(()=>window.stopPointer());assert.equal(await page.locator('.computer-click-indicator').count(),0);
  console.log('Watch/interactive cursor negotiation, letterbox mapping, click expiry, bot isolation, takeover and reduced motion passed.');
 }finally{await browser.close();server.closeAllConnections();server.close();}})().catch(e=>{console.error(e);process.exitCode=1});

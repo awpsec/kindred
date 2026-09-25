@@ -4869,3 +4869,7 @@ details.composio-service>summary.composio-service-summary::before{display:none}
 .message-expand { display: block; margin-top: 8px; padding: 2px 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; cursor: pointer; opacity: .8; }
 .message-expand:hover { opacity: 1; text-decoration: underline; }
 .message-expand[hidden] { display: none; }
+
+/* A temporary phone drawer closes on a tap outside it, including over an iframe. */
+.artifact-library-backdrop{display:none}
+@media(max-width:760px){.artifact-studio.sidebar-open .artifact-library-backdrop{display:block;position:absolute;inset:0;z-index:4;border:0;border-radius:0;padding:0;background:rgba(0,0,0,.12)}}

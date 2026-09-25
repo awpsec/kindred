@@ -676,12 +676,13 @@ function elapsedTime(seconds) {
   const n=Math.max(0,Math.floor(seconds));
   return n<60?`${n}s`:n<3600?`${Math.floor(n/60)}m${String(n%60).padStart(2,'0')}s`:`${Math.floor(n/3600)}h${String(Math.floor(n%3600/60)).padStart(2,'0')}m`;
 }
-function queuedWork(botId) {
+function queuedWork(botId,chatId) {
   const runs=state.allRuns.filter(r=>r.bot_id===botId);
   const queued=runs.filter(r=>r.status==='queued').sort((a,b)=>a.created-b.created);
   const pause=pausedScreens().find(p=>p.bot_id===botId);
+  // Dispatch is bot-wide; filter by conversation only after identifying the starting run.
   const starting=!pause&&!runs.some(active)?queued[0]:null;
-  return {pause,starting,waiting:queued.length-(starting?1:0)};
+  return {pause,starting,waiting:queued.filter(r=>r.id!==starting?.id&&(!chatId||r.chat_id===chatId)).length};
 }
 function updateWorkLabel(label) {
   const a=state.activities[label.dataset.activityLabel]||{},r=reaction(label.dataset.activityLabel);
@@ -1122,7 +1123,8 @@ function renderHeader() {
   $("show-computer").hidden=!!state.chat?.shared&&!chatScreenBots().length;
   $("composer-actions").hidden=false;
   const pause = pausedScreens().find(p=>p.bot_id===b?.id), thisBotPaused=!!pause;
-  const queued = queuedWork(b?.id).waiting;
+  const queueChatId = state.chat?.id || (b ? `dm-${b.id}` : '');
+  const queued = queueChatId ? [...new Set(state.allRuns.filter(r=>r.chat_id===queueChatId).map(r=>r.bot_id))].reduce((count,id)=>count+queuedWork(id,queueChatId).waiting,0) : 0;
   $('queue-status').hidden = !queued && !pause;
   $('queue-status').replaceChildren(node('span','',queued ? `${queued} message${queued===1?'':'s'} queued${pause?' · waiting for control to be returned':''}` : 'Computer paused for manual control'));
   if(pause)$('queue-status').append(button('Return control',()=>returnScreenControl(pause),'subtle-button small-button'));
@@ -6459,9 +6461,10 @@ function reviewTeaching() {
 }
 window.addEventListener('beforeunload',e=>{if(state.teaching){e.preventDefault();e.returnValue='';}});
 
-// Close modals synchronously. Waiting for a compositor animation can leave a
+// Close modals without waiting for animation. A compositor animation can leave a
 // transparent modal intercepting input when WebKit's animation never finishes.
-document.addEventListener('cancel',e=>{if(e.target instanceof HTMLDialogElement){e.preventDefault();e.target.close();}},true);
+// Let the dialog's own unsaved-change and in-flight guards handle cancel first.
+document.addEventListener('cancel',e=>{if(e.target instanceof HTMLDialogElement){const dialog=e.target;setTimeout(()=>{if(!e.defaultPrevented&&dialog.open)dialog.close();},0);}},true);
 
 function waitForDesktop() {
   if(state.desktopConnected)return Promise.resolve();
