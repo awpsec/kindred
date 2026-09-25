@@ -119,6 +119,7 @@ function iconButton(symbol, label, action) {
   return b;
 }
 function notice(text, error = false) {
+  $("notice").classList.remove("continuation-confirmation");
   $("notice").textContent = text;
   $("notice").classList.toggle("error", error);
   $("notice").hidden = false;
@@ -4692,7 +4693,7 @@ function connectorBatches(messages,_boundary,runs=[]){
   for(const m of messages){
     const previous=batch.at(-1);
     // Quiet routine completions are invisible, so they do not divide receipts.
-    if(!m.text?.trim()||(hiddenCompletionMessage(m)&&!runs.find(r=>r.id===m.run_id)?.error))continue;
+    if(m.kind==='continuation'||!m.text?.trim()||(hiddenCompletionMessage(m)&&!runs.find(r=>r.id===m.run_id)?.error))continue;
     if(!['completed','preparing','approved','ready','executing'].includes(m.connector_artifact?.status)){flush();continue;}
     // Consecutive calls belong together even across scheduled runs and long gaps.
     if(previous&&previous.sender!==m.sender)flush();
@@ -4705,9 +4706,9 @@ function connectorMessage(m,id){
   const receipt=connectorCard(m.connector_artifact,{heading:connectorHeading,button,api,onChange:async()=>{await refresh(true);},onDiscuss:()=>startMessageReply(id,m),botName:state.bots.find(b=>b.id===m.connector_artifact.bot_id)?.name,
     sanitizeHtml:text=>{const fragment=DOMPurify.sanitize(text,{RETURN_DOM_FRAGMENT:true,ALLOWED_TAGS:['p','br','div','span','strong','em','b','i','u','ul','ol','li','blockquote','table','thead','tbody','tr','td','th','a'],ALLOWED_ATTR:['href','title']});for(const a of fragment.querySelectorAll('a')){try{const url=new URL(a.getAttribute('href'));if(!['https:','http:','mailto:'].includes(url.protocol)||url.username||url.password)a.removeAttribute('href');else{a.target='_blank';a.rel='noopener noreferrer';}}catch{a.removeAttribute('href');}}return fragment;}});
   const card=m.connector_artifact;
-  // Decisions and uncertain outcomes remain fully visible; ordinary receipts
+  // Decisions and failures remain fully visible; interrupted and ordinary receipts
   // occupy a single line until the person asks to inspect them.
-  if(['pending','failed','interrupted','changes_requested'].includes(card.status)){group.append(receipt);return group;}
+  if(['pending','failed','changes_requested'].includes(card.status)){group.append(receipt);return group;}
   const disclosure=node('details','connector-call'),summary=connectorCallSummary(card);
   const entry=conversationHistory(id);entry.openConnectorCalls??=new Set();
   disclosure.open=entry.openConnectorCalls.has(card.id);
@@ -4735,7 +4736,7 @@ function editQueuedMessage(message,chatId){
 
 function connectorCallSummary(card){
   const brand=connectorBrand(card.connection||card.connector,card.tool),summary=node('summary','connector-call-summary');
-  const verbs={preparing:'Preparing',approved:'Queued',ready:'Queued',executing:'Calling',completed:card.email_send?'Sent via':'Called',denied:'Declined'};
+  const verbs={preparing:'Preparing',approved:'Queued',ready:'Queued',executing:'Calling',completed:card.email_send?'Sent via':'Called',denied:'Declined',interrupted:'Interrupted'};
   const tool=String(card.tool||'').split('__').at(-1);
   // Only known identifier fields belong in the compact receipt, never arbitrary
   // bodies, query contents, credentials or nested connector payloads.
@@ -4886,7 +4887,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   const boundary=unreadBoundaries.get(id);let unreadInserted=false;
   const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set();
   for (const m of data.messages) {
-    if(stacked.has(m.seq))continue;
+    if(stacked.has(m.seq)||m.kind==='continuation')continue;
     if (!m.text?.trim()) continue;
     if(hiddenCompletionMessage(m) && !runs.find(r=>r.id===m.run_id)?.error)continue;
     if(boundary&&!unreadInserted&&m.kind!=='connector_artifact'&&(chat.shared?!m.mine:m.sender!=='user')&&m.sender!=='system'&&m.seq>boundary.after&&m.seq<=boundary.through){
@@ -4960,11 +4961,6 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     previousTime = m.created;
     const statusRun=runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run;
     const statusNotice=m.status_notice||(m.kind==='notice'?{label:'Status',text:m.text}:m.kind==='result'&&statusRun&&['failed','cancelled','interrupted'].includes(statusRun.status)?{label:statusRun.status==='cancelled'?'Task stopped':statusRun.status==='interrupted'?'Task interrupted':'Task failed',text:statusRun.error||m.text}:null);
-    if(m.kind==='continuation'){
-      const line=node('article','task-continuation');line.dataset.message=String(m.seq);line.dataset.run=m.run_id;
-      line.append(icon('refresh',14),node('span','','Continuing task'));
-      area.append(line);previousSender=null;sequenceAvatar=null;continue;
-    }
     if(statusNotice){
       const recovered=!!statusNotice.continued_by;
       let group=recovered?[...area.querySelectorAll('.chat-status-group')].find(n=>n.dataset.recovery===m.run_id):null;
@@ -5294,12 +5290,13 @@ function taskRecoveryHistory(){
   history.append(summary,body);animateChatDisclosure(history,body);
   return history;
 }
+function showContinuationConfirmation(){notice('Continuing task');$('notice').classList.add('continuation-confirmation');}
 function continueTaskButton(run){
   if(run.error==='Connection issue - 5 retries failed.'){
     let sending=false;
     const retry=button('Retry',async()=>{
       if(sending)return;sending=true;retry.disabled=true;
-      try{await api('/runs/'+encodeURIComponent(run.id)+'/continue','POST',{});await refresh(true);}
+      try{await api('/runs/'+encodeURIComponent(run.id)+'/continue','POST',{});await refresh(true);showContinuationConfirmation();}
       finally{sending=false;retry.disabled=false;}
     },'outline-button provider-retry-button','refresh');return retry;
   }
@@ -5311,7 +5308,7 @@ function continueTaskButton(run){
       submit.disabled=true;
       try{
         await api('/runs/'+encodeURIComponent(run.id)+'/continue','POST',{});
-        dialog.close();await refresh(true);notice('Continuation sent.');
+        dialog.close();await refresh(true);showContinuationConfirmation();
       }catch(error){submit.disabled=false;throw error;}
     },'primary');
     const actions=node('div','continue-task-actions');actions.append(submit);dialog.append(actions);

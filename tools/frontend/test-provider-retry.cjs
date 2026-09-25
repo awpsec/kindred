@@ -35,7 +35,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   assert.equal(await page.getByText('Task failed',{exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'Continue task',exact:true}).count(),0);assert.equal(await retry.locator('svg').count(),1);
   await page.screenshot({path:path.join(out,engine+'-exhausted.png')});await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await retry.click();await page.locator('#notice').filter({hasText:'Temporary fixture failure'}).waitFor();assert(await retry.isEnabled());
-  await retry.evaluate(b=>{b.click();b.click();});await page.locator('.task-continuation').waitFor();assert.equal(posts,2,'failed request plus one guarded retry');assert.equal(await page.locator('.continue-task-dialog').count(),0);assert.equal(await page.locator('.task-recovery-history').count(),1);
+  await retry.evaluate(b=>{b.click();b.click();});await page.locator('.task-recovery-history').waitFor();assert.equal(await page.locator('.task-continuation').count(),0);assert.equal(posts,2,'failed request plus one guarded retry');assert.equal(await page.locator('.continue-task-dialog').count(),0);assert.equal(await page.locator('.task-recovery-history').count(),1);
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,fiveRetryStates:true,recoveryClearsStatus:true,animatedDotsStable:true,reducedMotion:true,compactFailure:true,directRetry:true,doubleClickGuard:true,failedRequestRecoverable:true,mobile:true}));
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

@@ -4086,7 +4086,6 @@ details.continue-task-preview>summary{padding-inline-start:34px}
 @media(prefers-reduced-motion:reduce) {.unread-divider.is-seen {opacity:0;height:0;margin-block:0;animation:none;}}
 
 /* A retry is a small timeline action; diagnostics remain available on demand. */
-.task-continuation{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.85rem;padding:8px 12px;margin:8px 0}
 .continue-task-dialog>p{margin:0 0 12px;line-height:1.6;overflow-wrap:anywhere}
 .continue-task-preview{margin-top:20px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .continue-task-preview>summary{padding:14px 16px;cursor:pointer;font-weight:550;line-height:1.5}
@@ -4897,3 +4896,10 @@ details.composio-service>summary.composio-service-summary::before{display:none}
 .artifact-studio-library:has(>.sidebar-bottom) .artifact-studio-library-list{flex:1;min-height:0;overflow-y:auto}
 
 .mac-overlay:has(.artifact-studio) .desktop-titlebar.macos{pointer-events:none}
+
+/* Recovery receipts share the compact rhythm of the following tool call. */
+.chat-status-group[data-recovery]{margin:3px 0}
+#notice.continuation-confirmation{animation:continuation-confirmation 4s ease both}
+@keyframes continuation-confirmation{0%,85%{opacity:1}100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){#notice.continuation-confirmation{animation:none}}
+html[data-motion=off] #notice.continuation-confirmation{animation:none}
