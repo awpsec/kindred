@@ -282,12 +282,6 @@ pub fn needs_local_start(url: &tauri::Url) -> bool {
         .and_then(|c| c.get("http://127.0.0.1:9444/health").send().ok())
         .is_none_or(|r| !r.status().is_success())
 }
-pub fn local_update_available(url: &tauri::Url) -> bool {
-    url.origin().ascii_serialization() == crate::local_server::ORIGIN
-        && root().is_ok_and(|p| p.join("standalone").is_dir())
-        && crate::local_server::version()
-            .is_some_and(|version| crate::local_server::newer(env!("CARGO_PKG_VERSION"), &version))
-}
 pub fn show(app: &tauri::AppHandle) -> Result<()> { show_context(app, None) }
 fn show_context(app: &tauri::AppHandle, context: Option<(&crate::surface::Surface, &str, &str)>) -> Result<()> {
     let prepare = |home: &tauri::WebviewWindow| -> Result<()> {

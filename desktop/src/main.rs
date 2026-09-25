@@ -110,8 +110,6 @@ fn main() {
     });
     let recover_local = !onboarding && profiles::needs_local_start(&url);
     let client_only = std::env::var("KINDRED_CLIENT_ONLY").as_deref() == Ok("1");
-    let update_local =
-        !onboarding && !recover_local && profiles::local_update_available(&url);
     let allowed_origin = url.origin();
     let token = update_session
         .as_ref()
@@ -296,10 +294,6 @@ fn main() {
                 profiles::show(app.handle()).map_err(std::io::Error::other)?;
                 if recover_local && !client_only{profiles::start_setup(app.handle().clone()).map_err(std::io::Error::other)?;}
                 return Ok(());
-            }
-            if update_local {
-                *app.state::<profiles::Host>().intent.lock().unwrap()=serde_json::json!({"mode":"standalone-update"});
-                profiles::show(app.handle()).map_err(std::io::Error::other)?;
             }
             app.add_capability(
                 tauri::ipc::CapabilityBuilder::new("local-updater")

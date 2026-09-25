@@ -101,24 +101,14 @@ pub fn connection_ready(window: crate::surface::Surface) -> Result<(), String> {
     *stage = 1;
     drop(stage);
     let host = window.state::<crate::profiles::Host>();
-    let update_local = {
-        let mut intent = host.intent.lock().map_err(|e| e.to_string())?;
-        let update = intent["mode"] == "standalone-update";
-        if !update {
-            *intent = serde_json::Value::Null;
-        }
-        update
-    };
-    if !update_local {
-        if let Some(home) = window.app_handle().get_webview_window("profile-home") {
-            let _ = home.close();
-        }
+    // Once the saved session connects, dismiss startup/recovery UI. Local
+    // server updates are managed explicitly from Server administration.
+    *host.intent.lock().map_err(|e| e.to_string())? = serde_json::Value::Null;
+    if let Some(home) = window.app_handle().get_webview_window("profile-home") {
+        let _ = home.close();
     }
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
-    if update_local {
-        crate::profiles::show(window.app_handle())?;
-    }
     Ok(())
 }
 
@@ -176,9 +166,7 @@ pub fn watch(app: tauri::AppHandle, server: String, key: Option<String>) {
                 if tick == 1 || failed {
                     let host = handle.state::<crate::profiles::Host>();
                     if let Ok(mut intent) = host.intent.lock() {
-                        if failed || intent["mode"] != "standalone-update" {
-                            *intent = json!({"mode":"connection", "server":server, "key":key, "failed":failed});
-                        }
+                        *intent = json!({"mode":"connection", "server":server, "key":key, "failed":failed});
                     }
                     let _ = crate::profiles::show(&handle);
                 }
