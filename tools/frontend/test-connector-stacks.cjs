@@ -33,8 +33,9 @@ assert.equal(context.connectorBatches([...routineCalls.slice(0,2),{seq:4.5,sende
   assert.equal(await stack.getAttribute('open'),null);assert.equal(await stack.locator('.connector-message').count(),11);
   assert.match(await stack.locator(':scope > summary').innerText(),/12 tool calls/);
   assert.equal(await page.locator('[data-connector-artifact="card-2"]').isVisible(),false);
-  for(const seq of [14,15])assert(await page.locator('[data-connector-artifact="card-'+seq+'"]').isVisible());for(const seq of [13,16,18,19,20])assert(await page.locator('.connector-message[data-message="'+seq+'"] > .connector-call > summary').isVisible());
+  for(const seq of [14])assert(await page.locator('[data-connector-artifact="card-'+seq+'"]').isVisible());for(const seq of [13,15,16,18,19,20])assert(await page.locator('.connector-message[data-message="'+seq+'"] > .connector-call > summary').isVisible());
   assert.match(await page.locator('.connector-message[data-message="16"] > .connector-call > summary').innerText(),/Interrupted/);assert.equal(await page.locator('[data-connector-artifact="card-16"]').isVisible(),false);
+  const failed=page.locator('.connector-message[data-message="15"] > .connector-call > summary');assert.match(await failed.innerText(),/Failed/);assert.equal(await page.locator('[data-connector-artifact="card-15"]').isVisible(),false);await failed.click();assert(await page.locator('[data-connector-artifact="card-15"] .connector-outcome-warning').isVisible());await failed.click();
   const interrupted=page.locator('.connector-message[data-message="16"] > .connector-call > summary');await interrupted.click();assert.equal(await page.locator('[data-connector-artifact="card-16"] .connector-outcome-warning').innerText(),'This lookup did not finish.');await interrupted.click();
   assert((await stack.boundingBox()).height<130,'collapsed stack stays compact');
   await stack.locator(':scope > summary').focus();await page.keyboard.press('Enter');await stack.locator('.connector-call > summary').first().click();await page.locator('[data-connector-artifact="card-2"]').waitFor({state:'visible'});
@@ -66,6 +67,6 @@ assert.equal(context.connectorBatches([...routineCalls.slice(0,2),{seq:4.5,sende
   assert.equal(await page.locator('.connector-stack').count(),1,'Receipt cursors do not split call groups');
   assert.equal(await page.locator('.unread-divider').count(),0);
   assert.deepEqual(writes,[]);assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({passed:true,engine,thirteenReceiptsOneStack:true,approvalAndFailureVisibleInterruptionExpandable:true,crossRoutineAndLongGapStacking:true,senderAndMessageBoundaries:true,receiptCursorsStayGrouped:true,keyboardExpansion:true,refreshPreservesNestedReadingState:true,quoteOpensExactReceipt:true,sixLayouts:true,noConnectorWrites:true}));
+  console.log(JSON.stringify({passed:true,engine,thirteenReceiptsOneStack:true,approvalVisibleFailuresAndInterruptionsExpandable:true,crossRoutineAndLongGapStacking:true,senderAndMessageBoundaries:true,receiptCursorsStayGrouped:true,keyboardExpansion:true,refreshPreservesNestedReadingState:true,quoteOpensExactReceipt:true,sixLayouts:true,noConnectorWrites:true}));
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

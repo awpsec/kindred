@@ -4706,9 +4706,9 @@ function connectorMessage(m,id){
   const receipt=connectorCard(m.connector_artifact,{heading:connectorHeading,button,api,onChange:async()=>{await refresh(true);},onDiscuss:()=>startMessageReply(id,m),botName:state.bots.find(b=>b.id===m.connector_artifact.bot_id)?.name,
     sanitizeHtml:text=>{const fragment=DOMPurify.sanitize(text,{RETURN_DOM_FRAGMENT:true,ALLOWED_TAGS:['p','br','div','span','strong','em','b','i','u','ul','ol','li','blockquote','table','thead','tbody','tr','td','th','a'],ALLOWED_ATTR:['href','title']});for(const a of fragment.querySelectorAll('a')){try{const url=new URL(a.getAttribute('href'));if(!['https:','http:','mailto:'].includes(url.protocol)||url.username||url.password)a.removeAttribute('href');else{a.target='_blank';a.rel='noopener noreferrer';}}catch{a.removeAttribute('href');}}return fragment;}});
   const card=m.connector_artifact;
-  // Decisions and failures remain fully visible; interrupted and ordinary receipts
+  // Only requests for a user decision expand automatically; execution receipts
   // occupy a single line until the person asks to inspect them.
-  if(['pending','failed','changes_requested'].includes(card.status)){group.append(receipt);return group;}
+  if(['pending','changes_requested'].includes(card.status)){group.append(receipt);return group;}
   const disclosure=node('details','connector-call'),summary=connectorCallSummary(card);
   const entry=conversationHistory(id);entry.openConnectorCalls??=new Set();
   disclosure.open=entry.openConnectorCalls.has(card.id);
@@ -4736,7 +4736,7 @@ function editQueuedMessage(message,chatId){
 
 function connectorCallSummary(card){
   const brand=connectorBrand(card.connection||card.connector,card.tool),summary=node('summary','connector-call-summary');
-  const verbs={preparing:'Preparing',approved:'Queued',ready:'Queued',executing:'Calling',completed:card.email_send?'Sent via':'Called',denied:'Declined',interrupted:'Interrupted'};
+  const verbs={preparing:'Preparing',approved:'Queued',ready:'Queued',executing:'Calling',completed:card.email_send?'Sent via':'Called',denied:'Declined',interrupted:'Interrupted',failed:'Failed'};
   const tool=String(card.tool||'').split('__').at(-1);
   // Only known identifier fields belong in the compact receipt, never arbitrary
   // bodies, query contents, credentials or nested connector payloads.
