@@ -23,10 +23,11 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
    if(match){const c=chats.find(c=>c.id===match[1]),all=c.id==='pair'?messages:[],before=Number(url.searchParams.get('before')),after=Number(url.searchParams.get('after')),inclusive=url.searchParams.get('inclusive')==='true',limit=Number(url.searchParams.get('limit')||50);let rows=all.filter(m=>(!before||(inclusive?m.seq<=before:m.seq<before))&&(!after||(inclusive?m.seq>=after:m.seq>after)));rows=after?rows.slice(0,limit):rows.slice(-limit);return send({chat:c,messages:rows,page:{has_before:all.some(m=>m.seq<rows[0]?.seq),has_after:all.some(m=>m.seq>rows.at(-1)?.seq)}});}
    return route.continue();
   });
-  await p.goto(origin);const tile=()=>p.locator('#pinned-bots').getByRole('button',{name:chat.name,exact:true});await tile().click();
+  await p.goto(origin);const tile=()=>p.locator('#pinned-bots').getByRole('button',{name:'#piper-izabella',exact:true});await tile().click();
   const first=()=>p.locator('[data-message="1"]'),second=()=>p.locator('[data-message="2"]'),prompt=p.locator('#prompt');
   await first().hover();await p.waitForTimeout(160);assert.equal(await first().locator('.message-actions').evaluate(n=>getComputedStyle(n).opacity),'1');assert.equal(await first().locator('.message-foot').count(),0);
-  assert(await first().evaluate(n=>{const b=n.querySelector('.message-bubble').getBoundingClientRect(),a=n.querySelector('.message-actions').getBoundingClientRect();return a.left>=b.right&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2)<2;}));
+  assert(await first().evaluate(n=>{const b=n.querySelector('.message-bubble').getBoundingClientRect(),a=n.querySelector('.message-actions').getBoundingClientRect();return a.left>=b.right&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2+8)<2;}));
+  const timestamp=first().locator('.message-action-time');assert.equal(await timestamp.getAttribute('datetime'),new Date(now*1000).toISOString());assert(await timestamp.getAttribute('title'));assert(await timestamp.evaluate(n=>{const t=n.getBoundingClientRect(),a=n.parentElement.getBoundingClientRect();return t.top>=a.bottom-1;}));
   assert.equal(await first().getByRole('button',{name:'More message actions',exact:true}).count(),0);
   await first().getByRole('button',{name:'Copy message',exact:true}).click();
   assert.equal(await p.evaluate(()=>window.fixtureCopied),messages[0].text);
