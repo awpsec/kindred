@@ -2,21 +2,18 @@ import {avatarData} from "./avatar-data.js";
 // Decorative pile of still bots for the Settings header. Bodies and faces come
 // from the avatar shapes; colour is applied by CSS (vivid in light, grey in dark).
 const NS = "http://www.w3.org/2000/svg";
-// [shape, centre x, centre y, scale, tilt, light tone, dark grey, gaze]
+// Oversized, irregularly stacked silhouettes deliberately spill past the header.
+// [shape, x, y, scale, tilt, light tone, dark grey, gaze, eye heights]
 const bots = [
-  ["square", 72, 23, .31, 10, "#14bfc7", "#8c8c8c", 2],
-  ["square", 106, 20, .28, -24, "#b24cf2", "#a6a6a6", 0],
-  ["round", 40, 25, .29, 0, "#7960ff", "#9a9a9a", 3],
-  ["cloud", 140, 23, .3, -6, "#24d5a4", "#7a7a7a", -2],
-  ["round", 175, 24, .28, 0, "#2ec767", "#b0b0b0", -3],
-  ["pebble", 206, 28, .24, 12, "#21b3ff", "#8f8f8f", 0],
-  ["pebble", 22, 53, .32, -8, "#ff6952", "#7d7d7d", 2],
-  ["cloud", 55, 53, .34, 4, "#ff9638", "#a0a0a0", 0],
-  ["triangle", 89, 50, .37, -6, "#f24d93", "#b8b8b8", -1],
-  ["round", 122, 54, .33, 0, "#ffbe16", "#858585", 3],
-  ["capsule", 157, 51, .37, -14, "#2475ff", "#a8a8a8", 0],
-  ["hexagon", 192, 53, .33, 10, "#a3d92b", "#7a7a7a", -2],
-  ["drop", 223, 56, .26, -10, "#858a8a", "#9c9c9c", 0],
+  ["round", 42, 15, .66, -22, "#7960ff", "#9a9a9a", 4, [25, 25]],
+  ["square", 110, 4, .72, 19, "#14bfc7", "#8c8c8c", -3, [8, 8]],
+  ["cloud", 184, 15, .76, -16, "#24d5a4", "#a6a6a6", 2, [27, 13]],
+  ["round", 269, 4, .7, 25, "#ffbe16", "#858585", -4, [22, 22]],
+  ["pebble", 327, 32, .67, -25, "#21b3ff", "#9c9c9c", -2, [24, 9]],
+  ["cloud", 63, 78, .79, 13, "#ff9638", "#a0a0a0", 3, [12, 12]],
+  ["triangle", 135, 65, .85, -13, "#f24d93", "#b8b8b8", -1, [23, 23]],
+  ["capsule", 218, 72, .86, 18, "#2475ff", "#a8a8a8", -3, [29, 29]],
+  ["hexagon", 300, 89, .79, -14, "#b24cf2", "#7a7a7a", 2, [12, 24]],
 ];
 function el(tag, attrs = {}) {
   const n = document.createElementNS(NS, tag);
@@ -26,12 +23,12 @@ function el(tag, attrs = {}) {
 export function settingsHeaderArt() {
   const svg = el("svg", {
     class: "settings-header-art",
-    viewBox: "0 0 240 70",
+    viewBox: "0 0 350 80",
     preserveAspectRatio: "xMaxYMax meet",
     "aria-hidden": "true",
     focusable: "false",
   });
-  for (const [shape, x, y, scale, tilt, tone, grey, gaze] of bots) {
+  for (const [shape, x, y, scale, tilt, tone, grey, gaze, eyes] of bots) {
     const face = avatarData.faces[shape] || avatarData.faces.round;
     const bot = el("g", {
       class: "settings-header-bot",
@@ -44,9 +41,9 @@ export function settingsHeaderArt() {
       bot.append(el("rect", {
         class: "settings-header-bot-eye",
         x: face.x + gaze + side * face.spread - 4.3,
-        y: face.y - 9.6,
+        y: face.y - eyes[(side + 1) / 2] / 2,
         width: 8.6,
-        height: 19.2,
+        height: eyes[(side + 1) / 2],
         rx: 4.3,
       }));
     }
