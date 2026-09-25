@@ -7,7 +7,7 @@ const p=await browser.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.mess
 sessionStorage.setItem('kindred-token',token);localStorage.setItem('kindred-dictation-v1',JSON.stringify({enabled:true,model:'local:base'}));
 window.__KINDRED_DESKTOP={platform:'linux'};window.__KINDRED_DICTATION_MODELS=true;window.jobs=[];
 // Each decode records how many 16 kHz samples it was given.
-window.__TAURI__={core:{invoke:async(command,args)=>{if(command==='transcribe_dictation')return new Promise(resolve=>jobs.push({samples:(atob(args.audio).length-44)/2,resolve:text=>resolve({text})}));return {supported:true,phase:'ready',model:'base',models:[{id:'base',name:'Base',downloaded:true,loaded:true}]};}}};
+window.__TAURI__={core:{invoke:async(command,args)=>{if(command==='transcribe_dictation')return new Promise((resolve,reject)=>jobs.push({reject,samples:(atob(args.audio).length-44)/2,resolve:text=>resolve({text})}));return {supported:true,phase:'ready',model:'base',models:[{id:'base',name:'Base',downloaded:true,loaded:true}]};}}};
 Object.defineProperty(navigator,'mediaDevices',{value:{getUserMedia:async()=>({getTracks:()=>[{stop(){}}]})}});
 const node=()=>({connect(){},disconnect(){},gain:{value:0}});window.AudioContext=class{constructor(){this.sampleRate=16000;this.state='running';}async resume(){}async close(){}createMediaStreamSource(){return node();}createGain(){return node();}createScriptProcessor(){window.capture=node();return capture;}};
 window.feed=(amplitude,seconds=1)=>capture.onaudioprocess({inputBuffer:{getChannelData:()=>new Float32Array(Math.round(16000*seconds)).fill(amplitude)}});
@@ -57,6 +57,11 @@ await p.evaluate(()=>{feed(0,.5);feed(.1);});assert.equal(await job(2),48000,'Un
 // Cancel after segments removes the whole transcript and ignores late results.
 await p.evaluate(()=>{feed(0);feed(.1);});const pending=await p.evaluate(()=>jobs.length);await p.getByRole('button',{name:'Cancel dictation',exact:true}).click();
 if(pending>2)await resolve(pending-1,'Do not insert');await p.waitForTimeout(100);assert.equal(await prompt(),'');
+// A failing preview during Stop must still drain the final recorded speech.
+await begin();await p.evaluate(()=>feed(.1));assert.equal(await job(1),16000);
+await p.evaluate(()=>feed(.1));await stop.click();await p.evaluate(()=>jobs[0].reject(new Error('Transient preview failure')));
+assert.equal(await job(2),32000,'The final drain retries all undecoded speech');await resolve(1,'First and final words.');await idle();assert.equal(await prompt(),'First and final words.');
+
 // A stop click must survive native status polling while the pointer is held.
 await begin();await p.evaluate(()=>feed(.1));await job(1);await resolve(0,'Ready to stop.');await shows('Ready to stop.');
 const box=await stop.boundingBox();await p.mouse.move(box.x+box.width/2,box.y+box.height/2);await p.mouse.down();

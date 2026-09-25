@@ -27,8 +27,15 @@ const assert=require('node:assert/strict');
  await p.keyboard.press('Escape');assert.equal(await p.locator('.workspace-artifact-dialog').count(),1);assert.equal(prompts,2);
  assert.equal(await input.inputValue(),'Unsaved');
  p.removeAllListeners('dialog');p.once('dialog',d=>d.accept());await p.getByRole('button',{name:'Close',exact:true}).click();await p.locator('.workspace-artifact-dialog').waitFor({state:'detached'});
+ // A refreshed app preview keeps the reader's place instead of jumping to top.
+ await p.evaluate(()=>{window.longSample={...sample,source:'<h1>Long report</h1><div style="height:2400px">Report content</div>'};window.longOptions={...options,api:async()=>longSample};window.longPreview=artifactModule.openWorkspaceArtifact(longSample,longOptions);});
+ await p.waitForFunction(()=>{const c=document.querySelector('.workspace-artifact-dialog .workspace-artifact');return c&&!c.hasAttribute('aria-busy')&&c.querySelector('iframe:not(.artifact-frame-pending)');});
+ await p.frameLocator('.workspace-artifact-dialog iframe').locator('body').evaluate(()=>scrollTo(0,480));await p.waitForTimeout(100);
+ await p.evaluate(async()=>{longSample={...longSample,revision:2};await longPreview.querySelector('.workspace-artifact').refreshArtifact(longSample);});
+ assert.equal(await p.frameLocator('.workspace-artifact-dialog iframe').locator('body').evaluate(()=>scrollY),480,'Refreshing preserves document scroll');
+ await p.getByRole('button',{name:'Close',exact:true}).click();await p.locator('.workspace-artifact-dialog').waitFor({state:'detached'});
  await p.evaluate(async()=>{const {loadArtifactFrame}=await import('/artifacts.js');const f=document.createElement('iframe');f.id='reload-test';f.sandbox='allow-scripts';document.body.append(f);loadArtifactFrame(f,'<h1>Reload survived</h1>');});
  await p.frameLocator('#reload-test').getByText('Reload survived').waitFor();
  await p.evaluate(()=>{document.querySelector('#reload-test').src='/artifact-frame.html?reload=1';});await p.frameLocator('#reload-test').getByText('Reload survived').waitFor();
- console.log('Touch drawer, desktop pin restoration, unsaved preview protection and frame reload passed');
+ console.log('Touch drawer, desktop pin restoration, unsaved preview protection, refresh scroll restoration and frame reload passed');
 }finally{await browser.close();server.closeAllConnections();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});

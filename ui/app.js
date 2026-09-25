@@ -2158,10 +2158,11 @@ async function settingsGeneral(revision) {
   const appearance=settingsPane('Appearance'),theme=select([['system','Follow System'],['dark','Dark'],['light','Light']],state.general.theme||'system');
   const motion=settingSwitch('Reduce motion',state.general.reduced_motion),activity=settingSwitch('Show activity in chats',state.general.show_activity===true);
   const separateBots=settingSwitch('Separate bot conversations',state.general.separate_bot_chats!==false);
-  appearance.body.append(settingRow('Theme',theme),motion.label,activity.label,separateBots.label);
+  appearance.body.append(settingRow('Theme',theme),motion.label);
+  const conversations=settingsPane('Conversations');conversations.body.append(activity.label,separateBots.label);
   const textSize=select([['100','100%'],['115','115%'],['125','125%'],['150','150%']],String(window.KindredReadingSize.get()));
   textSize.setAttribute('aria-label','Text size');textSize.onchange=()=>window.KindredReadingSize.set(textSize.value);
-  const textRow=settingRow('Text size',textSize,'On this device.');textRow.dataset.devicePreference='true';appearance.body.append(textRow);
+  const textRow=settingRow('Text size',textSize);textRow.dataset.devicePreference='true';appearance.body.append(textRow);
   const versions=settingsPane('Versions');versions.root.dataset.devicePreference='true';
   const clientVersion=node('span'),serverVersion=node('span'),updateStatus=node('p','muted small');
   clientVersion.dataset.clientVersion='';serverVersion.dataset.serverVersion='';updateStatus.dataset.clientUpdateStatus='';
@@ -2173,7 +2174,6 @@ async function settingsGeneral(revision) {
   versions.body.append(settingRow(window.__KINDRED_DESKTOP?'Desktop app on this device':'Browser interface',clientVersion),settingRow('Connected server',serverVersion,location.host),updateStatus,updateActions);
   if(window.__KINDRED_DESKTOP&&!window.__KINDRED_NATIVE_UPDATER&&!window.__KINDRED_SERVER_UPDATER)versions.body.append(node('p','muted small','This installed client predates in-app updates. Download the client from this server and install it once to enable future in-place updates.'));
   const system=settingsPane('System');system.root.dataset.devicePreference='true';
-  system.body.append(dictationUI.microphoneControl());
   if(window.__KINDRED_DESKTOP?.platform==='linux'&&window.__KINDRED_LINUX_UPDATER){
     const install=button('Install downloaded AppImage…',()=>nativeInvoke('open_linux_update',{}),'outline-button','download');install.setAttribute('aria-label','Install downloaded AppImage…');
     system.body.append(settingRow('Desktop app updates',install,'Installs an app update on this device. Your local server keeps running.'));
@@ -2203,8 +2203,10 @@ async function settingsGeneral(revision) {
   const help=node('details','settings-about');help.append(node('summary','','About approval policies'),node('p','muted small',approvalHelp));bots.body.append(help);
   notifications.onchange=()=>{if(notifications.value!=='none')void enableNotifications();};
   const dictation=dictationUI.settingsSection();dictation.dataset.devicePreference='true';
-  form.append(identity.root,appearance.root,system.root,bots.root,dictation,versions.root);
-  const serverControls=[name.input,prefs.input,theme,motion.input,activity.input,timezone,approval.input,notifications];
+  const speechPane=dictation.querySelector('.settings-pane');speechPane.insertBefore(dictationUI.microphoneControl(),speechPane.querySelector('.dictation-model-row'));
+  system.root.hidden=!system.body.children.length;
+  form.append(identity.root,appearance.root,conversations.root,dictation,system.root,bots.root,versions.root);
+  const serverControls=[name.input,prefs.input,theme,motion.input,activity.input,separateBots.input,timezone,approval.input,notifications];
   serverControls.forEach(control=>control.disabled=true);
   root.append(form);renderVersions();
   for(const input of [theme,motion.input])input.addEventListener('change',()=>{state.general={...state.general,theme:theme.value,reduced_motion:motion.input.checked};applyGeneral();});
@@ -3361,6 +3363,8 @@ async function connectDesktop() {
     const host = node("div", "desktop-canvas");
     $("desktop").prepend(host);
     const rfb = new RFB(host, url.href);
+    const previewOpen=button('',()=>setComputerExpanded(true),'desktop-preview-open');
+    previewOpen.setAttribute('aria-label','Open computer screen');previewOpen.append(node('span','','Open'));previewOpen.hidden=true;host.append(previewOpen);
     let failed=false;
     const fail=message=>{if(failed||generation!==state.desktopGeneration)return;failed=true;rfb.disconnect();retryDesktop(generation,message);};
     state.rfb = rfb;
@@ -3416,6 +3420,7 @@ function updateDesktopState() {
         ? "Stop task & take control"
         : "Take control";
   $('computer-panel').classList.toggle('is-controlling',takeover&&!!state.desktopConnected);
+  const previewOpen=$('desktop').querySelector('.desktop-preview-open');if(previewOpen)previewOpen.hidden=!state.desktopConnected;
   $('done-subtask').hidden = !human || !takeover;
   $('done-subtask').disabled = state.takingControl;
   $('take-control').hidden = !!human && takeover;
