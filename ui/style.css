@@ -3100,7 +3100,7 @@ input[type="checkbox"]:checked::after {
 .computer-preview {overflow:hidden;}
 .computer-preview img {transition:transform .28s ease;}
 .computer-preview:hover img {transform:scale(1.015);}
-.computer-preview > .preview-open {position:absolute;left:50%;top:50%;bottom:auto;transform:translate(-50%,-35%);border:1px solid #ffffff38;border-radius:8px;padding:8px 16px;background:#161616dd;color:#fff;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;}
+.computer-preview > .preview-open {position:absolute;left:50%;top:50%;bottom:auto;transform:translate(-50%,-35%);border:0;padding:0;background:transparent;color:#fff;display:flex;align-items:center;gap:7px;text-shadow:0 1px 3px #000,0 0 8px #000;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;}
 .computer-preview:hover > .preview-open,.computer-preview:focus-visible > .preview-open {opacity:1;transform:translate(-50%,-50%);}
 .bot-link {min-height:62px;gap:9px;transition:background .18s ease;}
 .bot-link > .character {flex:none;}
@@ -4877,8 +4877,8 @@ details.composio-service>summary.composio-service-summary::before{display:none}
 .computer-panel:not(.is-controlling) .desktop-canvas canvas{cursor:default!important}
 .computer-panel:not(.expanded) .desktop-canvas canvas{cursor:pointer!important}
 .desktop-preview-open{position:absolute;inset:0;z-index:3;border:0;border-radius:12px;padding:0;background:transparent;color:white;cursor:pointer;display:grid;place-items:center;translate:none!important}
-.desktop-preview-open:hover{background:transparent}
-.desktop-preview-open>span{padding:8px 16px;border:1px solid #ffffff38;border-radius:8px;background:#161616dd;opacity:0;transform:translateY(4px);transition:opacity .18s ease,transform .18s ease;pointer-events:none}
+.desktop-preview-open:hover:not(:disabled),.computer-preview:hover:not(:disabled){background:transparent}
+.desktop-preview-open>span{display:flex;align-items:center;gap:7px;padding:0;border:0;background:transparent;text-shadow:0 1px 3px #000,0 0 8px #000;opacity:0;transform:translateY(4px);transition:opacity .18s ease,transform .18s ease;pointer-events:none}
 .desktop-preview-open:hover>span,.desktop-preview-open:focus-visible>span{opacity:1;transform:none}
 .desktop-preview-open:focus-visible{outline:2px solid var(--fg);outline-offset:-4px}
 .computer-panel.expanded .desktop-preview-open{display:none}
@@ -4922,3 +4922,5 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
 :root[data-theme="light"] .settings-header-bot-body {fill:var(--art-tone);}
 @media(max-width:600px){.settings-main > header:has(.settings-header-art) .settings-header-art{right:60px;}}
 @media(max-width:420px),(forced-colors:active){.settings-header-art{display:none;}}
+
+.desktop-preview-open>span>svg,.computer-preview>.preview-open>svg{width:18px;height:18px;filter:drop-shadow(0 1px 2px #000);}
