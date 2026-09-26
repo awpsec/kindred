@@ -1105,6 +1105,7 @@ const iconPaths = {
   stop: "M6 6h12v12H6z",
   external: "M14 3h7v7M21 3l-11 11M10 3H3v18h18v-7",
   link: "M10 14l4-4M8 12l-2 2a3.5 3.5 0 0 0 5 5l2-2M16 12l2-2a3.5 3.5 0 0 0-5-5l-2 2",
+  paste: "M9 5H6a2 2 0 0 0-2 2v13h16V7a2 2 0 0 0-2-2h-3M9 3h6v4H9zM8 12h8M8 16h6",
   copy: "M9 9h12v12H9zM5 15H3V3h12v2",
   check: "m5 12 4 4L19 6",
   edit: "m15 4 5 5M3 21l5-1L21 7l-5-5L3 15v6",

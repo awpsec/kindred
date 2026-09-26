@@ -4924,3 +4924,6 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
 @media(max-width:420px),(forced-colors:active){.settings-header-art{display:none;}}
 
 .desktop-preview-open>span>svg,.computer-preview>.preview-open>svg{width:18px;height:18px;filter:drop-shadow(0 1px 2px #000);}
+
+.desktop-footer-actions{display:flex;align-items:center;gap:6px;flex:none;margin-left:8px;}
+#desktop-paste{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:5px 7px;}
