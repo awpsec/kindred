@@ -2552,15 +2552,13 @@ function customProviderEditor(root,provider=null) {
 async function settingsComposio(root) {
   const data = await api("/composio");
   if (!root.isConnected) return;
-  const group = section("Apps marketplace");
-  group.append(
-    node(
-      "p",
-      "muted small",
-      "Search Composio apps and add them to your workspace. All your bots share connected apps.",
-    ),
-  );
-  group.append(button("Browse marketplace", openMarketplace, "outline-button"));
+  const group = section("Composio");
+  const editor = node(data.configured ? 'details' : 'div', 'composio-key-editor');
+  if (data.configured) {
+    const summary=node('summary','composio-key-summary');
+    summary.append(node('span','','Key saved'),node('span','muted small','Change key'));
+    editor.append(summary);
+  }
   const key = field("Composio project API key", "", "input", {
     type: "password",
     autocomplete: "off",
@@ -2598,14 +2596,8 @@ async function settingsComposio(root) {
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   keyActions.append(link);
-  group.append(key.label, keyActions, feedback);
-  group.append(
-    node(
-      "p",
-      "muted small",
-      "Use a project API key with access to toolkits, auth configs, connected accounts and tools. Your key stays on your server.",
-    ),
-  );
+  editor.append(key.label, keyActions, feedback);
+  group.append(editor);
   if (data.configured) {
     const remove=button("Remove Composio key", async () => {
       await api("/composio/key", "POST", { key: "" });

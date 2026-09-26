@@ -4947,3 +4947,7 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
 .server-update-dialog progress{display:block;width:100%;height:5px;margin:20px 0;accent-color:var(--fg);}
 .server-update-dialog progress[hidden]{display:none;}
 .server-update-dialog>.primary{margin-top:12px;}
+.composio-key-summary{display:flex;align-items:center;gap:12px;cursor:pointer;font-size:13px;padding:4px 0;}
+.composio-key-summary>.muted{margin-left:auto;}
+.composio-key-editor[open]>.composio-key-summary{margin-bottom:14px;}
+.composio-key-editor>.inline-feedback:empty{display:none;}
