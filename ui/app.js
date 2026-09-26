@@ -2159,7 +2159,7 @@ function progressChoices(value='balanced'){
   for(const [index,[key,label]] of progressModes.entries()){
     const tile=node('label','progress-choice'),input=node('input');input.type='radio';input.name='progress_updates';input.value=key;input.checked=key===value;input.setAttribute('aria-describedby',description.id);inputs.push(input);
     const preview=node('span','progress-choice-preview');preview.setAttribute('aria-hidden','true');preview.append(node('i','progress-sketch-user'));
-    for(let i=0;i<[0,2,4][index];i++){const bubble=node('i','progress-sketch-bubble');bubble.append(node('i'),node('i'));preview.append(bubble);}
+    for(let i=0;i<[2,2,4][index];i++){const bubble=node('i','progress-sketch-bubble'+(key==='calm'?' progress-sketch-ghost':''));if(key!=='calm')bubble.append(node('i'),node('i'));preview.append(bubble);}
     const working=node('i','progress-sketch-working');working.append(node('i','progress-sketch-bot'),node('i','progress-sketch-strokes'));preview.append(working);
     tile.append(input,node('span','progress-choice-title',label),preview);tiles.append(tile);
   }
