@@ -4927,3 +4927,18 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
 
 .desktop-footer-actions{display:flex;align-items:center;gap:6px;flex:none;margin-left:8px;}
 #desktop-paste{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:5px 7px;}
+
+/* Settings controls retain one consistent bottom inset and separators between rows only. */
+.settings-pane > .setting-row:not(:has(~ .setting-row)){border-bottom:0;}
+.settings-pane > [hidden],.settings-pane > p:empty{display:none;}
+.settings-pane > p:last-child{margin-bottom:13px;}
+.settings-device-control:has(.microphone-picker){width:270px;max-width:60%;}
+.microphone-picker{display:flex;align-items:center;gap:8px;}
+.microphone-picker>.icon-button{flex:none;width:30px;height:30px;margin:0;}
+.settings-device-control .microphone-picker>select{flex:1;width:0;min-width:0;max-width:none;}
+.assigned-computer-bots{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:12px 0;}
+.assigned-bot-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;background:var(--surface);border:1px solid var(--line);border-radius:20px;font-size:12px;color:var(--fg);}
+.server-address-badge{display:inline-block;padding:3px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--fg);overflow-wrap:anywhere;}
+.mac-desktop .artifact-studio-library{padding-top:10px;}
+.artifact-studio-macos .artifact-library-brand-row{height:47px;min-height:47px;margin-bottom:0;}
+.artifact-studio-macos .artifact-studio-library-brand{visibility:hidden;pointer-events:none;}

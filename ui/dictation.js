@@ -255,12 +255,12 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     const control=document.createElement('div');control.className='settings-device-control';
     const input=document.createElement('select');input.setAttribute('aria-label','Microphone');
     const hint=document.createElement('p');hint.className='muted small';hint.hidden=true;
-    const retry=document.createElement('button');retry.type='button';retry.className='subtle-button';retry.textContent='Refresh microphones';retry.hidden=false;
+    const retry=document.createElement('button');retry.type='button';retry.className='icon-button';retry.setAttribute('aria-label','Refresh microphones');retry.title='Refresh microphones';retry.append(icon('refresh'));retry.hidden=false;
     input.append(new Option('System Default','default'));
     if(navigator.mediaDevices?.getUserMedia)input.append(new Option('Choose a microphone…','__permission__'));
     if(preferences.microphone!=='default')input.append(new Option('Saved microphone',preferences.microphone));
     input.value=preferences.microphone;input.disabled=!navigator.mediaDevices?.getUserMedia;
-    control.append(input,hint,retry);row.append(title,control);
+    const picker=document.createElement('div');picker.className='microphone-picker';picker.append(retry,input);control.append(picker,hint);row.append(title,control);
     let refreshing=false;
     async function refresh(){
       if(refreshing)return;refreshing=true;retry.disabled=true;
