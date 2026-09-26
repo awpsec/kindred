@@ -1,0 +1,7 @@
+/* Kindred progress uses the same warm orange across native and hosted pages. */
+:root{--progress-accent:#ffb15b}
+progress{accent-color:var(--progress-accent);color:var(--progress-accent)}
+progress[value]{appearance:none;-webkit-appearance:none;border:0;overflow:hidden;background:var(--line,#303030)}
+progress::-webkit-progress-bar{background:var(--line,#303030)}
+progress::-webkit-progress-value{background:var(--progress-accent)}
+progress::-moz-progress-bar{background:var(--progress-accent)}

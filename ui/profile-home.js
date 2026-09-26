@@ -79,7 +79,7 @@ function renderSetup(status={}){
  $('standalone').textContent=working?'Preparing local server…':server?.update_available?'Update local server':server?'Repair local server':'Set up this computer';
  const panel=$('setup-progress-panel');panel.hidden=!['working','error','ready'].includes(status.status);panel.dataset.status=status.status||'';
  const bar=$('setup-progress'),total=status.stage_count||5,completed=status.completed_stages;
- bar.max=total;if(Number.isFinite(completed))bar.value=Math.max(0,Math.min(total,completed));else if(status.status==='ready')bar.value=total;else bar.removeAttribute('value');
+ bar.max=total;if(status.status==='ready')bar.value=total;else if(Number.isFinite(completed))bar.value=Math.max(0,Math.min(total,completed));else bar.removeAttribute('value');
  const stage=status.status==='ready'?'All setup stages complete':(status.stage_index?'Step '+status.stage_index+' of '+total+' · ':'')+(status.stage||'Preparing local server');if($('setup-stage').textContent!==stage)$('setup-stage').textContent=stage;
  bar.setAttribute('aria-valuetext',$('setup-stage').textContent);const detail=status.detail||'Waiting for the next setup update…';if($('setup-log').textContent!==detail)$('setup-log').textContent=detail;$('setup-details').hidden=!status.detail;if(status.status==='error'&&previous?.status!=='error'&&status.detail)$('setup-details').open=true;
  profileReadiness();elapsedSetup();

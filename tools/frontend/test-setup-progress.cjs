@@ -25,7 +25,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   assert(await local.isDisabled());assert(await remote.isEnabled());assert.equal(await p.locator('#setup-progress').getAttribute('value'),'2');
   await local.evaluate(b=>b.click());assert.deepEqual(await p.evaluate(()=>fixture.switches),[]);
   await remote.click();assert.deepEqual(await p.evaluate(()=>fixture.switches),['remote']);
-  await p.getByText('Setup details',{exact:true}).click();assert(await p.getByText('Downloading computer tools…',{exact:true}).isVisible());
+  await p.locator('#setup-details summary').click();assert(await p.getByText('Downloading computer tools…',{exact:true}).isVisible());
   for(const width of [390,680,1320])for(const size of [100,150])for(const theme of ['light','dark']){
    await p.setViewportSize({width,height:900});await p.evaluate(({size,theme})=>{document.documentElement.style.setProperty('--text-scale',size/100);document.documentElement.dataset.theme=theme;},{size,theme});
    assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),JSON.stringify({width,size,theme}));
@@ -40,8 +40,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await p.getByText(/Could not check setup progress/).waitFor();assert(await p.locator('#standalone').isDisabled(),'An unavailable status must not offer another setup attempt');
   await p.evaluate(()=>{fixture.statusFailure=false;});
   await p.waitForFunction(()=>document.querySelector('#setup-stage').textContent==='Step 1 of 5 · Checking Docker');
-  await p.evaluate(()=>{fixture.status={...fixture.status,status:'ready',completed_stages:5,message:'Your local server is ready.',local_server:{version:'fixture',desktop_version:'fixture',update_available:false}};});
-  await p.waitForFunction(()=>document.documentElement.dataset.accountSection==='accounts');assert(await local.isEnabled());assert.equal(await p.locator('#setup-progress').getAttribute('value'),'5');
+  await p.evaluate(()=>{fixture.status={...fixture.status,status:'ready',completed_stages:3,message:'Your local server is ready.',local_server:{version:'fixture',desktop_version:'fixture',update_available:false}};});
+  await p.waitForFunction(()=>document.documentElement.dataset.accountSection==='accounts');assert(await local.isEnabled());assert.equal(await p.locator('#setup-progress').getAttribute('value'),'5','Ready fills the bar even when the stage count is stale');assert.equal(await p.locator('#setup-progress').evaluate(p=>getComputedStyle(p).accentColor),'rgb(255, 177, 91)');
   assert.deepEqual(await p.evaluate(()=>fixture.switches),['remote'],'Setup must not auto-switch to an unrelated saved account');
   await local.click();assert.deepEqual(await p.evaluate(()=>fixture.switches),['remote','local']);
   assert.equal(await p.evaluate(()=>fixture.maximum),1,'Status polls must not overlap');assert.deepEqual(errors,[]);
