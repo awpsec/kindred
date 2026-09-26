@@ -184,7 +184,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const transfer=await api('transfer');
     if(transfer?.state==='moved')form.append(el('p','muted','This workspace moved to '+transfer.destination+'. The original is retained here for reference.'));
     else if(transfer?.state==='prepared')form.append(el('p','muted','A server transfer is pending. Tasks and routines are paused here until you finish or cancel it.'));
-    if(window.__KINDRED_PROFILE_HOST)form.append(button(transfer?'Resume or review server transfer':'Move to another server',async()=>{d.close();await nativeInvoke('open_profile_transfer',{});},'outline-button'));
+    if(window.__KINDRED_PROFILE_HOST)form.append(button(transfer?'Resume workspace move':'Move workspace',async()=>{d.close();await nativeInvoke('open_profile_transfer',{theme:document.documentElement.dataset.theme||'dark'});},'outline-button'));
     else form.append(el('p','muted','Use the Kindred desktop app to move this workspace to another server.'));
   }
   async function admin() {
@@ -267,19 +267,21 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     root.querySelector('button:not([aria-disabled=true])')?.focus({preventScroll:true});
   }
   async function init(pairCode) {
-    try{const response=await fetch('/identity/meta',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(!response.ok)return;meta=await response.json();enabled=meta.profiles===true;}catch{return;}
+    const response=await fetch('/identity/meta',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.status===404)return;if(!response.ok)throw new Error('The server is reconnecting.');meta=await response.json();enabled=meta.profiles===true;
     if(!enabled)return;
     try{if(window.__KINDRED_PROFILE_HOST){const directory=await nativeInvoke('profile_home_state',{});nativeProfiles=directory.entries||[];nativeLast=directory.last;}}catch{}
     // Old create-profile links now lead to account sign-in, never a hidden workspace creation.
     if(new URLSearchParams(location.search).has('new_profile')){const clean=new URL(location.href);clean.searchParams.delete('new_profile');clean.searchParams.delete('request_id');history.replaceState(null,'',clean.href);}
-    if(getToken()){try{projection=await api('profiles');}catch(e){if(e.status===401||/session expired|sign in to/i.test(e.message)){setToken('');sessionStorage.removeItem('kindred-token');localStorage.removeItem('kindred-token');}}}
+    if(getToken()){try{projection=await api('profiles');}catch(e){if(e.status===401){setToken('');sessionStorage.removeItem('kindred-token');localStorage.removeItem('kindred-token');}else throw e;}}
+    if(!$('switch-profiles')){
     const control=button('',menu,'profile-switch-button');control.append(menuIcon('M4 7h16m-4-4 4 4-4 4 M20 17H4m4-4-4 4 4 4'));control.setAttribute('aria-expanded','false');control.setAttribute('aria-controls','profile-menu');control.id='switch-profiles';control.setAttribute('aria-haspopup','menu');$('identity-row').append(control);paint();
     document.addEventListener('click',e=>{if(!e.target.closest('#profile-menu,#switch-profiles'))closeMenu();});
     document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('profile-menu')){e.preventDefault();closeMenu(true);}const menu=$('profile-menu');if(menu&&e.key==='Tab'){closeMenu(true);return;}if(menu&&['ArrowUp','ArrowDown','Home','End'].includes(e.key)){e.preventDefault();const controls=[...menu.querySelectorAll('button:not([aria-disabled=true]):not(:disabled)')],at=controls.indexOf(document.activeElement),next=e.key==='Home'?0:e.key==='End'?controls.length-1:(at+(e.key==='ArrowDown'?1:-1)+controls.length)%controls.length;controls[next]?.focus();}});
     window.addEventListener('resize',positionMenu);
     setInterval(()=>{if(!document.hidden)refresh().catch(()=>{});},15000);
+    }
     if(!pairCode&&!getToken()&&!new URLSearchParams(location.search).has('legacy')){
-      const host=$('connect-form');host.onsubmit=e=>e.preventDefault();for(const element of [...host.children])if(element.id!=='connect-character'&&element.tagName!=='H1')element.hidden=true;
+      const host=$('connect-form')||$('account-connect');host.onsubmit=e=>e.preventDefault();for(const element of [...host.children])if(element.id!=='connect-character'&&element.tagName!=='H1')element.hidden=true;
       // Form nesting is invalid HTML: replace only the original token form's tag.
       const container=el('div','connect-card');container.id='account-connect';for(const child of [...host.children])container.append(child);host.replaceWith(container);
       if(window.__KINDRED_PROFILE_HOST&&nativeProfiles.length&&!window.__KINDRED_EXPLICIT_PROFILE&&(!window.__KINDRED_NEW_ACCOUNT||nativeProfiles.some(p=>p.server===location.origin)))accountChooser(container);

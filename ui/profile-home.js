@@ -2,7 +2,7 @@ import {savedAccounts} from './profiles.js';
 const invoke=(command,args={})=>window.__TAURI__.core.invoke(command,args),$=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search),embedded=params.get('embedded')==='1';
 let requestedTheme=params.get('theme'),platform=null;
-function accountContext(detail={}){if(detail.section==='setup')delete document.documentElement.dataset.accountSection;if(['light','dark'].includes(detail.theme)){requestedTheme=detail.theme;document.documentElement.dataset.theme=detail.theme;}if(['accounts','standalone'].includes(detail.section)){document.documentElement.dataset.accountSection=detail.section;const label=detail.section==='standalone'?'Local server':'Accounts';const chrome=document.querySelector('.dialog-chrome span');if(chrome)chrome.textContent=label;document.querySelector('main>h1').textContent=label;}}
+function accountContext(detail={}){if(detail.section==='setup')delete document.documentElement.dataset.accountSection;if(['light','dark'].includes(detail.theme)){requestedTheme=detail.theme;document.documentElement.dataset.theme=detail.theme;}if(['accounts','standalone','transfer'].includes(detail.section)){document.documentElement.dataset.accountSection=detail.section;const label=detail.section==='standalone'?'Local server':detail.section==='transfer'?'Move workspace':'Accounts';const chrome=document.querySelector('.dialog-chrome span');if(chrome)chrome.textContent=label;document.querySelector('main>h1').textContent=label;}}
 accountContext({theme:requestedTheme,section:params.get('section')});
 window.addEventListener('kindred-account-context',e=>accountContext(e.detail));
 
@@ -13,6 +13,7 @@ if(embedded){
 }
 function statusReply(){let timer;return Promise.race([invoke('standalone_status'),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('The setup status did not respond.')),8000);})]).finally(()=>clearTimeout(timer));}
 let firstRun=false;
+let transferSource='',transferBusy=false,transferLocalReady=false,transferTimer=null,transferSetupTimer=null;
 function chooseSetup(choice){
  document.documentElement.dataset.setupChoice=choice;
  for(const name of ['local','server'])$('choose-'+name).setAttribute('aria-pressed',String(choice===name));
@@ -43,8 +44,14 @@ async function load(){
  firstRun=!embedded&&!document.documentElement.dataset.accountSection&&!data.entries.length&&!data.intent;
  document.documentElement.toggleAttribute('data-first-run',firstRun);$('setup-choices').hidden=!firstRun;
  if(firstRun){document.querySelector('.dialog-chrome span').textContent='Welcome';$('home-title').textContent='Welcome to Kindred';$('home-intro').textContent='Choose where your bots will live.';}
- const moving=data.intent?.mode==='transfer';$('connections-view').hidden=moving;$('transfer-view').hidden=!moving;if(moving){$('transfer-source').textContent=data.intent.name+' · '+data.intent.server;const pending=data.transfer_request;if(pending?.source===data.intent.source){$('transfer-address').value=pending.destination;$('transfer-username').value=pending.username;}return;}
- const connection=data.intent?.mode==='connection'?data.intent:null;$('connection-recovery').hidden=!connection;
+ const moving=data.intent?.mode==='transfer';document.documentElement.toggleAttribute('data-transferring',moving);$('connections-view').hidden=moving;$('transfer-view').hidden=!moving;if(moving){
+  accountContext({section:'transfer'});transferSource=data.intent.server;$('transfer-source').textContent=data.intent.name+' · '+data.intent.server;
+  document.querySelector('.dialog-chrome span').textContent='Move workspace';
+  const pending=data.transfer_request,localOption=$('transfer-target').querySelector('[value=local]');localOption.disabled=localServer(transferSource);
+  if(pending?.source===data.intent.source){$('transfer-address').value=pending.destination;$('transfer-username').value=pending.username;$('transfer-target').value=localServer(pending.destination)?'local':'server';$('transfer-cancel').hidden=false;}
+  await transferTarget();const progress=await invoke('profile_transfer_status');if(progress?.state==='working'){setTransferBusy(true);pollTransferProgress();}return;
+ }
+ const connection=data.intent?.mode==='connection'?data.intent:null;document.documentElement.toggleAttribute('data-connecting',!!connection&&!connection.failed);$('connection-recovery').hidden=!connection;
  if(connection){$('connection-title').textContent=connection.failed?'Couldn’t open your workspace':'Opening your workspace…';$('connection-address').textContent=connection.server;$('connection-help').textContent=connection.failed?'Check your connection and that the server is running, then try again. '+(data.entries.length?'You can also choose another account below.':'You can also connect to another server below.'):'Connecting to your saved server.';$('connection-retry').hidden=!connection.failed;$('connection-retry').dataset.profileServer=connection.server;$('connection-retry').onclick=()=>perform(()=>connection.key?invoke('switch_native_profile',{key:connection.key}):invoke('connect_profile_server',{address:connection.server}),$('connection-retry'));}
  $('saved').hidden=!data.entries.length;$('profiles').replaceChildren();
  for(const entry of savedAccounts(data.entries,data.last)){const row=document.createElement('div');row.className='saved-profile';const button=document.createElement('button');button.type='button';button.className='select';button.dataset.key=entry.key;button.dataset.profileServer=entry.server;button.dataset.keys=JSON.stringify(entry.workspaces.map(p=>p.key));
@@ -103,7 +110,7 @@ setInterval(elapsedSetup,1000);
 window.addEventListener('pagehide',()=>clearTimeout(pollTimer));
 $('copy-linux-setup').onclick=async()=>{const command=$('linux-setup-command');try{await navigator.clipboard.writeText(command.value);$('linux-copy-status').textContent='Copied. Paste this block into your terminal.';}catch{command.focus();command.select();$('linux-copy-status').textContent='Select and copy the highlighted block with Ctrl+C, then paste it into your terminal.';}};
 $('open-local').onclick=()=>{if(hasLocalAccounts){accountContext({section:'accounts'});window.scrollTo(0,0);return;}return perform(()=>invoke('connect_profile_server',{address:'http://127.0.0.1:9444'}),$('open-local'));};
-void perform(load);setInterval(()=>{if(!document.hidden)counts();},15000);
+void perform(load).finally(()=>delete document.documentElement.dataset.homeLoading);setInterval(()=>{if(!document.hidden)counts();},15000);
 
 function confirmForget(entry,trigger){
  const dialog=document.createElement('dialog');dialog.className='confirm-dialog';
@@ -122,10 +129,44 @@ function profileOptions(entry,trigger){
  if(entry.workspaces?.length>1){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Existing workspaces';details.append(summary);for(const workspace of entry.workspaces){const button=document.createElement('button');button.dataset.profileServer=workspace.server||entry.server;button.textContent=workspace.name;button.onclick=()=>perform(()=>invoke('switch_native_profile',{key:workspace.key}),button);details.append(button);}dialog.append(details);}
  dialog.append(actions);document.body.append(dialog);dialog.addEventListener('close',()=>{dialog.remove();if(!document.querySelector('dialog[open]'))trigger.focus({preventScroll:true});},{once:true});dialog.showModal();profileReadiness();done.focus();
 }
-$('transfer-form').onsubmit=async event=>{event.preventDefault();const button=$('transfer-submit');if(button.disabled)return;button.disabled=true;$('transfer-cancel').disabled=true;$('transfer-error').textContent='Moving your workspace. Keep this window open…';try{
- await invoke('transfer_profile',{address:$('transfer-address').value,username:$('transfer-username').value,password:$('transfer-password').value,register:$('transfer-register').checked,remember:$('transfer-remember').checked});
- $('transfer-error').textContent='Moved. Opening your workspace on its new server…';
-}catch(e){$('transfer-error').textContent=String(e.message||e);}finally{$('transfer-password').value='';button.disabled=false;$('transfer-cancel').disabled=false;}};
+function setTransferBusy(busy){transferBusy=busy;$('transfer-fields').disabled=busy;$('transfer-submit').disabled=busy||($('transfer-target').value==='local'&&!transferLocalReady);$('transfer-cancel').disabled=busy;}
+async function transferTarget(){
+ const local=$('transfer-target').value==='local';$('transfer-remote').hidden=local;$('transfer-address').required=!local;$('transfer-local').hidden=!local;
+ clearTimeout(transferSetupTimer);if(local)await checkTransferLocal();else setTransferBusy(transferBusy);
+}
+async function checkTransferLocal(){
+ try{
+  const status=await statusReply(),working=status.status==='working';transferLocalReady=!!status.local_server&&!status.local_server.update_available&&!working&&status.status!=='error';
+  $('transfer-local-state').textContent=working?(status.stage||'Preparing Standalone…'):transferLocalReady?'Standalone ready':status.local_server?.update_available?'Standalone needs an update':status.status==='error'?(status.message||'Setup needs attention'):'Standalone is not running';
+  const prepare=$('transfer-prepare');prepare.hidden=transferLocalReady;prepare.disabled=working;prepare.textContent=working?'Preparing…':status.local_server?.update_available?'Update & start':status.status==='error'?'Retry setup':'Set up & start';
+  const progress=$('transfer-setup-progress');progress.hidden=!working;progress.max=status.stage_count||5;if(Number.isFinite(status.completed_stages))progress.value=status.completed_stages;else progress.removeAttribute('value');
+  const details=$('transfer-setup-details');details.hidden=status.status!=='error';$('transfer-setup-log').textContent=status.detail||status.message||'';
+  const command=$('transfer-setup-command');command.hidden=!status.linux_recovery?.command;command.value=status.linux_recovery?.command||'';
+  if(status.status==='error')details.open=true;
+ }catch(e){transferLocalReady=false;$('transfer-local-state').textContent=String(e.message||e);$('transfer-prepare').hidden=false;$('transfer-prepare').disabled=false;}
+ setTransferBusy(transferBusy);if($('transfer-target').value==='local')transferSetupTimer=setTimeout(checkTransferLocal,2000);
+}
+$('transfer-target').onchange=()=>transferTarget().catch(e=>$('transfer-error').textContent=String(e.message||e));
+$('transfer-prepare').onclick=async()=>{const button=$('transfer-prepare');button.disabled=true;try{await invoke('start_standalone');clearTimeout(transferSetupTimer);await checkTransferLocal();}catch(e){$('transfer-local-state').textContent=String(e.message||e);button.disabled=false;}};
+async function pollTransferProgress(){
+ clearTimeout(transferTimer);
+ try{const status=await invoke('profile_transfer_status');if(status?.stage){$('transfer-progress-panel').hidden=false;$('transfer-stage').textContent=status.stage;$('transfer-progress').max=status.total||6;$('transfer-progress').value=status.completed||0;}
+  if(status?.state==='error'){setTransferBusy(false);$('transfer-error').textContent=status.error||'The move stopped. Retry or cancel.';return;}
+  if(status?.state==='complete'){setTransferBusy(false);$('transfer-stage').textContent='Workspace moved';return;}
+ }catch{/* The operation owns its result; a missed status poll must not cancel it. */}
+ if(transferBusy)transferTimer=setTimeout(pollTransferProgress,700);
+}
+$('transfer-form').onsubmit=async event=>{
+ event.preventDefault();if(transferBusy||($('transfer-target').value==='local'&&!transferLocalReady))return;
+ const address=$('transfer-target').value==='local'?'http://127.0.0.1:9444':$('transfer-address').value;
+ setTransferBusy(true);$('transfer-error').textContent='';$('transfer-progress-panel').hidden=false;$('transfer-stage').textContent='Checking source';$('transfer-progress').value=0;
+ const operation=invoke('transfer_profile',{address,username:$('transfer-username').value.trim(),password:$('transfer-password').value,register:$('transfer-register').checked,remember:$('transfer-remember').checked});
+ void pollTransferProgress();
+ try{await operation;$('transfer-stage').textContent='Workspace moved';$('transfer-progress').value=6;}
+ catch(e){$('transfer-error').textContent=String(e.message||e);$('transfer-cancel').hidden=false;$('transfer-submit').textContent='Retry move';}
+ finally{clearTimeout(transferTimer);$('transfer-password').value='';setTransferBusy(false);}
+};
 $('transfer-register').onchange=()=>{$('transfer-password').autocomplete=$('transfer-register').checked?'new-password':'current-password';};
-$('transfer-cancel').onclick=async()=>{const button=$('transfer-cancel');button.disabled=true;try{await invoke('cancel_profile_transfer');$('transfer-error').textContent='Transfer cancelled. The original workspace can run again. Any partial destination copy remains paused.';}catch(e){$('transfer-error').textContent=String(e.message||e);}finally{button.disabled=false;}};
+$('transfer-cancel').onclick=async()=>{setTransferBusy(true);try{await invoke('cancel_profile_transfer');$('transfer-error').textContent='Move cancelled. The original workspace can run again.';$('transfer-progress-panel').hidden=true;$('transfer-cancel').hidden=true;$('transfer-submit').textContent='Move workspace';}catch(e){$('transfer-error').textContent=String(e.message||e);}finally{setTransferBusy(false);}};
+window.addEventListener('pagehide',()=>{clearTimeout(transferTimer);clearTimeout(transferSetupTimer);});
 window.addEventListener('kindred-dialog-refresh',()=>perform(load));

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kindred · Accounts</title><link rel="stylesheet" href="profile-home.css"><script src="profile-home.js" type="module"></script><link rel="stylesheet" href="bundled-dialog.css"><script src="reading-size.js" defer></script><script src="bundled-dialog.js" defer></script></head>
+<html lang="en" data-home-loading><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kindred · Accounts</title><link rel="stylesheet" href="profile-home.css"><script src="profile-home.js" type="module"></script><link rel="stylesheet" href="bundled-dialog.css"><script src="reading-size.js" defer></script><script src="bundled-dialog.js" defer></script></head>
 <body><header class="dialog-chrome"><span>Accounts</span><button type="button" aria-label="Close">×</button></header><main id="connections-view">
 
   <div class="welcome-brand" aria-hidden="true">kindred.</div><h1 id="home-title">Accounts</h1><p id="home-intro" class="intro">Pick up where you left off, or add another account. Each account keeps its own bots and conversations.</p>
@@ -13,16 +13,20 @@
   <output id="error" role="alert"></output><footer><span id="version"></span> <button id="update-client" type="button" hidden>Install downloaded app update…</button></footer>
 </main>
 <main id="transfer-view" hidden>
-<h1>Move your workspace</h1><p class="intro" id="transfer-source"></p>
-<p class="transfer-copy">Your bots, conversations, attachments, memories, skills and routines move together. The original workspace stays on its server as a read-only backup.</p>
-<p class="hint">Sign in to your providers again on the new server. Computer files, installed software, browser sign-ins and desktop permissions stay on their current computer. Moved routines start paused so you can review them before they run.</p>
+<h1>Move workspace</h1><p class="intro" id="transfer-source"></p>
 <form id="transfer-form">
-<label for="transfer-address">New server address</label><input id="transfer-address" type="url" placeholder="https://kindred.example.com" required autocomplete="url">
-<label for="transfer-username">Username on that server</label><input id="transfer-username" autocomplete="username" required maxlength="80">
+<fieldset id="transfer-fields">
+<label for="transfer-target">Destination</label><select id="transfer-target"><option value="server">Another server</option><option value="local">This computer · Standalone</option></select>
+<div id="transfer-remote"><label for="transfer-address">Server address</label><input id="transfer-address" type="url" placeholder="https://kindred.example.com" required autocomplete="url"></div>
+<section id="transfer-local" hidden><div class="transfer-local-row"><span id="transfer-local-state" role="status">Checking local server…</span><button id="transfer-prepare" type="button" hidden>Set up Standalone</button></div><progress id="transfer-setup-progress" hidden aria-label="Standalone setup"></progress><details id="transfer-setup-details" hidden><summary>Setup details</summary><pre id="transfer-setup-log"></pre><textarea id="transfer-setup-command" readonly hidden aria-label="Setup command" rows="5"></textarea></details></section>
+<label for="transfer-username">Username</label><input id="transfer-username" autocomplete="username" required maxlength="80">
 <label for="transfer-password">Password</label><input id="transfer-password" type="password" autocomplete="current-password" required>
-<label class="check-row"><input id="transfer-register" type="checkbox">Create an account on the new server</label>
+<label class="check-row"><input id="transfer-register" type="checkbox">Create a new account</label>
 <label class="check-row"><input id="transfer-remember" type="checkbox" checked>Keep this computer connected</label>
-<button class="primary" id="transfer-submit" type="submit">Move workspace</button>
-<button id="transfer-cancel" type="button">Cancel pending transfer</button>
-</form><output id="transfer-error" role="status"></output>
+<details class="transfer-summary"><summary>What moves</summary><p>Bots, chats, artifacts, files attached in Kindred, memories, skills and routines.</p><p>Provider and connector sign-ins, and bot computer files, stay on the source. Routines arrive paused. The original workspace is kept as a read-only backup.</p></details>
+</fieldset>
+<div id="transfer-progress-panel" hidden><span id="transfer-stage" role="status"></span><progress id="transfer-progress" max="6" value="0" aria-label="Workspace move"></progress></div>
+<output id="transfer-error" role="alert"></output>
+<div class="transfer-actions"><button class="primary" id="transfer-submit" type="submit">Move workspace</button><button id="transfer-cancel" type="button" hidden>Cancel move</button></div>
+</form>
 </main></body></html>

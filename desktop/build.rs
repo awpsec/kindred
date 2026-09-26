@@ -45,6 +45,7 @@ fn main() {
             "close_profile_home",
             "open_profile_transfer",
             "transfer_profile",
+            "profile_transfer_status",
             "cancel_profile_transfer",
             "remember_profile",
             "profile_home_state",

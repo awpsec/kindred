@@ -62,8 +62,12 @@ display's work area. Minimized windows never replace the normal saved bounds.
 
 ## Moving a workspace
 
-In the desktop app, choose **Account settings → Move to another server**. Enter the
-new server and sign in to your account there, or create an account. Kindred imports
+In the desktop app, choose **Account settings → Move workspace**. Choose
+**Another server** or **This computer · Standalone**, then sign in or create an
+account at the destination. Standalone can be set up, started or updated on the
+same page before moving. If system prerequisites need attention, their setup
+details appear there too. The progress bar follows preparation, copying,
+verification and opening the destination. Kindred imports
 into a new profile; it never overwrites an existing workspace on the destination.
 Both servers must support the same workspace format. Transfers are limited to 256 MB.
 
@@ -81,7 +85,9 @@ and enable them. This prevents the same routine from running on both servers.
 Local desktop access starts off in the destination profile.
 
 The saved transfer ID makes retries reuse the same destination profile and import.
-A failed transfer leaves the original workspace intact. Open Account settings to
+A failed transfer leaves the original workspace intact. Recovery information stays
+saved until the destination opens and authenticates, including when restarting
+the desktop fails. Open Account settings to
 resume it, or cancel a pending transfer to let the original workspace run again.
 Any partial destination copy remains paused. Transfer state survives server restart.
 
