@@ -156,51 +156,60 @@ try:
      windows=capture(child,phase,['Piper'])
      frames.append({'phase':phase,'width':frame['width'],'height':frame['height'],'windows':windows})
     proof['native_window_frame_checks']=frames
-   command([out/'app-focus','foreground',child.pid],'notch-foreground-focus.log')
-   request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"notch-foreground"}',headers={'Content-Type':'application/json'},method='POST')
-   with urllib.request.urlopen(request) as response:response.read()
-   wait_report(fixture,'notch-foreground',child);time.sleep(.5)
-   windows=capture(child,'notch-foreground',['Piper'])
-   assert not any(w['title']=='Kindred notification' for w in windows),'Foreground app must suppress notch notifications'
-   proof['native_notch_foreground_suppressed']=True
-   request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"notch-preview"}',headers={'Content-Type':'application/json'},method='POST')
-   with urllib.request.urlopen(request) as response:response.read()
-   wait_report(fixture,'notch-preview',child);time.sleep(.25)
-   windows=capture(child,'notch-preview',['sent you a message'])
-   preview_banner=next(w for w in windows if w['title']=='Kindred notification')
-   proof['native_notch_preview_visible_while_foreground']=True
-   focus=json.loads(command([out/'app-focus','background',child.pid],'notch-background-focus.log').stdout)
-   # Start outside the known notification frame, then enter its visible card
-   # immediately after presentation. OCR of two windows can consume most of the
-   # three-second dismissal timer; do not put it in front of the hover action.
-   bounds=preview_banner['bounds']
-   if focus['canPostEvents']:
-    command([out/'app-focus','move',child.pid,bounds['X']+bounds['Width']/2,bounds['Y']+bounds['Height']+30],'notch-hover-outside.log')
-   request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"notch"}',headers={'Content-Type':'application/json'},method='POST')
-   with urllib.request.urlopen(request) as response:response.read()
-   wait_report(fixture,'notch',child);time.sleep(.25)
-   hover_started=None
-   if focus['canPostEvents']:
-    command([out/'app-focus','move',child.pid,bounds['X']+bounds['Width']/2,bounds['Y']+bounds['Height']-24],'notch-hover-move.log')
-    hover_started=time.monotonic()
-   windows=capture(child,'notch',['sent you a message'])
-   banner=next(w for w in windows if w['title']=='Kindred notification' and w['bounds']['Width']<=500 and w['bounds']['Height']<=100)
-   proof['native_notch_notification_rendered']=True
-   focus=json.loads(command([out/'app-focus','status',child.pid],'notch-background-preserved.log').stdout)
-   assert focus['active'] is False,'Notch presentation stole focus'
-   bounds=banner['bounds']
-   if focus['canPostEvents']:
-    assert hover_started is not None
-    time.sleep(max(0,5-(time.monotonic()-hover_started)))
-    hovered=capture(child,'notch-hover',['sent you a message'])
-    assert any(w['title']=='Kindred notification' for w in hovered),'Hover must keep the native notch notification visible beyond its watchdog deadline'
-    proof['native_notch_hover_extends_deadline']=True
-    proof['native_notch_hover_seconds']=time.monotonic()-hover_started
-    command([out/'app-focus','click',child.pid,bounds['X']+bounds['Width']-20,bounds['Y']+bounds['Height']/2],'notch-surface-click.log')
-    proof['native_notch_surface_click_activated_app']=True
-   else:
-    proof['native_notch_surface_click_unverified_reason']='GUI runner does not grant event-posting permission; no OS security setting changed'
-    command([out/'app-focus','foreground',child.pid],'notch-return-focus.log')
+   gui_failures=[]
+   try:
+    command([out/'app-focus','foreground',child.pid],'notch-foreground-focus.log')
+    request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"notch-foreground"}',headers={'Content-Type':'application/json'},method='POST')
+    with urllib.request.urlopen(request) as response:response.read()
+    wait_report(fixture,'notch-foreground',child);time.sleep(.5)
+    windows=capture(child,'notch-foreground',['Piper'])
+    assert not any(w['title']=='Kindred notification' for w in windows),'Foreground app must suppress notch notifications'
+    proof['native_notch_foreground_suppressed']=True
+    request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"notch-preview"}',headers={'Content-Type':'application/json'},method='POST')
+    with urllib.request.urlopen(request) as response:response.read()
+    wait_report(fixture,'notch-preview',child);time.sleep(.25)
+    windows=capture(child,'notch-preview',['sent you a message'])
+    preview_banner=next(w for w in windows if w['title']=='Kindred notification')
+    proof['native_notch_preview_visible_while_foreground']=True
+    focus=json.loads(command([out/'app-focus','background',child.pid],'notch-background-focus.log').stdout)
+    # Start outside the known notification frame, then enter its visible card
+    # immediately after presentation. OCR of two windows can consume most of the
+    # three-second dismissal timer; do not put it in front of the hover action.
+    bounds=preview_banner['bounds']
+    if focus['canPostEvents']:
+     command([out/'app-focus','move',child.pid,bounds['X']+bounds['Width']/2,bounds['Y']+bounds['Height']+30],'notch-hover-outside.log')
+    request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"notch"}',headers={'Content-Type':'application/json'},method='POST')
+    with urllib.request.urlopen(request) as response:response.read()
+    wait_report(fixture,'notch',child);time.sleep(.25)
+    hover_started=None
+    if focus['canPostEvents']:
+     command([out/'app-focus','move',child.pid,bounds['X']+bounds['Width']/2,bounds['Y']+bounds['Height']-24],'notch-hover-move.log')
+     hover_started=time.monotonic()
+    windows=capture(child,'notch',['sent you a message'])
+    banner=next(w for w in windows if w['title']=='Kindred notification' and w['bounds']['Width']<=500 and w['bounds']['Height']<=100)
+    proof['native_notch_notification_rendered']=True
+    focus=json.loads(command([out/'app-focus','status',child.pid],'notch-background-preserved.log').stdout)
+    assert focus['active'] is False,'Notch presentation stole focus'
+    bounds=banner['bounds']
+    if focus['canPostEvents']:
+     assert hover_started is not None
+     time.sleep(max(0,5-(time.monotonic()-hover_started)))
+     hovered=capture(child,'notch-hover',['sent you a message'])
+     assert any(w['title']=='Kindred notification' for w in hovered),'Hover must keep the native notch notification visible beyond its watchdog deadline'
+     proof['native_notch_hover_extends_deadline']=True
+     proof['native_notch_hover_seconds']=time.monotonic()-hover_started
+     command([out/'app-focus','click',child.pid,bounds['X']+bounds['Width']-20,bounds['Y']+bounds['Height']/2],'notch-surface-click.log')
+     proof['native_notch_surface_click_activated_app']=True
+    else:
+     proof['native_notch_surface_click_unverified_reason']='GUI runner does not grant event-posting permission; no OS security setting changed'
+     command([out/'app-focus','foreground',child.pid],'notch-return-focus.log')
+   except Exception as error:
+    # Independent updater evidence must still be collected when the transient
+    # notch preview fails. The release remains blocked by the deferred failure.
+    import traceback
+    gui_failures.append('Notch validation: '+str(error))
+    proof['native_gui_failures']=gui_failures
+    (out/'notch-validation-error.txt').write_text(traceback.format_exc())
    request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"updater"}',headers={'Content-Type':'application/json'},method='POST')
    with urllib.request.urlopen(request) as response:response.read()
    wait_report(fixture,'updater',child);time.sleep(3)
@@ -229,6 +238,7 @@ try:
    stop(child);child=None
    command(['node',a.source.resolve()/'tools/frontend/test-native-workspace-artifacts.cjs'],'native-artifact-rendering.log',env={**env,'KINDRED_NATIVE_EXE':str(executable),'KINDRED_NATIVE_WINDOW_PROBE':str(out/'window-proof')},timeout=90)
    proof['native_sandboxed_artifact_rendering']=True
+   assert not gui_failures,'; '.join(gui_failures)
 
 
    stop(child);child=None;stop(server);server=None
