@@ -56,9 +56,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await p.getByRole('button',{name:'Always allow',exact:true}).click();
   assert(await p.evaluate(()=>calls.some(c=>c.command==='decide_microphone_permission'&&c.args.requestId==='permanent'&&c.args.remember===true)));
   const enumerationCount=await p.evaluate(()=>window.enumerations||0);
-  await p.locator('#settings-button').click();await p.getByText('Microphone access: always allowed for this account.',{exact:true}).waitFor();
+  await p.locator('#settings-button').click();await p.getByRole('button',{name:'Refresh microphones',exact:true}).waitFor();
+  assert.equal(await p.getByText('Microphone access:',{exact:false}).count(),0);
+  assert.equal(await p.getByRole('button',{name:'Ask again next time',exact:true}).count(),0);
   assert.equal(await p.evaluate(()=>window.enumerations||0),enumerationCount,'Opening Settings must not enumerate devices');
-  await p.getByRole('button',{name:'Ask again next time',exact:true}).click();await p.getByText('Microphone access: ask when recording starts.',{exact:true}).waitFor();
   await p.getByRole('button',{name:'Refresh microphones',exact:true}).click();
   await p.locator('#settings-dialog').evaluate(d=>{d.animate=()=>({cancel(){}});});await p.locator('#settings-close').click();await p.locator('#settings-dialog').waitFor({state:'hidden'});assert.equal(await p.locator('#settings-dialog').isVisible(),false,'Stalled enumeration must not trap Settings');
   await p.evaluate(()=>{window.deferCapture=false;window.failAudio=true;window.stallClose=true;});
@@ -66,6 +67,11 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await p.waitForFunction(n=>contexts.filter(c=>c.failed).length>n,failedBefore);await p.waitForFunction(()=>document.querySelector('.dictation-button').disabled===false);
   assert(await p.evaluate(()=>tracks.every(t=>t.readyState==='ended')),'Stalled audio close must still release the microphone');
   await p.locator('#settings-button').click();await p.locator('#settings-dialog').evaluate(d=>{d.animate=()=>({cancel(){}});});await p.locator('#settings-close').click();await p.locator('#settings-dialog').waitFor({state:'hidden'});assert.equal(await p.locator('#settings-dialog').isVisible(),false);
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,logos,audioFailureCleanup:true,retry:true,lateCaptureStopped:true,duplicateStartPrevented:true,selectedDevicePreserved:true,themedConsent:true,persistentConsent:true,revokeConsent:true,settingsWithoutEnumeration:true,stalledCleanup:true}));
+  await p.locator('#settings-button').click();
+  await p.getByRole('switch',{name:'Enable dictation',exact:true}).uncheck();
+  const disabledCaptures=await p.evaluate(()=>captureCount);
+  await p.evaluate(()=>document.querySelector('.dictation-button').onclick());
+  assert.equal(await p.evaluate(()=>captureCount),disabledCaptures,'Disabled dictation cannot request microphone capture');
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,logos,audioFailureCleanup:true,retry:true,lateCaptureStopped:true,duplicateStartPrevented:true,selectedDevicePreserved:true,themedConsent:true,persistentConsent:true,settingsWithoutEnumeration:true,stalledCleanup:true}));
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;server.close();});

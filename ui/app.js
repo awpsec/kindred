@@ -2206,7 +2206,7 @@ async function settingsGeneral(revision) {
   }
   const bots=settingsPane('Bot'),zoneOptions=[['auto','Auto-detect ('+deviceTimezone()+')'],...([...new Set(['UTC',state.general.timezone,...(Intl.supportedValuesOf?.('timeZone')||[])])].filter(Boolean)).map(z=>[z,z])];
   const timezone=select(zoneOptions,state.general.timezone_mode==='fixed'?state.general.timezone:'auto');
-  bots.body.append(settingRow('Timezone',timezone,'Shared by your bots and new routines. Existing routines keep their saved timezone.'));
+  bots.body.append(settingRow('Timezone',timezone));
   const approval=approvalSelect(state.general.approval_mode||'ask'),notifications=select([['all','All'],['input_needed','Input needed'],['none','None']],state.general.notifications||'all');
   bots.body.append(settingRow('Default approval policy',approval.input),settingRow('Notifications',notifications));
   const help=node('details','settings-about');help.append(node('summary','','About approval policies'),node('p','muted small',approvalHelp));bots.body.append(help);
@@ -2232,7 +2232,7 @@ async function settingsGeneral(revision) {
     timezone.value=selected;approval.input.value=state.general.approval_mode||'ask';notifications.value=state.general.notifications||'all';
     serverControls.forEach(control=>control.disabled=false);loading.remove();
     void defaultModelSettings(root,current);
-  livePreferences(form,()=>({name:name.input.value,identity:prefs.input.value,theme:theme.value,reduced_motion:motion.input.checked,approval_mode:approval.input.value,notifications:notifications.value,show_activity:activity.input.checked,separate_bot_chats:separateBots.input.checked,timezone:timezone.value==='auto'?deviceTimezone():timezone.value,timezone_mode:timezone.value==='auto'?'auto':'fixed'}),value=>api('/settings','PUT',value),value=>{state.general=value;applyGeneral();renderSidebar();void renderChat(true,'cached');});
+  livePreferences(form,()=>({name:name.input.value,identity:prefs.input.value,theme:theme.value,reduced_motion:motion.input.checked,approval_mode:approval.input.value,notifications:notifications.value,show_activity:activity.input.checked,separate_bot_chats:separateBots.input.checked,timezone:timezone.value==='auto'?deviceTimezone():timezone.value,timezone_mode:timezone.value==='auto'?'auto':'fixed'}),value=>api('/settings','PUT',value),value=>{const zoneChanged=state.general.timezone!==value.timezone;state.general=value;applyGeneral();renderSidebar();void renderChat(true,'cached');if(zoneChanged)void refresh().then(()=>renderComputerRoutines()).catch(e=>notice(e.message,true));});
   }
   const accountActions=node('div','settings-account-actions');root.append(accountActions);
   accountActions.append(button('Manage archived bots and chats',()=>openSettings('archived'),'outline-button'));
@@ -3794,7 +3794,6 @@ $("routine-form").onsubmit = (e) => {
     const f = e.target.elements;
     const schedule=f.schedule_mode.value==='daily'?{timezone:f.timezone.value.trim(),days:[1,2,3,4,5,6,7],start:f.daily_time.value,end:f.daily_time.value,every_minutes:1440}:['weekly','window'].includes(f.schedule_mode.value)?{timezone:f.timezone.value.trim(),days:[...e.target.querySelectorAll('[name=weekday]:checked')].map(n=>Number(n.value)),start:f.start.value,end:f.schedule_mode.value==='window'?f.end.value:f.start.value,every_minutes:f.schedule_mode.value==='window'?Number(f.every_minutes.value):1440}:null;
     if(schedule && !schedule.days.length)throw new Error('Choose at least one day.');
-    if(schedule && schedule.end<schedule.start)throw new Error('The last run must be at or after the first run.');
     try{new Intl.DateTimeFormat(undefined,{timeZone:f.timezone.value.trim()}).format();}catch{throw new Error('Choose a valid time zone.');}
     const runAt=f.schedule_mode.value==='once'?(await api('/settings/timezone/resolve','POST',{local:f.run_date.value+'T'+f.once_time.value,timezone:f.timezone.value.trim()})).run_at:null;
     if(runAt!==null&&(!Number.isFinite(runAt)||f.enabled.checked&&runAt<=Date.now()/1000))throw new Error('Choose a future one-time date.');

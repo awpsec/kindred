@@ -3,7 +3,7 @@
  if(window.top!==window)return;
  window.__KINDRED_MICROPHONE_PERMISSION=true;
  // WebKit caches device grants internally. Check native Kindred consent before
- // every capture so "Ask again next time" applies without restarting the app.
+ // each capture; saved or session consent is granted without another prompt.
  const media=navigator.mediaDevices, capture=media?.getUserMedia?.bind(media);
  let captureGeneration=0;const tracks=new Set();
  const stop=()=>{captureGeneration++;for(const track of tracks)track.stop();tracks.clear();};
@@ -30,7 +30,7 @@
   const title=document.createElement('h2');title.id='microphone-permission-title';title.textContent='Allow microphone access?';
   const description=document.createElement('p');description.id='microphone-permission-description';description.textContent='Kindred uses your microphone for local dictation. Audio stays on this computer and recording stops when you finish or cancel.';
   description.style.margin='12px 0';
-  const scope=document.createElement('p');scope.className='muted small';scope.textContent='Always allow remembers this account and server on this computer. Change it in General settings.';
+  const scope=document.createElement('p');scope.className='muted small';scope.textContent='Always allow remembers this account and server on this computer.';
   const actions=document.createElement('div');actions.className='dialog-actions';
   Object.assign(actions.style,{display:'flex',justifyContent:'flex-end',flexWrap:'wrap',gap:'8px',marginTop:'16px'});
   const cancel=document.createElement('button');cancel.type='button';cancel.className='outline-button';cancel.textContent='Not now';cancel.autofocus=true;

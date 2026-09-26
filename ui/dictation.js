@@ -8,7 +8,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   const usesNative=()=>preferences.model==='native'&&nativeAvailable();
   const available=()=>window.__KINDRED_DICTATION_MODELS===true;
   const modelCatalogue=[['base','Base',59707625],['small','Small',190085487],['medium','Medium',539212467],['large-v3-turbo','Large v3 Turbo',574041195],['large-v3','Large v3',1081140203]];
-  let settingsEvents=null,microphoneEvents=null,renderedStop=null;
+  let settingsEvents=null,renderedStop=null;
   let generation=0,phase='idle',stream=null,context=null,processor=null,source=null,mute=null,chunks=[],samples=0,timer=null,native={phase:'off'},settings=null,poll=null,liveTimer=null,inflight=null,lastDecodedSpeech=0,lastAudibleSample=0,lastRequestAt=0,session=null,rate=16000;
   // Utterance segmentation: completed utterances are kept as text and their audio
   // is excluded from later decodes. Boundaries are only placed inside verified
@@ -249,7 +249,6 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(message)),milliseconds);})]).finally(()=>clearTimeout(timer));
   }
   function microphoneControl(){
-    microphoneEvents?.abort();microphoneEvents=new AbortController();
     const row=document.createElement('div');row.className='setting-row microphone-setting';row.dataset.devicePreference='true';
     const title=document.createElement('span');title.className='setting-label';title.textContent='Microphone';
     const control=document.createElement('div');control.className='settings-device-control';
@@ -270,7 +269,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
         const options=[new Option('System Default','default')],inputs=devices.filter(d=>d.kind==='audioinput'&&d.deviceId&&d.deviceId!=='default');
         for(const [index,device] of inputs.entries())options.push(new Option(device.label||'Microphone '+(index+1),device.deviceId));
         if(preferences.microphone!=='default'&&!inputs.some(d=>d.deviceId===preferences.microphone))options.push(new Option('Saved microphone · unavailable',preferences.microphone));
-        if(navigator.mediaDevices?.getUserMedia&&!inputs.some(d=>d.label))options.push(new Option('Choose a microphone…','__permission__'));
+        if(preferences.enabled&&navigator.mediaDevices?.getUserMedia&&!inputs.some(d=>d.label))options.push(new Option('Choose a microphone…','__permission__'));
         input.replaceChildren(...options);input.value=preferences.microphone;input.disabled=!navigator.mediaDevices?.getUserMedia;hint.hidden=true;
       }catch(e){if(row.isConnected){hint.textContent=e.message;hint.hidden=false;retry.hidden=false;}}
       finally{refreshing=false;retry.disabled=false;}
@@ -278,26 +277,13 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     retry.onclick=()=>void refresh();
     input.onchange=async()=>{
       if(input.value==='__permission__'){
+        if(!preferences.enabled){await refresh();return;}
         input.disabled=true;try{const permission=await navigator.mediaDevices.getUserMedia({audio:true,video:false});permission.getTracks().forEach(t=>t.stop());}catch(e){notice(e.name==='NotAllowedError'?'Microphone permission was denied. You can still use System Default after allowing access.':e.message,true);}finally{input.disabled=false;await refresh();}return;
       }
       preferences.microphone=input.value;save();await cancel();
     };
     // Opening Settings must not enter the system media-device enumeration path.
     // Device discovery runs only after an explicit user action.
-    if(window.__KINDRED_MICROPHONE_PERMISSION){
-      const permission=document.createElement('p');permission.className='muted small';permission.textContent='Checking microphone permission…';
-      const forget=document.createElement('button');forget.type='button';forget.className='subtle-button';forget.textContent='Ask again next time';forget.hidden=true;
-      control.append(permission,forget);
-      const check=async()=>{try{
-        const value=await deviceReply(nativeInvoke('microphone_permission',{}),'Microphone permission did not respond.');
-        if(!row.isConnected)return;
-        permission.textContent=value.persistent?'Microphone access: always allowed for this account.':value.session?'Microphone access: allowed for this session.':'Microphone access: ask when recording starts.';
-        forget.hidden=!value.persistent&&!value.session;
-      }catch(e){if(row.isConnected)permission.textContent=e.message;}};
-      forget.onclick=async()=>{forget.disabled=true;try{await cancel();await deviceReply(nativeInvoke('microphone_permission',{forget:true}),'Microphone permission could not be reset.');await check();}catch(e){notice(e.message,true);}finally{forget.disabled=false;}};
-      window.addEventListener('kindred-microphone-permission-changed',()=>void check(),{signal:microphoneEvents.signal});
-      void check();
-    }
     return row;
   }
   function settingsSection(){
