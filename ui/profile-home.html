@@ -21,12 +21,13 @@
 <section id="transfer-local" hidden><div class="transfer-local-row"><span id="transfer-local-state" role="status">Checking local server…</span><button id="transfer-prepare" type="button" hidden>Set up Standalone</button></div><progress id="transfer-setup-progress" hidden aria-label="Standalone setup"></progress><details id="transfer-setup-details" hidden><summary>Setup details</summary><pre id="transfer-setup-log"></pre><textarea id="transfer-setup-command" readonly hidden aria-label="Setup command" rows="5"></textarea></details></section>
 <label for="transfer-username">Username</label><input id="transfer-username" autocomplete="username" required maxlength="80">
 <label for="transfer-password">Password</label><input id="transfer-password" type="password" autocomplete="current-password" required>
-<label class="check-row"><input id="transfer-register" type="checkbox">Create a new account</label>
+<label class="check-row"><input id="transfer-register" type="checkbox">Create an account on the destination</label>
+<div id="transfer-invite-row" hidden><label for="transfer-invite">Invitation code (if needed)</label><input id="transfer-invite" autocomplete="off"></div>
 <label class="check-row"><input id="transfer-remember" type="checkbox" checked>Keep this computer connected</label>
 <details class="transfer-summary"><summary>What moves</summary><p>Bots, chats, artifacts, files attached in Kindred, memories, skills and routines.</p><p>Provider and connector sign-ins, and bot computer files, stay on the source. Routines arrive paused. The original workspace is kept as a read-only backup.</p></details>
 </fieldset>
 <div id="transfer-progress-panel" hidden><span id="transfer-stage" role="status"></span><progress id="transfer-progress" max="6" value="0" aria-label="Workspace move"></progress></div>
 <output id="transfer-error" role="alert"></output>
-<div class="transfer-actions"><button class="primary" id="transfer-submit" type="submit">Move workspace</button><button id="transfer-cancel" type="button" hidden>Cancel move</button></div>
+<div class="transfer-actions"><button class="primary" id="transfer-submit" type="submit">Move workspace</button><button id="transfer-open" type="button" hidden>Open moved workspace</button><button id="transfer-cancel" type="button" hidden>Cancel move</button></div>
 </form>
 </main></body></html>

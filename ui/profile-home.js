@@ -13,7 +13,7 @@ if(embedded){
 }
 function statusReply(){let timer;return Promise.race([invoke('standalone_status'),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('The setup status did not respond.')),8000);})]).finally(()=>clearTimeout(timer));}
 let firstRun=false;
-let transferSource='',transferBusy=false,transferLocalReady=false,transferTimer=null,transferSetupTimer=null;
+let transferSource='',transferBusy=false,transferLocalReady=false,transferTimer=null,transferSetupTimer=null,transferSetupEpoch=0,transferOperationPending=false,transferDestinationKey=null,transferPollEpoch=0;
 function chooseSetup(choice){
  document.documentElement.dataset.setupChoice=choice;
  for(const name of ['local','server'])$('choose-'+name).setAttribute('aria-pressed',String(choice===name));
@@ -48,8 +48,9 @@ async function load(){
   accountContext({section:'transfer'});transferSource=data.intent.server;$('transfer-source').textContent=data.intent.name+' · '+data.intent.server;
   document.querySelector('.dialog-chrome span').textContent='Move workspace';
   const pending=data.transfer_request,localOption=$('transfer-target').querySelector('[value=local]');localOption.disabled=localServer(transferSource);
-  if(pending?.source===data.intent.source){$('transfer-address').value=pending.destination;$('transfer-username').value=pending.username;$('transfer-target').value=localServer(pending.destination)?'local':'server';$('transfer-cancel').hidden=false;}
-  await transferTarget();const progress=await invoke('profile_transfer_status');if(progress?.state==='working'){setTransferBusy(true);pollTransferProgress();}return;
+  transferDestinationKey=null;$('transfer-submit').hidden=false;$('transfer-open').hidden=true;
+  if(pending?.source===data.intent.source){$('transfer-address').value=pending.destination;$('transfer-username').value=pending.username;$('transfer-target').value=localServer(pending.destination)?'local':'server';$('transfer-cancel').hidden=false;if(pending.completed){const entry=data.entries.find(p=>p.server===pending.destination&&p.profile_id===pending.destination_profile);if(entry){transferDestinationKey=entry.key;$('transfer-open').hidden=false;$('transfer-submit').hidden=true;$('transfer-cancel').hidden=true;$('transfer-fields').hidden=true;$('transfer-error').textContent='Your workspace has moved.';return;}}}
+  $('transfer-fields').hidden=false;await transferTarget();const progress=await invoke('profile_transfer_status');if(progress?.state==='working'){setTransferBusy(true);pollTransferProgress();}return;
  }
  const connection=data.intent?.mode==='connection'?data.intent:null;document.documentElement.toggleAttribute('data-connecting',!!connection&&!connection.failed);$('connection-recovery').hidden=!connection;
  if(connection){$('connection-title').textContent=connection.failed?'Couldn’t open your workspace':'Opening your workspace…';$('connection-address').textContent=connection.server;$('connection-help').textContent=connection.failed?'Check your connection and that the server is running, then try again. '+(data.entries.length?'You can also choose another account below.':'You can also connect to another server below.'):'Connecting to your saved server.';$('connection-retry').hidden=!connection.failed;$('connection-retry').dataset.profileServer=connection.server;$('connection-retry').onclick=()=>perform(()=>connection.key?invoke('switch_native_profile',{key:connection.key}):invoke('connect_profile_server',{address:connection.server}),$('connection-retry'));}
@@ -132,41 +133,44 @@ function profileOptions(entry,trigger){
 function setTransferBusy(busy){transferBusy=busy;$('transfer-fields').disabled=busy;$('transfer-submit').disabled=busy||($('transfer-target').value==='local'&&!transferLocalReady);$('transfer-cancel').disabled=busy;}
 async function transferTarget(){
  const local=$('transfer-target').value==='local';$('transfer-remote').hidden=local;$('transfer-address').required=!local;$('transfer-local').hidden=!local;
- clearTimeout(transferSetupTimer);if(local)await checkTransferLocal();else setTransferBusy(transferBusy);
+ clearTimeout(transferSetupTimer);transferSetupEpoch++;if(local)await checkTransferLocal(transferSetupEpoch);else setTransferBusy(transferBusy);
 }
-async function checkTransferLocal(){
+async function checkTransferLocal(epoch=transferSetupEpoch){
+ if(transferBusy||epoch!==transferSetupEpoch||$('transfer-target').value!=='local')return;
  try{
-  const status=await statusReply(),working=status.status==='working';transferLocalReady=!!status.local_server&&!status.local_server.update_available&&!working&&status.status!=='error';
+  const status=await statusReply();if(epoch!==transferSetupEpoch||transferBusy)return;const working=status.status==='working';transferLocalReady=!!status.local_server&&!status.local_server.update_available&&!working&&status.status!=='error';
   $('transfer-local-state').textContent=working?(status.stage||'Preparing Standalone…'):transferLocalReady?'Standalone ready':status.local_server?.update_available?'Standalone needs an update':status.status==='error'?(status.message||'Setup needs attention'):'Standalone is not running';
   const prepare=$('transfer-prepare');prepare.hidden=transferLocalReady;prepare.disabled=working;prepare.textContent=working?'Preparing…':status.local_server?.update_available?'Update & start':status.status==='error'?'Retry setup':'Set up & start';
   const progress=$('transfer-setup-progress');progress.hidden=!working;progress.max=status.stage_count||5;if(Number.isFinite(status.completed_stages))progress.value=status.completed_stages;else progress.removeAttribute('value');
   const details=$('transfer-setup-details');details.hidden=status.status!=='error';$('transfer-setup-log').textContent=status.detail||status.message||'';
   const command=$('transfer-setup-command');command.hidden=!status.linux_recovery?.command;command.value=status.linux_recovery?.command||'';
   if(status.status==='error')details.open=true;
- }catch(e){transferLocalReady=false;$('transfer-local-state').textContent=String(e.message||e);$('transfer-prepare').hidden=false;$('transfer-prepare').disabled=false;}
- setTransferBusy(transferBusy);if($('transfer-target').value==='local')transferSetupTimer=setTimeout(checkTransferLocal,2000);
+ }catch(e){if(epoch!==transferSetupEpoch)return;transferLocalReady=false;$('transfer-local-state').textContent=String(e.message||e);$('transfer-prepare').hidden=false;$('transfer-prepare').disabled=false;}
+ setTransferBusy(transferBusy);if(!transferBusy&&epoch===transferSetupEpoch&&$('transfer-target').value==='local')transferSetupTimer=setTimeout(()=>checkTransferLocal(epoch),2000);
 }
 $('transfer-target').onchange=()=>transferTarget().catch(e=>$('transfer-error').textContent=String(e.message||e));
-$('transfer-prepare').onclick=async()=>{const button=$('transfer-prepare');button.disabled=true;try{await invoke('start_standalone');clearTimeout(transferSetupTimer);await checkTransferLocal();}catch(e){$('transfer-local-state').textContent=String(e.message||e);button.disabled=false;}};
-async function pollTransferProgress(){
+$('transfer-prepare').onclick=async()=>{const button=$('transfer-prepare');button.disabled=true;clearTimeout(transferSetupTimer);const epoch=++transferSetupEpoch;try{await invoke('start_standalone');await checkTransferLocal(epoch);}catch(e){$('transfer-local-state').textContent=String(e.message||e);button.disabled=false;}};
+async function pollTransferProgress(epoch=transferPollEpoch){
  clearTimeout(transferTimer);
- try{const status=await invoke('profile_transfer_status');if(status?.stage){$('transfer-progress-panel').hidden=false;$('transfer-stage').textContent=status.stage;$('transfer-progress').max=status.total||6;$('transfer-progress').value=status.completed||0;}
-  if(status?.state==='error'){setTransferBusy(false);$('transfer-error').textContent=status.error||'The move stopped. Retry or cancel.';return;}
-  if(status?.state==='complete'){setTransferBusy(false);$('transfer-stage').textContent='Workspace moved';return;}
+ try{const status=await invoke('profile_transfer_status');if(epoch!==transferPollEpoch)return;if(status?.stage&&(!transferOperationPending||status.state==='working')){$('transfer-progress-panel').hidden=false;$('transfer-stage').textContent=status.stage;$('transfer-progress').max=status.total||6;$('transfer-progress').value=status.completed||0;}
+  if(!transferOperationPending&&status?.state==='error'){setTransferBusy(false);$('transfer-error').textContent=status.error||'The move stopped. Retry or cancel.';return;}
+  if(!transferOperationPending&&status?.state==='complete'){setTransferBusy(false);$('transfer-stage').textContent='Workspace moved';return;}
  }catch{/* The operation owns its result; a missed status poll must not cancel it. */}
- if(transferBusy)transferTimer=setTimeout(pollTransferProgress,700);
+ if(transferBusy&&epoch===transferPollEpoch)transferTimer=setTimeout(()=>pollTransferProgress(epoch),700);
 }
 $('transfer-form').onsubmit=async event=>{
  event.preventDefault();if(transferBusy||($('transfer-target').value==='local'&&!transferLocalReady))return;
  const address=$('transfer-target').value==='local'?'http://127.0.0.1:9444':$('transfer-address').value;
  setTransferBusy(true);$('transfer-error').textContent='';$('transfer-progress-panel').hidden=false;$('transfer-stage').textContent='Checking source';$('transfer-progress').value=0;
- const operation=invoke('transfer_profile',{address,username:$('transfer-username').value.trim(),password:$('transfer-password').value,register:$('transfer-register').checked,remember:$('transfer-remember').checked});
+ transferOperationPending=true;transferPollEpoch++;transferSetupEpoch++;clearTimeout(transferSetupTimer);
+ const operation=invoke('transfer_profile',{address,username:$('transfer-username').value.trim(),password:$('transfer-password').value,register:$('transfer-register').checked,invite:$('transfer-invite').value.trim(),remember:$('transfer-remember').checked});
  void pollTransferProgress();
  try{await operation;$('transfer-stage').textContent='Workspace moved';$('transfer-progress').value=6;}
- catch(e){$('transfer-error').textContent=String(e.message||e);$('transfer-cancel').hidden=false;$('transfer-submit').textContent='Retry move';}
- finally{clearTimeout(transferTimer);$('transfer-password').value='';setTransferBusy(false);}
+ catch(e){$('transfer-error').textContent=String(e.message||e);$('transfer-cancel').hidden=false;$('transfer-submit').textContent='Retry move';await load().catch(()=>{});}
+ finally{transferOperationPending=false;transferPollEpoch++;clearTimeout(transferTimer);$('transfer-password').value='';$('transfer-invite').value='';setTransferBusy(false);if($('transfer-target').value==='local')void checkTransferLocal();}
 };
-$('transfer-register').onchange=()=>{$('transfer-password').autocomplete=$('transfer-register').checked?'new-password':'current-password';};
-$('transfer-cancel').onclick=async()=>{setTransferBusy(true);try{await invoke('cancel_profile_transfer');$('transfer-error').textContent='Move cancelled. The original workspace can run again.';$('transfer-progress-panel').hidden=true;$('transfer-cancel').hidden=true;$('transfer-submit').textContent='Move workspace';}catch(e){$('transfer-error').textContent=String(e.message||e);}finally{setTransferBusy(false);}};
-window.addEventListener('pagehide',()=>{clearTimeout(transferTimer);clearTimeout(transferSetupTimer);});
+$('transfer-open').onclick=()=>perform(()=>invoke('switch_native_profile',{key:transferDestinationKey}),$('transfer-open'));
+$('transfer-register').onchange=()=>{$('transfer-invite-row').hidden=!$('transfer-register').checked;$('transfer-password').autocomplete=$('transfer-register').checked?'new-password':'current-password';};
+$('transfer-cancel').onclick=async()=>{setTransferBusy(true);try{await invoke('cancel_profile_transfer');$('transfer-error').textContent='Move cancelled. The original workspace can run again. If a copy reached the destination, it remains there with routines paused.';$('transfer-progress-panel').hidden=true;$('transfer-cancel').hidden=true;$('transfer-submit').textContent='Move workspace';}catch(e){$('transfer-error').textContent=String(e.message||e);}finally{setTransferBusy(false);}};
+window.addEventListener('pagehide',()=>{clearTimeout(transferTimer);clearTimeout(transferSetupTimer);transferSetupEpoch++;});
 window.addEventListener('kindred-dialog-refresh',()=>perform(load));

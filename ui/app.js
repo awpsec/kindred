@@ -4685,7 +4685,8 @@ async function syncChatHistory(entry){
     entry.pendingWaits=data.pending_waits||[];entry.commands=data.commands||[];
     // A reading gesture during a tail refresh takes precedence over removing its anchor.
     const anchor=chatScroll.view===entry.id && !chatScroll.follow && chatScroll.anchor?.key;
-    if(!opening && anchor && entry.messages.some(m=>String(m.seq)===anchor) && !data.messages.some(m=>String(m.seq)===anchor)){
+    const members=new Set(chatScroll.anchor?.members||[anchor]);
+    if(!opening && anchor && entry.messages.some(m=>members.has(String(m.seq))) && !data.messages.some(m=>members.has(String(m.seq)))){
       entry.hasAfter=true;return;
     }
     // Refreshing visible messages must not dismiss a failed page's Retry action.
@@ -4724,10 +4725,12 @@ async function loadHistoryPage(direction,fromScroll=false){
     const data=await messagePage(entry,query),merged=[...new Map([...entry.messages,...data.messages].map(m=>[m.seq,m])).values()].sort((a,b)=>a.created-b.created || (a.history_order && b.history_order ? a.history_order.localeCompare(b.history_order) : a.seq-b.seq));
     let start=direction==='older'?0:Math.max(0,merged.length-CHAT_WINDOW_SIZE);
     const anchor=chatScroll.view===id && !chatScroll.follow && chatScroll.anchor?.key;
-    const index=anchor?merged.findIndex(m=>String(m.seq)===anchor):-1;
+    const members=new Set(chatScroll.anchor?.members||[anchor]);
+    const inWindow=anchor&&merged.slice(start,start+CHAT_WINDOW_SIZE).some(m=>members.has(String(m.seq)));
+    const index=anchor&&!inWindow?merged.findIndex(m=>members.has(String(m.seq))):-1;
     if(index>=0 && (index<start || index>=start+CHAT_WINDOW_SIZE))start=Math.max(0,Math.min(index-25,merged.length-CHAT_WINDOW_SIZE));
     const previousBefore=entry.hasBefore,previousAfter=entry.hasAfter;
-    entry.messages=merged.slice(start,start+CHAT_WINDOW_SIZE);
+    entry.messages=merged.slice(start,start+CHAT_WINDOW_SIZE);entry.historyChanged=true;
     entry.hasBefore=start>0 || (direction==='older'?!!data.page?.has_before:previousBefore);
     entry.hasAfter=start+CHAT_WINDOW_SIZE<merged.length || (direction==='newer'?!!data.page?.has_after:previousAfter);
   })();
@@ -4809,9 +4812,9 @@ function connectorCallSummary(card){
   summary.append(icon('chevron',12));return summary;
 }
 function connectorStack(messages,entry){
-  const first=messages[0],last=messages.at(-1),key=String(first.seq),group=node('article','connector-stack-group');group.dataset.message=key;
+  const first=messages[0],last=messages.at(-1),key=String(first.seq),group=node('article','connector-stack-group');group.dataset.message=key;group.dataset.scrollMessages=messages.map(m=>m.seq).join(' ');
   const details=node('details','connector-stack');details.dataset.connectorStack=key;
-  entry.openConnectorStacks??=new Set();details.open=entry.openConnectorStacks.has(key);
+  entry.openConnectorStacks??=new Set();details.open=messages.some(m=>entry.openConnectorStacks.has(String(m.seq)));
   const summary=node('summary','connector-stack-summary'),logos=node('span','connector-stack-logos'),copy=node('span','connector-stack-copy');
   const brands=[...new Map(messages.map(m=>{const c=m.connector_artifact,b=connectorBrand(c.connection||c.connector,c.tool);return[b.key,b];})).values()];
   for(const brand of brands.slice(0,3))logos.append(connectorLogo(brand));
@@ -4820,7 +4823,7 @@ function connectorStack(messages,entry){
   summary.title=brands.map(b=>b.name).join(', ');
   const body=node('div','connector-stack-body');for(const m of messages.filter(m=>m!==last)){const card=connectorMessage(m,entry.id);conversationRenderSignatures.set(card,conversationSignature(card));body.append(card);}
   const expansion=node('div','chat-disclosure-body');expansion.append(body);
-  details.append(summary,expansion);animateChatDisclosure(details,expansion);details.ontoggle=()=>{if(!details.isConnected)return;details.open?entry.openConnectorStacks.add(key):entry.openConnectorStacks.delete(key);};
+  details.append(summary,expansion);animateChatDisclosure(details,expansion);details.ontoggle=()=>{if(!details.isConnected)return;for(const id of group.dataset.scrollMessages.split(' '))details.open?entry.openConnectorStacks.add(id):entry.openConnectorStacks.delete(id);};
   const latest=node('div','connector-stack-current');latest.append(connectorMessage(last,entry.id));
   group.append(details,latest);return group;
 }
@@ -4936,7 +4939,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       ),
     );
     area.append(empty);
-    reconcileConversation(liveArea,area);
+    reconcileConversation(liveArea,area,mode==='sync'&&!entry.historyChanged);entry.historyChanged=false;
     endChatRender();
     return;
   }
@@ -4966,11 +4969,11 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     if(m.workspace_artifact&&m.artifact_action==='updated'){
       const batch=artifactBatches.get(m.seq),group=node('article','message-group artifact-update-message');group.dataset.message=String(m.seq);
       const options={baseUrl:state.status.public_url||location.origin};
-      if(batch){for(const item of batch)stacked.add(item.seq);const details=node('details','artifact-update-stack'),summary=node('summary');
-        entry.openArtifactStacks??=new Set();details.open=entry.openArtifactStacks.has(String(m.seq));
+      if(batch){group.dataset.scrollMessages=batch.map(item=>item.seq).join(' ');for(const item of batch)stacked.add(item.seq);const details=node('details','artifact-update-stack'),summary=node('summary');
+        entry.openArtifactStacks??=new Set();details.open=batch.some(item=>entry.openArtifactStacks.has(String(item.seq)));
         summary.append(artifactUpdateRow(batch.at(-1).workspace_artifact,{...options,label:batch.length+' artifact updates ·'}));
         const body=node('div','artifact-update-stack-body');for(const item of batch)body.append(artifactUpdateRow(item.workspace_artifact,options));
-        details.append(summary,body);details.addEventListener('toggle',()=>{if(details.isConnected){if(details.open)entry.openArtifactStacks.add(String(m.seq));else entry.openArtifactStacks.delete(String(m.seq));}});group.append(details);
+        details.append(summary,body);details.addEventListener('toggle',()=>{if(details.isConnected){for(const item of batch){if(details.open)entry.openArtifactStacks.add(String(item.seq));else entry.openArtifactStacks.delete(String(item.seq));}}});group.append(details);
       }else group.append(artifactUpdateRow(m.workspace_artifact,options));
       area.append(group);previousSender=null;continue;
     }
@@ -5202,7 +5205,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     group.dataset.message='human-task-'+task.id;group.append(card);
     area.insertBefore(group,anchor||null);
   }
-  reconcileConversation(liveArea,area);
+  reconcileConversation(liveArea,area,mode==='sync'&&!entry.historyChanged);entry.historyChanged=false;
   const artifactTurns=data.messages.filter(m=>m.sender==='user'||m.mine===true||(chat.shared&&chat.participants?.some(p=>p.id===m.sender&&p.kind==='person'))).map(m=>String(m.seq));
   for(const card of liveArea.querySelectorAll('[data-workspace-artifact]'))card.advanceArtifactTurns?.(artifactTurns);
   for(const seq of entry.replyArrivals.keys()){const group=[...liveArea.children].find(n=>n.dataset.message===String(seq));if(group){revealReply(group,entry.replyArrivals.get(seq));entry.replyArrivals.delete(seq);}}
@@ -5285,8 +5288,8 @@ function connectorAdvance(group,next){
     const control=trackMotion(group.animate([{opacity:1},{opacity:1}],{duration}),duration,finish);group.finishConnectorAdvance=()=>control.finish();
   };
 }
-function reconcileConversation(target,desired){
-  const formations=connectorStackFormation(target,desired);
+function reconcileConversation(target,desired,animate=true){
+  const formations=animate?connectorStackFormation(target,desired):[];
   for(const next of desired.querySelectorAll('.command-progress')){
     const previous=[...target.querySelectorAll('.command-progress')].find(p=>p.dataset.command===next.dataset.command);
     if(previous)next.open=previous.open&&!previous.classList.contains('is-collapsing');
@@ -5299,11 +5302,13 @@ function reconcileConversation(target,desired){
     if(previous&&conversationRenderSignatures.get(previous)===signature)return previous;
     if(previous?.classList.contains('group-activity')&&next.classList.contains('group-activity')){transitionGroupActivity(previous,next,motionAllowed(),a=>trackMotion(a,280));conversationRenderSignatures.set(previous,signature);return previous;}
     if(previous?.classList.contains('connector-stack-group')&&next.classList.contains('connector-stack-group')){
-      const advance=connectorAdvance(previous,next);
+      const advance=animate?connectorAdvance(previous,next):null;
       const before=previous.querySelector('.connector-stack'),after=next.querySelector('.connector-stack');
+      previous.dataset.scrollMessages=next.dataset.scrollMessages;
+      if(before.open)for(const id of previous.dataset.scrollMessages.split(' '))conversationHistory(currentConversationId()).openConnectorStacks.add(id);
       before.querySelector('summary').replaceChildren(...after.querySelector('summary').childNodes);
-      reconcileConversation(before.querySelector('.connector-stack-body'),after.querySelector('.connector-stack-body'));
-      reconcileConversation(previous.querySelector('.connector-stack-current'),next.querySelector('.connector-stack-current'));advance?.();
+      reconcileConversation(before.querySelector('.connector-stack-body'),after.querySelector('.connector-stack-body'),animate);
+      reconcileConversation(previous.querySelector('.connector-stack-current'),next.querySelector('.connector-stack-current'),animate);advance?.();
       conversationRenderSignatures.set(previous,signature);return previous;
     }
     const beforeHistory=previous?.querySelector('.task-recovery-history'),afterHistory=next.querySelector('.task-recovery-history');
@@ -6796,17 +6801,27 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelec
 const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0};
 function captureChatAnchor(){
   const area=$('content'),top=area.getBoundingClientRect().top;
-  const visible=[...area.querySelectorAll(':scope > [data-message], :scope > [data-run]')].find(n=>n.getBoundingClientRect().bottom>top+1);
+  const visible=[...area.querySelectorAll(':scope > [data-message], :scope > [data-run]')].filter(n=>n.getBoundingClientRect().bottom>top+1).slice(0,3);
   chatScroll.top=area.scrollTop;
-  chatScroll.anchor=visible?{key:visible.dataset.message,run:visible.dataset.run,offset:visible.getBoundingClientRect().top-top}:null;
+  const anchors=visible.map(n=>({key:n.dataset.message,run:n.dataset.run,members:n.dataset.scrollMessages?.split(' '),offset:n.getBoundingClientRect().top-top}));
+  chatScroll.anchor=anchors.length?{...anchors[0],backups:anchors.slice(1)}:null;
 }
 function restoreChatPosition(){
   const area=$('content');
   if(chatScroll.follow)area.scrollTop=area.scrollHeight;
   else {
     const a=chatScroll.anchor;
-    const target=a&&[...area.children].find(n=>a.key?n.dataset.message===a.key:n.dataset.run===a.run);
-    area.scrollTop=target?area.scrollTop+target.getBoundingClientRect().top-area.getBoundingClientRect().top-a.offset:chatScroll.top;
+    let target,matched;
+    // Page boundaries can split or merge receipt stacks. Their first message is
+    // not a stable identity; retain any surviving member, then a nearby row.
+    for(const candidate of a?[a,...(a.backups||[])]:[]){
+      const members=new Set(candidate.members||[candidate.key]);
+      target=[...area.children].find(n=>candidate.key
+        ?members.has(n.dataset.message)||n.dataset.scrollMessages?.split(' ').some(id=>members.has(id))
+        :n.dataset.run===candidate.run);
+      if(target){matched=candidate;break;}
+    }
+    area.scrollTop=target?area.scrollTop+target.getBoundingClientRect().top-area.getBoundingClientRect().top-matched.offset:chatScroll.top;
   }
   chatScroll.top=area.scrollTop;updateJumpLatest();
 }
@@ -6814,7 +6829,11 @@ function scheduleChatPosition(){
   if(chatScroll.frame)return;
   chatScroll.frame=requestAnimationFrame(()=>{chatScroll.frame=0;restoreChatPosition();chatScroll.rendering=false;finishConversationOpening(chatScroll.view);});
 }
-const chatResize=new ResizeObserver(scheduleChatPosition);
+const chatResize=new ResizeObserver(()=>{
+  // ResizeObserver runs before paint. Deferring this correction exposes a frame
+  // at the wrong position whenever images or message disclosures settle.
+  restoreChatPosition();
+});
 function beginChatRender(view){
   const focused=document.activeElement;
   // Retained connector editors keep their own focus; only restore named message actions.
@@ -6843,6 +6862,7 @@ function endChatRender(){
   for(const child of $('content').children)chatResize.observe(child);
   restoreChatPosition();
   if(!chatHistory.get(currentConversationId())?.hasAfter&&$('content').scrollHeight-$('content').scrollTop-$('content').clientHeight<80)chatScroll.follow=true;
+  chatScroll.rendering=false;
   scheduleChatPosition();
   if(messageActionFocus){const group=$('content').querySelector('[data-message="'+messageActionFocus.seq+'"]');(group?.querySelector('[data-message-focus="'+messageActionFocus.control+'"]')||group)?.focus({preventScroll:true});messageActionFocus=null;}
   positionMessageMenu();
@@ -6857,6 +6877,7 @@ $('content').addEventListener('scroll',()=>{
   if(chatOpening||chatScroll.rendering)return;
   const area=$('content');
   if(Math.abs(area.scrollTop-chatScroll.top)<1)return;
+  cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
   const entry=chatHistory.get(currentConversationId());
   chatScroll.follow=!entry?.hasAfter && area.scrollHeight-area.scrollTop-area.clientHeight<80;
   captureChatAnchor();
@@ -6868,12 +6889,12 @@ $('content').addEventListener('scroll',()=>{
 // A wheel/touch/key gesture takes precedence over a pending image/layout correction.
 function readingGesture(e){
   if(chatOpening)return;
-  if(e.type==='wheel'&&e.deltaY>=0)return;
-  if(e.type==='keydown'&&!['ArrowUp','PageUp','Home'].includes(e.key))return;
+  if(e.type==='wheel'&&e.deltaY===0)return;
+  if(e.type==='keydown'&&(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(e.key)||e.target.closest('input,textarea,[contenteditable=true]')))return;
   chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
 }
-for(const name of ['wheel','touchstart','keydown'])$('content').addEventListener(name,readingGesture,{passive:true});
+for(const name of ['wheel','touchstart','pointerdown','keydown'])$('content').addEventListener(name,readingGesture,{passive:true});
 const jumpLatest=button('Latest messages',async()=>{followChatLatest();await renderChat(true);$('prompt').focus({preventScroll:true});},'jump-latest','chevron');jumpLatest.hidden=true;$('composer-area').append(jumpLatest);
 function updateJumpLatest(){const area=$('content');jumpLatest.hidden=!chatHistory.get(currentConversationId())?.hasAfter && area.scrollHeight-area.scrollTop-area.clientHeight<150;}
 $('content').addEventListener('scroll',updateJumpLatest,{passive:true});new MutationObserver(updateJumpLatest).observe($('content'),{childList:true,subtree:true});
