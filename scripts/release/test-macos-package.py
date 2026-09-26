@@ -51,13 +51,13 @@ def wait_report(folder,phase,child):
    if match:return match
   time.sleep(.2)
  raise AssertionError('Native UI did not report '+phase)
-def capture(child,name,required_words,render_wait=0):
+def capture(child,name,required_words,render_wait=0,window_title=None):
  deadline=time.monotonic()+render_wait
  while True:
   assert child.poll() is None,'Native app exited'
   command([out/'window-proof',child.pid,out/name],name+'.log')
   rows=json.loads((out/name/'windows.json').read_text())
-  text=' '.join(s for row in rows for s in row['text']).lower()
+  text=' '.join(s for row in rows if window_title is None or row['title']==window_title for s in row['text']).lower()
   rendered=all(word.lower() in text for word in required_words)
   if rendered or time.monotonic()>=deadline:break
   time.sleep(.5)
@@ -210,7 +210,11 @@ try:
    # Inspect this interactive panel with Kindred active, as a user opens it.
    command([out/'app-focus','foreground',child.pid],'client-updater-foreground.log')
    command([out/'app-focus','status',child.pid],'client-updater-focus-after.log')
-   capture(child,'client-updater',['up to date','Kindred update'],render_wait=15)
+   # Chat performs its own feed checks; preserve phase and user-agent evidence
+   # even when the native updater never loads far enough to request the feed.
+   feed=fixture/'signed-feed.json'
+   proof['updater_feed_requests_before_capture']=json.loads(feed.read_text()) if feed.exists() else {'served':False}
+   capture(child,'client-updater',['up to date','Kindred update'],render_wait=15,window_title='Kindred update')
    assert json.loads((fixture/'signed-feed.json').read_text())['served']
    proof['native_client_update_window_and_signed_feed']=True
    request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"accounts"}',headers={'Content-Type':'application/json'},method='POST')
