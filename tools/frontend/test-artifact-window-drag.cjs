@@ -9,6 +9,19 @@ const assert=require('node:assert/strict');
   await page.addInitScript(({token,platform})=>{sessionStorage.setItem('kindred-token',token);window.__KINDRED_DESKTOP={platform};window.__KINDRED_EXTERNAL_LINKS=true;window.nativeCalls=[];window.externalCalls=[];window.__TAURI__={core:{invoke:async(command,args)=>{if(command==='window_action')nativeCalls.push(args.action);if(command==='open_external_url')externalCalls.push(args.url);return null;}}};},{token,platform});
   await page.goto('http://127.0.0.1:'+server.address().port);
   await page.locator('.desktop-titlebar').waitFor();
+  await page.locator('.chat-window-drag').waitFor();
+  const grip=page.locator('.chat-window-drag');
+  for(const name of ['Piper','A very long bot name for the entire client operations and reporting team']){
+   await page.locator('#heading').evaluate((n,name)=>n.textContent=name,name);
+   const gripBox=await grip.boundingBox(),headerBox=await page.locator('.conversation-header').boundingBox();
+   assert(gripBox.height>=headerBox.height-2&&gripBox.width>=47,'Full-height grip remains available with long names');
+   await page.evaluate(()=>nativeCalls.length=0);
+   for(const offset of [4,gripBox.height/2,gripBox.height-4])await page.mouse.click(gripBox.x+gripBox.width/2,gripBox.y+offset);
+   assert.deepEqual(await page.evaluate(()=>nativeCalls),['drag','drag','drag'],platform+' drag works across the blank header height');
+  }
+  await page.evaluate(()=>{nativeCalls.length=0;for(const target of document.querySelectorAll('.conversation-header button'))target.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,detail:1}));});
+  assert.deepEqual(await page.evaluate(()=>nativeCalls),[],platform+' chat controls remain interactive');
+
   await page.evaluate(async()=>{
    const {artifactStudio}=await import('/workspace-artifacts.js');
    const doc={id:'drag-doc',title:'Editable title',kind:'document',source:'# Document',state:{},revision:1,updated:Date.now()/1000};
