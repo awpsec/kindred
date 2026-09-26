@@ -21,7 +21,7 @@
       let state=null,timer,busy=false,epoch=0;
       function render(value){
         state=value;const working=value.status==='working',pending=value.status==='awaiting_restart';
-        button.disabled=busy||working;button.textContent=working?'Updating…':pending?'Restart Kindred and server':value.status==='error'?'Retry update':'Update local server';
+        button.disabled=busy||working;button.textContent=working?'Updating…':pending?'Restart local server':value.status==='error'?'Retry update':'Update local server';
         if(value.local_server)version.textContent='Version '+value.local_server.version+' · App '+value.local_server.desktop_version;
         else if(!working)version.textContent='On this computer';
         progress.hidden=!working&&!pending;progress.max=value.stage_count||5;

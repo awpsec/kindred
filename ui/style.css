@@ -4959,3 +4959,9 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
 .conversation-header:has(>.chat-window-drag)>.bot-heading{flex:0 1 auto;max-width:none;margin-right:0;}
 .chat-window-drag{align-self:stretch;flex:1 0 48px;user-select:none;}
 .conversation-header:has(>.chat-window-drag)>.header-actions{flex:none;}
+
+.server-update-settings{padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid var(--line)}
+.server-update-settings h3{font-size:14px;margin:0 0 12px}
+html[data-starting] #connect{visibility:hidden}
+#startup-status{position:fixed;inset:0;display:grid;place-content:center;background:var(--bg,#111);color:var(--muted,#aaa)}
+#startup-status[hidden]{display:none}

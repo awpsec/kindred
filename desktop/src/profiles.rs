@@ -1071,8 +1071,17 @@ fn start_setup_mode(app: tauri::AppHandle, prepare_only: bool, activate_only: bo
             }
         }
         if success && activate_only {
-            crate::window_state::flush(&app);
-            app.restart();
+            // Only the server changed. Keep the desktop process and its session alive.
+            if let Some(view) = app.get_webview("main") {
+                if let Err(error) = view.reload() {
+                    crate::setup_progress::finish(
+                        &mut app.state::<Host>().setup.lock().unwrap(),
+                        Err(format!(
+                            "The server restarted, but the window could not reconnect: {error}. Reopen Kindred."
+                        )),
+                    );
+                }
+            }
         }
     });
     Ok(())

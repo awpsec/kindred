@@ -3835,7 +3835,11 @@ if (window.__KINDRED_TOKEN__) {
   state.token = window.__KINDRED_TOKEN__;
   delete window.__KINDRED_TOKEN__;
 }
-void profilesUI.init(pairCode).then(()=>{if (state.token && !pairCode) perform(connect);});
+void (async()=>{
+  try{await profilesUI.init(pairCode);if(state.token&&!pairCode)await connect();}
+  catch(e){notice(e.message||'Could not open your workspace. Please try again.',true);}
+  finally{delete document.documentElement.dataset.starting;$('startup-status')?.setAttribute('hidden','');}
+})();
 
 // Shared conversations and typed mentions.
 async function chooseChat(chat) {

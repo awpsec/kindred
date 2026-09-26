@@ -11,7 +11,7 @@ await page.waitForTimeout(100);assert.equal(await page.locator('.local-server-ad
 if(expected){
  const update=page.getByRole('button',{name:'Update local server',exact:true});await update.click();assert(await page.getByRole('button',{name:'Updating…'}).isDisabled());assert.equal(await page.locator('progress').getAttribute('value'),'2');
  assert.equal(await page.evaluate(()=>calls.filter(c=>c==='prepare_local_server').length),1);assert(!await page.evaluate(()=>calls.includes('restart_local_server')));
- await page.evaluate(()=>state={status:'awaiting_restart',completed_stages:3,stage_count:5});const restart=page.getByRole('button',{name:'Restart Kindred and server'});await restart.waitFor();
+ await page.evaluate(()=>state={status:'awaiting_restart',completed_stages:3,stage_count:5});const restart=page.getByRole('button',{name:'Restart local server'});await restart.waitFor();
  for(const width of [690,360]){await page.setViewportSize({width,height:650});assert(await page.locator('.local-server-admin').evaluate(n=>n.scrollWidth<=n.clientWidth));fs.mkdirSync('test-results',{recursive:true});await page.screenshot({path:`test-results/local-server-inline-${process.env.WEBKIT?'webkit':'chromium'}-${width}.png`});}
  await restart.click();assert(await page.getByRole('button',{name:'Updating…'}).isDisabled());assert.equal(await page.evaluate(()=>calls.filter(c=>c==='restart_local_server').length),1);
  await page.evaluate(()=>state={status:'error',message:'Server readiness check failed',detail:'Preserved existing data'});await page.getByRole('button',{name:'Retry update'}).waitFor();assert(await page.getByText('Server readiness check failed',{exact:true}).isVisible());
