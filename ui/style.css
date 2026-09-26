@@ -5089,6 +5089,8 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .progress-sketch-user{width:43%;height:12%;min-height:6px;align-self:flex-end;border-radius:5px 5px 1px 5px;background:color-mix(in srgb,var(--fg) 30%,transparent);margin-bottom:3px}
 .progress-sketch-bubble{display:flex;flex-direction:column;gap:2px;justify-content:center;width:72%;height:14%;min-height:6px;border-radius:4px 4px 4px 1px;background:var(--hover);padding:3px 5px}
 .progress-sketch-bubble:nth-child(odd){width:59%}
+.progress-sketch-ghost{background:transparent;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fg) 16%,transparent)}
+.progress-choice:has(input:checked) .progress-sketch-ghost{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fg) 20%,transparent)}
 .progress-sketch-bubble>i{height:1px;width:87%;background:color-mix(in srgb,var(--fg) 28%,transparent)}
 .progress-sketch-bubble>i+i{width:61%}
 .progress-sketch-working{display:flex;align-items:center;gap:6px;margin-top:auto;height:15px;flex:none}
