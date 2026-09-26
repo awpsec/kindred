@@ -3059,6 +3059,7 @@ async function settingsBotComputer() {
   const root = $("settings-content");
   root.replaceChildren();
   const resources = section("Live computer");
+  resources.classList.add("computer-settings-section");
   const screenChoice=select(state.bots.filter(b=>!profile(b).archived).map(b=>[b.id,b.name+'’s screen']),screenBotId());
   screenChoice.id='computer-settings-screen';screenChoice.setAttribute('aria-label','Preview bot screen');screenChoice.disabled=!!state.teaching;
   screenChoice.onchange=()=>perform(()=>selectComputerScreen(screenChoice.value,{workspace:true}));
@@ -3088,6 +3089,7 @@ async function settingsBotComputer() {
   refreshPreview();
   refreshResources();
   const machine = section("Shared bot computer");
+  machine.classList.add("computer-settings-section");
   machine.append(
     node("div", "setting-box", state.status.vm || "Virtual machine"),
   );
@@ -3131,7 +3133,7 @@ async function settingsBotComputer() {
   for(const action of machineActions.children)action.classList.add('outline-button');
   machine.append(machineActions,machineStatus);
   root.append(machine);
-  const maintenance=section('Computer updates'),updateStatus=node('p','muted small');updateStatus.id='computer-maintenance-status';
+  const maintenance=section('Computer updates'),updateStatus=node('p','muted small');maintenance.classList.add('computer-settings-section');updateStatus.id='computer-maintenance-status';
   const updateSwitch=settingSwitch('Update automatically',true),updateLabel=updateSwitch.label,updateToggle=updateSwitch.input;updateToggle.id='computer-maintenance-enabled';updateToggle.setAttribute('aria-label','Update the bot computer automatically');
   const updateNow=button('Update now',()=>{},'outline-button','refresh');updateNow.disabled=true;
   updateNow.onclick=async()=>{
@@ -3147,6 +3149,7 @@ async function settingsBotComputer() {
   api('/computer/maintenance').then(value=>{if(maintenance.isConnected){showMaintenance(value);updateToggle.disabled=false;}}).catch(e=>{updateStatus.textContent=e.message;});
   updateToggle.onchange=()=>{updateToggle.disabled=true;api('/computer/maintenance','PUT',{enabled:updateToggle.checked}).then(showMaintenance).catch(e=>{updateToggle.checked=!updateToggle.checked;updateStatus.textContent=e.message;}).finally(()=>{updateToggle.disabled=false;});};
   const server = section("Server");
+  server.classList.add("computer-settings-section");
   const address=node('p','muted small','This app is connected to ');
   address.append(node('code','server-address-badge',location.origin));
   server.append(address);
