@@ -7092,8 +7092,10 @@ function initDesktopChrome() {
     const mark=node('span','window-symbol',name==='close'?'×':name==='minimize'?'−':name==='fullscreen'?'+':'□');control.append(mark);controls.append(control);
   }
   bar.append(title,controls);document.body.prepend(bar);
+  const chatDrag=node('div','chat-window-drag');chatDrag.setAttribute('aria-hidden','true');
+  $('bot-details').after(chatDrag);
   // Delegate so headers mounted after startup (such as Artifacts) also work.
-  const dragSelector=mac||linux?'.desktop-titlebar,.sidebar-top,.conversation-header,.artifact-workbench-header,.artifact-library-brand-row':'.desktop-titlebar,.artifact-workbench-header,.artifact-library-brand-row';
+  const dragSelector=mac||linux?'.desktop-titlebar,.sidebar-top,.conversation-header,.artifact-workbench-header,.artifact-library-brand-row':'.desktop-titlebar,.conversation-header,.artifact-workbench-header,.artifact-library-brand-row';
   const draggable=event=>{
     if(event.target.closest?.('button,a,input,textarea,select,[contenteditable],[role="button"],[role="link"]'))return false;
     if(event.target.closest?.(dragSelector))return true;

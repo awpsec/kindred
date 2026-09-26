@@ -4951,3 +4951,8 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
 .composio-key-summary>.muted{margin-left:auto;}
 .composio-key-editor[open]>.composio-key-summary{margin-bottom:14px;}
 .composio-key-editor>.inline-feedback:empty{display:none;}
+/* Keep the chat's blank title-bar area grabbable at its full height. */
+.conversation-header:has(>.chat-window-drag){gap:8px;}
+.conversation-header:has(>.chat-window-drag)>.bot-heading{flex:0 1 auto;max-width:none;margin-right:0;}
+.chat-window-drag{align-self:stretch;flex:1 0 48px;user-select:none;}
+.conversation-header:has(>.chat-window-drag)>.header-actions{flex:none;}
