@@ -3520,6 +3520,7 @@ for (const [id, symbol] of Object.entries({
   "settings-close": "close",
 }))
   $(id).append(icon(symbol));
+$("desktop-paste").prepend(icon("paste"));
 $("settings-button").append(icon("settings"), node("span", "", "Settings"));
 for (const b of document.querySelectorAll("[data-close]")) {
   b.append(icon("close"));
