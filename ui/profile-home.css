@@ -102,3 +102,18 @@ html[data-first-run] #standalone{background:var(--button);color:var(--button-fg)
 @keyframes setup-reveal{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @media(max-width:480px){#setup-choices{grid-template-columns:1fr}.setup-choice{padding:18px}html[data-first-run] main{padding:24px}}
 @media(prefers-reduced-motion:reduce){html[data-first-run] :is(.standalone,#server-choice){animation:none}.setup-choice,#setup-progress::-webkit-progress-value{transition:none}}
+
+/* A reconnect is not an account selection or sign-in. */
+html[data-connecting] #connections-view>:not(#connection-recovery){display:none}
+#transfer-fields{border:0;padding:0;margin:0;min-width:0}
+#transfer-target{width:100%;padding:10px 12px;margin:0 0 16px;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:8px;font:inherit}
+#transfer-source{overflow-wrap:anywhere;margin-bottom:22px}
+.transfer-summary{margin:18px 0;color:var(--muted);font-size:12px}.transfer-summary summary{cursor:pointer}.transfer-summary p{margin:8px 0}
+.transfer-local-row{display:flex;align-items:center;gap:12px;justify-content:space-between}#transfer-local{margin:0 0 18px;padding:12px;border:1px solid var(--line);border-radius:10px}#transfer-local button{flex-shrink:0}
+#transfer-view progress{display:block;width:100%;height:6px;margin:12px 0;accent-color:#ffb15b}#transfer-view progress[hidden]{display:none}
+#transfer-setup-details pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:160px;overflow:auto}#transfer-setup-command{width:100%;font-size:11px}
+.transfer-actions{display:flex;gap:12px;align-items:center;margin-top:18px}#transfer-stage{font-size:13px;color:var(--muted)}#transfer-error{display:block;margin-top:12px;overflow-wrap:anywhere}
+
+html[data-home-loading] main{visibility:hidden}
+
+#transfer-submit{margin-top:0}#transfer-error:empty{display:none}.transfer-actions{margin-top:8px}#transfer-fields>label:not(.check-row){margin:12px 0 6px}

@@ -1,0 +1,16 @@
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const {server,token}=require('./fixtures/desktop.cjs');const assert=require('node:assert/strict');
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await(process.env.WEBKIT?webkit:chromium).launch();
+try{
+ const c=await browser.newContext(),p=await c.newPage();let offline=true,expired=false,apiOffline=false;
+ await c.addInitScript(t=>{sessionStorage.setItem('kindred-token',t);window.loginFlashed=false;const watch=()=>{const n=document.querySelector('#connect');if(n&&!n.hidden&&getComputedStyle(n).visibility!=='hidden')window.loginFlashed=true;requestAnimationFrame(watch)};requestAnimationFrame(watch);},token);
+ await c.route(origin+'/identity/**',r=>{const path=new URL(r.request().url()).pathname;if(offline)return r.fulfill({status:503,json:{error:'Restarting'}});if(path==='/identity/meta')return r.fulfill({json:{profiles:true,first_user:false,registration:true}});if(expired)return r.fulfill({status:401,json:{error:'Session expired'}});return r.fulfill({json:{active:'p',account_id:'a',profiles:[{id:'p',name:'Personal',active:true}],directory:[]}});});
+ await c.route(origin+'/api/status*',r=>apiOffline?r.fulfill({status:503,json:{error:'Server restarting'}}):r.continue());
+ await p.goto(origin);await p.getByRole('button',{name:'Try again',exact:true}).waitFor();assert.equal(await p.evaluate(()=>window.loginFlashed),false);assert.equal(await p.evaluate(()=>sessionStorage.getItem('kindred-token')),token);
+ offline=false;await p.getByRole('button',{name:'Try again',exact:true}).click();await p.locator('#app').waitFor({state:'visible'});assert.equal(await p.evaluate(()=>window.loginFlashed),false);assert.equal(await p.locator('#switch-profiles').count(),1);
+ apiOffline=true;await p.reload();await p.getByRole('button',{name:'Try again',exact:true}).waitFor();assert.equal(await p.evaluate(()=>window.loginFlashed),false);apiOffline=false;await p.getByRole('button',{name:'Try again',exact:true}).click();await p.locator('#app').waitFor({state:'visible'});assert.equal(await p.evaluate(()=>window.loginFlashed),false);
+ expired=true;await p.reload();await p.locator('#account-connect').waitFor({state:'visible'});assert(await p.locator('#app').isHidden());assert.equal(await p.evaluate(()=>sessionStorage.getItem('kindred-token')),null);
+ const recovery=await browser.newPage();await recovery.addInitScript(()=>{window.__TAURI__={core:{invoke:async name=>{if(name==='profile_home_state'){await new Promise(r=>setTimeout(r,800));return {entries:[],platform:'linux',version:'test',intent:{mode:'connection',server:'https://server.example',failed:false}};}if(name==='standalone_status')return {status:'idle'};return {};}}};});
+ await recovery.goto(origin+'/profile-home.html');assert(await recovery.locator('#server-form').isHidden());await recovery.getByText('Opening your workspace…',{exact:true}).waitFor();assert(await recovery.locator('#server-form').isHidden());assert(await recovery.locator('#saved').isHidden());await recovery.close();
+ console.log('Startup keeps saved sessions through reconnect failures; expired sessions show sign-in.');
+}finally{await browser.close();server.close();}})().catch(e=>{console.error(e);server.close();process.exitCode=1;});

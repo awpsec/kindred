@@ -16,6 +16,7 @@ pub struct Host {
     pub setup: Mutex<Value>,
     pub entries: Mutex<Value>,
     pub intent: Mutex<Value>,
+    pub transfer: Mutex<Value>,
 }
 pub fn hardware_acceleration() -> bool {
     static ACTIVE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -287,7 +288,7 @@ fn show_context(app: &tauri::AppHandle, context: Option<(&crate::surface::Surfac
     let prepare = |home: &tauri::WebviewWindow| -> Result<()> {
         if let Some((parent, theme, section)) = context {
             home.set_skip_taskbar(true).map_err(error)?;
-            home.set_title(if section=="standalone"{"Kindred · Local server"}else{"Kindred · Accounts"}).map_err(error)?;
+            home.set_title(if section=="standalone"{"Kindred · Local server"}else if section=="transfer"{"Kindred · Move workspace"}else{"Kindred · Accounts"}).map_err(error)?;
             let origin=parent.outer_position().map_err(error)?;let size=parent.outer_size().map_err(error)?;let child=home.outer_size().map_err(error)?;
             home.set_position(tauri::PhysicalPosition::new(origin.x+(size.width as i32-child.width as i32)/2,origin.y+(size.height as i32-child.height as i32)/2)).map_err(error)?;
             home.eval(&format!("window.dispatchEvent(new CustomEvent('kindred-account-context',{{detail:{}}}))",json!({"theme":theme,"section":section}))).map_err(error)?;
@@ -470,6 +471,14 @@ fn restart(app: &tauri::AppHandle, url: &str, token: &str, profile: &str) -> Res
     app.exit(0);
     Ok(())
 }
+fn finish_saved_transfer(directory: &mut Value, server: &str, profile: &str) {
+    let request=&directory["transfer_request"];
+    if request["completed"]==true && request["destination"]==server && request["destination_profile"]==profile {
+        let source=request["source"].clone();
+        if let Some(entries)=directory["entries"].as_array_mut(){entries.retain(|entry|entry["key"]!=source);}
+        directory.as_object_mut().unwrap().remove("transfer_request");
+    }
+}
 #[tauri::command]
 pub async fn remember_profile(
     window: crate::surface::Surface,
@@ -561,6 +570,7 @@ pub async fn remember_profile(
         if let Some(theme) = theme.filter(|t| matches!(t.as_str(), "dark" | "light")) {
             directory["theme"] = json!(theme);
         }
+        finish_saved_transfer(&mut directory,&origin,&profile_id);
         directory["last"] = json!(id);
         save(&directory)?;
     }
@@ -1210,6 +1220,7 @@ pub fn set_launch_on_startup(
 
 #[tauri::command]
 pub async fn open_profile_transfer(
+    theme: Option<String>,
     window: crate::surface::Surface,
     state: tauri::State<'_, Desktop>,
     host: tauri::State<'_, Host>,
@@ -1229,7 +1240,7 @@ pub async fn open_profile_transfer(
     *host.intent.lock().map_err(error)? =
         json!({"mode":"transfer","source":source["key"],"name":source["name"],"server":origin});
     drop(directory);
-    show(window.app_handle())
+    show_context(window.app_handle(),Some((&window,if theme.as_deref()==Some("light"){"light"}else{"dark"},"transfer")))
 }
 async fn transfer_json(
     client: &reqwest::Client,
@@ -1305,25 +1316,58 @@ fn source_entry(window: &crate::surface::Surface, host: &Host) -> Result<Value> 
     }
     Ok(source)
 }
+struct TransferOperation<'a>(&'a Host);
+impl<'a> TransferOperation<'a> {
+    fn begin(host: &'a Host, stage: &str) -> Result<Self> {
+        let mut status=host.transfer.lock().map_err(error)?;
+        if status["state"]=="working" {return Err("A workspace move is already in progress".into());}
+        *status=json!({"state":"working","stage":stage,"completed":0,"total":6});
+        Ok(Self(host))
+    }
+}
+impl Drop for TransferOperation<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut status)=self.0.transfer.lock() {
+            if status["state"]=="working" {status["state"]=json!("error");status["error"]=json!("Move interrupted. Retry or cancel to return to the original workspace.");}
+        }
+    }
+}
+fn transfer_stage(host: &Host, stage: &str, completed: u8) {
+    *host.transfer.lock().unwrap() = json!({"state":"working","stage":stage,"completed":completed,"total":6});
+}
+#[tauri::command]
+pub fn profile_transfer_status(window: crate::surface::Surface, host: tauri::State<'_, Host>) -> Result<Value> {
+    native(&window)?;
+    Ok(host.transfer.lock().map_err(error)?.clone())
+}
 #[tauri::command]
 pub async fn transfer_profile(
     window: crate::surface::Surface,
     host: tauri::State<'_, Host>,
-    address: String,
-    username: String,
-    password: String,
-    register: bool,
-    remember: bool,
+    address: String, username: String, password: String, register: bool, remember: bool,
 ) -> Result<Value> {
     native(&window)?;
+    let _operation=TransferOperation::begin(&host,"Checking source")?;
+    let result=transfer_profile_inner(&window,&host,address,username,password,register,remember).await;
+    let mut status=host.transfer.lock().map_err(error)?;
+    match &result {
+        Ok(_) => *status=json!({"state":"complete","stage":"Workspace moved","completed":6,"total":6}),
+        Err(message) => {status["state"]=json!("error");status["error"]=json!(message);}
+    }
+    result
+}
+async fn transfer_profile_inner(
+    window: &crate::surface::Surface, host: &Host,
+    address: String, username: String, password: String, register: bool, remember: bool,
+) -> Result<Value> {
     crate::local_access::cancel_for_profile_change(window.app_handle())?;
     let source = source_entry(&window, &host)?;
     let source_server = source["server"].as_str().ok_or("Missing source server")?;
     let source_token = source["token"].as_str().unwrap();
     let destination = validate_url(&address)?.origin().ascii_serialization();
-    if source_server == destination {
+    if source_server == destination || (crate::local_server::is_origin(source_server) && crate::local_server::is_origin(&destination)) {
         return Err(
-            "Choose a different server. Use Create a profile for another workspace on this server."
+            "Choose a different destination server."
                 .into(),
         );
     }
@@ -1387,30 +1431,31 @@ pub async fn transfer_profile(
         .and_then(|items| items.iter().find(|p| p["active"] == true))
         .and_then(|p| p["name"].as_str())
         .unwrap_or("Kindred");
+    transfer_stage(host,"Signing in to destination",1);
     let mut credentials = json!({"login":username,"password":password,"request_id":transfer_id});
     if register {
         credentials["name"] = json!(name);
     } else {
         credentials["new_profile_name"] = json!(name);
     }
-    let account = transfer_json(
-        &client,
-        &destination,
-        if register {
-            "/identity/register"
-        } else {
-            "/identity/login"
-        },
-        "",
-        Some(credentials),
-    )
-    .await?;
+    let signed_in = transfer_json(&client,&destination,if register {"/identity/register"} else {"/identity/login"},"",Some(credentials.clone())).await;
+    // Registration may have succeeded before the connection failed. Reuse the
+    // same request ID through authenticated login; never create a second copy.
+    let account = match signed_in {
+        Ok(value) => value,
+        Err(original) if register => {
+            credentials["new_profile_name"]=json!(name);
+            transfer_json(&client,&destination,"/identity/login","",Some(credentials)).await.map_err(|_| original)?
+        }
+        Err(message) => return Err(message),
+    };
     let token = account["token"]
         .as_str()
         .ok_or("Destination sign-in returned no session")?;
     let profile = account["profile_id"]
         .as_str()
         .ok_or("Destination returned no profile")?;
+    transfer_stage(host,"Preparing workspace",2);
     let package = transfer_json(
         &client,
         source_server,
@@ -1425,6 +1470,7 @@ pub async fn transfer_profile(
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
+    transfer_stage(host,"Copying workspace",3);
     let result = transfer_json(
         &client,
         &destination,
@@ -1433,6 +1479,7 @@ pub async fn transfer_profile(
         Some(package),
     )
     .await?;
+    transfer_stage(host,"Verifying copy",4);
     if result["receipt"]["id"] != transfer_id
         || result["receipt"]["digest"] != expected
         || result["profile_id"] != profile
@@ -1455,15 +1502,16 @@ pub async fn transfer_profile(
         let mut directory = host.entries.lock().map_err(error)?;
         let entries = directory["entries"].as_array_mut().unwrap();
         let new_key = key(&destination, profile);
-        entries.retain(|e| e["key"] != source["key"] && e["key"] != new_key);
-        entries.push(json!({"key":new_key,"server":destination,"profile_id":profile,"name":result["name"],"account":identity["account_id"],"token":if remember{token}else{""},"legacy":false}));
+        entries.retain(|e| e["key"] != new_key);
+        entries.push(json!({"key":new_key,"server":destination,"profile_id":profile,"name":result["name"],"account":identity["account_id"],"username":username,"token":if remember{token}else{""},"legacy":false}));
         directory["last"] = json!(new_key);
-        directory
-            .as_object_mut()
-            .unwrap()
-            .remove("transfer_request");
+        // Retire the source bookmark only after the new process authenticates.
+        // A failed launch can still retry from the retained source and receipt.
+        directory["transfer_request"]["completed"]=json!(true);
+        directory["transfer_request"]["destination_profile"]=json!(profile);
         save(&directory)?;
     }
+    transfer_stage(host,"Opening workspace",5);
     restart(window.app_handle(), &destination, token, profile)?;
     Ok(json!({"moved":true}))
 }
@@ -1473,6 +1521,7 @@ pub async fn cancel_profile_transfer(
     host: tauri::State<'_, Host>,
 ) -> Result<()> {
     native(&window)?;
+    let _operation=TransferOperation::begin(&host,"Cancelling move")?;
     let source = source_entry(&window, &host)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
@@ -1506,5 +1555,34 @@ pub async fn cancel_profile_transfer(
         .unwrap()
         .remove("transfer_request");
     save(&directory)?;
+    *host.transfer.lock().map_err(error)?=json!({"state":"idle"});
     Ok(())
+}
+
+#[cfg(test)]
+mod transfer_operation_tests {
+    use super::*;
+    #[test]
+    fn failed_launch_keeps_recovery_until_exact_destination_connects() {
+        let mut directory=json!({"entries":[{"key":"source"},{"key":"destination"}],"transfer_request":{"completed":true,"source":"source","destination":"https://next.example","destination_profile":"p"}});
+        finish_saved_transfer(&mut directory,"https://other.example","p");
+        assert_eq!(directory["entries"].as_array().unwrap().len(),2);
+        finish_saved_transfer(&mut directory,"https://next.example","other");
+        assert!(directory.get("transfer_request").is_some());
+        finish_saved_transfer(&mut directory,"https://next.example","p");
+        assert_eq!(directory["entries"],json!([{"key":"destination"}]));
+        assert!(directory.get("transfer_request").is_none());
+    }
+    #[test]
+    fn moves_and_cancellation_are_serialized_and_interruption_is_retryable() {
+        let host=Host::default();
+        let operation=TransferOperation::begin(&host,"Checking source").unwrap();
+        assert!(TransferOperation::begin(&host,"Cancelling move").is_err());
+        drop(operation);
+        assert_eq!(host.transfer.lock().unwrap()["state"],"error");
+        let retry=TransferOperation::begin(&host,"Checking source").unwrap();
+        *host.transfer.lock().unwrap()=json!({"state":"complete"});
+        drop(retry);
+        assert_eq!(host.transfer.lock().unwrap()["state"],"complete");
+    }
 }

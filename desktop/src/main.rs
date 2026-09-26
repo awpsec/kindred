@@ -202,6 +202,7 @@ fn main() {
             profiles::close_profile_home,
             profiles::open_profile_transfer,
             profiles::transfer_profile,
+            profiles::profile_transfer_status,
             profiles::cancel_profile_transfer,
             profiles::remember_profile,
             profiles::profile_home_state,
@@ -279,7 +280,7 @@ fn main() {
                 .permission("allow-local-access-state")
                 .permission("allow-set-local-access"))?;
             let mut home=tauri::ipc::CapabilityBuilder::new("profile-home").window("profile-home");
-            for permission in ["allow-open-linux-update","allow-transfer-profile","allow-cancel-profile-transfer","allow-window-action","allow-profile-home-state","allow-connect-profile-server","allow-switch-native-profile","allow-forget-profile","allow-profile-activity","allow-start-standalone","allow-standalone-status","allow-set-launch-on-startup"] {home=home.permission(permission);}
+            for permission in ["allow-open-linux-update","allow-transfer-profile","allow-profile-transfer-status","allow-cancel-profile-transfer","allow-window-action","allow-profile-home-state","allow-connect-profile-server","allow-switch-native-profile","allow-forget-profile","allow-profile-activity","allow-start-standalone","allow-standalone-status","allow-set-launch-on-startup"] {home=home.permission(permission);}
             app.add_capability(home)?;
             let mut accounts=tauri::ipc::CapabilityBuilder::new("embedded-accounts").webview("profile-home-settings");
             for permission in ["allow-profile-home-state","allow-connect-profile-server","allow-switch-native-profile","allow-forget-profile","allow-profile-activity","allow-start-standalone","allow-standalone-status","allow-close-profile-home"] {accounts=accounts.permission(permission);}

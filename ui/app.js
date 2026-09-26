@@ -234,7 +234,7 @@ async function api(path, method = "GET", body, options = {}) {
   } catch {
     throw new Error("The server did not return a valid response.");
   }
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {const error=new Error(data.error || `Request failed (${res.status})`);error.status=res.status;throw error;}
   return data;
   } catch(e) {
     if(timeout.signal.reason==='pagehide')throw 'pagehide';
@@ -3861,11 +3861,28 @@ if (window.__KINDRED_TOKEN__) {
   state.token = window.__KINDRED_TOKEN__;
   delete window.__KINDRED_TOKEN__;
 }
-void (async()=>{
-  try{await profilesUI.init(pairCode);if(state.token&&!pairCode)await connect();}
-  catch(e){notice(e.message||'Could not open your workspace. Please try again.',true);}
-  finally{delete document.documentElement.dataset.starting;$('startup-status')?.setAttribute('hidden','');}
-})();
+let startingWorkspace=false;
+async function openInitialWorkspace(){
+  if(startingWorkspace)return;startingWorkspace=true;
+  const status=$('startup-status');status.replaceChildren(node('span','','Opening Kindred…'));
+  document.documentElement.dataset.starting='';status.hidden=false;
+  try{
+    for(let attempt=0;;attempt++){
+      try{
+        await profilesUI.init(pairCode);
+        if(state.token&&!pairCode)await connect();
+        delete document.documentElement.dataset.starting;status.hidden=true;break;
+      }catch(e){
+        if(e.status===401){$('app').hidden=true;$('connect').hidden=false;state.token='';sessionStorage.removeItem('kindred-token');localStorage.removeItem('kindred-token');continue;}
+        if(attempt<3){status.replaceChildren(node('span','','Reconnecting to your workspace…'));await new Promise(r=>setTimeout(r,1500));continue;}
+        status.replaceChildren(node('span','','Your server isn’t responding.'),button('Try again',()=>openInitialWorkspace(),'outline-button'));
+        if(window.__KINDRED_PROFILE_HOST)status.append(button('Accounts',()=>nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark'}),'subtle-button'));
+        notice(e.message||'Could not open your workspace.',true);break;
+      }
+    }
+  }finally{startingWorkspace=false;}
+}
+void openInitialWorkspace();
 
 // Shared conversations and typed mentions.
 async function chooseChat(chat) {
