@@ -197,9 +197,9 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const hardware=el('section','vm-resource-settings'),heading=el('h3','','Bot computer resources');
     const status=el('p','muted','Loading computer settings…');status.setAttribute('role','status');
     hardware.append(heading,status);d.append(hardware);
-    const form=el('form','vm-resource-form'),fields={};
+    const form=el('form','vm-resource-form'),fields={},readouts={};
     for(const [key,title,min,max,step] of [['cpus','CPUs',1,32,1],['memory_mb','RAM (GB)',1,256,0.5],['disk_gb','Disk (GB)',8,2048,1]]){
-      const f=label(title,'number','');f.input.min=min;f.input.max=max;f.input.step=step;f.input.required=true;fields[key]=f.input;form.append(f.root);
+      const f=label(title,'number','');f.input.min=min;f.input.max=max;f.input.step=step;f.input.required=true;fields[key]=f.input;const readout=el('div','vm-resource-readout');readout.append(el('span','',title),el('span','vm-resource-value'));readouts[key]=readout;form.append(f.root,readout);
     }
     const help=el('p','muted small','For this workspace. Shut down the computer, save changes, then start it again. Disk space can only increase.');
     const actions=el('div','row-actions'),save=el('button','outline-button','Save resources');save.type='submit';
@@ -209,7 +209,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       try{const response=await fetch('/api/vm/'+(resourceState==='running'?'shutdown':'start'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getToken()},body:'{}',signal:AbortSignal.timeout(120000)});const value=await response.json();if(!response.ok)throw Error(value.error||'Computer action failed');await loadResources();}
       catch(e){status.textContent=e.message;}finally{resourceBusy=false;renderResourceControls();}
     },'outline-button');actions.append(save,power);form.append(help,actions);hardware.append(form);form.hidden=true;
-    function renderResourceControls(){save.disabled=resourceBusy||resourceState==='running'||!provisioned;power.disabled=resourceBusy;power.textContent=resourceState==='running'?'Shut down':'Start computer';for(const input of Object.values(fields))input.disabled=resourceBusy||resourceState==='running'||!provisioned;}
+    function renderResourceControls(){const editable=resourceState!=='running'&&provisioned;save.hidden=!editable;save.disabled=resourceBusy||!editable;power.disabled=resourceBusy;power.textContent=resourceState==='running'?'Shut down':'Start computer';for(const [key,input] of Object.entries(fields)){input.disabled=resourceBusy||!editable;input.parentElement.hidden=!editable;readouts[key].hidden=editable;readouts[key].lastChild.textContent=input.value;}}
     async function loadResources(){
       try{const value=await api('computer-settings');if(value.supported===false){status.textContent='This computer is managed by the host. Change its resources in your VM manager.';return;}
         provisioned=value.provisioned!==false;resourceState=value.state;for(const [key,input] of Object.entries(fields))input.value=key==='memory_mb'?value.resources[key]/1024:value.resources[key];fields.disk_gb.min=value.resources.disk_gb;form.hidden=false;status.textContent=!provisioned?'Start this computer once to configure its resources.':resourceState==='running'?'Running':'Stopped';renderResourceControls();
