@@ -28,6 +28,58 @@ pub(crate) fn trusted(window: &tauri::WebviewWindow) -> Result<(), String> {
         Err("Only the local update window can use this command.".into())
     }
 }
+// Cocoa must create and present the updater on its main run loop. In particular,
+// opening it immediately after a nonactivating notification must not expose an
+// unpainted WKWebView. Wait for the bundled page before showing the window.
+#[cfg(target_os = "macos")]
+pub fn show(app: &tauri::AppHandle) {
+    let handle = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        if let Some(window) = handle.get_webview_window("updater") {
+            let _ = window.show();
+            let _ = window.set_focus();
+            return;
+        }
+        let result = tauri::WebviewWindowBuilder::new(
+            &handle,
+            "updater",
+            tauri::WebviewUrl::App("updater.html".into()),
+        )
+        .title("Kindred update")
+        .inner_size(440.0, 270.0)
+        .resizable(false)
+        .visible(false)
+        .center()
+        .on_navigation(|u| {
+            u.scheme() == "tauri"
+                && u.host_str() == Some("localhost")
+                && u.path() == "/updater.html"
+        })
+        .on_page_load(|window, payload| {
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                eprintln!("Kindred updater: bundled page loaded");
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        })
+        .build();
+        match result {
+            Ok(window) => {
+                let handle = handle.clone();
+                window.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                        crate::server_update::cancel(&handle);
+                    }
+                });
+            }
+            Err(error) => eprintln!("Kindred updater: window creation failed: {error}"),
+        }
+    }) {
+        eprintln!("Kindred updater: main-thread dispatch failed: {error}");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 pub fn show(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("updater") {
         let _ = window.show();
