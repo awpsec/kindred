@@ -10,7 +10,7 @@ import re
 import subprocess
 from pathlib import Path
 
-SHARED = ('ui/app-policy.txt', 'ui/artifact-frame-policy.txt', 'ui/artifact-frame.html', 'ui/reading-size.js', 'ui/profiles.js', 'ui/updates.js', 'ui/fonts.css', 'ui/fonts/InterVariable.woff2', 'ui/fonts/InterVariable-Italic.woff2', 'ui/fonts/LiberationMono-Regular.ttf', 'ui/fonts/LiberationMono-Bold.ttf', 'ui/fonts/LiberationMono-Italic.ttf', 'ui/fonts/LiberationMono-BoldItalic.ttf', 'ui/app.js', 'ui/style.css', 'ui/composer-text.js', 'ui/artifacts.js', 'ui/workspace-artifacts.js', 'ui/settings-header-art.js',
+SHARED = ('ui/app-policy.txt', 'ui/artifact-frame-policy.txt', 'ui/artifact-frame.html', 'ui/reading-size.js', 'ui/profiles.js', 'ui/updates.js', 'ui/server-update.js', 'ui/fonts.css', 'ui/fonts/InterVariable.woff2', 'ui/fonts/InterVariable-Italic.woff2', 'ui/fonts/LiberationMono-Regular.ttf', 'ui/fonts/LiberationMono-Bold.ttf', 'ui/fonts/LiberationMono-Italic.ttf', 'ui/fonts/LiberationMono-BoldItalic.ttf', 'ui/app.js', 'ui/style.css', 'ui/composer-text.js', 'ui/artifacts.js', 'ui/workspace-artifacts.js', 'ui/settings-header-art.js',
           'ui/vendor.js', 'ui/visual-panels.js', 'ui/decision-receipts.js', 'ui/group-activity.js', 'ui/computer-pointer.js', 'ui/document-preview.js', 'ui/document-worker.js', 'ui/profile-home.html',
           'ui/profile-home.css', 'ui/profile-home.js', 'ui/bundled-dialog.css')
 

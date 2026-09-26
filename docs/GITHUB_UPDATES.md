@@ -46,3 +46,7 @@ publishing. GitHub update plumbing does not substitute for OS signing/notarizati
 ## Public repository transition
 
 New packages and signed manifests are published in `awpsec/kindred`; server packages live in `awpsec/kindred-server`. Old private release assets and history are not copied here. Older installed clients may need a manual upgrade to change their built-in repository URL; the existing signed server-feed fallback remains supported. Do not remove a working legacy feed during migration.
+
+### Updating from the browser
+
+The browser update dialog can install a server release and reconnect automatically when a [host update supervisor](browser-updates.md) is configured. This requires the new server endpoint and a one-time host setup; older releases cannot gain it just by refreshing. Without a supervisor, continue using your normal deployment procedure. If only the browser interface is stale, the dialog loads the already-updated interface without reinstalling the server.

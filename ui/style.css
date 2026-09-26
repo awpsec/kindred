@@ -4942,3 +4942,8 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
 .mac-desktop .artifact-studio-library{padding-top:10px;}
 .artifact-studio-macos .artifact-library-brand-row{height:47px;min-height:47px;margin-bottom:0;}
 .artifact-studio-macos .artifact-studio-library-brand{visibility:hidden;pointer-events:none;}
+.server-update-dialog{position:relative;max-width:440px;}
+.server-update-dialog .dialog-close{position:absolute;right:14px;top:14px;}
+.server-update-dialog progress{display:block;width:100%;height:5px;margin:20px 0;accent-color:var(--fg);}
+.server-update-dialog progress[hidden]{display:none;}
+.server-update-dialog>.primary{margin-top:12px;}

@@ -1,3 +1,4 @@
+import {createServerUpdater} from './server-update.js';
 import {settingsHeaderArt} from './settings-header-art.js';
 import {workspaceArtifactCard,artifactStudio,artifactUpdateRow,artifactUpdateBatches} from './workspace-artifacts.js';
 import {groupActivity,transitionGroupActivity,visibleGroupWorkers,sharedConversationWorkers} from './group-activity.js';
@@ -1180,28 +1181,31 @@ function openClientDownload(){
   if(window.__KINDRED_EXTERNAL_LINKS)return nativeInvoke('open_external_url',{url});
   window.open(url,'_blank','noopener,noreferrer');
 }
+const browserUpdater=createServerUpdater({token:()=>state.token,currentVersion:()=>state.status.version,uiVersion:UI_VERSION,newerVersion,
+  beforeReload:()=>{for(const [key,value] of Object.entries(conversationSnapshot()))sessionStorage.setItem('kindred-reload-'+key,JSON.stringify(value));},changed:()=>renderUpdateNotice()});
 async function clientUpdateAction(){if(canInstallClientUpdate())return updateKindred();return openClientDownload();}
 function renderUpdateNotice() {
   renderVersions();
   const desktop=!!window.__KINDRED_DESKTOP,newerUI=!desktop&&newerVersion(state.status.version,UI_VERSION);
-  const visible=desktop?!!state.updateRelease:newerUI;
+  const visible=desktop?!!state.updateRelease:(newerUI||browserUpdater.available());
   let update=$('client-update');
   if(!visible){update?.parentElement.remove();return;}
   if(!update){
     const slot=node('span','update-slot');
     update=button('Update',async()=>{
       if(desktop)return clientUpdateAction();
-      for(const [key,value] of Object.entries(conversationSnapshot()))sessionStorage.setItem('kindred-reload-'+key,JSON.stringify(value));location.reload();
+      return browserUpdater.open();
     },'client-update','download');
     update.id='client-update';slot.append(update);$('identity-row').append(slot);
   }
   const manual=desktop&&!canInstallClientUpdate();
   const label=manual?'Download update':'Update';
   if(update.dataset.label!==label){update.dataset.label=label;update.replaceChildren(icon('download'),document.createTextNode(label));}
-  update.setAttribute('aria-label',desktop?(manual?'Download Kindred client update':'Update Kindred client'):'Reload updated interface');
-  update.title=desktop?'Client '+state.updateRelease.version+' is available'+(canInstallClientUpdate()?'':' · Download and install once to enable in-app updates'):'Reload the updated server interface';
+  update.setAttribute('aria-label',desktop?(manual?'Download Kindred client update':'Update Kindred client'):'Update Kindred server');
+  update.title=desktop?'Client '+state.updateRelease.version+' is available'+(canInstallClientUpdate()?'':' · Download and install once to enable in-app updates'):'Check for Kindred updates';
 }
 async function checkUpdates(force=false) {
+  if(!window.__KINDRED_DESKTOP)return browserUpdater.check(force);
   if(!window.__KINDRED_DESKTOP||!installedClientVersion()||state.checkingUpdate||(!force&&Date.now()-(state.lastUpdateCheck||0)<60000))return;
   state.checkingUpdate=true;state.lastUpdateCheck=Date.now();
   try{state.updateRelease=await availableRelease(installedClientVersion(),window.__KINDRED_DESKTOP.platform);renderUpdateNotice();}
@@ -1211,6 +1215,7 @@ setInterval(()=>{if(!document.hidden)void checkUpdates();},60000);
 window.addEventListener("focus",()=>void checkUpdates());
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)void checkUpdates();});
 void checkUpdates(true);
+window.addEventListener('kindred-server-update',()=>browserUpdater.open());
 
 async function renderChat(force, mode='sync') {
   const currentChat =
@@ -2174,6 +2179,7 @@ async function settingsGeneral(revision) {
     updateActions.append(button('Check for updates',async()=>{await checkUpdates(true);updateStatus.textContent=state.updateRelease?'Desktop app '+state.updateRelease.version+' is available.':'No newer desktop app update is available.';},'outline-button','refresh'));
     const updateAction=button('Update desktop app',()=>clientUpdateAction(),'outline-button','download');updateAction.dataset.clientUpdateAction='';updateActions.append(updateAction);
   }
+  if(!window.__KINDRED_DESKTOP)updateActions.append(button('Check for updates',()=>browserUpdater.open(),'outline-button','refresh'));
   versions.body.append(settingRow(window.__KINDRED_DESKTOP?'Desktop app on this device':'Browser interface',clientVersion),settingRow('Connected server',serverVersion,location.host),updateStatus,updateActions);
   if(window.__KINDRED_DESKTOP&&!window.__KINDRED_NATIVE_UPDATER&&!window.__KINDRED_SERVER_UPDATER)versions.body.append(node('p','muted small','This installed client predates in-app updates. Download the client from this server and install it once to enable future in-place updates.'));
   const system=settingsPane('System');system.root.dataset.devicePreference='true';

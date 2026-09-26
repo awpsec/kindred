@@ -42,7 +42,7 @@ const windows={...pkg,version:'0.52.0',channel:'stable',platform:'windows-x86_64
    await page.route('**/updates/stable.json',route=>route.fulfill({json:envelope(windows)}));
    await page.goto(origin);await page.waitForFunction(()=>!document.querySelector('#server-version').textContent.includes('Connecting'));await page.locator('#settings-button').click();
    await page.locator('[data-client-version]').waitFor();
-   if(spec.platform)await page.getByRole('button',{name:'Check for app updates',exact:true}).click();
+   if(spec.platform)await page.getByRole('button',{name:'Check for updates',exact:true}).click();
    const expected=spec.unknown?'Unknown':spec.version||'0.51.0';
    assert.equal(await page.locator('#server-version').textContent(),'Server '+(spec.platform?'0.52.0':'0.51.0'),spec.name);
    if(spec.platform){assert.equal(await page.locator('#version').textContent(),'Client '+expected);assert.equal(await page.locator('[data-client-version]').textContent(),expected);}
