@@ -189,7 +189,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   }
   async function admin() {
     const d=dialog('Server administration'),data=await api('admin');
-    d.append(button('Check for updates',()=>{d.close();window.dispatchEvent(new Event('kindred-server-update'));},'outline-button'));
+    const updates=el('section','server-update-settings'),updateRow=el('div','row-actions');updates.append(el('h3','','Server updates'));updateRow.append(button('Check for updates',()=>{d.close();window.dispatchEvent(new Event('kindred-server-update'));},'outline-button'));updates.append(updateRow);d.append(updates);
     if(window.__KINDRED_PROFILE_HOST&&location.origin==='http://127.0.0.1:9444'){
       const local=el('section','local-server-admin');local.append(el('h3','','Local server'),button('Manage local server',()=>nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark',section:'standalone'}),'outline-button'));d.append(local);
     }
