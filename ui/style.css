@@ -5075,31 +5075,30 @@ html[data-motion=off] .pane-resizer::after{transition:none}
  .shell>.pane-overlay>.pane-resizer{display:none}
 }
 
-/* Progress cadence: small illustrations, never sample prose. */
-.progress-choices{border:0;margin:18px 0 0;padding:0;min-width:0}
+/* Progress cadence: one quiet summary through frequent milestones. */
+.progress-choices{--progress-accent:#ffb15b;border:0;margin:18px 0 0;padding:0;min-width:0}
 .progress-choices>legend{font-size:13px;margin-bottom:12px;padding:0}
 .progress-choice-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,132px));gap:12px}
 .progress-choice{position:relative;display:block;aspect-ratio:1;margin:0!important;border:1px solid var(--line);border-radius:12px;background:var(--bg);cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease}
-.progress-choice:has(input:checked){border-color:color-mix(in srgb,var(--fg) 45%,transparent);box-shadow:0 0 0 2px color-mix(in srgb,var(--fg) 8%,transparent),0 0 15px color-mix(in srgb,var(--fg) 10%,transparent)}
+.progress-choice:has(input:checked){border-color:color-mix(in srgb,var(--progress-accent) 55%,transparent);box-shadow:0 0 0 2px color-mix(in srgb,var(--progress-accent) 12%,transparent),0 0 15px color-mix(in srgb,var(--progress-accent) 10%,transparent)}
 .progress-choice:has(input:focus-visible){outline:2px solid var(--fg);outline-offset:4px}
 .progress-choice:has(input:disabled){opacity:.5;cursor:default}
 .progress-choice>input{position:absolute;width:1px;height:1px;opacity:0;margin:0}
 .progress-choice-title{position:absolute;top:9px;left:10px;font-size:12px;color:var(--fg)}
-.progress-choice-preview{position:absolute;inset:33px 11px 10px;display:flex;flex-direction:column;gap:4px;pointer-events:none}
-.progress-sketch-user{width:43%;height:12%;min-height:6px;align-self:flex-end;border-radius:5px 5px 1px 5px;background:color-mix(in srgb,var(--fg) 30%,transparent);margin-bottom:3px}
-.progress-sketch-bubble{display:flex;flex-direction:column;gap:2px;justify-content:center;width:72%;height:14%;min-height:6px;border-radius:4px 4px 4px 1px;background:var(--hover);padding:3px 5px}
-.progress-sketch-bubble:nth-child(odd){width:59%}
-.progress-sketch-ghost{background:transparent;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fg) 16%,transparent)}
-.progress-choice:has(input:checked) .progress-sketch-ghost{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--fg) 20%,transparent)}
-.progress-sketch-bubble>i{height:1px;width:87%;background:color-mix(in srgb,var(--fg) 28%,transparent)}
-.progress-sketch-bubble>i+i{width:61%}
-.progress-sketch-working{display:flex;align-items:center;gap:6px;margin-top:auto;height:15px;flex:none}
-.progress-sketch-bot{position:relative;width:14px;height:14px;border-radius:50%;background:#df6662;flex:none}
-.progress-sketch-bot::before,.progress-sketch-bot::after{content:'';position:absolute;top:5px;width:2px;height:4px;border-radius:2px;background:#fff}
+.progress-choice-preview{position:absolute;inset:33px 11px 10px;display:flex;flex-direction:column;gap:5px;pointer-events:none}
+.progress-sketch-user{width:43%;height:10px;flex:none;align-self:flex-end;border-radius:5px 5px 1px 5px;background:color-mix(in srgb,var(--fg) 30%,transparent)}
+.progress-sketch-thread{display:flex;flex:1;min-height:0;flex-direction:column;justify-content:flex-end;gap:3px}
+.progress-sketch-bubble{display:flex;flex-direction:column;gap:3px;justify-content:center;width:74%;height:12px;min-height:0;flex-shrink:1;border-radius:4px 4px 4px 1px;background:var(--hover);padding:0 5px}
+.progress-sketch-bubble:nth-child(even){width:59%}
+.progress-sketch-bubble.progress-sketch-summary{width:86%;height:22px}
+.progress-sketch-bubble>i{height:1px;flex:none;width:66%;background:color-mix(in srgb,var(--fg) 32%,transparent)}
+.progress-sketch-bubble>i+i{width:48%}
+.progress-sketch-working{display:flex;align-items:center;gap:6px;height:14px;flex:none}
+.progress-sketch-bot{position:relative;width:14px;height:14px;border-radius:50%;background:var(--progress-accent);flex:none}
+.progress-sketch-bot::before,.progress-sketch-bot::after{content:'';position:absolute;top:5px;width:2px;height:4px;border-radius:2px;background:#29221e}
 .progress-sketch-bot::before{left:4px}.progress-sketch-bot::after{left:8px}
-.progress-sketch-strokes{width:29%;height:4px;border-radius:3px;background:color-mix(in srgb,var(--fg) 25%,transparent)}
+.progress-sketch-strokes{width:24%;height:4px;border-radius:3px;background:color-mix(in srgb,var(--fg) 25%,transparent)}
 .progress-choice-description{font-size:12px;color:var(--muted);margin:12px 0 0;line-height:1.5;min-height:1.5em}
-@media(max-width:420px){.progress-choice-tiles{gap:8px}.progress-choice-title{font-size:11px;left:7px}.progress-choice-preview{inset:30px 7px 8px}}
 @media(prefers-reduced-motion:reduce){.progress-choice{transition:none}}
 :root[data-motion=off] .progress-choice{transition:none}
-@media(max-width:600px){.progress-choice-title{top:6px;font-size:10px;left:6px}.progress-choice-preview{inset:24px 6px 6px;gap:1px}.progress-sketch-user{min-height:3px;margin-bottom:1px}.progress-sketch-bubble{min-height:4px;padding:1px 3px;gap:1px}.progress-sketch-bubble>i+i{display:none}.progress-sketch-working{height:9px;gap:4px}.progress-sketch-bot{width:9px;height:9px}.progress-sketch-bot::before,.progress-sketch-bot::after{top:3px;width:1px;height:3px}.progress-sketch-bot::before{left:3px}.progress-sketch-bot::after{left:5px}}
+@media(max-width:600px){.progress-choice-tiles{gap:8px}.progress-choice-title{top:6px;font-size:10px;left:6px}.progress-choice-preview{inset:24px 6px 6px;gap:3px}.progress-sketch-user{height:6px}.progress-sketch-thread{gap:2px}.progress-sketch-bubble{height:8px;padding:0}.progress-sketch-bubble.progress-sketch-summary{height:15px}.progress-sketch-bubble>i{display:none}.progress-sketch-working{height:10px;gap:4px}.progress-sketch-bot{width:10px;height:10px}.progress-sketch-bot::before,.progress-sketch-bot::after{top:3px;width:1px;height:3px}.progress-sketch-bot::before{left:3px}.progress-sketch-bot::after{left:6px}}
