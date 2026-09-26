@@ -24,7 +24,8 @@
   --bubble: #242424;
   --user-bubble: #666666;
   --user-fg: #ffffff;
-  --sidebar-width: 280px;
+  --sidebar-default-width: 280px;
+  --sidebar-width: var(--sidebar-default-width);
   --line: #2b2b2b;
   --fg: #ededed;
   --muted: #919191;
@@ -1965,14 +1966,14 @@ input[type="checkbox"]:checked::after {
   }
 }
 @media (min-width: 1600px) {
-  :root { --sidebar-width: 300px; }
+  :root { --sidebar-default-width: 300px; }
   .details-panel {
     width: 390px;
   }
 
 }
 @media (max-width: 1100px) {
-  :root { --sidebar-width: 260px; }
+  :root { --sidebar-default-width: 260px; }
   .details-panel {
     width: 325px;
   }
@@ -2566,9 +2567,7 @@ input[type="checkbox"]:checked::after {
     width: 300px;
     min-width: 260px;
   }
-  .sidebar {
-    width: 210px;
-  }
+  :root { --sidebar-default-width: 210px; }
   .messages {
     padding-inline: 16px;
   }
@@ -4985,3 +4984,93 @@ html[data-starting] #connect{visibility:hidden}
 .computer-window-drag{display:none;}
 .native-desktop .computer-panel.expanded .computer-window-drag{display:block;align-self:stretch;flex:1 0 48px;user-select:none;}
 .native-desktop .computer-panel.expanded>.panel-header{user-select:none;}
+
+/* Resizable panes. Widths come from app.js only on wide layouts; phones keep the drawer and overlays. */
+.shell{--sidebar-rail:76px;--rail-avatar:50px;--rail-control:58px}
+.mac-desktop .shell{--sidebar-rail:96px}
+.pane-resizer{display:none}
+.pane-resize-shield{position:fixed;inset:0;z-index:2147483646;cursor:col-resize;background:transparent}
+html.pane-resizing,html.pane-resizing *{cursor:col-resize!important;user-select:none!important;-webkit-user-select:none!important}
+html.pane-resizing :is(iframe,canvas,embed,object){pointer-events:none!important}
+html.pane-resizing .shell :is(.sidebar,.details-panel,.computer-panel,.conversation),html.pane-resizing .artifact-studio{transition:none!important}
+@media(min-width:761px){
+ .shell>.sidebar{position:relative}
+ .pane-resizer{display:block;position:absolute;top:0;bottom:0;z-index:8;width:9px;padding:0;cursor:col-resize;touch-action:none;outline:none}
+ .pane-resizer::after{content:'';position:absolute;top:0;bottom:0;left:4px;width:1px;background:transparent;transition:background-color .15s ease .08s,box-shadow .15s ease .08s}
+ .pane-resizer:hover::after,.pane-resizer.is-dragging::after{background:color-mix(in srgb,var(--fg) 34%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--fg) 12%,transparent)}
+ .pane-resizer:focus-visible::after{background:var(--fg);box-shadow:0 0 0 1px var(--fg)}
+ .shell>.sidebar>.pane-resizer{right:-5px;z-index:21}
+ .details-panel>.pane-resizer,.computer-panel>.pane-resizer{left:0;bottom:auto;height:100%}
+ .computer-panel.expanded>.pane-resizer,.computer-panel:fullscreen>.pane-resizer{display:none}
+ .shell.sidebar-sized>.sidebar{width:var(--sidebar-width)}
+ .shell>.computer-panel.expanded{left:var(--sidebar-width)}
+ .details-panel[data-pane-sized]{width:var(--pane-width);max-width:none}
+ .computer-panel[data-pane-sized]:not(.expanded){width:var(--pane-width);max-width:none}
+ .shell.pane-settling>:is(.sidebar,.details-panel,.computer-panel){transition:width .18s cubic-bezier(.2,.8,.2,1)}
+ .artifact-studio .artifact-studio-library{width:var(--artifact-library-width,252px)}
+ .artifact-studio.sidebar-pinned{grid-template-columns:var(--artifact-library-width,252px) minmax(0,1fr)}
+ .artifact-studio-library>.pane-resizer{right:-5px}
+ .artifact-studio:not(.sidebar-pinned) .artifact-studio-library>.pane-resizer{display:none}
+
+ /* Between the readable minimum and the rail, labels fade with the width. */
+ .shell.sidebar-fading>.sidebar :is(.bot-info,.wordmark,.search input,.search kbd,.sidebar-settings>span,#identity-name,.pinned-bot>span:last-child,.bot-chat-section>summary,.update-slot,.profile-switch-button,#bots>p){opacity:var(--sidebar-detail,1)}
+ .shell.sidebar-fading>.sidebar :is(.nav-pin,.nav-more,.search kbd){display:none}
+ .shell.sidebar-fading>.sidebar :is(.bot-link,.sidebar-settings,.identity-button,.search){overflow:hidden}
+
+ /* Avatar rail. */
+ .sidebar-rail:not(.sidebar-peek)>.sidebar :is(.sidebar-settings>span,#identity-name,.client-update>span){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .sidebar-top{justify-content:center;padding:10px 0 8px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .wordmark{display:none}
+ .mac-desktop .sidebar-rail:not(.sidebar-peek)>.sidebar .sidebar-top{height:auto;padding-top:57px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar>.new-menu{left:calc(var(--sidebar-width) + 6px);top:12px}
+ .mac-desktop .sidebar-rail:not(.sidebar-peek)>.sidebar>.new-menu{top:60px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .search{position:relative;flex:none;width:44px;height:40px;margin:1px auto 14px;padding:0;justify-content:center;border-radius:10px;cursor:pointer}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .search:hover{color:var(--fg);background:var(--hover)}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .search .icon{width:18px;height:18px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .search :is(input,kbd){position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .search kbd{display:none}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-bots{flex:none;flex-direction:column;flex-wrap:nowrap;align-items:center;gap:4px;max-height:42%;overflow-y:auto;scrollbar-width:none;margin:0 12px 8px;padding:0 0 10px;border-bottom:1px solid var(--line)}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-bot{width:var(--rail-control);height:var(--rail-control);padding:0;justify-content:center;gap:0;border-radius:14px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-bot>span:last-child{display:none}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-bot>.unread-dot{top:4px;right:4px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar :is(.nav-pin,.nav-more){display:none}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar #bots{padding:0;scrollbar-width:none}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar #bots::-webkit-scrollbar{display:none}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar #bots>p{display:none}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .nav-entry{width:var(--rail-control);margin:0 auto}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-link{width:var(--rail-control);height:var(--rail-control);min-height:0;margin:3px 0;padding:0;gap:0;justify-content:center;border-radius:14px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-link:hover:not(.active){background:var(--hover)}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-link>.bot-info{display:none}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-link>.unread-dot{left:auto;right:4px;top:4px;width:8px;height:8px;transform:none;box-shadow:0 0 0 2px var(--sidebar)}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar :is(.bot-link,.pinned-bot)>.character{width:var(--rail-avatar)!important;height:var(--rail-avatar)!important;pointer-events:none}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar :is(.bot-link,.pinned-bot)>.participant-stack{--participant-cell:25px;width:var(--rail-avatar);height:var(--rail-avatar);pointer-events:none}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .participant-stack>:is(.character,.person-avatar){width:var(--participant-cell)!important;height:var(--participant-cell)!important}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-chat-section{margin:8px 12px 0;border-top:1px solid var(--line)}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-chat-section>summary{position:relative;height:30px;padding:0;font-size:0;color:var(--muted);border-radius:8px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-chat-section>summary::before{left:calc(50% - 7px);top:8px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-chat-section>summary:hover{color:var(--fg);background:var(--hover)}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .sidebar-bottom{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0 14px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .sidebar-settings{display:flex;align-items:center;justify-content:center;width:46px;height:46px;padding:0;border-radius:11px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .sidebar-settings:hover{color:var(--fg)}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .sidebar-settings>.icon{width:22px;height:22px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .identity-row{flex-direction:column;gap:4px;margin-top:2px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .identity-button{flex:none;width:46px;height:46px;padding:0;justify-content:center;border-radius:11px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .identity-button .user-avatar{width:34px;height:34px;font-size:calc(13px * var(--text-scale, 1))}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .client-update:is(:hover,:focus-visible){width:30px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-entry.pin-drop-before::before,.sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-entry.pin-drop-after::after{left:6px;right:6px;top:auto;bottom:auto;width:auto;height:2px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-entry.pin-drop-before::before{top:-3px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-entry.pin-drop-after::after{bottom:-3px}
+ /* Search opens the full sidebar over the chat without moving it. */
+ .shell.sidebar-rail.sidebar-peek>.sidebar{width:var(--sidebar-peek-width);margin-right:calc(var(--sidebar-rail) - var(--sidebar-peek-width));z-index:7;box-shadow:var(--shadow)}
+}
+.rail-tooltip{position:fixed;z-index:1250;transform:translateY(-50%);max-width:240px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--fg);box-shadow:0 6px 20px #0003;font-size:calc(12px * var(--text-scale, 1));line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;animation:rail-tooltip-in .12s ease-out}
+@keyframes rail-tooltip-in{from{opacity:0;translate:-3px 0}to{opacity:1;translate:0 0}}
+@media(prefers-reduced-motion:reduce){.rail-tooltip{animation:none}.pane-resizer::after{transition:none}.shell.pane-settling>*{transition:none!important}}
+html[data-motion=off] .rail-tooltip{animation:none}
+html[data-motion=off] .pane-resizer::after{transition:none}
+@media(forced-colors:active){.pane-resizer:is(:hover,:focus-visible,.is-dragging)::after{background:Highlight}}
+/* When even the avatar rail cannot leave room for chat, use a temporary overlay. */
+@media(min-width:761px){
+ .shell>:is(.computer-panel,.details-panel).pane-overlay:not(.expanded){position:absolute;inset:0 0 0 auto;height:100%;z-index:3;box-shadow:var(--shadow)}
+ .shell>.pane-overlay>.pane-resizer{display:none}
+}

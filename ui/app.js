@@ -875,7 +875,7 @@ function enablePinReordering(wrap,control,key){
       document.querySelectorAll('.pin-drop-before,.pin-drop-after').forEach(n=>n.classList.remove('pin-drop-before','pin-drop-after'));
       target=document.elementFromPoint(event.clientX,event.clientY)?.closest('.pinned-entry');
       if(target===wrap||target?.parentElement!==$('pinned-bots')){target=null;return;}
-      after=event.clientX>target.getBoundingClientRect().left+target.offsetWidth/2;
+      const box=target.getBoundingClientRect();after=$('app').classList.contains('sidebar-rail')&&!$('app').classList.contains('sidebar-peek')?event.clientY>box.top+box.height/2:event.clientX>box.left+box.width/2;
       target.classList.add(after?'pin-drop-after':'pin-drop-before');
     };
     const finish=event=>{
@@ -5746,8 +5746,8 @@ function mountArtifactNavigation(sidebar,leave){
  const placeholder=document.createComment('Sidebar navigation');footer.before(placeholder);
  const entry=$('artifacts-button'),originalClick=entry.onclick,originalContents=[...entry.childNodes];
  closeIdentityMenu();entry.replaceChildren(icon('chat'),node('span','','Chats'));entry.onclick=leave;
- sidebar.append(footer);
- return ()=>{closeIdentityMenu();entry.replaceChildren(...originalContents);entry.onclick=originalClick;placeholder.replaceWith(footer);};
+ sidebar.append(footer);const removeResizer=mountLibraryResizer(sidebar);
+ return ()=>{closeIdentityMenu();removeResizer();entry.replaceChildren(...originalContents);entry.onclick=originalClick;placeholder.replaceWith(footer);};
 }
 let artifactWorkspace=null,artifactWorkspaceToken=null;
 function syncArtifactRoute(){
@@ -6112,7 +6112,7 @@ async function openProviderUsage(provider) {
 }
 $("marketplace-button").replaceChildren(
   icon("marketplace"),
-  document.createTextNode("Marketplace"),
+  node("span", "", "Marketplace"),
 );
 
 async function restartDraftKey(){
@@ -6222,12 +6222,243 @@ function setComputerExpanded(expanded) {
     const animation=panel.animate([rect(before),rect(after)],timing),screenAnimation=screen.animate([{height:screenBefore.height+'px'},{height:screenAfter.height+'px'}],timing);
     let frame;
     const fit=()=>{refitComputer();frame=requestAnimationFrame(fit);};frame=requestAnimationFrame(fit);
-    const cleanup=()=>{computerTransition=null;cancelAnimationFrame(frame);screenAnimation.cancel();panel.style.cssText=panelStyle;screen.style.cssText=screenStyle;spacer?.remove();refitComputer();};
+    const cleanup=()=>{computerTransition=null;cancelAnimationFrame(frame);screenAnimation.cancel();panel.style.cssText=panelStyle;screen.style.cssText=screenStyle;spacer?.remove();refitComputer();layoutPanes();};
     computerTransition=trackMotion(animation,timing.duration,cleanup).finish;
   }else refitComputer();
   $('computer-expand').setAttribute('aria-label',expanded?'Collapse computer':'Expand computer');
   $('computer-expand').title=expanded?'Collapse computer':'Expand computer';
   $('computer-expand').replaceChildren(icon(expanded?'chevrons-right':'expand'));
+}
+// Resizable panes. The sidebar narrows to an avatar rail; right panes and the
+// pinned artifact library may grow past their default width. Sizes are saved
+// per device and re-clamped whenever the window or open pane changes, keeping
+// the conversation at least paneLimits.chat wide wherever the window allows.
+const paneLimits={chat:420,sidebar:200,sidebarMax:480,collapse:140,library:200,libraryMax:480,libraryDefault:252,step:16};
+const paneSizesKey='kindred-pane-sizes',wideLayout=matchMedia('(min-width:761px)');
+let paneSizes={},paneDrag=null,paneSettle=0,paneSignature='';
+try{const saved=JSON.parse(localStorage.getItem(paneSizesKey)||'{}');if(saved&&typeof saved==='object'){for(const key of ['sidebar','computer','details','library'])if(Number.isFinite(saved[key])&&saved[key]>0)paneSizes[key]=saved[key];if(saved.rail===true)paneSizes.rail=true;}}catch{}
+function savePaneSizes(){for(const key of Object.keys(paneSizes))if(paneSizes[key]==null||paneSizes[key]===false)delete paneSizes[key];try{localStorage.setItem(paneSizesKey,JSON.stringify(paneSizes));}catch{}}
+const clampWidth=(value,min,max)=>Math.round(Math.min(Math.max(value,min),Math.max(min,max)));
+const railWidth=()=>parseFloat(getComputedStyle($('app')).getPropertyValue('--sidebar-rail'))||76;
+function openRightPane(){for(const id of ['details-panel','computer-panel']){const panel=$(id);if(!panel.hidden&&!panel.inert&&!panel.classList.contains('expanded')&&!panel.matches(':fullscreen'))return panel;}return null;}
+function naturalPaneWidth(panel){
+  const sized=panel.hasAttribute('data-pane-sized');if(sized)panel.removeAttribute('data-pane-sized');
+  const width=panel.getBoundingClientRect().width;if(sized)panel.setAttribute('data-pane-sized','');return width;
+}
+function inFlowWidth(panel){return panel&&getComputedStyle(panel).position!=='absolute'?panel.getBoundingClientRect().width:0;}
+function setSidebarWidth(width,{rail=false,detail=1}={}){
+  const shell=$('app');
+  shell.classList.toggle('sidebar-rail',rail);shell.classList.toggle('sidebar-fading',!rail&&detail<1);
+  if(width==null){shell.classList.remove('sidebar-sized');shell.style.removeProperty('--sidebar-width');}
+  else{shell.classList.add('sidebar-sized');shell.style.setProperty('--sidebar-width',width+'px');}
+  if(!rail&&detail<1)shell.style.setProperty('--sidebar-detail',detail.toFixed(3));else shell.style.removeProperty('--sidebar-detail');
+  if(!rail)endSidebarPeek();
+}
+function setPaneWidth(panel,width,natural){
+  if(width>natural+.5){panel.style.setProperty('--pane-width',width+'px');panel.setAttribute('data-pane-sized','');}
+  else{panel.removeAttribute('data-pane-sized');panel.style.removeProperty('--pane-width');}
+}
+function layoutPanes(){
+  const shell=$('app');if(paneDrag||shell.hidden||!shell.clientWidth)return;
+  const panels=[$('details-panel'),$('computer-panel')];
+  if(computerTransition)return;
+  for(const panel of panels)panel.classList.remove('pane-overlay');
+  if(!wideLayout.matches){setSidebarWidth(null);for(const panel of panels)setPaneWidth(panel,0,0);updateSeparators();return;}
+  const total=shell.clientWidth,pane=openRightPane(),natural=pane?naturalPaneWidth(pane):0,rail=railWidth();
+  let reserved=pane&&getComputedStyle(pane).position!=='absolute'?natural:0;
+  // On the smallest tablet windows there is no side-by-side solution, even
+  // with the avatar rail. Keep the normal-size pane as a temporary overlay.
+  const overlay=reserved>0&&total-paneLimits.chat-reserved<rail;
+  if(overlay){pane.classList.add('pane-overlay');reserved=0;}
+  const available=Math.min(paneLimits.sidebarMax,total-paneLimits.chat-reserved);
+  let sidebar;
+  if(paneSizes.rail){sidebar=rail;setSidebarWidth(sidebar,{rail:true});}
+  else{
+    setSidebarWidth(null);
+    const baseline=parseFloat(getComputedStyle(shell).getPropertyValue('--sidebar-default-width'));
+    const wanted=paneSizes.sidebar||baseline;
+    if(available<paneLimits.sidebar){sidebar=rail;setSidebarWidth(sidebar,{rail:true});}
+    else{
+      sidebar=clampWidth(wanted,paneLimits.sidebar,available);
+      if(paneSizes.sidebar||sidebar!==baseline)setSidebarWidth(sidebar);
+    }
+  }
+  for(const panel of panels){
+    const saved=paneSizes[panel.id==='details-panel'?'details':'computer'];
+    if(panel===pane&&saved&&!overlay)setPaneWidth(panel,clampWidth(saved,natural,total-sidebar-paneLimits.chat),natural);
+    else if(panel===pane||panel.hidden)setPaneWidth(panel,0,0);
+  }
+  const library=document.querySelector('.artifact-studio');
+  if(library){if(paneSizes.library)library.style.setProperty('--artifact-library-width',clampWidth(paneSizes.library,paneLimits.library,Math.min(paneLimits.libraryMax,library.clientWidth-paneLimits.chat))+'px');else library.style.removeProperty('--artifact-library-width');}
+  updateSeparators();
+}
+// Each separator describes the pane it resizes. `direction` is +1 when dragging
+// right widens it. Limits are measured once per gesture, so pointer moves only write.
+const paneSpecs={
+  sidebar:{label:'Resize sidebar',controls:'sidebar',direction:1,
+    measure(){const shell=$('app'),rail=railWidth(),total=shell.clientWidth,available=Math.min(paneLimits.sidebarMax,total-paneLimits.chat-inFlowWidth(openRightPane()));return {start:shell.querySelector('.sidebar').getBoundingClientRect().width,rail,min:rail,max:available<paneLimits.sidebar?rail:available};},
+    preview(raw,limits){
+      if(raw<paneLimits.collapse||limits.max<paneLimits.sidebar){setSidebarWidth(limits.rail,{rail:true});return limits.rail;}
+      const width=Math.round(Math.min(raw,limits.max));setSidebarWidth(width,{detail:Math.min(1,(width-paneLimits.collapse)/(paneLimits.sidebar-paneLimits.collapse))});return width;
+    },
+    commit(raw,limits){
+      // Between the rail and the smallest readable sidebar, settle to the nearer one.
+      const width=Math.min(raw,limits.max),rail=width<paneLimits.collapse||width<paneLimits.sidebar&&width<(paneLimits.collapse+paneLimits.sidebar)/2;
+      if(rail)paneSizes.rail=true;else{paneSizes.rail=false;paneSizes.sidebar=Math.round(Math.max(width,paneLimits.sidebar));}
+    },
+    step(limits,delta){const current=$('app').classList.contains('sidebar-rail')?limits.rail:limits.start;if(current<=limits.rail)return delta>0?paneLimits.sidebar:limits.rail;const next=current+delta;return next<paneLimits.sidebar?limits.rail:Math.min(next,limits.max);},
+    toggle(){if(paneSizes.rail)paneSizes.rail=false;else paneSizes.rail=true;},
+    reset(){delete paneSizes.rail;delete paneSizes.sidebar;},
+    value(){const shell=$('app'),width=Math.round(parseFloat(shell.style.getPropertyValue('--sidebar-width'))||shell.querySelector('.sidebar').getBoundingClientRect().width);return {now:width,text:shell.classList.contains('sidebar-rail')?'Collapsed to avatars':width+' pixels wide'};}},
+  details:{label:'Resize details panel',controls:'details-panel',direction:-1,panel:()=>$('details-panel')},
+  computer:{label:'Resize computer panel',controls:'computer-panel',direction:-1,panel:()=>$('computer-panel')},
+  library:{label:'Resize artifact library',direction:1,
+    measure(){const root=document.querySelector('.artifact-studio'),library=root.querySelector('.artifact-studio-library');return {start:library.getBoundingClientRect().width,min:paneLimits.library,max:Math.max(paneLimits.library,Math.min(paneLimits.libraryMax,root.clientWidth-paneLimits.chat)),root};},
+    preview(raw,limits){const width=clampWidth(raw,limits.min,limits.max);limits.root.style.setProperty('--artifact-library-width',width+'px');return width;},
+    commit(raw,limits){const width=clampWidth(raw,limits.min,limits.max);paneSizes.library=width===paneLimits.libraryDefault?null:width;},
+    reset(){delete paneSizes.library;},
+    value(){const root=document.querySelector('.artifact-studio'),width=Math.round(parseFloat(root?.style.getPropertyValue('--artifact-library-width'))||root?.querySelector('.artifact-studio-library').getBoundingClientRect().width||0);return {now:width,text:width+' pixels wide'};}},
+};
+for(const kind of ['details','computer'])Object.assign(paneSpecs[kind],{
+  measure(){const panel=this.panel(),total=$('app').clientWidth,natural=naturalPaneWidth(panel);return {start:panel.getBoundingClientRect().width,min:natural,max:Math.max(natural,total-$('app').querySelector('.sidebar').getBoundingClientRect().width-paneLimits.chat),panel};},
+  preview(raw,limits){const width=clampWidth(raw,limits.min,limits.max);setPaneWidth(limits.panel,width,limits.min);if(kind==='computer')refitComputer();return width;},
+  commit(raw,limits){const width=clampWidth(raw,limits.min,limits.max);paneSizes[kind]=width>limits.min+.5?width:null;},
+  reset(){delete paneSizes[kind];},
+  value(){const panel=this.panel(),width=Math.round(panel.hasAttribute('data-pane-sized')&&parseFloat(panel.style.getPropertyValue('--pane-width'))||panel.getBoundingClientRect().width);return {now:width,text:width+' pixels wide'};},
+});
+function updateSeparators(){
+  for(const handle of document.querySelectorAll('.pane-resizer')){
+    const spec=paneSpecs[handle.dataset.pane],box=handle.parentElement;if(!spec||!box.getClientRects().length)continue;
+    const {now,text}=spec.value();handle.setAttribute('aria-valuenow',String(now));handle.setAttribute('aria-valuetext',text);
+    if(handle===document.activeElement||handle.classList.contains('is-dragging')||handle.matches(':hover')){const limits=spec.measure();handle.setAttribute('aria-valuemin',String(Math.round(limits.min)));handle.setAttribute('aria-valuemax',String(Math.round(limits.max)));}
+  }
+}
+function settlePanes(){
+  // A short width glide for keyboard, double-click and snap changes; never during a drag.
+  clearTimeout(paneSettle);const shell=$('app');
+  if(!motionAllowed()){shell.classList.remove('pane-settling');return;}
+  shell.classList.add('pane-settling');paneSettle=setTimeout(()=>{shell.classList.remove('pane-settling');refitComputer();updateSeparators();},200);
+}
+function commitPane(spec,apply){apply();savePaneSizes();settlePanes();layoutPanes();refitComputer();}
+function paneSeparator(kind){
+  const spec=paneSpecs[kind],handle=node('div','pane-resizer');
+  handle.dataset.pane=kind;handle.tabIndex=0;handle.setAttribute('role','separator');handle.setAttribute('aria-orientation','vertical');
+  handle.setAttribute('aria-label',spec.label);if(spec.controls)handle.setAttribute('aria-controls',spec.controls);
+  handle.title=spec.label+' · Double-click to reset';
+  handle.addEventListener('pointerdown',event=>beginPaneDrag(event,kind,handle));
+  handle.addEventListener('dblclick',()=>commitPane(spec,()=>spec.reset()));
+  handle.addEventListener('focus',updateSeparators);
+  handle.addEventListener('keydown',event=>{
+    if(!wideLayout.matches)return;
+    const grow=event.key==='ArrowRight'?1:event.key==='ArrowLeft'?-1:0,limits=spec.measure();
+    let target=null;
+    if(grow){const delta=grow*spec.direction*(event.shiftKey?paneLimits.step*4:paneLimits.step);target=spec.step?spec.step(limits,delta):limits.start+delta;}
+    else if(event.key==='Home')target=limits.min;
+    else if(event.key==='End')target=limits.max;
+    else if(event.key==='Enter'){event.preventDefault();commitPane(spec,()=>spec.toggle?spec.toggle():spec.reset());return;}
+    else return;
+    event.preventDefault();commitPane(spec,()=>spec.commit(target,limits));
+  });
+  return handle;
+}
+function beginPaneDrag(event,kind,handle){
+  if(event.button!==0||!event.isPrimary||!wideLayout.matches||paneDrag)return;
+  event.preventDefault();
+  const spec=paneSpecs[kind],limits=spec.measure(),origin=event.clientX,root=document.documentElement;
+  let raw=limits.start,frame=0,ended=false;
+  clearTimeout(paneSettle);$('app').classList.remove('pane-settling');
+  handle.setPointerCapture(event.pointerId);
+  // Remote screens and artifact frames never see the gesture, even outside capture.
+  const shield=node('div','pane-resize-shield');shield.setAttribute('aria-hidden','true');document.body.append(shield);
+  root.classList.add('pane-resizing');handle.classList.add('is-dragging');hideRailTooltip();hidePinPreview();
+  paneDrag={kind};
+  const move=e=>{
+    if(e.pointerId!==event.pointerId)return;raw=limits.start+(e.clientX-origin)*spec.direction;
+    if(!frame)frame=requestAnimationFrame(()=>{frame=0;const width=spec.preview(raw,limits);handle.setAttribute('aria-valuenow',String(width));});
+  };
+  const end=e=>{
+    if(ended||e.pointerId!==undefined&&e.pointerId!==event.pointerId)return;
+    if(e.type==='keydown'&&e.key!=='Escape')return;
+    ended=true;cancelAnimationFrame(frame);
+    handle.removeEventListener('pointermove',move);for(const type of ['pointerup','pointercancel','lostpointercapture'])handle.removeEventListener(type,end);document.removeEventListener('keydown',end,true);
+    if(handle.hasPointerCapture(event.pointerId))handle.releasePointerCapture(event.pointerId);
+    shield.remove();root.classList.remove('pane-resizing');handle.classList.remove('is-dragging');paneDrag=null;
+    if(e.type==='keydown'){e.preventDefault();e.stopPropagation();layoutPanes();return;}
+    if(e.type==='pointercancel'){layoutPanes();return;}
+    spec.commit(raw,limits);savePaneSizes();
+    if(kind==='sidebar'&&raw>=paneLimits.collapse&&raw<paneLimits.sidebar)settlePanes();
+    layoutPanes();refitComputer();
+  };
+  handle.addEventListener('pointermove',move);for(const type of ['pointerup','pointercancel','lostpointercapture'])handle.addEventListener(type,end);document.addEventListener('keydown',end,true);
+}
+// The rail keeps names reachable: hover or keyboard focus shows a label beside it.
+let railTip=null,railTipTimer=0;
+function hideRailTooltip(){clearTimeout(railTipTimer);railTip?.remove();railTip=null;}
+function railControl(target){
+  const shell=$('app');if(!shell.classList.contains('sidebar-rail')||shell.classList.contains('sidebar-peek'))return null;
+  const control=target?.closest?.('.sidebar button,.sidebar summary,.sidebar .search');
+  if(!control||control.closest('.pinned-entry,.new-menu,.pane-resizer'))return null;
+  return control;
+}
+function railLabel(control){
+  if(control.matches('.search'))return 'Search';
+  if(control.id==='identity-button')return $('identity-name').textContent||'Account';
+  const label=(control.getAttribute('aria-label')||control.textContent||control.title||'').trim(),presence=control.querySelector(':scope>.character.has-presence')?.title;
+  return presence?label+' · '+presence:label;
+}
+function showRailTooltip(control,delay){
+  hideRailTooltip();
+  railTipTimer=setTimeout(()=>{
+    if(!control.isConnected||!railControl(control))return;
+    const label=railLabel(control);if(!label)return;
+    railTip=node('div','rail-tooltip',label);railTip.setAttribute('aria-hidden','true');document.body.append(railTip);
+    const bounds=control.getBoundingClientRect(),edge=$('app').querySelector('.sidebar').getBoundingClientRect().right;
+    railTip.style.left=edge+8+'px';railTip.style.top=Math.max(8+railTip.offsetHeight/2,Math.min(innerHeight-8-railTip.offsetHeight/2,bounds.top+bounds.height/2))+'px';
+  },delay);
+}
+function startSidebarPeek(){
+  const shell=$('app');if(!shell.classList.contains('sidebar-rail')||shell.classList.contains('sidebar-peek'))return;
+  hideRailTooltip();shell.style.setProperty('--sidebar-peek-width',Math.max(paneLimits.sidebar,Math.min(paneSizes.sidebar||280,paneLimits.sidebarMax))+'px');shell.classList.add('sidebar-peek');
+}
+function endSidebarPeek(){
+  const shell=$('app');if(!shell.classList.contains('sidebar-peek'))return;
+  shell.classList.remove('sidebar-peek');
+  // The rail has no visible query, so a filtered list would be unexplained there.
+  if($('search').value){$('search').value='';renderSidebar();}
+}
+function initPaneResizing(){
+  const shell=$('app'),sidebar=shell.querySelector('.sidebar');sidebar.id||='sidebar';
+  sidebar.append(paneSeparator('sidebar'));$('details-panel').append(paneSeparator('details'));
+  const computer=$('computer-panel'),computerHandle=paneSeparator('computer');computer.append(computerHandle);
+  // The compact computer pane scrolls; keep its edge handle in view.
+  computer.addEventListener('scroll',()=>{computerHandle.style.top=computer.scrollTop+'px';},{passive:true});
+  const observer=new MutationObserver(()=>{
+    const signature=['details-panel','computer-panel'].map(id=>{const panel=$(id);return [panel.hidden,panel.inert,panel.classList.contains('expanded')].join();}).join('|')+shell.hidden+!!document.querySelector('.artifact-studio');
+    if(signature!==paneSignature){paneSignature=signature;hideRailTooltip();layoutPanes();}
+  });
+  for(const id of ['details-panel','computer-panel'])observer.observe($(id),{attributes:true,attributeFilter:['hidden','class']});
+  observer.observe(shell,{childList:true,attributes:true,attributeFilter:['hidden']});
+  window.addEventListener('resize',()=>{hideRailTooltip();layoutPanes();});
+  // WebKit can dispatch window resize before the shell has its final layout.
+  new ResizeObserver(()=>layoutPanes()).observe(shell);
+  wideLayout.addEventListener('change',layoutPanes);
+  document.addEventListener('fullscreenchange',layoutPanes);
+  sidebar.addEventListener('pointerover',e=>{if(e.pointerType==='touch')return;const control=railControl(e.target);if(control&&control!==railControl(e.relatedTarget))showRailTooltip(control,120);});
+  sidebar.addEventListener('pointerout',e=>{if(railControl(e.target)!==railControl(e.relatedTarget))hideRailTooltip();});
+  sidebar.addEventListener('focusin',e=>{const control=railControl(e.target);let visible=true;try{visible=e.target.matches(':focus-visible');}catch{}if(control&&visible)showRailTooltip(control,0);});
+  sidebar.addEventListener('focusout',e=>{hideRailTooltip();if(!sidebar.contains(e.relatedTarget))endSidebarPeek();});
+  sidebar.addEventListener('pointerdown',hideRailTooltip);
+  sidebar.addEventListener('click',e=>{if(e.target.closest('.bot-link,.pinned-bot'))endSidebarPeek();});
+  $('bots').addEventListener('scroll',hideRailTooltip,{passive:true});
+  // Search needs room: from the rail it opens the full sidebar over the chat.
+  $('search').addEventListener('focus',startSidebarPeek);
+  $('search').addEventListener('keydown',e=>{if(e.key==='Escape'&&shell.classList.contains('sidebar-peek')){e.preventDefault();endSidebarPeek();$('search').blur();}});
+  layoutPanes();
+}
+function mountLibraryResizer(library){
+  const handle=paneSeparator('library');library.append(handle);
+  queueMicrotask(layoutPanes);
+  return ()=>handle.remove();
 }
 function avatarMenu(bot) {
   const wrap=node('div','avatar-menu');
@@ -7372,6 +7603,7 @@ async function jumpToMessage(chatId,seq){
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.message-action-menu,.message-actions'))closeMessageMenu();});
 $('content').addEventListener('scroll',()=>positionMessageMenu());window.addEventListener('resize',()=>positionMessageMenu());
 initDesktopChrome();
+initPaneResizing();
 
 dictationUI=createDictationUI({editor:$("prompt"),send:$("send"),composer:$("composer"),api,nativeInvoke,chatId:composerChatId,hasFiles:()=>!!pendingFiles.get(composerChatId())?.length,notice,icon});
 
