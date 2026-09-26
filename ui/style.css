@@ -4965,3 +4965,19 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
 html[data-starting] #connect{visibility:hidden}
 #startup-status{position:fixed;inset:0;display:grid;place-content:center;background:var(--bg,#111);color:var(--muted,#aaa)}
 #startup-status[hidden]{display:none}
+
+.settings-section.computer-settings-section > h3 {
+  font-size: calc(15px * var(--text-scale, 1));
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 14px;
+}
+#computer-action-status {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-left: 2px solid var(--line);
+  border-radius: 0 8px 8px 0;
+  background: var(--surface);
+  font-size: calc(13px * var(--text-scale, 1));
+  line-height: 1.5;
+}
