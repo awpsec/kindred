@@ -204,8 +204,12 @@ try:
    request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"updater"}',headers={'Content-Type':'application/json'},method='POST')
    with urllib.request.urlopen(request) as response:response.read()
    wait_report(fixture,'updater',child);time.sleep(3)
-   # The fixture reports window creation before WebKit paints the local page.
-   # Keep the same visible-text checks, with a bounded wait for that paint.
+   # Preserve the initial window and activation evidence before foregrounding.
+   command([out/'window-proof',child.pid,out/'client-updater-before-focus'],'client-updater-before-focus.log')
+   command([out/'app-focus','status',child.pid],'client-updater-focus-before.log')
+   # Inspect this interactive panel with Kindred active, as a user opens it.
+   command([out/'app-focus','foreground',child.pid],'client-updater-foreground.log')
+   command([out/'app-focus','status',child.pid],'client-updater-focus-after.log')
    capture(child,'client-updater',['up to date','Kindred update'],render_wait=15)
    assert json.loads((fixture/'signed-feed.json').read_text())['served']
    proof['native_client_update_window_and_signed_feed']=True
