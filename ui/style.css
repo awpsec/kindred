@@ -1,5 +1,6 @@
 @charset "UTF-8";
 @import url("./fonts.css");
+@import url("./progress.css");
 /* Ship the requested family and its intermediate weights on every desktop. */
 
 
@@ -2279,7 +2280,7 @@ input[type="checkbox"]:checked::after {
   height: 4px;
   display: block;
   margin-top: 8px;
-  accent-color: var(--soft);
+  accent-color: var(--progress-accent);
   border: none;
   border-radius: 4px;
 }
@@ -2288,7 +2289,7 @@ input[type="checkbox"]:checked::after {
   border-radius: 4px;
 }
 .resource-row progress::-webkit-progress-value {
-  background: var(--soft);
+  background: var(--progress-accent);
   border-radius: 4px;
 }
 .new-menu {
@@ -3783,11 +3784,11 @@ html[data-motion="off"] #composer,html[data-motion="off"] .composer-reply .icon-
 .dictation-download{padding:0 0 13px;}
 .dictation-download:has(.dictation-detail[hidden]){display:none;}
 .dictation-detail{margin:11px 0 0;font-size:calc(12px * var(--text-scale, 1));}
-.dictation-progress{display:block;appearance:none;-webkit-appearance:none;height:5px;width:100%;margin-top:10px;border:0;border-radius:4px;overflow:hidden;background:var(--line);color:#3b82f6;accent-color:#3b82f6;}
+.dictation-progress{display:block;appearance:none;-webkit-appearance:none;height:5px;width:100%;margin-top:10px;border:0;border-radius:4px;overflow:hidden;background:var(--line);color:var(--progress-accent);accent-color:var(--progress-accent);}
 .dictation-progress[hidden]{display:none;}
 .dictation-progress::-webkit-progress-bar{background:var(--line);border-radius:4px;}
-.dictation-progress::-webkit-progress-value{background:#3b82f6;border-radius:4px;transition:width .25s ease;}
-.dictation-progress::-moz-progress-bar{background:#3b82f6;border-radius:4px;}
+.dictation-progress::-webkit-progress-value{background:var(--progress-accent);border-radius:4px;transition:width .25s ease;}
+.dictation-progress::-moz-progress-bar{background:var(--progress-accent);border-radius:4px;}
 .saved-computer{padding:18px 0;border-bottom:1px solid var(--line);}
 .saved-computer:last-child{border-bottom:0;}
 .saved-computer-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;}
@@ -4946,7 +4947,7 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
 .artifact-studio-macos .artifact-studio-library-brand{visibility:hidden;pointer-events:none;}
 .server-update-dialog{position:relative;max-width:440px;}
 .server-update-dialog .dialog-close{position:absolute;right:14px;top:14px;}
-.server-update-dialog progress{display:block;width:100%;height:5px;margin:20px 0;accent-color:var(--fg);}
+.server-update-dialog progress{display:block;width:100%;height:5px;margin:20px 0;accent-color:var(--progress-accent);}
 .server-update-dialog progress[hidden]{display:none;}
 .server-update-dialog>.primary{margin-top:12px;}
 .composio-key-summary{display:flex;align-items:center;gap:12px;cursor:pointer;font-size:13px;padding:4px 0;}

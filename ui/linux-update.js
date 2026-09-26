@@ -10,7 +10,7 @@ function render(value){
  $('filename').textContent=value.filename||'Use an AppImage downloaded from Kindred Releases.';
  $('message').textContent=value.message||'Choose a Kindred AppImage from your downloads.';
  $('progress').hidden=!value.busy&&value.status!=='ready';
- if(Number.isFinite(value.progress))$('progress').value=value.progress;else $('progress').removeAttribute('value');
+ if(ready)$('progress').value=$('progress').max;else if(Number.isFinite(value.progress))$('progress').value=Math.max(0,Math.min($('progress').max,value.progress));else $('progress').removeAttribute('value');
  $('runtime').hidden=!value.runtime;$('runtime').textContent=value.runtime==='system'?'Using your system GTK and audio libraries.':'Using the AppImage’s bundled libraries.';
 }
 async function load(){render(await invoke('linux_update_state'));}
