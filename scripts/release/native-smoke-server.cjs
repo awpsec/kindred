@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path');
 const [source,folder]=process.argv.slice(2);
 const {server}=require(path.resolve(source,'tools/frontend/fixtures/desktop.cjs'));
 const original=server.listeners('request')[0];server.removeAllListeners('request');
-let phase='chat';const reports=[];
+let phase='chat';const reports=[],feedRequests=[];
 const probe=`<script type="module">
 const errors=[];window.addEventListener('error',e=>errors.push(e.message));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -85,7 +85,8 @@ server.on('request',async(req,res)=>{
  const route=new URL(req.url,'http://localhost').pathname;
  const send=data=>{res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
  if(route==='/updates/client-stable.json'||route==='/updates/client-linux.json'){
-  fs.writeFileSync(path.join(folder,'signed-feed.json'),JSON.stringify({served:true}));
+  feedRequests.push({phase,route,userAgent:req.headers['user-agent']||'',at:new Date().toISOString()});
+  fs.writeFileSync(path.join(folder,'signed-feed.json'),JSON.stringify({served:true,requests:feedRequests}));
   return send(JSON.parse(fs.readFileSync(path.join(__dirname,'native-client-feed-fixture.json'),'utf8')));
  }
  if(route==='/fixture/report'){
