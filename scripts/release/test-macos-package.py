@@ -51,12 +51,17 @@ def wait_report(folder,phase,child):
    if match:return match
   time.sleep(.2)
  raise AssertionError('Native UI did not report '+phase)
-def capture(child,name,required_words):
- assert child.poll() is None,'Native app exited'
- command([out/'window-proof',child.pid,out/name],name+'.log')
- rows=json.loads((out/name/'windows.json').read_text())
- text=' '.join(s for row in rows for s in row['text']).lower()
- assert all(word.lower() in text for word in required_words),f'{name}: expected UI text missing from captured windows'
+def capture(child,name,required_words,render_wait=0):
+ deadline=time.monotonic()+render_wait
+ while True:
+  assert child.poll() is None,'Native app exited'
+  command([out/'window-proof',child.pid,out/name],name+'.log')
+  rows=json.loads((out/name/'windows.json').read_text())
+  text=' '.join(s for row in rows for s in row['text']).lower()
+  rendered=all(word.lower() in text for word in required_words)
+  if rendered or time.monotonic()>=deadline:break
+  time.sleep(.5)
+ assert rendered,f'{name}: expected UI text missing from captured windows'
  return rows
 child=server=None;mounted=False
 try:
@@ -199,7 +204,9 @@ try:
    request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"updater"}',headers={'Content-Type':'application/json'},method='POST')
    with urllib.request.urlopen(request) as response:response.read()
    wait_report(fixture,'updater',child);time.sleep(3)
-   capture(child,'client-updater',['up to date','Kindred update'])
+   # The fixture reports window creation before WebKit paints the local page.
+   # Keep the same visible-text checks, with a bounded wait for that paint.
+   capture(child,'client-updater',['up to date','Kindred update'],render_wait=15)
    assert json.loads((fixture/'signed-feed.json').read_text())['served']
    proof['native_client_update_window_and_signed_feed']=True
    request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"accounts"}',headers={'Content-Type':'application/json'},method='POST')
