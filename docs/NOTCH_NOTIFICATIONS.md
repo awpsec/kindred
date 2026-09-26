@@ -4,11 +4,11 @@ Settings → General → System → **Notch notifications** enables a local, opt
 notification surface. It replaces Kindred's system banners while enabled. The
 existing global and per-bot notification preferences still decide which alerts
 are delivered. Custom previews appear during macOS Focus; the setting explains
-this difference. They are silent. Notch alerts are suppressed while the Kindred application is active, including its Accounts/settings windows. Focus is rechecked before presentation and on each alert refresh; foreground alerts are discarded, not queued for later. The Settings test also respects this focus rule.
+this difference. They are silent. Notch alerts are suppressed while the Kindred application is active, including its Accounts/settings windows. Focus is rechecked before presentation and on each alert refresh; foreground alerts are discarded, not queued for later. Explicit Settings tests remain visible while Kindred is active.
 
 The bundled `notch.html` surface displays the bot's original animated avatar,
 name and “sent you a message.” on one line. The entire notification is one button that brings Kindred forward;
-it collapses back into the notch automatically after three seconds, including while hovered. There is no close button. Motion follows both the notification's account preference and the live
+it collapses back into the notch automatically after three seconds unless held by pointer hover or accessible keyboard focus. Leaving restarts the countdown. There is no close button. Motion follows both the notification's account preference and the live
 system Reduce Motion setting.
 
 The native window follows the display containing Kindred, falling back to
@@ -84,12 +84,22 @@ Kindred implements that visual behavior independently, retaining its own avatar,
 single-line message, click action and three-second timeout.
 
 The native window remains fixed while an interpolated path changes the visible
-silhouette. Opening settles over 440ms with a small overshoot; content enters
-90ms later over 230ms. Closing contracts over 300ms, with content withdrawing
-in the first 140ms. Interrupted openings close from their current shape. The
+silhouette. Opening uses a sampled damped spring with a small overshoot; content enters
+90ms later over 260ms. Closing contracts over 300ms, with content withdrawing
+in the first 130ms. Interrupted openings close from their current shape. The
 collapsed shape is prepared before `present`, avoiding a full-card first frame.
-Reduce Motion presents/dismisses immediately. External-display corners are
+Reduce Motion uses short opacity fades without shape morphing, translation or blur. External-display corners are
 bounded by the shorter collapsed height.
 
 Browser motion previews are illustrative, not native macOS acceptance. The
 previous native-camera clearance rebuild/verification requirement still applies.
+
+## Refined interaction
+
+Hover subtly widens the silhouette without scaling text. Queued alerts exchange
+content inside the open shape instead of collapsing between each message. The
+renderer receives only the avatar, name, motion preference and queue count;
+message bodies stay native for system-banner fallback. A polite status region
+announces the fixed notification phrase. DOM keyboard focus holds expiry,
+Escape dismisses, and Enter/Space opens. The native window remains non-focusable:
+VoiceOver announcements and keyboard reachability require real Mac validation.

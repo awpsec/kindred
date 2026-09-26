@@ -75,6 +75,13 @@ fn bundled(url: &tauri::Url) -> bool {
 #[path = "notch_geometry.rs"]
 mod geometry;
 
+// The surface renders only a name, avatar and fixed phrase. The message body
+// stays native for the system-banner fallback and never enters the webview.
+#[cfg(any(target_os = "macos", test))]
+fn payload(id: &str, title: &str, avatar: &Value, reduced_motion: bool, queued: usize) -> Value {
+    json!({"id":id,"title":title,"avatar":avatar,"reduced_motion":reduced_motion,"queued":queued})
+}
+
 #[cfg(any(target_os = "macos", test))]
 fn frame(x: f64, y: f64, width: f64, height: f64, inset: f64, bridge: f64) -> [f64; 5] {
     let top = inset.clamp(0., 96.).max(12.);
@@ -336,6 +343,8 @@ pub mod native {
         inner
             .queue
             .retain(|a| a.destination.as_ref().is_none_or(|(g, _)| *g == generation));
+        // Lets the surface hand an expiring alert to the next without collapsing.
+        let queued = inner.queue.len().saturating_sub(1);
         let Some(alert) = inner.queue.front_mut() else {
             return Ok(Value::Null);
         };
@@ -344,7 +353,7 @@ pub mod native {
         }
         match action {
             "state" => {
-                let value = json!({"id":alert.id,"title":alert.title,"body":alert.body,"avatar":alert.avatar,"reduced_motion":alert.reduced_motion});
+                let value = super::payload(&alert.id, &alert.title, &alert.avatar, alert.reduced_motion, queued);
                 drop(inner);
                 let mut value = value;
                 value["layout"] = layout(app, &window(app)?)?;
@@ -485,6 +494,14 @@ mod tests {
         let narrow = frame(0., 0., 320., 480., 0., 300.);
         assert_eq!(narrow[0], 12.);
         assert_eq!(narrow[2], 296.);
+    }
+    #[test]
+    fn surface_payload_omits_the_message_body() {
+        let value = payload("a", "Harold", &json!({"shape":"round"}), true, 2);
+        let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["avatar", "id", "queued", "reduced_motion", "title"]);
+        assert_eq!(value["queued"], 2);
     }
     #[test]
     fn only_the_bundled_alert_document_is_trusted() {

@@ -13,11 +13,14 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
    // Keep layout/interaction fixtures alive under a busy test host. The external
    // fixture below separately checks the real three-second expiry, including hover.
    const schedule=window.setTimeout.bind(window);window.setTimeout=(fn,delay,...args)=>schedule(fn,delay===3000&&window.queue?.[0]?.id!=='external'?30000:delay,...args);
-   window.calls=[];window.layout={top:32,notched:true,bridge_width:176};
+   window.calls=[];window.animated=[];
+   // Record which properties each alert animates, to prove Reduce Motion only dissolves.
+   const animate=Element.prototype.animate;Element.prototype.animate=function(frames,options){animated.push({id:window.queue?.[0]?.id,props:[...new Set(frames.flatMap(Object.keys))].filter(k=>!['offset','easing','composite'].includes(k))});return animate.call(this,frames,options);};
+   window.layout={top:32,notched:true,bridge_width:176};
    window.queue=[{id:'first',title:'Harold',body:'Your inbox is checked. Two messages need your attention.',avatar:{shape:'capsule',color:'#7960ff',eyes:'curious'},reduced_motion:false}];
    window.__TAURI__={event:{listen:async(_,callback)=>{window.changed=callback;return()=>{};}},core:{invoke:async(command,args)=>{
     calls.push({command,...args,at:Date.now(),paint:args.action==='present'?{clip:getComputedStyle(document.querySelector('#alert')).clipPath,opacity:getComputedStyle(document.querySelector('#open')).opacity}:null});const current=queue[0];
-    if(args.action==='state')return current?structuredClone({...current,layout}):null;
+    if(args.action==='state')return current?structuredClone({...current,queued:queue.length-1,layout}):null;
     if(current?.id!==args.id)return null;
     if(['present','hold','release'].includes(args.action))window.lastRenewed=Date.now();
     if(['open','dismiss'].includes(args.action)){queue.shift();setTimeout(()=>changed(),0);}
@@ -28,6 +31,11 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   await p.mouse.move(-10,-10);await p.goto(origin+'/notch.html');await p.waitForFunction(()=>calls.some(c=>c.action==='present'));await p.mouse.move(239,75);await p.waitForTimeout(600);
   const initialPaint=await p.evaluate(()=>calls.find(c=>c.action==='present').paint);assert(initialPaint.clip.startsWith('path('),'Native presentation must start with the collapsed silhouette');assert.equal(initialPaint.opacity,'0','Content must not flash before expansion');
   assert.equal(await p.locator('#avatar .character').count(),1);
+  assert.equal(await p.locator('#announce').textContent(),'Harold sent you a message.');
+  assert.equal(await p.locator('#announce').getAttribute('role'),'status');
+  const type=await p.evaluate(()=>['#title','#message'].map(s=>{const c=getComputedStyle(document.querySelector(s));return{size:parseFloat(c.fontSize),weight:+c.fontWeight,color:c.color};}));
+  assert(type[0].size>=13&&type[0].weight>=600&&type[1].size>=11.5,JSON.stringify(type));
+  assert.equal(await p.evaluate(()=>animated.filter(a=>a.id==='first').some(a=>a.props.includes('clipPath'))),true,'Arrival morphs the silhouette');
   for(const selector of ['.notch-card','.notch-bridge'])assert.equal(await p.locator(selector).evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(0, 0, 0)');
   const resting=await p.locator('.notch-card').boundingBox();assert(resting.height<=32.1,JSON.stringify({resting,transform:await p.locator('#alert').evaluate(n=>getComputedStyle(n).transform)}));
   assert.equal((await p.locator('.notch-card').boundingBox()).width,224);
@@ -54,6 +62,8 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   assert.equal(await p.locator('#avatar .character').getAttribute('data-action'),'idle');
   await p.evaluate(()=>{queue[0]={id:'tribute-vivienne',title:'Vivienne · Project chat',body:'Your task is complete.',avatar:{name:'Vivienne',shape:'triangle',color:'#2ec767'},reduced_motion:false};changed();});
   await p.locator('#avatar [data-tribute="vivienne"]').waitFor();
+  await p.waitForFunction(()=>getComputedStyle(document.querySelector('#open')).opacity==='1'&&document.getAnimations().every(a=>a.playState!=='running'||a.effect?.target?.closest?.('.character')));
+  assert(await p.locator('#alert').isVisible(),'Replacing a visible alert keeps the surface open');
   await p.screenshot({path:path.join(artifacts,engine+'-notch-tribute.png'),omitBackground:true});
   await p.setViewportSize({width:304,height:56});
   await p.evaluate(()=>{layout={top:12,notched:false,bridge_width:240};queue[0]={id:'external',title:'A very long bot name that must stay contained',body:'Untrusted preview <img src=x onerror=alert(1)> '+('A long message with useful details. '.repeat(20)),avatar:{shape:'hexagon',color:'#ff9638'},reduced_motion:true};changed();});
@@ -64,7 +74,9 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   assert.equal(await p.locator('html').getAttribute('data-notched'),'false');
   const layout=await p.locator('.notch-card').evaluate(n=>{const r=n.getBoundingClientRect();return{bottom:r.bottom,right:r.right,width:n.scrollWidth,client:n.clientWidth,animations:document.getAnimations().filter(a=>a.playState==='running').length};});
   assert(layout.bottom<=56&&layout.right<=304&&layout.width<=layout.client+1,JSON.stringify(layout));
-  assert.equal(layout.animations,0);
+  await p.waitForFunction(()=>document.getAnimations().every(a=>a.playState!=='running'));
+  const reduced=await p.evaluate(()=>[...new Set(animated.filter(a=>a.id==='external').flatMap(a=>a.props))]);
+  assert.deepEqual(reduced,['opacity'],'Reduce Motion dissolves without morphing, moving or blurring');
   await p.screenshot({path:path.join(artifacts,engine+'-external.png'),omitBackground:true});
   assert.equal(await p.locator('#dismiss').count(),0);
   await p.setViewportSize({width:320,height:56});
@@ -74,18 +86,40 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   const nativeScript=rust.match(/window\.eval\(&format!\(r#"([\s\S]*?)"#\)\)/)[1];
   const nativePointer=(x,y)=>nativeScript.replaceAll('{{','{').replaceAll('}}','}').replaceAll('{x}',String(x)).replaceAll('{y}',String(y)).replaceAll('{id}',JSON.stringify('external'));
   await p.mouse.move(-10,-10);
+  const restingClip=await p.locator('#alert').evaluate(n=>n.style.clipPath);
   await p.evaluate(nativePointer(160,32));
   await p.waitForTimeout(4500);
   assert(await p.locator('#alert').isVisible(),'Hover must outlast both dismissal deadlines');
   assert.equal(await p.evaluate(()=>calls.filter(c=>c.action==='dismiss'&&c.id==='external').length),0);
   assert(await p.evaluate(()=>calls.filter(c=>c.action==='hold'&&c.id==='external').length)>=4,'Native watchdog lease renews while hovered');
-  assert(await p.locator('#alert').evaluate(n=>new DOMMatrix(getComputedStyle(n).transform).a>1));
+  // Hover widens the silhouette; text is never magnified.
+  assert.notEqual(await p.locator('#alert').evaluate(n=>n.style.clipPath),restingClip,'Hover swells the silhouette');
+  assert.equal(await p.locator('#alert').evaluate(n=>getComputedStyle(n).transform),'none');
+  assert.notEqual(await p.locator('#message').evaluate(n=>getComputedStyle(n).color),'rgba(235, 235, 245, 0.66)','Hover brightens secondary text');
   assert.equal(await p.evaluate(()=>calls.filter(c=>c.action==='watchdog').length),0);
   const enlarged=await p.locator('#alert').boundingBox();assert(enlarged.x>=0&&enlarged.x+enlarged.width<=320&&enlarged.y+enlarged.height<=56);
   const released=Date.now();await p.evaluate(nativePointer(0,55));
   await p.waitForFunction(()=>calls.some(c=>c.action==='dismiss'&&c.id==='external'));
   const lifetime=await p.evaluate(()=>calls.find(c=>c.action==='dismiss'&&c.id==='external').at-calls.find(c=>c.action==='present'&&c.id==='external').at);
   assert(lifetime>=7000,'Hover must extend the lifetime: '+lifetime);assert(Date.now()-released>=2800&&Date.now()-released<4500,'Leaving restarts the three-second countdown');
+  await p.locator('#alert').waitFor({state:'hidden'});
+  assert.equal(await p.locator('#announce').textContent(),'');
+  // Keyboard: focus holds like hover, Escape dismisses, and a queued alert takes
+  // over the open shape without the surface collapsing or hiding in between.
+  await p.evaluate(()=>{queue.push({id:'keys',title:'Mira',body:'x',avatar:{shape:'round',color:'#2475ff'},reduced_motion:false},{id:'next',title:'Juno',body:'x',avatar:{shape:'round',color:'#ff9638'},reduced_motion:false});changed();});
+  await p.waitForFunction(()=>calls.some(c=>c.action==='present'&&c.id==='keys'));
+  await p.keyboard.press('Tab');
+  assert.equal(await p.evaluate(()=>document.activeElement.id),'alert');
+  await p.waitForFunction(()=>calls.some(c=>c.action==='hold'&&c.id==='keys'));
+  assert.notEqual(await p.locator('#open').evaluate(n=>getComputedStyle(n).boxShadow),'none','Keyboard focus draws a ring inside the silhouette');
+  await p.evaluate(()=>{window.hiddenDuringHandoff=false;new MutationObserver(()=>{if(document.querySelector('#alert').hidden)hiddenDuringHandoff=true;}).observe(document.querySelector('#alert'),{attributes:true,attributeFilter:['hidden']});});
+  await p.keyboard.press('Escape');
+  await p.waitForFunction(()=>calls.some(c=>c.action==='present'&&c.id==='next'));
+  assert(await p.evaluate(()=>calls.some(c=>c.action==='dismiss'&&c.id==='keys')));
+  assert.equal(await p.evaluate(()=>hiddenDuringHandoff),false,'Queued handoff keeps the surface open');
+  await p.waitForFunction(()=>document.querySelector('#title').textContent==='Juno'&&getComputedStyle(document.querySelector('#open')).opacity==='1');
+  await p.locator('#alert').focus();await p.keyboard.press('Enter');
+  await p.waitForFunction(()=>calls.some(c=>c.action==='open'&&c.id==='next'));
   await p.locator('#alert').waitFor({state:'hidden'});
   await p.evaluate(()=>{queue.push({id:'open-me',title:'Rowan',body:'Your task is complete.',avatar:{shape:'round',color:'#2ec767'},reduced_motion:false});changed();});
   await p.waitForFunction(()=>calls.some(c=>c.action==='present'&&c.id==='open-me'));
@@ -108,6 +142,6 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
    }else {await page.getByRole('button',{name:'Test notification',exact:true}).waitFor();assert.equal(await page.getByText('Notch notifications',{exact:true}).count(),0);}
    await c.close();
   }
-  console.log(engine+': hover hold, magnification, resumed expiry, no close button, notch rendering, safe text, open/dismiss, motion, external display layout and three-platform settings passed');
+  console.log(engine+': hover hold, silhouette swell, keyboard hold/escape/enter, queued handoff, announcement, dissolve-only reduced motion, resumed expiry, no close button, notch rendering, safe text, open/dismiss, motion, external display layout and three-platform settings passed');
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;server.close();});
