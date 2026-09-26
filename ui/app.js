@@ -1168,7 +1168,7 @@ function renderVersions(){
   for(const n of document.querySelectorAll('[data-client-version]'))n.textContent=desktop?(client||'Unknown'):('Browser UI '+UI_VERSION);
   for(const n of document.querySelectorAll('[data-server-version]'))n.textContent=state.status.version||'Connecting…';
   for(const n of document.querySelectorAll('[data-client-update-status]')){
-    n.textContent=state.updateRelease?'Desktop app '+state.updateRelease.version+' is available.':desktop&&client&&newerVersion(state.status.version,client)?'The connected server is newer than this desktop app. Check for an app update.':desktop?'App updates affect this device. Server updates are managed separately.':'This interface is loaded from your server.';
+    n.textContent=state.updateRelease?'Desktop app '+state.updateRelease.version+' is available.':desktop&&client&&newerVersion(state.status.version,client)?'The connected server is newer than this desktop app. Check for an app update.':'';
   }
   for(const n of document.querySelectorAll('[data-client-update-action]')){n.hidden=!state.updateRelease;n.textContent=canInstallClientUpdate()?'Update desktop app':'Download app update';}
 }
@@ -2171,7 +2171,7 @@ async function settingsGeneral(revision) {
   clientVersion.dataset.clientVersion='';serverVersion.dataset.serverVersion='';updateStatus.dataset.clientUpdateStatus='';
   const updateActions=node('div','version-actions');
   if(window.__KINDRED_DESKTOP){
-    updateActions.append(button('Check for app updates',async()=>{await checkUpdates(true);updateStatus.textContent=state.updateRelease?'Desktop app '+state.updateRelease.version+' is available.':'No newer desktop app update is available.';},'outline-button','refresh'));
+    updateActions.append(button('Check for updates',async()=>{await checkUpdates(true);updateStatus.textContent=state.updateRelease?'Desktop app '+state.updateRelease.version+' is available.':'No newer desktop app update is available.';},'outline-button','refresh'));
     const updateAction=button('Update desktop app',()=>clientUpdateAction(),'outline-button','download');updateAction.dataset.clientUpdateAction='';updateActions.append(updateAction);
   }
   versions.body.append(settingRow(window.__KINDRED_DESKTOP?'Desktop app on this device':'Browser interface',clientVersion),settingRow('Connected server',serverVersion,location.host),updateStatus,updateActions);
@@ -3005,8 +3005,10 @@ async function settingsComputer(){
       if(here){const change=button(modes[d.mode]||'Desktop permissions',()=>settingsDesktopPermissions(),'outline-button computer-permission-button','chevron');change.setAttribute('aria-label','Desktop permissions');details.append(change);}
       else details.append(node('span','computer-permission-value',modes[d.mode]||d.mode));
       card.append(details);
-      const assigned=state.bots.filter(b=>!profile(b).archived&&profile(b).local_access&&(profile(b).local_device_id===d.id||profile(b).local_device_id==='*')).map(b=>b.name);
-      card.append(node('p','muted small assigned-computer-bots',assigned.length?'Enabled for: '+assigned.join(', '):'No bots have local access enabled for this computer.'));
+      const assigned=state.bots.filter(b=>!profile(b).archived&&profile(b).local_access&&(profile(b).local_device_id===d.id||profile(b).local_device_id==='*'));
+      const badges=node('div','assigned-computer-bots');
+      if(assigned.length){badges.append(node('span','muted small','Enabled for:'));for(const bot of assigned){const badge=node('span','assigned-bot-badge');badge.append(character(profile(bot),18),node('span','',bot.name));badges.append(badge);}}else badges.append(node('span','muted small','No bots have local access enabled for this computer.'));
+      card.append(badges);
       list.append(card);
     }
     if(devices.some(d=>d.id!==current?.device_id))computers.root.querySelector('.remote-permission-note')?.remove();
@@ -3147,9 +3149,9 @@ async function settingsBotComputer() {
   api('/computer/maintenance').then(value=>{if(maintenance.isConnected){showMaintenance(value);updateToggle.disabled=false;}}).catch(e=>{updateStatus.textContent=e.message;});
   updateToggle.onchange=()=>{updateToggle.disabled=true;api('/computer/maintenance','PUT',{enabled:updateToggle.checked}).then(showMaintenance).catch(e=>{updateToggle.checked=!updateToggle.checked;updateStatus.textContent=e.message;}).finally(()=>{updateToggle.disabled=false;});};
   const server = section("Server");
-  server.append(
-    node("p", "muted small", "This app is connected to " + location.origin),
-  );
+  const address=node('p','muted small','This app is connected to ');
+  address.append(node('code','server-address-badge',location.origin));
+  server.append(address);
   if (state.status.public_url && state.status.public_url !== location.origin)
     server.append(
       node(
