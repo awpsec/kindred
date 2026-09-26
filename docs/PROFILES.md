@@ -89,7 +89,11 @@ A failed transfer leaves the original workspace intact. Recovery information sta
 saved until the destination opens and authenticates, including when restarting
 the desktop fails. Open Account settings to
 resume it, or cancel a pending transfer to let the original workspace run again.
-Any partial destination copy remains paused. Transfer state survives server restart.
+If a copy already reached the destination, cancelling keeps that copy with its
+routines paused. A completed move offers **Open moved workspace** if reopening
+the app failed. New Standalone accounts are created during the move; invitation
+codes are supported for hosted servers with restricted registration.
+Transfer state survives server restart.
 
 ## Existing personal installations
 

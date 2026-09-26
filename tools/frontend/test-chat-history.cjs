@@ -4,7 +4,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test-results');fs.mkdirSync(artifacts,{recursive:true});
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
- const engine=process.env.WEBKIT?'webkit':'edge',browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true,channel:'msedge'});
+ const engine=process.env.WEBKIT?'webkit':'chromium',browser=await(process.env.WEBKIT?webkit:chromium).launch({headless:true});
  try{
   const context=await browser.newContext({viewport:{width:1320,height:900}}),p=await context.newPage();p.setDefaultTimeout(12000);
   const errors=[],requests=[],details=[];p.on('pageerror',e=>errors.push(e.message));
@@ -33,12 +33,12 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   });
   await context.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);await p.goto(origin);
   const area=p.locator('#content'),first=()=>area.locator('[data-message]').first().getAttribute('data-message'),last=()=>area.locator('[data-message]').last().getAttribute('data-message');
-  await area.locator('[data-message="1000"]').waitFor();await p.locator('#chat-loading').waitFor({state:'hidden'});await p.evaluate(()=>document.fonts.ready);assert.equal(await area.locator('[data-message]').count(),50);assert.equal(await first(),'951');
+  await area.locator('[data-message="1000"]').waitFor();assert.equal(await area.locator('[data-message]').count(),50);assert.equal(await first(),'951');
   const anchor=()=>area.evaluate(n=>{const top=n.getBoundingClientRect().top,m=[...n.querySelectorAll('[data-message]')].find(m=>m.getBoundingClientRect().bottom>top+1);return {seq:m.dataset.message,y:m.getBoundingClientRect().top-top};});
   // Prepending must keep the same visible message, even as pages leave the opposite end.
   delay=120;
   for(let step=0;step<7;step++){
-   await p.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));const oldFirst=Number(await first());await area.evaluate(n=>{n.dispatchEvent(new WheelEvent('wheel',{deltaY:-100}));n.scrollTop=100;});const before=await anchor();
+   const oldFirst=Number(await first());await area.evaluate(n=>{n.dispatchEvent(new WheelEvent('wheel',{deltaY:-100}));n.scrollTop=100;});const before=await anchor();
    await p.waitForFunction(old=>Number(document.querySelector('#content [data-message]').dataset.message)<old,oldFirst);
    await p.waitForTimeout(120);const after=await anchor();
    const anchoredY=await area.locator('[data-message="'+before.seq+'"]').evaluate(n=>n.getBoundingClientRect().top-document.querySelector('#content').getBoundingClientRect().top);
