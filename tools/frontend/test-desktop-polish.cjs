@@ -52,6 +52,19 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   if(platform==='macos')await p.getByRole('button',{name:'Toggle full screen',exact:true}).click();
   else {await p.getByRole('button',{name:'Maximize window',exact:true}).click();await p.getByRole('button',{name:'Restore window',exact:true}).click();}
   assert(await p.evaluate(()=>nativeCalls.some(c=>c.command==='start_desktop')));
+  const dragResult=await p.evaluate(()=>{
+   const panel=document.querySelector('#computer-panel');panel.classList.add('expanded');panel.hidden=false;
+   const region=panel.querySelector('.computer-window-drag'),before=nativeCalls.length;
+   region.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,detail:1}));
+   const dragged=nativeCalls.slice(before).some(c=>c.command==='window_action'&&c.args.action==='drag');
+   const controlsBefore=nativeCalls.length;
+   panel.querySelector('button').dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,detail:1}));
+   const controlDragged=nativeCalls.slice(controlsBefore).some(c=>c.command==='window_action'&&c.args.action==='drag');
+   const width=region.getBoundingClientRect().width;panel.hidden=true;panel.classList.remove('expanded');
+   return {dragged,controlDragged,width};
+  });
+  assert(dragResult.dragged&&!dragResult.controlDragged&&dragResult.width>=48,JSON.stringify(dragResult));
+
   await p.locator('.screenshot-frame').hover();
   const downloaded=p.waitForEvent('download');await screenshotControl.click();
   const download=await downloaded,downloadPath=path.join(artifacts,`${engine}-${platform}-screenshot.png`);await download.saveAs(downloadPath);assert.deepEqual(fs.readFileSync(downloadPath),png);

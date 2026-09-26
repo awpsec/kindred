@@ -7101,11 +7101,14 @@ function initDesktopChrome() {
   bar.append(title,controls);document.body.prepend(bar);
   const chatDrag=node('div','chat-window-drag');chatDrag.setAttribute('aria-hidden','true');
   $('bot-details').after(chatDrag);
+  const computerDrag=node('div','computer-window-drag');computerDrag.setAttribute('aria-hidden','true');
+  $('computer-panel').querySelector('.panel-header').firstElementChild.after(computerDrag);
   // Delegate so headers mounted after startup (such as Artifacts) also work.
   const dragSelector=mac||linux?'.desktop-titlebar,.sidebar-top,.conversation-header,.artifact-workbench-header,.artifact-library-brand-row':'.desktop-titlebar,.conversation-header,.artifact-workbench-header,.artifact-library-brand-row';
+  const computerDragSelector='#computer-panel.expanded > .panel-header';
   const draggable=event=>{
     if(event.target.closest?.('button,a,input,textarea,select,[contenteditable],[role="button"],[role="link"]'))return false;
-    if(event.target.closest?.(dragSelector))return true;
+    if(event.target.closest?.(dragSelector+','+computerDragSelector))return true;
     // Include the sidebar's top padding, without making the library list draggable.
     const sidebar=event.target.closest?.('.artifact-studio-library');
     return event.target===sidebar&&event.clientY<sidebar.querySelector('.artifact-library-brand-row').getBoundingClientRect().bottom;

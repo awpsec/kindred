@@ -4981,3 +4981,7 @@ html[data-starting] #connect{visibility:hidden}
   font-size: calc(13px * var(--text-scale, 1));
   line-height: 1.5;
 }
+
+.computer-window-drag{display:none;}
+.native-desktop .computer-panel.expanded .computer-window-drag{display:block;align-self:stretch;flex:1 0 48px;user-select:none;}
+.native-desktop .computer-panel.expanded>.panel-header{user-select:none;}
