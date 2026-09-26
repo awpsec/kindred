@@ -3075,7 +3075,8 @@ async function settingsBotComputer() {
   img.id = "computer-settings-preview-image";
   img.dataset.computerPreview = screenBotId();
   img.alt = (state.bots.find(b=>b.id===screenBotId())?.name||'Bot')+'’s screen';
-  preview.append(img, node("span", "preview-open", "Open"));
+  const openLabel=node("span", "preview-open");openLabel.append(icon("expand"),node("span","","Open"));
+  preview.append(img, openLabel);
   preparePreview(img);
   const overview = node("div", "computer-overview");
   overview.append(preview);
@@ -3367,7 +3368,7 @@ async function connectDesktop() {
     $("desktop").prepend(host);
     const rfb = new RFB(host, url.href);
     const previewOpen=button('',()=>setComputerExpanded(true),'desktop-preview-open');
-    previewOpen.setAttribute('aria-label','Open computer screen');previewOpen.append(node('span','','Open'));previewOpen.hidden=true;host.append(previewOpen);
+    previewOpen.setAttribute('aria-label','Open computer screen');const openLabel=node('span');openLabel.append(icon('expand'),node('span','','Open'));previewOpen.append(openLabel);previewOpen.hidden=true;host.append(previewOpen);
     let failed=false;
     const fail=message=>{if(failed||generation!==state.desktopGeneration)return;failed=true;rfb.disconnect();retryDesktop(generation,message);};
     state.rfb = rfb;
