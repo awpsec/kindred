@@ -8,8 +8,10 @@ let pid = Int32(CommandLine.arguments[1])!
 let folder = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+let requestedTitle = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : nil
 var proof: [[String: Any]] = []
 for window in windows {
+    if let requestedTitle, (window[kCGWindowName as String] as? String) != requestedTitle { continue }
     guard (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid,
           let id = window[kCGWindowNumber as String] as? UInt32,
           let bounds = window[kCGWindowBounds as String] as? [String: Any],

@@ -1,4 +1,4 @@
-"""Reuse unchanged Windows/Linux packages after a macOS-only notification fix.
+"""Reuse unchanged Windows/Linux packages after a macOS-only window or notification fix.
 
 Verifies the complete Git tree difference, including identical bundled resources.
 Original package manifests and build commits remain in the release provenance.
@@ -17,6 +17,15 @@ def source_check(original, source):
     changed = git('diff', '--name-only', original, source).decode().splitlines()
     for name in changed:
         if name.startswith('scripts/release/') or name.startswith('tools/frontend/test-') or name == 'tools/frontend/fixtures/desktop.cjs':
+            continue
+        if name == 'desktop/src/updater.rs':
+            before, after = [git('show', commit + ':' + name).decode() for commit in [original, source]]
+            start = after.index('// Cocoa must create and present the updater')
+            end_marker = '#[cfg(not(target_os = "macos"))]\n'
+            end = after.index(end_marker, start) + len(end_marker)
+            block = after[start:end]
+            if '#[cfg(target_os = "macos")]\npub fn show' not in block or after[:start] + after[end:] != before:
+                raise ValueError('Non-macOS updater code changed')
             continue
         if name != 'desktop/src/notch.rs':
             raise ValueError('Unverified application change prevents package reuse: ' + name)

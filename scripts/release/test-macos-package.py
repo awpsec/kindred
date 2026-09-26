@@ -55,7 +55,7 @@ def capture(child,name,required_words,render_wait=0,window_title=None):
  deadline=time.monotonic()+render_wait
  while True:
   assert child.poll() is None,'Native app exited'
-  command([out/'window-proof',child.pid,out/name],name+'.log')
+  command([out/'window-proof',child.pid,out/name]+([window_title] if window_title else []),name+'.log')
   rows=json.loads((out/name/'windows.json').read_text())
   text=' '.join(s for row in rows if window_title is None or row['title']==window_title for s in row['text']).lower()
   rendered=all(word.lower() in text for word in required_words)
@@ -168,7 +168,7 @@ try:
     request=urllib.request.Request(url+'/fixture/phase',data=b'{"phase":"notch-preview"}',headers={'Content-Type':'application/json'},method='POST')
     with urllib.request.urlopen(request) as response:response.read()
     wait_report(fixture,'notch-preview',child);time.sleep(.25)
-    windows=capture(child,'notch-preview',['sent you a message'])
+    windows=capture(child,'notch-preview',['sent you a message'],render_wait=1.5,window_title='Kindred notification')
     preview_banner=next(w for w in windows if w['title']=='Kindred notification')
     proof['native_notch_preview_visible_while_foreground']=True
     focus=json.loads(command([out/'app-focus','background',child.pid],'notch-background-focus.log').stdout)
@@ -185,7 +185,7 @@ try:
     if focus['canPostEvents']:
      command([out/'app-focus','move',child.pid,bounds['X']+bounds['Width']/2,bounds['Y']+bounds['Height']-24],'notch-hover-move.log')
      hover_started=time.monotonic()
-    windows=capture(child,'notch',['sent you a message'])
+    windows=capture(child,'notch',['sent you a message'],render_wait=1.5,window_title='Kindred notification')
     banner=next(w for w in windows if w['title']=='Kindred notification' and w['bounds']['Width']<=500 and w['bounds']['Height']<=100)
     proof['native_notch_notification_rendered']=True
     focus=json.loads(command([out/'app-focus','status',child.pid],'notch-background-preserved.log').stdout)
@@ -194,7 +194,7 @@ try:
     if focus['canPostEvents']:
      assert hover_started is not None
      time.sleep(max(0,5-(time.monotonic()-hover_started)))
-     hovered=capture(child,'notch-hover',['sent you a message'])
+     hovered=capture(child,'notch-hover',['sent you a message'],window_title='Kindred notification')
      assert any(w['title']=='Kindred notification' for w in hovered),'Hover must keep the native notch notification visible beyond its watchdog deadline'
      proof['native_notch_hover_extends_deadline']=True
      proof['native_notch_hover_seconds']=time.monotonic()-hover_started
