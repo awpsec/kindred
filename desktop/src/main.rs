@@ -403,6 +403,24 @@ fn main() {
             // allowing the web header to extend behind the transparent titlebar.
             #[cfg(target_os = "macos")]
             {
+                use objc2::{MainThreadMarker, msg_send, sel};
+                use objc2_app_kit::NSWritingToolsBehavior;
+                use objc2_foundation::NSObjectProtocol;
+                use objc2_web_kit::WKWebViewConfiguration;
+
+                // Configure before WKWebView creation: changing its copied
+                // configuration afterward has no effect. This opts Kindred's
+                // main editor out of Writing Tools (including Siri's overlay),
+                // without changing the user's system Siri preferences.
+                let mtm = MainThreadMarker::new().ok_or("Webview setup requires the main thread")?;
+                let configuration = unsafe { WKWebViewConfiguration::new(mtm) };
+                if configuration.respondsToSelector(sel!(setWritingToolsBehavior:)) {
+                    // Public macOS 15+ API, not yet exposed by our WebKit bindings.
+                    let _: () = unsafe {
+                        msg_send![&*configuration, setWritingToolsBehavior: NSWritingToolsBehavior::None]
+                    };
+                    window = window.with_webview_configuration(configuration);
+                }
                 window = window
                     .title_bar_style(tauri::TitleBarStyle::Overlay)
                     .hidden_title(true)
