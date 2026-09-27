@@ -10,14 +10,15 @@ const assert=require('node:assert/strict');
   const chat={id:'team',name:'Team',members:bots.map(b=>b.id),pinned:true,archived:false};
   const messages=Array.from({length:40},(_,i)=>({seq:i+1,sender:i%2?'piper':'user',kind:'message',text:`Message ${i+1}. `+'A useful conversation with enough history to scroll. '.repeat(4),created:now-1000+i}));
   const runs=bots.map((b,i)=>({id:'work-'+i,bot_id:b.id,chat_id:'team',status:'running',prompt:'Review the project',output:'',error:'',created:now-30,depth:0}));
+  let sent=false;
   await p.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
   await p.route(origin+'/api/**',async route=>{
    const req=route.request(),name=new URL(req.url()).pathname.slice(4),send=json=>route.fulfill({json});
    if(name==='/bots')return send(bots);if(name==='/chats')return send([...bots.map(b=>({id:'dm-'+b.id,name:b.name,members:[b.id],archived:false})),chat]);if(name==='/runs')return send(runs);if(name==='/activity')return send({});
    if(name.startsWith('/runs/'))return send({run:runs.find(r=>r.id===name.slice(6)),events:[],attachments:[]});
-   if(name==='/chats/team/messages'){messages.push({seq:messages.length+1,sender:'user',kind:'message',text:req.postDataJSON().prompt,created:now});return send({runs:[]});}
+   if(name==='/chats/team/messages'){sent=true;messages.push({seq:messages.length+1,sender:'user',kind:'message',text:req.postDataJSON().prompt,created:now});return send({runs:[]});}
    if(name.startsWith('/chats/dm-'))return send({chat:{id:name.slice(7),members:[name.slice(10)]},messages:[],page:{has_before:false,has_after:false}});
-   if(name==='/chats/team')return send({chat,messages,page:{has_before:false,has_after:false},pending_waits:[{run_id:'helper-task',parent_run_id:'work-0',bot_id:'helper',requester_bot_id:'piper',chat_id:'team'}]});
+   if(name==='/chats/team'){const snapshot=structuredClone(messages);if(sent)await new Promise(r=>setTimeout(r,350));return send({chat,messages:snapshot,page:{has_before:false,has_after:false},pending_waits:[{run_id:'helper-task',parent_run_id:'work-0',bot_id:'helper',requester_bot_id:'piper',chat_id:'team'}]});}
    return route.continue();
   });
   await p.goto(origin);await p.locator('[data-sidebar-id="team"]').first().click();await p.locator('.collaboration-wait-row').waitFor();await p.locator('.group-activity').waitFor();await p.waitForTimeout(400);
@@ -38,7 +39,11 @@ const assert=require('node:assert/strict');
   smooth(await sample(draft),-1);smooth(await sample(''),1);
   // Both working bots and the collaboration wait stay above a tall draft.
   await sample(draft);assert(await p.locator('.group-activity').evaluate(n=>n.getBoundingClientRect().bottom<document.querySelector('#composer-area').getBoundingClientRect().top));
+  await p.evaluate(()=>{window.sendFrames=[];window.trackSend=true;const record=()=>{window.sendFrames.push({empty:!document.querySelector('#prompt').value,inserted:!!document.querySelector('[data-message="41"]')});if(window.trackSend)requestAnimationFrame(record);};requestAnimationFrame(record);});
   await p.locator('#send').click();await p.waitForFunction(()=>document.querySelector('#prompt').value==='');await p.waitForTimeout(350);
+  const sendFrames=await p.evaluate(()=>{window.trackSend=false;return window.sendFrames;});
+  assert(sendFrames.some(f=>!f.inserted),'Exercise delayed history loading');
+  assert(!sendFrames.some(f=>f.empty&&!f.inserted),'Never collapse before the accepted message is rendered');
   assert(await p.locator('#content').evaluate(n=>n.scrollHeight-n.scrollTop-n.clientHeight<3));assert.equal(messages.at(-1).text,draft);
   // Reading older messages must not be displaced by editing a draft.
   await p.locator('#content').evaluate(n=>{n.dispatchEvent(new WheelEvent('wheel',{deltaY:-400}));n.scrollTop-=600;});await p.waitForTimeout(100);

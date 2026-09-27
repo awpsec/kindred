@@ -3698,6 +3698,16 @@ $("composer").onsubmit = (e) => {
       if(state.pendingSends.get(selectedChatId)===send)state.pendingSends.delete(selectedChatId);
     }
     else await api("/runs", "POST", { bot_id: state.bot.id, prompt });
+    // Keep the draft's space until the accepted message is in the conversation.
+    // Otherwise a slow history fetch exposes the previous message during collapse.
+    if(chat && composerChatId()===selectedChatId){
+      const entry=conversationHistory(chat.id);
+      try{
+        // A poll started before POST may not contain the newly accepted message.
+        if(entry.pending)await entry.pending;
+        await renderSharedChat(chat,true);
+      }catch{/* Sending succeeded; the normal refresh below retries history. */}
+    }
     const pending = pendingFiles.get(selectedChatId) || [];
     for (const file of files) {const index=pending.indexOf(file);if(index>=0)pending.splice(index,1);releasePendingPreview(file);}
     renderPendingFiles();
