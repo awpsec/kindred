@@ -3298,6 +3298,7 @@ html[data-motion='off'] .color-option {transition:none;scale:1;}
 .avatar-customize::after,.avatar-edit::after {content:"✎";position:absolute;inset:0;display:grid;place-items:center;color:var(--fg);font-size:calc(25px * var(--text-scale, 1));opacity:0;pointer-events:none;}
 .avatar-customize:is(:hover,:focus-visible)::after,.avatar-edit:is(:hover,:focus-visible)::after {opacity:1;}
 .avatar-dialog {width:330px;padding:20px;}
+.avatar-dialog .dialog-header {justify-content:flex-end;}
 .avatar-dialog .avatar-preview {height:122px;}
 .avatar-dialog .shape-options {margin-bottom:15px;gap:2px;}
 .avatar-dialog .color-options {gap:12px;}
