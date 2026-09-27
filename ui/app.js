@@ -1200,7 +1200,7 @@ function renderUpdateNotice() {
   }
   const manual=desktop&&!canInstallClientUpdate();
   const label=manual?'Download update':'Update';
-  if(update.dataset.label!==label){update.dataset.label=label;update.replaceChildren(icon('download'),document.createTextNode(label));}
+  if(update.dataset.label!==label){update.dataset.label=label;update.replaceChildren(icon('download'),node('span','',label));}
   update.setAttribute('aria-label',desktop?(manual?'Download Kindred client update':'Update Kindred client'):'Update Kindred server');
   update.title=desktop?'Client '+state.updateRelease.version+' is available'+(canInstallClientUpdate()?'':' · Download and install once to enable in-app updates'):'Check for Kindred updates';
 }

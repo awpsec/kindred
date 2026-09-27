@@ -1522,7 +1522,7 @@ input[type="checkbox"]:checked::after {
 .identity-row .identity-button { flex:1; min-width:0; }
 .update-slot { position:relative; width:32px; height:32px; flex:none; }
 .client-update { position:absolute; right:0; top:0; height:30px; width:30px; display:flex; align-items:center; gap:6px; padding:0 7px; border-radius:16px; overflow:hidden; background:var(--button); color:var(--button-fg); transition:width .2s ease,background .15s; white-space:nowrap; }
-.client-update .icon { width:16px; height:16px; }
+.client-update .icon { width:16px; height:16px; flex:none; }
 .client-update span { opacity:0; transition:opacity .15s; font-size:calc(12px * var(--text-scale, 1)); }
 .client-update:hover, .client-update:focus-visible { width:84px; background:var(--button) !important; }
 .client-update:hover span, .client-update:focus-visible span { opacity:1; }
