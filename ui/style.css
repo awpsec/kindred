@@ -4521,11 +4521,11 @@ details.decision-receipt-disclosure[open]>.decision-receipt-summary,
 .chart-tooltip-row>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
 .chart-tooltip-row>strong{flex-shrink:0}
 
-/* Float the composer over the history instead of reserving an opaque footer. */
+/* Preserve the floating composer while reserving its actual animated height. */
 .conversation{position:relative}
 .conversation>.composer-area{position:absolute;bottom:0;left:0;right:0;margin-inline:auto;z-index:3;background:transparent;pointer-events:none;isolation:isolate}
 .composer-area> :not([hidden]){pointer-events:auto}
-.conversation .messages{padding-bottom:72px;scroll-padding-bottom:calc(var(--composer-clearance,0px) + 12px)}
+.conversation .messages{padding-bottom:calc(var(--composer-clearance,62px) + 10px);scroll-padding-bottom:calc(var(--composer-clearance,0px) + 12px)}
 
 /* Document text uses a centered reading page, not chat-bubble sizing. */
 .document-body>.document-prose{box-sizing:border-box;flex:none;align-self:center;width:100%;max-width:820px;min-height:100%;max-height:none;margin:0 auto;padding:36px 48px;border:0;border-radius:0;background:var(--word-paper,var(--surface));color:var(--fg);overflow:visible;overflow-wrap:anywhere}

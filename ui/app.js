@@ -3735,10 +3735,36 @@ function updateComposerLayout(){
 const composerLayout=new ResizeObserver(updateComposerLayout);
 new MutationObserver(updateComposerLayout).observe($('composer'),{attributes:true,attributeFilter:['class']});
 composerLayout.observe($('composer'));document.fonts.ready.then(resizeComposer);
-// Track the overlay for explicit scroll-into-view operations only. History padding
-// stays fixed so growing drafts do not displace messages or change bottom-follow.
-const composerClearance=new ResizeObserver(()=>{const area=$('composer-area');area.closest('.conversation').style.setProperty('--composer-clearance',area.hidden?'0px':area.getBoundingClientRect().height+'px');});
+// The composer remains a floating surface. Animate its reserved space instead
+// of message transforms, so working avatars and collaboration waits move together.
+const composerSpace={height:null,target:0,frame:0};
+function setComposerClearance(height){
+  composerSpace.height=height;
+  $('composer-area').closest('.conversation').style.setProperty('--composer-clearance',height+'px');
+  if(chatScroll.follow&&!chatOpening&&!chatScroll.rendering)restoreChatPosition();
+}
+function settleComposerClearance(){
+  cancelAnimationFrame(composerSpace.frame);composerSpace.frame=0;
+  setComposerClearance(composerSpace.target);
+}
+const composerClearance=new ResizeObserver(()=>{
+  const area=$('composer-area'),chat=composerChatId(),to=area.hidden?0:area.getBoundingClientRect().height;
+  const from=composerSpace.height??to,sameChat=chatScroll.view===chat;
+  composerSpace.target=to;
+  cancelAnimationFrame(composerSpace.frame);composerSpace.frame=0;
+  // Reply morphs already change height on each frame; don't animate them twice.
+  if(!sameChat||Math.abs(to-from)<1||!chatScroll.follow||chatOpening||$('composer').classList.contains('is-morphing')||!motionAllowed())return setComposerClearance(to);
+  const start=performance.now(),duration=180;
+  const step=now=>{
+    if(!motionAllowed()||composerChatId()!==chat)return settleComposerClearance();
+    const t=Math.min(1,(now-start)/duration);
+    setComposerClearance(from+(to-from)*(1-(1-t)**3));
+    composerSpace.frame=t<1?requestAnimationFrame(step):0;
+  };
+  composerSpace.frame=requestAnimationFrame(step);
+});
 composerClearance.observe($('composer-area'));
+document.addEventListener('visibilitychange',()=>{if(document.hidden)settleComposerClearance();});
 function isDraftingFor(id) {
   const selected=state.chat ? state.chat.members.includes(id) : state.bot?.id===id;
   return selected && document.activeElement===$("prompt") && Date.now()-(state.lastTyped||0)<6500;
