@@ -2282,7 +2282,8 @@ input[type="checkbox"]:checked::after {
   height: 4px;
   display: block;
   margin-top: 8px;
-  accent-color: var(--progress-accent);
+  accent-color: var(--fg);
+  color: var(--fg);
   border: none;
   border-radius: 4px;
 }
@@ -2291,9 +2292,11 @@ input[type="checkbox"]:checked::after {
   border-radius: 4px;
 }
 .resource-row progress::-webkit-progress-value {
-  background: var(--progress-accent);
+  background: var(--fg);
   border-radius: 4px;
 }
+/* Resource utilization is a neutral meter, not task completion progress. */
+.resource-row progress::-moz-progress-bar {background:var(--fg);border-radius:4px;}
 .new-menu {
   position: absolute;
   top: 49px;
