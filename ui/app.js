@@ -3731,6 +3731,8 @@ $("composer").onsubmit = (e) => {
     if(composerChatId()===selectedChatId && $("prompt").value===submittedDraft){
       $("prompt").value = "";
       $("prompt").style.height = "auto";
+      resizeComposer();
+      updateMentions();
     }
     persistConversation();
     await refresh(true);
@@ -3793,8 +3795,16 @@ function isDraftingFor(id) {
   const selected=state.chat ? state.chat.members.includes(id) : state.bot?.id===id;
   return selected && document.activeElement===$("prompt") && Date.now()-(state.lastTyped||0)<6500;
 }
-function wakeCuriousBot() { state.lastTyped=Date.now();updateReactions(); }
-$("prompt").addEventListener("blur",()=>updateReactions());
+let typingReactionChat=null;
+function wakeCuriousBot() {
+  const now=Date.now(),chat=composerChatId();
+  const alreadyTyping=typingReactionChat===chat&&now-(state.lastTyped||0)<6500;
+  state.lastTyped=now;typingReactionChat=document.activeElement===$("prompt")?chat:null;
+  // The first input changes expression. Subsequent keys only extend the typing
+  // deadline; the normal activity tick maintains timers and animation phase.
+  if(!alreadyTyping)updateReactions();
+}
+$("prompt").addEventListener("blur",()=>{typingReactionChat=null;updateReactions();});
 $("prompt").oninput = () => {
   updateMentions();
   resizeComposer();

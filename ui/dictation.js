@@ -19,8 +19,12 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   const status=document.createElement('span');status.className='dictation-status';status.setAttribute('role','status');status.hidden=true;mic.before(status);
   const cancelButton=document.createElement('button');cancelButton.type='button';cancelButton.className='icon-button dictation-cancel';cancelButton.title='Cancel dictation';cancelButton.setAttribute('aria-label','Cancel dictation');cancelButton.append(icon('close'));cancelButton.hidden=true;mic.before(cancelButton);
   const save=()=>localStorage.setItem(key,JSON.stringify(preferences));
+  let renderedComposerState;
   function render(){
     const active=phase!=='idle',text=!!editor.value?.trim()||hasFiles(),primary=preferences.enabled&&!text;
+    const renderKey=JSON.stringify([preferences.enabled,text,phase,!!inflight]);
+    if(renderKey===renderedComposerState){if(settings?.isConnected)renderSettingsStatus();return;}
+    renderedComposerState=renderKey;
     composer.classList.toggle('dictation-enabled',preferences.enabled);composer.classList.toggle('dictation-empty',primary);composer.classList.toggle('is-dictating',active);
     mic.hidden=!preferences.enabled;send.hidden=primary||active;mic.classList.toggle('is-primary',primary);mic.classList.toggle('is-recording',phase==='recording');
     mic.disabled=phase==='starting'||phase==='finishing';send.disabled=active;
