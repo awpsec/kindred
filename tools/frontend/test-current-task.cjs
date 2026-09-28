@@ -11,8 +11,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  await p.route(origin+'/api/chats/dm-piper/messages',r=>{if(r.request().method()!=='POST')return r.continue();assert.equal(r.request().postDataJSON().prompt,'/task Review notes');task={label:'Review notes',revision:5};return r.fulfill({json:{runs:[]}});});
  await p.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);await p.goto(origin);await p.locator('#prompt').waitFor();
  const badge=p.locator('#header-current-task');await badge.getByText('ACME Corp External Pen',{exact:true}).waitFor();
- assert.equal(await p.locator('.bot-current-task').textContent(),'ACME Corp External Pen');
- assert.equal(await p.locator('#bots .bot-label').count(),0);
+ assert.equal(await p.locator('.bot-current-task').count(),0);
+ assert.equal(await p.locator('#bots .bot-label').textContent(),'Tester');
  const remove=badge.getByRole('button',{name:'Remove task label: ACME Corp External Pen'});await badge.hover();await p.waitForTimeout(160);assert.equal(await remove.evaluate(n=>getComputedStyle(n).opacity),'1');
  for(const theme of ['dark','light']){await p.evaluate(t=>{document.documentElement.dataset.theme=t;document.body.dataset.theme=t;},theme);await p.screenshot({path:path.join(out,engine+'-'+theme+'.png'),clip:{x:0,y:0,width:1200,height:220}});}
  await p.setViewportSize({width:390,height:844});assert(await badge.isHidden());

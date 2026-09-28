@@ -1037,8 +1037,7 @@ function renderSidebar() {
     const info = node("div", "bot-info"),
       title = node("div", "bot-title-row");
     title.append(node("strong", "", b.name));
-    if(profile(b).current_task?.label){const task=node('span','bot-current-task',profile(b).current_task.label);task.title=profile(b).current_task.label;title.append(task);}
-    else if (profile(b).label) title.append(node("span", "bot-label", profile(b).label));
+    if (profile(b).label) title.append(node("span", "bot-label", profile(b).label));
     if (lastMessage || latest) title.append(node("span", "bot-time", clock(lastMessage?.created || latest.created)));
     const previewLine=node('div','bot-preview');previewLine.dataset.sidebarActivity=b.id;previewLine.dataset.idlePreview=preview;
     updateSidebarActivity(previewLine);info.append(title);

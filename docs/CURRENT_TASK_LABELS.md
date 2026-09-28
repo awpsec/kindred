@@ -1,6 +1,6 @@
 # Current task labels
 
-A bot can have one short label describing its current assignment. It is shown beside its name in the chat header and in place of its role badge in the sidebar. Hover or focus the header label to remove it; on smaller screens, use **Bot actions → Remove task label**.
+A bot can have one short label describing its current assignment. It is shown as a subtle chip beside its name in the chat header. Sidebar role badges stay unchanged; the task remains available in hover text and search. Hover or focus the header label to remove it; on smaller screens, use **Bot actions → Remove task label**.
 
 - `/task ACME External Pen` sets the label in a bot’s DM.
 - `/task-remove` clears it.
