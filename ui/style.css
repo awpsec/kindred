@@ -322,6 +322,8 @@ kbd {
 .pinned-bot.active { background: var(--selected); }
 .pinned-bot {overflow:hidden;}
 .pinned-entry,.nav-entry { position:relative; }
+/* Keep row margins from collapsing through their wrappers into adjacent cards. */
+.nav-entry {display:flow-root;}
 .nav-pin { position:absolute; right:3px; top:5px; width:26px; height:26px; padding:5px; border-radius:50%; background:var(--sidebar); opacity:0; pointer-events:none; }
 .nav-entry:hover .nav-pin,.nav-entry:focus-within .nav-pin,.pinned-entry:hover .nav-pin,.pinned-entry:focus-within .nav-pin { opacity:1; pointer-events:auto; }
 .nav-entry:hover .bot-time,.nav-entry:focus-within .bot-time { opacity:0; }
@@ -360,7 +362,7 @@ kbd {
   gap: 10px;
   padding: 10px 9px;
   border-radius: 9px;
-  margin: 2px 0;
+  margin: 3px 0;
   min-height: 65px;
 }
 .bot-link.active {
