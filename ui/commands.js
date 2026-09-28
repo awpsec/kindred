@@ -80,7 +80,7 @@ export function createCommandsUI({editor,composer,api,connected,unavailable=()=>
   }
   function updateHint(){
     markCommands();const p=parsed();editor.removeAttribute('data-command-params');editor.removeAttribute('data-command-active');
-    if(!connected()||unavailable()||!p?.command||!['run','task'].includes(p.command.action))return;
+    if(!connected()||unavailable()||!p?.command||p.command.action!=='run')return;
     const {parts,incomplete}=tokenizeParameters(p.args),params=p.command.parameters||[];
     const filled=incomplete?Math.max(0,parts.length-1):parts.length;
     const remaining=params.slice(filled).map(p=>(p.required?'<':'[')+p.name+(p.required?'>':']'));
