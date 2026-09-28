@@ -5049,7 +5049,7 @@ html.pane-resizing .shell :is(.sidebar,.details-panel,.computer-panel,.conversat
  .sidebar-rail:not(.sidebar-peek)>.sidebar :is(.bot-link,.pinned-bot)>.character{width:var(--rail-avatar)!important;height:var(--rail-avatar)!important;pointer-events:none}
  .sidebar-rail:not(.sidebar-peek)>.sidebar :is(.bot-link,.pinned-bot)>.participant-stack{--participant-cell:25px;width:var(--rail-avatar);height:var(--rail-avatar);pointer-events:none}
  .sidebar-rail:not(.sidebar-peek)>.sidebar .participant-stack>:is(.character,.person-avatar){width:var(--participant-cell)!important;height:var(--participant-cell)!important}
- .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-chat-section{margin:8px 12px 0;border-top:1px solid var(--line)}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-chat-section{margin:8px 12px 0;padding-top:6px;border-top:1px solid var(--line)}
  .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-chat-section>summary{position:relative;height:30px;padding:0;font-size:0;color:var(--muted);border-radius:8px}
  .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-chat-section>summary::before{left:calc(50% - 7px);top:8px}
  .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-chat-section>summary:hover{color:var(--fg);background:var(--hover)}
