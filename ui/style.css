@@ -5104,3 +5104,13 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 @media(prefers-reduced-motion:reduce){.progress-choice{transition:none}}
 :root[data-motion=off] .progress-choice{transition:none}
 @media(max-width:600px){.progress-choice-tiles{gap:8px}.progress-choice-title{top:6px;font-size:10px;left:6px}.progress-choice-preview{inset:24px 6px 6px;gap:3px}.progress-sketch-user{height:6px}.progress-sketch-thread{gap:2px}.progress-sketch-bubble{height:8px;padding:0}.progress-sketch-bubble.progress-sketch-summary{height:15px}.progress-sketch-bubble>i{display:none}.progress-sketch-working{height:10px;gap:4px}.progress-sketch-bot{width:10px;height:10px}.progress-sketch-bot::before,.progress-sketch-bot::after{top:3px;width:1px;height:3px}.progress-sketch-bot::before{left:3px}.progress-sketch-bot::after{left:6px}}
+
+/* Unread activity remains visible in full rows, pinned tiles and the avatar rail. */
+.sidebar :is(.bot-link,.pinned-bot).has-unread {
+  background:color-mix(in srgb,var(--unread-color) 12%,var(--sidebar));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--unread-color) 20%,transparent);
+}
+.sidebar :is(.bot-link,.pinned-bot).has-unread:is(:hover,.active) {
+  background:color-mix(in srgb,var(--unread-color) 17%,var(--selected));
+}
+.sidebar .has-unread .bot-title-row strong {color:var(--fg)}

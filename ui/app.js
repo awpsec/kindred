@@ -1041,12 +1041,12 @@ function renderSidebar() {
     const previewLine=node('div','bot-preview');previewLine.dataset.sidebarActivity=b.id;previewLine.dataset.idlePreview=preview;
     updateSidebarActivity(previewLine);info.append(title,previewLine);
     row.append(info);
-    addUnreadDot(row,`dm-${b.id}`);
+    addUnreadDot(row,`dm-${b.id}`,b);
     if (profile(b).pinned) {
       const p = button("", () => chooseBot(b), "pinned-bot" + (!state.chat && b.id === state.bot?.id ? " active" : ""));
       p.setAttribute("aria-label", b.name);
       p.append(buddy(b, 58, busy, `pin-${b.id}`), node("span", "", b.name));
-      addUnreadDot(p,`dm-${b.id}`);
+      addUnreadDot(p,`dm-${b.id}`,b);
       attachPinPreview(p, b.name, lastMessage, preview);
       $("pinned-bots").append(sidebarEntry(p, b, "bots", true));
     } else $("bots").append(sidebarEntry(row, b, "bots", false));
@@ -4619,8 +4619,11 @@ function acceptAttention(attention){
     value.unread=value.cursor>value.read_cursor;
   }
 }
-function addUnreadDot(control,id){
+function addUnreadDot(control,id,bot){
   if(!state.attention.chats[id]?.unread)return;
+  const color=bot?profile(bot).color:null;
+  control.classList.add('has-unread');
+  control.style.setProperty('--unread-color',color==='#ffffff'?'var(--fg)':/^#[0-9a-f]{6}$/i.test(color||'')?color:'var(--muted)');
   const dot=node('span','unread-dot');dot.setAttribute('role','img');dot.setAttribute('aria-label','Unread activity');dot.title='Unread activity';if(control.classList.contains('pinned-bot'))control.prepend(dot);else control.append(dot);
 }
 function scheduleReadReceipt(){clearTimeout(readReceiptTimer);readReceiptTimer=setTimeout(markVisibleConversationRead,300);}
@@ -7498,32 +7501,44 @@ function desktopNotificationControl() {
   root.append(settingRow('Desktop notifications',test),status);void describe();return root;
 }
 let browserNotificationCursor=null,browserNotificationBusy=false;
-let browserSoundContext,browserSoundBuffer,browserSoundLast=-Infinity;
+let browserSoundContext,browserSoundBuffer,browserSoundLast=-Infinity,browserSoundCursor=0,browserSoundToken=null;
 function unlockBrowserNotificationSound(){
-  if(window.__KINDRED_DESKTOP||!window.AudioContext)return;
-  try{browserSoundContext ||= new AudioContext();if(browserSoundContext.state==='suspended')void browserSoundContext.resume().catch(()=>{});}catch{}
+  if(window.__KINDRED_DESKTOP)return;
+  const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;
+  try{if(!browserSoundContext||browserSoundContext.state==='closed'){browserSoundContext=new Audio();browserSoundBuffer=null;}if(browserSoundContext.state!=='running')void browserSoundContext.resume().catch(()=>{});}catch{}
 }
 window.addEventListener('pointerdown',unlockBrowserNotificationSound,{passive:true});
 window.addEventListener('keydown',unlockBrowserNotificationSound,{passive:true});
-async function playBrowserNotificationSound(current){
-  if(window.__KINDRED_DESKTOP||browserSoundContext?.state!=='running'||!current())return;
+window.addEventListener('focus',unlockBrowserNotificationSound);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)unlockBrowserNotificationSound();});
+async function playBrowserNotificationSound(current,id){
+  if(browserSoundToken!==state.token){browserSoundToken=state.token;browserSoundCursor=0;}
+  if(id<=browserSoundCursor)return;
+  if(window.__KINDRED_DESKTOP||!browserSoundContext||!current())return;
   try{
+    if(browserSoundContext.state!=='running')await browserSoundContext.resume();
+    if(browserSoundContext.state!=='running'||!current())return;
     browserSoundBuffer ||= fetch('/audio/kindred-pop.wav').then(async r=>{if(!r.ok)throw Error('Sound unavailable');return browserSoundContext.decodeAudioData(await r.arrayBuffer());}).catch(e=>{browserSoundBuffer=null;throw e;});
     const buffer=await browserSoundBuffer,now=performance.now();
-    if(!current()||now-browserSoundLast<750||browserSoundContext.state!=='running')return;
+    if(!current()||id<=browserSoundCursor||browserSoundContext.state!=='running')return;
+    browserSoundCursor=id;
+    if(now-browserSoundLast<750)return;
     browserSoundLast=now;const source=browserSoundContext.createBufferSource();source.buffer=buffer;source.connect(browserSoundContext.destination);source.onended=()=>source.disconnect();source.start();
   }catch{/* Browser autoplay or sound failure must not discard the notification. */}
 }
 async function pollBrowserNotifications() {
-  if(window.__KINDRED_DESKTOP||!state.token||browserNotificationBusy||!('Notification' in window)||Notification.permission!=='granted')return;
+  if(window.__KINDRED_DESKTOP||!state.token||browserNotificationBusy||('Notification' in window&&Notification.permission==='denied'))return;
   browserNotificationBusy=true;
   try {
     const token=state.token;
     const data=await api('/notifications'+(browserNotificationCursor===null?'':'?after='+browserNotificationCursor));
     if(token!==state.token)return;
     for(const item of data.items||[]) {
-      const eligible=()=>token===state.token&&Notification.permission==='granted'&&state.general.notifications!=='none'&&state.bots.find(b=>b.id===item.bot_id)?.profile?.notifications!==false;
+      const eligible=()=>token===state.token&&(!('Notification' in window)||Notification.permission!=='denied')&&state.general.notifications!=='none'&&state.bots.find(b=>b.id===item.bot_id)?.profile?.notifications!==false;
       if(!eligible()){browserNotificationCursor=item.id;continue;}
+      if(!('Notification' in window)||Notification.permission!=='granted'){
+        void playBrowserNotificationSound(eligible,item.id);browserNotificationCursor=item.id;continue;
+      }
       let portrait;
       const portraitRequest=new AbortController(),portraitTimer=setTimeout(()=>portraitRequest.abort(),3000);
       try{
@@ -7532,9 +7547,9 @@ async function pollBrowserNotifications() {
       }catch{/* A portrait failure must not discard the message. */}finally{clearTimeout(portraitTimer);}
       if(token!==state.token){if(portrait)URL.revokeObjectURL(portrait);return;}
       if(!eligible()){if(portrait)URL.revokeObjectURL(portrait);browserNotificationCursor=item.id;continue;}
+      void playBrowserNotificationSound(eligible,item.id);
       let n;try{n=new Notification(item.title,{body:item.body,tag:'kindred-'+item.id,icon:portrait||'/favicon.svg',silent:true});}catch(error){if(portrait)URL.revokeObjectURL(portrait);throw error;}
       browserNotificationCursor=item.id;
-      void playBrowserNotificationSound(eligible);
       if(portrait){n.onclose=()=>URL.revokeObjectURL(portrait);setTimeout(()=>URL.revokeObjectURL(portrait),60000);}
       n.onclick=()=>{if(token!==state.token){n.close();return;}window.focus();n.close();void openNotificationChat(item);};
     }

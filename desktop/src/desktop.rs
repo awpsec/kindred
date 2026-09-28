@@ -113,11 +113,16 @@ pub(crate) fn show_system_notification(
         if sound.is_some() {
             notification.sound_name(crate::notification_sound::name());
         }
+        #[cfg(target_os = "linux")]
+        let daemon_sound = notify_rust::get_capabilities()
+            .map(|caps| caps.iter().any(|cap| cap == "sound")).unwrap_or(true);
         #[cfg(not(target_os = "macos"))]
         if let Some(path) = &sound {
-            notification.hint(notify_rust::Hint::SoundFile(
-                path.to_string_lossy().into_owned(),
-            ));
+            if daemon_sound {
+                notification.hint(notify_rust::Hint::SoundFile(path.to_string_lossy().into_owned()));
+            } else {
+                notification.hint(notify_rust::Hint::SuppressSound(true));
+            }
         } else {
             notification.hint(notify_rust::Hint::SuppressSound(true));
         }
@@ -131,6 +136,10 @@ pub(crate) fn show_system_notification(
             .hint(notify_rust::Hint::DesktopEntry("Kindred".into()))
             .action("default", "Open Kindred");
         let handle = notification.show().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "linux")]
+        if !daemon_sound && current_destination(app, &destination) {
+            if let Some(path) = sound { crate::notification_sound::play_linux_fallback(path); }
+        }
         #[cfg(not(target_os = "macos"))]
         {
             let app = app.clone();
