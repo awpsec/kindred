@@ -3443,7 +3443,7 @@ function updateDesktopState() {
     recovering = state.status.computer_recovering_seconds || 0,
     busy = state.allRuns.some((r) => r.bot_id === screenBotId() && active(r) && r.status !== "awaiting_user"),
     human = pendingHumanTask();
-  const controlLabel = updating ? "Updating computer…" : takeover
+  const controlLabel = state.takingControl ? "Switching control…" : updating ? "Updating computer…" : takeover
     ? "Return control"
     : state.status.takeover
       ? "Use screen"
@@ -3478,6 +3478,7 @@ function screenAction(control,label,symbol) {
   control.dataset.label=label;control.replaceChildren(icon(symbol,16),node('span','desktop-action-label',label));
 }
 async function toggleControl() {
+  const targetBotId=screenBotId();
   state.statusEpoch=(state.statusEpoch||0)+1;
   state.takingControl = true;
   updateDesktopState();
@@ -3500,13 +3501,20 @@ async function toggleControl() {
     if (running.length) {
       for (const run of running)
         await api("/runs/" + run.id + "/cancel", "POST", {});
-      await refresh();
-      notice(
-        "Task stopped. Take control when its current command has finished.",
-      );
-      return;
+      const botId=targetBotId,deadline=Date.now()+75000;
+      while(true){
+        if(screenBotId()!==botId)return;
+        const status=await api('/status?bot_id='+encodeURIComponent(botId));
+        if(screenBotId()!==botId)return;
+        state.status=status;updateDesktopState();
+        if(!status.computer_busy&&!status.computer_recovering_seconds)break;
+        if(Date.now()>=deadline)throw new Error('The computer is still finishing a stopped command. Try taking control again.');
+        await new Promise(resolve=>setTimeout(resolve,150));
+      }
     }
-    await api("/takeover", "POST", { enabled: true, reason: state.startingTeaching?'teaching':'manual' });
+    if(screenBotId()!==targetBotId)return;
+    await api("/takeover", "POST", { enabled: true, bot_id:targetBotId, reason: state.startingTeaching?'teaching':'manual' });
+    if(screenBotId()!==targetBotId)return;
     state.desktopControlRequested=true;
     await refresh();
     await connectDesktop();
