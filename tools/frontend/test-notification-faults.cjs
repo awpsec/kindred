@@ -3,7 +3,7 @@ const {server,token}=require('./fixtures/desktop.cjs');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
- const browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true,channel:'msedge'});
+ const browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true});
  try {
   async function fixture(options={}) {
    const context=await browser.newContext(),p=await context.newPage(),items=[],errors=[];let avatarRelease,assetRequests=0;
@@ -12,10 +12,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     sessionStorage.setItem('kindred-token',token);window.notes=[];window.sounds=0;window.revoked=[];window.rejectTag='';window.resolveDecode=null;
     const interval=window.setInterval;window.setInterval=(fn,ms,...args)=>String(fn).includes('pollBrowserNotifications')?0:interval(fn,ms,...args);
     const revoke=URL.revokeObjectURL;URL.revokeObjectURL=u=>{window.revoked.push(u);revoke(u);};
-    window.Notification=class {static permission='granted';constructor(title,options){if(options.tag===window.rejectTag){window.rejectTag='';throw Error('Transient notification failure');}window.notes.push(options);}close(){}};
-    window.AudioContext=class {state=options.blocked?'suspended':'running';destination={};constructor(){window.audio=this;}resume(){return this.state==='suspended'?Promise.reject(Error('Audio blocked')):Promise.resolve();}decodeAudioData(bytes){if(bytes.byteLength<1000)throw Error('Bad PCM');return options.delayedDecode?new Promise(r=>window.resolveDecode=()=>r({})):Promise.resolve({});}createBufferSource(){return {connect(){},disconnect(){},start(){window.sounds++;}};}};
+    window.Notification=class {static permission=options.permission||'granted';constructor(title,options){if(options.tag===window.rejectTag){window.rejectTag='';throw Error('Transient notification failure');}window.notes.push(options);}close(){}};
+    window.AudioContext=class {state=options.blocked?'suspended':'running';destination={};constructor(){window.audio=this;}resume(){if(options.blocked)return Promise.reject(Error('Audio blocked'));this.state='running';return Promise.resolve();}decodeAudioData(bytes){if(bytes.byteLength<1000)throw Error('Bad PCM');return options.delayedDecode?new Promise(r=>window.resolveDecode=()=>r({})):Promise.resolve({});}createBufferSource(){return {connect(){},disconnect(){},start(){window.sounds++;}};}};
    },{token,options});
-   await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nwindow.__notifyQA={poll:pollBrowserNotifications,bot:()=>state.bots[0].id,muteBot:()=>state.bots[0].profile.notifications=false,busy:()=>browserNotificationBusy,cursor:()=>browserNotificationCursor};'}));
+   await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nwindow.__notifyQA={poll:pollBrowserNotifications,bot:()=>state.bots[0].id,muteBot:()=>state.bots[0].profile.notifications=false,unlock:unlockBrowserNotificationSound,busy:()=>browserNotificationBusy,cursor:()=>browserNotificationCursor};'}));
    await p.route(origin+'/audio/kindred-pop.wav',r=>{assetRequests++;return options.failFirstAudio&&assetRequests===1?r.fulfill({status:503,body:'Unavailable'}):r.continue();});
    await p.route(origin+'/api/notifications*',r=>{const after=new URL(r.request().url()).searchParams.get('after');return r.fulfill({json:{cursor:items.at(-1)?.id||0,items:after===null?[]:items.filter(i=>i.id>Number(after))}});});
    await p.route(origin+'/api/bots/*/avatar.png',async r=>{if(options.holdAvatar)await new Promise(resolve=>avatarRelease=resolve);return r.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=','base64')});});
@@ -44,6 +44,15 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    f.add(1);let timer;try{await Promise.race([f.flush(),new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('A stalled portrait blocked notification delivery')),4500))]);}finally{clearTimeout(timer);f.releaseAvatar();}
    assert.equal(await f.p.evaluate(()=>notes.length),1);assert.equal(await f.p.evaluate(()=>notes[0].icon),'/favicon.svg');assert.equal(await f.p.evaluate(()=>__notifyQA.cursor()),1);assert.deepEqual(f.errors,[]);
   }finally{f.releaseAvatar();await f.context.close();}
-  console.log(JSON.stringify({passed:true,engine:process.env.WEBKIT?'webkit':'edge',burstCoalescing:true,noDuplicateOnDeliveryRetry:true,failedSoundRecovers:true,muteDuringDecode:true,permissionRevokedDuringPortrait:true,blobCleanup:true,blockedAudioKeepsNotification:true}));
+  const g=await fixture({permission:'default'});try {
+   g.add(1);await g.flush();await g.p.waitForFunction(()=>sounds===1);assert.equal(await g.p.evaluate(()=>notes.length),0,'In-app sound does not need banner permission');
+   await g.p.waitForTimeout(800);await g.p.evaluate(()=>audio.state='interrupted');g.add(2);await g.flush();await g.p.waitForFunction(()=>sounds===2);assert.equal(await g.p.evaluate(()=>audio.state),'running');
+   await g.p.waitForTimeout(800);await g.p.evaluate(()=>{audio.state='closed';__notifyQA.unlock();});g.add(3);await g.flush();await g.p.waitForFunction(()=>sounds===3);assert.deepEqual(g.errors,[]);
+  }finally{await g.context.close();}
+  const h=await fixture();try {
+   await h.p.evaluate(()=>rejectTag='kindred-1');h.add(1);await h.flush();await h.p.waitForFunction(()=>sounds===1);assert.equal(await h.p.evaluate(()=>notes.length),0);
+   await h.p.waitForTimeout(800);await h.flush();assert.equal(await h.p.evaluate(()=>notes.length),1);assert.equal(await h.p.evaluate(()=>sounds),1,'Retrying a banner must not repeat its sound');assert.deepEqual(h.errors,[]);
+  }finally{await h.context.close();}
+  console.log(JSON.stringify({passed:true,engine:process.env.WEBKIT?'webkit':'chromium',burstCoalescing:true,noDuplicateOnDeliveryRetry:true,failedSoundRecovers:true,muteDuringDecode:true,permissionRevokedDuringPortrait:true,blobCleanup:true,blockedAudioKeepsNotification:true,interruptedAudioRecovers:true,closedAudioRecovers:true,inAppSoundWithoutBannerPermission:true,bannerRetryDoesNotRepeatSound:true}));
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

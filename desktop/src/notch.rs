@@ -229,6 +229,9 @@ pub mod native {
         let state = app.state::<Notch>();
         let mut inner = state.0.lock().unwrap();
         let had_alerts = !inner.queue.is_empty();
+        if inner.queue.iter().any(|alert| !alert.presented && !alert.test && crate::desktop::current_destination(app, &alert.destination)) {
+            crate::notification_sound::play_notch(app, false);
+        }
         // Explicit tests must remain visible even from the focused settings window.
         // Real alerts are still discarded when the app becomes active.
         inner.queue.retain(|alert| alert.test);
@@ -368,6 +371,7 @@ pub mod native {
                 unsafe {
                     (&*native.cast::<NSWindow>()).orderFrontRegardless();
                 }
+                if !alert.presented { crate::notification_sound::play_notch(app, alert.test); }
                 alert.presented = true;
                 alert.started = Some(Instant::now());
                 Ok(Value::Null)

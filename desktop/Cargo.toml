@@ -36,6 +36,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+libloading = "0.7"
 gtk = "0.18"
 webkit2gtk = { version = "2", features = ["v2_24"] }
 
