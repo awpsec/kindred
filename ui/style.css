@@ -3414,7 +3414,7 @@ html[data-motion='off'] .color-option {transition:none;scale:1;}
 .message-actions .icon-button:hover,.message-actions .icon-button:focus-visible {color:var(--fg);background:var(--hover);}
 .message-group:hover .message-actions,.message-group:focus-within .message-actions,.message-menu-open .message-actions {opacity:1;}
 .message-group:focus {outline:none;}
-.message-group:focus-visible > .message-row > .message-bubble {outline:1px solid var(--muted);outline-offset:3px;}
+html:not([data-input-modality=pointer]) .message-group:focus-visible > .message-row > .message-bubble {outline:1px solid var(--muted);outline-offset:3px;}
 .message-action-menu {position:fixed;z-index:130;min-width:190px;padding:5px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px #0003;}
 .message-menu-item {display:flex;align-items:center;gap:9px;padding:10px 9px;width:100%;border-radius:8px;text-align:left;font-size:calc(13px * var(--text-scale, 1));}
 .message-menu-item svg {width:16px;height:16px;}
@@ -3726,11 +3726,11 @@ html[data-motion="off"] #composer,html[data-motion="off"] .composer-reply .icon-
 
 /* Quiet orientation cues. Keep controls fully readable when a schedule is paused. */
 .routine-card.is-disabled .routine-copy,.monitor-row.is-disabled > :not(.row-actions) {opacity:.7;filter:grayscale(.5);}
-.unread-divider {display:flex;align-items:center;gap:12px;height:1.5em;overflow:hidden;margin:22px 0;color:var(--accent,#78baa6);font-size:calc(10px * var(--text-scale, 1));font-weight:700;letter-spacing:.14em;text-transform:uppercase;pointer-events:none;}
+.unread-divider {display:flex;align-items:center;gap:12px;height:1.5em;overflow:hidden;margin:8px 0;color:var(--muted);font-size:calc(10px * var(--text-scale, 1));font-weight:700;letter-spacing:.14em;text-transform:uppercase;pointer-events:none;}
 .unread-divider::before,.unread-divider::after {content:'';height:1px;background:currentColor;opacity:.4;flex:1;}
 .unread-divider.is-seen {animation:unread-fade 1.8s ease forwards;}
 .unread-divider.has-faded {opacity:0;height:0;margin-block:0;animation:none;}
-@keyframes unread-fade {0%{opacity:1;height:1.5em;margin-block:22px}83%{opacity:0;height:1.5em;margin-block:22px}100%{opacity:0;height:0;margin-block:0}}
+@keyframes unread-fade {0%{opacity:1;height:1.5em;margin-block:8px}100%{opacity:0;height:0;margin-block:0}}
 @media(min-width:701px){.settings-dialog[open]{height:820px;max-height:92dvh;}}
 @media(prefers-reduced-motion:reduce){.unread-divider.is-seen{animation-duration:.01ms;}}
 

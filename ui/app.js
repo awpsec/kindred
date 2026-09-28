@@ -4609,7 +4609,7 @@ const unreadObserver=new IntersectionObserver(entries=>{
       boundary.seenAt=Date.now();const id=item.target.dataset.chat;
       setTimeout(()=>{if(unreadBoundaries.get(id)!==boundary)return;unreadBoundaries.delete(id);if(currentConversationId()===id)void renderChat(true,'cached');},motionAllowed()?7800:0);
     }
-    if(boundary)item.target.style.animationDelay=Math.max(0,6000-(Date.now()-boundary.seenAt))+'ms';
+    if(boundary)item.target.style.animationDelay=(6000-(Date.now()-boundary.seenAt))+'ms';
     item.target.classList.add('is-seen');unreadObserver.unobserve(item.target);
   }
 },{root:$('content'),threshold:1});
