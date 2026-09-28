@@ -1,8 +1,9 @@
 import {build} from 'esbuild';
 import {remoteCursorPlugin} from './remote-cursor-plugin.mjs';
+import {displayScalingPlugin} from './display-scaling-plugin.mjs';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('.',import.meta.url));
-await build({absWorkingDir:root,entryPoints:['vendor.mjs'],plugins:[remoteCursorPlugin],bundle:true,minify:true,format:'esm',target:'es2022',outfile:'../../ui/vendor.js',legalComments:'linked'});
+await build({absWorkingDir:root,entryPoints:['vendor.mjs'],plugins:[remoteCursorPlugin,displayScalingPlugin],bundle:true,minify:true,format:'esm',target:'es2022',outfile:'../../ui/vendor.js',legalComments:'linked'});
 const react=await build({absWorkingDir:root,entryPoints:['artifact-react.mjs'],bundle:true,minify:true,format:'iife',target:'es2022',write:false,define:{'process.env.NODE_ENV':'"production"'},legalComments:'inline'});
 await build({absWorkingDir:root,stdin:{contents:`import * as Babel from '@babel/standalone';export const transform=Babel.transform;export const runtime=${JSON.stringify(react.outputFiles[0].text)};`,resolveDir:root},bundle:true,minify:true,format:'esm',target:'es2022',outfile:'../../ui/artifact-vendor.js',legalComments:'linked'});
 await build({absWorkingDir:root,entryPoints:['document-worker.mjs'],alias:{crypto:'./empty.mjs',fs:'./empty.mjs',stream:'readable-stream'},inject:['./document-polyfills.mjs'],bundle:true,minify:true,format:'iife',platform:'browser',target:'es2022',outfile:'../../ui/document-worker.js',legalComments:'linked'});

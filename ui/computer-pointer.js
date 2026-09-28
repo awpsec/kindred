@@ -10,10 +10,11 @@ export function computerClickIndicator(host, status, botId) {
     if(data.takeover||!canvas||point?.bot_id!==botId()){ring.hidden=true;}
     else if(point?.id && point.id!==lastId){
       lastId=point.id;
-      if(Number.isFinite(point.x)&&Number.isFinite(point.y)&&point.x>=0&&point.x<canvas.width&&point.y>=0&&point.y<canvas.height&&Math.abs(Date.now()/1000-point.created)<4){
+      const width=Number(canvas.dataset.framebufferWidth)||canvas.width,height=Number(canvas.dataset.framebufferHeight)||canvas.height;
+      if(Number.isFinite(point.x)&&Number.isFinite(point.y)&&point.x>=0&&point.x<width&&point.y>=0&&point.y<height&&Math.abs(Date.now()/1000-point.created)<4){
         const bounds=canvas.getBoundingClientRect(),base=host.getBoundingClientRect();
-        ring.style.left=(bounds.left-base.left+point.x/canvas.width*bounds.width)+'px';
-        ring.style.top=(bounds.top-base.top+point.y/canvas.height*bounds.height)+'px';
+        ring.style.left=(bounds.left-base.left+point.x/width*bounds.width)+'px';
+        ring.style.top=(bounds.top-base.top+point.y/height*bounds.height)+'px';
         ring.hidden=false;ring.classList.remove('pulse');void ring.offsetWidth;ring.classList.add('pulse');
         clearTimeout(hide);hide=setTimeout(()=>ring.hidden=true,900);
       }

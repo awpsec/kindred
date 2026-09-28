@@ -23,6 +23,10 @@ try{
  await page.screenshot({path:out+'/cursor.png'});
  for(let i=0;i<12;i++){await page.screenshot({path:out+'/frame-'+String(i).padStart(2,'0')+'.png'});await page.waitForTimeout(60);}
  await page.waitForTimeout(900);assert(!await page.locator('.computer-click-indicator').isVisible());
+ await page.evaluate(()=>{const c=document.querySelector('#preview canvas');c.dataset.framebufferWidth='1280';c.dataset.framebufferHeight='800';c.width=2560;c.height=1600;});
+ await click('hidpi');await page.waitForTimeout(180);assert.deepEqual(await page.locator('.computer-click-indicator').evaluate(n=>({left:parseFloat(n.style.left),top:parseFloat(n.style.top)})),geometry,'Display pixels must not change remote click coordinates');
+ await page.evaluate(()=>{const c=document.querySelector('#preview canvas');delete c.dataset.framebufferWidth;delete c.dataset.framebufferHeight;c.width=1280;c.height=800;});await page.waitForTimeout(950);
+
  await click('old',{created:Date.now()/1000-30});await page.waitForTimeout(180);assert(!await page.locator('.computer-click-indicator').isVisible());
  await click('wrong-bot',{bot_id:'other'});await page.waitForTimeout(180);assert(!await page.locator('.computer-click-indicator').isVisible());
  await click('takeover');await page.evaluate(()=>window.pointerStatus.takeover=true);await page.waitForTimeout(180);assert(!await page.locator('.computer-click-indicator').isVisible());
