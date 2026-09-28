@@ -963,11 +963,12 @@ fn start_setup_mode(app: tauri::AppHandle, prepare_only: bool, activate_only: bo
             let log_path = root.join("setup.log");
             #[cfg(not(target_os = "linux"))]
             for args in [
+                vec!["--version"],
                 vec!["compose", "version"],
                 vec!["info", "--format", "{{.ServerVersion}}"],
             ] {
                 let mut command = Command::new(docker_executable());
-                command.args(args);
+                command.args(&args);
                 hidden(&mut command);
                 crate::setup_progress::run(
                     &mut command,
@@ -976,7 +977,11 @@ fn start_setup_mode(app: tauri::AppHandle, prepare_only: bool, activate_only: bo
                     |tail| {
                         app.state::<Host>().setup.lock().unwrap()["detail"] = json!(tail);
                     },
-                )?;
+                ).map_err(|_| match args[0] {
+                    "--version" => "Docker Desktop is missing or cannot start. Install it using the installation guide, open it, then retry setup.",
+                    "compose" => "Docker Compose is unavailable. Update or repair Docker Desktop, then retry setup.",
+                    _ => "Docker is installed, but its engine is not ready. Open Docker Desktop and wait until it is running, then retry setup. Check Docker Desktop for any startup errors.",
+                }.to_owned())?;
             }
             #[cfg(target_os = "linux")]
             if let Some(message) = crate::linux_setup::prerequisite_error() {
