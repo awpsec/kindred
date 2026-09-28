@@ -3167,7 +3167,8 @@ async function settingsBotComputer() {
     delete updateNow.dataset.submitting;renderComputerMaintenance();
   };updateNow.id='computer-maintenance-now';updateNow.title='Update Linux and all provider runtimes, then restart the computer';
   const updateActions=node('div','row-actions computer-update-actions');updateActions.append(updateLabel,updateNow);
-  maintenance.append(updateActions,node('p','muted small','Automatic updates run during downtime, at most once every three days.'),updateStatus);root.append(maintenance);
+  const updateProgress=node('progress');updateProgress.id='computer-maintenance-progress';updateProgress.setAttribute('aria-label','Updating bot computer');updateProgress.hidden=true;updateProgress.style.width='100%';
+  maintenance.append(updateActions,updateProgress,node('p','muted small','Automatic updates run during downtime, at most once every three days.'),updateStatus);root.append(maintenance);
   function showMaintenance(value){state.status.maintenance=value;updateToggle.checked=value.enabled;renderComputerMaintenance();}
   updateToggle.disabled=true;
   api('/computer/maintenance').then(value=>{if(maintenance.isConnected){showMaintenance(value);updateToggle.disabled=false;}}).catch(e=>{updateStatus.textContent=e.message;});
@@ -3434,7 +3435,8 @@ function renderComputerMaintenance(){
   const value=state.status.maintenance,status=$('computer-maintenance-status'),toggle=$('computer-maintenance-enabled');if(!value||!status||!toggle)return;
   if(!toggle.disabled)toggle.checked=value.enabled;
   const updateNow=$('computer-maintenance-now');if(updateNow){updateNow.disabled=!!updateNow.dataset.submitting||!!value.requested||['starting','updating','checking','rebooting'].includes(value.phase);}
-  status.textContent=value.error||(value.phase==='rebooting'?'Restarting the computer…':['starting','updating','checking','rebooting'].includes(value.phase)?'Updating the computer. New tasks are queued.':value.requested?'Update queued. Waiting for the computer to be available.':value.reboot_recommended?'Updates installed · reboot recommended.':value.last_success?'Last updated '+new Date(value.last_success*1000).toLocaleString():value.enabled?'Waiting for downtime.':'Automatic updates off.');
+  const progress=$('computer-maintenance-progress');if(progress)progress.hidden=!['starting','updating','checking','rebooting'].includes(value.phase);
+  status.textContent=value.error||(value.phase==='rebooting'?'Restarting the computer…':['starting','updating','checking','rebooting'].includes(value.phase)?(value.detail||'Updating the computer. New tasks are queued.'):value.requested?'Update queued. Waiting for the computer to be available.':value.reboot_recommended?'Updates installed · reboot recommended.':value.last_success?'Last updated '+new Date(value.last_success*1000).toLocaleString():value.enabled?'Waiting for downtime.':'Automatic updates off.');
 }
 function updateDesktopState() {
   renderComputerMaintenance();
