@@ -16,6 +16,7 @@ import {createServerChatsUI} from "./server-chats.js";
 import {createCommandsUI} from "./commands.js";
 import {composerText,createComposerLists} from "./composer-text.js";
 import {availableRelease, newerVersion} from "./updates.js";
+import {createMarkupCache} from "./markup-cache.js";
 import { RFB, marked, DOMPurify } from "./vendor.js";
 import { computerClickIndicator } from "./computer-pointer.js";
 import { visualPanel, compactChanges } from "./visual-panels.js";
@@ -309,9 +310,7 @@ function observeLongMessages(target){
   for(const [element,observer] of longMessageObservers)if(!element.isConnected){observer.disconnect();longMessageObservers.delete(element);}
   for(const viewport of target.querySelectorAll('.message-text-viewport'))if(!longMessageObservers.has(viewport))viewport._observeLongMessage?.();
 }
-function markdown(text, mentions=false, preserveBreaks=false) {
-  const n = node("div", "message-bubble");
-  n.innerHTML = DOMPurify.sanitize(marked.parse(text || "",{breaks:preserveBreaks}), {
+const markdownMarkup=createMarkupCache((text,preserveBreaks)=>DOMPurify.sanitize(marked.parse(text || "",{breaks:preserveBreaks}), {
     ALLOWED_TAGS: [
       "p",
       "br",
@@ -339,7 +338,12 @@ function markdown(text, mentions=false, preserveBreaks=false) {
       "input",
     ],
     ALLOWED_ATTR: ["href", "title", "class", "type", "checked", "disabled", "start", "align"],
-  });
+  }));
+let markdownCacheToken;
+function markdown(text, mentions=false, preserveBreaks=false) {
+  const n = node("div", "message-bubble");
+  if(markdownCacheToken!==state.token){markdownMarkup.clear();markdownCacheToken=state.token;}
+  n.innerHTML = markdownMarkup.render(text||"",preserveBreaks);
   for (const link of n.querySelectorAll("a")) {
     try {
       const u = new URL(link.getAttribute("href"), location.href);
