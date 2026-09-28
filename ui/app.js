@@ -1001,6 +1001,7 @@ function renderSidebar() {
             b.name,
             profile(b).label,
             profile(b).description,
+            profile(b).current_task?.label||"",
             ...state.allRuns
               .filter((r) => r.bot_id === b.id)
               .map((r) => r.prompt + " " + r.output),
@@ -1030,24 +1031,26 @@ function renderSidebar() {
       () => chooseBot(b),
       "bot-link" + (!state.chat && b.id === state.bot?.id ? " active" : ""),
     );
-    row.setAttribute("aria-label", b.name);
+    row.setAttribute("aria-label", b.name+(profile(b).current_task?.label?" · "+profile(b).current_task.label:""));
+    row.title=b.name+(profile(b).current_task?.label?" · "+profile(b).current_task.label:"");
     row.append(buddy(b, 44, busy, `nav-${b.id}`));
     const info = node("div", "bot-info"),
       title = node("div", "bot-title-row");
     title.append(node("strong", "", b.name));
-    if (profile(b).label)
-      title.append(node("span", "bot-label", profile(b).label));
+    if(profile(b).current_task?.label){const task=node('span','bot-current-task',profile(b).current_task.label);task.title=profile(b).current_task.label;title.append(task);}
+    else if (profile(b).label) title.append(node("span", "bot-label", profile(b).label));
     if (lastMessage || latest) title.append(node("span", "bot-time", clock(lastMessage?.created || latest.created)));
     const previewLine=node('div','bot-preview');previewLine.dataset.sidebarActivity=b.id;previewLine.dataset.idlePreview=preview;
-    updateSidebarActivity(previewLine);info.append(title,previewLine);
+    updateSidebarActivity(previewLine);info.append(title);
+    info.append(previewLine);
     row.append(info);
     addUnreadDot(row,`dm-${b.id}`);
     if (profile(b).pinned) {
       const p = button("", () => chooseBot(b), "pinned-bot" + (!state.chat && b.id === state.bot?.id ? " active" : ""));
-      p.setAttribute("aria-label", b.name);
+      p.setAttribute("aria-label", row.getAttribute("aria-label"));p.title=row.title;
       p.append(buddy(b, 58, busy, `pin-${b.id}`), node("span", "", b.name));
       addUnreadDot(p,`dm-${b.id}`);
-      attachPinPreview(p, b.name, lastMessage, preview);
+      attachPinPreview(p, b.name+(profile(b).current_task?.label?' · '+profile(b).current_task.label:''), lastMessage, preview);
       $("pinned-bots").append(sidebarEntry(p, b, "bots", true));
     } else $("bots").append(sidebarEntry(row, b, "bots", false));
   }
@@ -1102,12 +1105,28 @@ function renderSidebar() {
   for(const [key,avatar] of avatarCache)if(/^stack-(row|tile)-/.test(key)&&!avatar.isConnected)avatarCache.delete(key);
   restoreSidebarFocus(focus);glideSidebar(places);continueLoops($("bots"));
 }
+async function clearCurrentTask(bot) {
+  const task=profile(bot).current_task;if(!task?.label)return;
+  try{await api('/bots/'+bot.id+'/task','PUT',{label:'',expected_revision:task.revision});}
+  finally{await refresh(true);}
+}
+function renderCurrentTask(bot) {
+  let badge=$('header-current-task');
+  if(!badge){badge=node('span','header-current-task');badge.id='header-current-task';$('bot-details').after(badge);}
+  const task=bot&&profile(bot).current_task;badge.hidden=!task?.label;
+  const key=JSON.stringify([bot?.id,task]);if(badge.dataset.key===key)return;badge.dataset.key=key;badge.replaceChildren();
+  if(!task?.label)return;
+  const label=node('span','current-task-text',task.label);label.title=task.label;
+  const remove=iconButton('close','Remove task label: '+task.label,()=>clearCurrentTask(bot));remove.classList.add('current-task-remove');remove.title='Remove label (doesn’t stop work)';
+  badge.append(label,remove);
+}
 function renderHeader() {
   renderPendingFiles();
   const b = state.chat?.shared?null:state.bot,
     busy = state.allRuns.some((r) => r.bot_id === b?.id && active(r));
   const group=state.chat&&!state.chat.id.startsWith('dm-');
   $('bot-details').disabled=!(b||group);
+  renderCurrentTask(group?null:b);
   const key = JSON.stringify([b, busy, state.chat,channelTitle(state.chat),state.general.name,state.bots.map(b=>[b.id,b.name,b.profile])]);
   if (key !== state.headerKey) {
     state.headerKey = key;
@@ -3696,6 +3715,7 @@ $("composer").onsubmit = (e) => {
     );
     const chat =
       state.chat || state.chats.find((c) => c.id === `dm-${state.bot.id}`);
+    if(!chat && /^\/task(?:-remove)?(?:\s|$)/.test(prompt))throw new Error('Open this bot’s chat before changing its task label.');
     followChatLatest();
     if (chat) {
       const payload={prompt,mentions:state.chat?mentions:[],files:files.map(f=>f.id),reply_to:submittedReply?.seq??null};
@@ -3703,6 +3723,7 @@ $("composer").onsubmit = (e) => {
       const send=old?.signature===signature?old:{signature,request_id:crypto.randomUUID()};
       state.pendingSends.set(selectedChatId,send);persistConversation();
       await api("/chats/"+chat.id+"/messages","POST",{...payload,request_id:send.request_id});
+      if(/^\/task(?:-remove)?(?:\s|$)/.test(prompt))notice(prompt.startsWith('/task-remove')?'Task label removed.':'Task label set.');
       if(state.pendingSends.get(selectedChatId)===send)state.pendingSends.delete(selectedChatId);
     }
     else await api("/runs", "POST", { bot_id: state.bot.id, prompt });
@@ -4145,6 +4166,7 @@ function showBotMenu(bot,trigger,x,y){
   showConversationMenu('Bot actions',trigger,x,y,[
     ['Edit bot',async()=>{const b=current();await chooseBot(b);if(!state.chat&&state.bot?.id===b.id)openDetails('settings');},'edit'],
     [profile(current()).pinned?'Unpin':'Pin',async()=>{const b=current();await api('/bots/'+b.id+'/pin','PUT',{pinned:!profile(b).pinned});state.navKey='';await refresh(true);},'pin'],
+    ...(profile(current()).current_task?.label?[["Remove task label",()=>clearCurrentTask(current()),'close']]:[]),
     muteMenuAction('bot',bot.id),
     ['Instructions',()=>editBotText(current().id,'instructions')],
     ['Memory',()=>editBotText(current().id,'memory')],
