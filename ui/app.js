@@ -5811,7 +5811,11 @@ document.addEventListener('paste',async e=>{
     void perform(()=>queueFiles(images,destination));return;
   }
   if(destination.chatId!==composerChatId()||destination.token!==state.token)return;
-  const text = pastedText.slice(0,64000),sel=getSelection();
+  if(pastedText.length>=4000 || pastedText.split(/\r\n|\r|\n/).length>=40){
+    void perform(()=>queueFiles([new File([pastedText],'Pasted text.txt',{type:'text/plain;charset=utf-8'})],destination));
+    return;
+  }
+  const text = pastedText,sel=getSelection();
   if(!sel)return;
   let r=sel.rangeCount?sel.getRangeAt(0):null;
   if(!r||!$('prompt').contains(r.commonAncestorContainer)){r=document.createRange();r.selectNodeContents($('prompt'));r.collapse(false);}
