@@ -86,23 +86,31 @@ export async function renderWordLayout(buffer,name){
  notes.push('Use a PDF exported by the author for final pagination review.');
  return {page,note:notes.join(' '),dispose:()=>embedded.forEach(face=>document.fonts.delete(face))};
 }
-export async function openDocumentPreview({card,name,extension,getBlob,download,createDownloadButton,renderMarkdown,artifactPreview}){
+export async function openDocumentPreview({card,name,extension,getBlob,getPagePreview,download,createDownloadButton,renderMarkdown,artifactPreview}){
  const dialog=el('dialog','document-dialog'),head=el('header','document-header'),body=el('div','document-body'),foot=el('footer','document-footer','Quick preview · Download for the original formatting.');
  const title=el('strong','',name);dialog.setAttribute('aria-label',name+' preview');
+ const conversionAbort=new AbortController();let paginatedWord=false,conversionFailed=false;
  let closed=false,worker=null,pdfTask=null,timer=null,cancelWork=null,passwordRequired=false,wordDispose=null;
- const cleanup=()=>{if(closed)return;closed=true;clearTimeout(timer);cancelWork?.();wordDispose?.();worker?.terminate();pdfTask?.destroy().catch(()=>{});observer.disconnect();dialog.remove();};
+ const cleanup=()=>{if(closed)return;closed=true;conversionAbort.abort();clearTimeout(timer);cancelWork?.();wordDispose?.();worker?.terminate();pdfTask?.destroy().catch(()=>{});observer.disconnect();dialog.remove();};
  const observer=new MutationObserver(()=>{if(!card.isConnected)cleanup();});observer.observe(document.body,{childList:true,subtree:true});
  const close=button('Close',()=>dialog.close());head.append(title,createDownloadButton?createDownloadButton():button('Download',download),close);dialog.append(head,body,foot);card.append(dialog);
  dialog.addEventListener('close',cleanup,{once:true});dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
  dialog.showModal();close.focus();body.append(el('p','document-status','Preparing preview…'));
  try{
-  const blob=await getBlob();if(closed)return;if(blob.size>8*1024*1024)throw Error('Preview supports files up to 8 MB. Download to view this file.');
+  let blob;
+  if(extension==='docx'&&getPagePreview){
+   body.firstChild.textContent='Laying out document…';
+   timer=setTimeout(()=>conversionAbort.abort(),90000);
+   try{blob=await getPagePreview(conversionAbort.signal);paginatedWord=true;extension='pdf';}catch{conversionFailed=true;}finally{clearTimeout(timer);}
+   if(closed)return;
+  }
+  if(!blob)blob=await getBlob();if(closed)return;if(blob.size>(paginatedWord?32:8)*1024*1024)throw Error('Preview supports files up to 8 MB. Download to view this file.');
   if(['docx','xlsx'].includes(extension)){
    const buffer=await blob.arrayBuffer();if(closed)return;
    const result=await new Promise((resolve,reject)=>{cancelWork=()=>reject(Error('Preview closed.'));worker=new Worker(new URL('./document-worker.js',import.meta.url));timer=setTimeout(()=>{worker.terminate();reject(Error('This preview took too long. Download to view the file.'));},20000);worker.onmessage=({data})=>{cancelWork=null;clearTimeout(timer);worker.terminate();data.error?reject(Error(data.error)):resolve(data);};worker.onerror=()=>{cancelWork=null;clearTimeout(timer);worker.terminate();reject(Error('Unable to read this document. You can still download the original.'));};worker.postMessage({buffer,extension},[buffer]);});
    if(closed)return;body.replaceChildren();
    if(extension==='docx'){
-    const rendered=await renderWordLayout(result.buffer,name);if(closed){rendered.dispose();return;}wordDispose=rendered.dispose;body.append(rendered.page);foot.textContent=rendered.note;
+    const rendered=await renderWordLayout(result.buffer,name);if(closed){rendered.dispose();return;}wordDispose=rendered.dispose;body.append(rendered.page);foot.textContent=(conversionFailed?'Quick preview · Page layout unavailable on this server. ':'')+rendered.note;
    }else{
     const tabs=el('div','document-sheets'),grid=el('div','document-grid');tabs.setAttribute('aria-label','Worksheets');grid.tabIndex=0;grid.setAttribute('role','region');body.append(tabs,grid);
     if(!result.sheets.length){body.append(el('p','document-status','No visible worksheets.'));return;}
@@ -110,6 +118,7 @@ export async function openDocumentPreview({card,name,extension,getBlob,download,
     result.sheets.forEach((sheet,i)=>tabs.append(button(sheet.name,()=>select(i))));select(0);
    }
   }else if(extension==='pdf'){
+   if(paginatedWord)foot.textContent='Document page preview · Font substitutions may differ from Word.';
    const {getDocument,GlobalWorkerOptions}=await import('./document-vendor.js');if(closed)return;GlobalWorkerOptions.workerSrc=new URL('./pdf-worker.js',import.meta.url).href;
    const data=new Uint8Array(await blob.arrayBuffer());if(closed)return;
    pdfTask=getDocument({data,isEvalSupported:false,useSystemFonts:true,useWasm:false,disableFontFace:false,maxImageSize:16000000,isOffscreenCanvasSupported:false});
