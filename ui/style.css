@@ -4279,7 +4279,7 @@ html[data-motion='off'] .sidebar-activity-dots>span{animation:none}
 /* Keep timestamps on the title line; the role yields space before wrapping. */
 .bot-title-row{display:grid;grid-template-columns:minmax(0,max-content) minmax(0,1fr) auto;column-gap:5px}
 .bot-title-row strong{grid-column:1;grid-row:1;min-width:0}
-.bot-title-row .bot-label{grid-column:2;grid-row:1;min-width:0;max-width:min(64px,100%);width:fit-content}
+.bot-title-row .bot-label{grid-column:2;grid-row:1;min-width:0;max-width:100%;width:fit-content}
 .bot-title-row .bot-time{grid-column:3;grid-row:1}
 
 /* Quiet affordances: file types tint in place without shifting the transcript. */
