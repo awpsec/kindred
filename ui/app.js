@@ -7379,6 +7379,9 @@ function renderAttachments(target, attachments) {
       target.append(fileCard(attachment,{getBlob:async id=>{
         const token=state.token,response=await fetch('/api/deliverables/'+encodeURIComponent(id),{headers:{Authorization:'Bearer '+token},cache:'no-store'});
         if(!response.ok)throw new Error('This file could not be downloaded. Try again.');const blob=await response.blob();if(state.token!==token)throw new Error('Connection changed');if(blob.size>8*1024*1024)throw new Error('File exceeds the chat download limit');return blob;
+      },getPagePreview:async(id,signal)=>{
+        const token=state.token,response=await fetch('/api/deliverables/'+encodeURIComponent(id)+'/preview',{headers:{Authorization:'Bearer '+token},cache:'no-store',signal});
+        if(!response.ok||!response.headers.get('Content-Type')?.startsWith('application/pdf'))throw new Error('Page preview unavailable');const blob=await response.blob();if(state.token!==token)throw new Error('Connection changed');if(blob.size>32*1024*1024)throw new Error('Preview exceeds limit');return blob;
       },nativeSave:window.__KINDRED_FILE_DELIVERY?id=>nativeInvoke('save_chat_file',{id}):null,nativeReveal:window.__KINDRED_FILE_DELIVERY?receipt=>nativeInvoke('reveal_chat_file',{receipt}):null,notice,renderMarkdown:markdown}));continue;
     }
     const figure=node('figure','screenshot-attachment'),frame=node('div','screenshot-frame'),image=node('img'),caption=node('figcaption');
