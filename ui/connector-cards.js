@@ -11,9 +11,9 @@ function details(value,service){const box=el('dl','connector-record-fields');for
 export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botName,sanitizeHtml}){
  const root=el('section','connector-artifact connector-kind-'+card.kind);root.dataset.connectorArtifact=card.id;root.setAttribute('aria-label',`${card.connection||card.connector}: ${card.title}`);
  const header=el('header','connector-artifact-header');header.append(heading(card.connection||card.connector,card.source,card.tool));
- const status=card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
+ const status=card.status==='pending'&&card.email_send?'Draft · not sent':card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
  header.append(el('span','connector-card-status status-'+card.status,status));root.append(header);
- const operation=el('div','connector-operation');operation.append(el('span','connector-call-name',card.tool.split('__').at(-1)),el('span','',`By ${botName||'your bot'}`));root.append(operation);
+ const operation=el('div','connector-operation');operation.append(el('span','connector-call-name',card.tool.split('__').at(-1)),el('span','',`By ${botName||'your bot'}`));if(card.kind!=='email')root.append(operation);
  const proposed=!card.records?.length&&card.preview_records?.length&&card.status!=='completed';const shown=card.records?.length?card.records:(proposed?card.preview_records:[]);
  const content=el('div','connector-artifact-content');content.tabIndex=0;content.setAttribute('role','region');content.setAttribute('aria-label','Connector contents');root.append(content);const email=card.email||{},pending=card.status==='pending';
  if(card.kind==='email'&&(email.body||email.subject||email.to)){
@@ -25,7 +25,11 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   const attachmentValues=Object.fromEntries(Object.keys(card.input||{}).filter(k=>/attachment/i.test(k)).map(k=>[k,safeRelated(card.input[k])]));
   if(Array.isArray(email.attachments)&&email.attachments.length)attachmentValues['attachments']=safeRelated(email.attachments);
   if(Array.isArray(card.input?.message?.attachments))attachmentValues['message.attachments']=safeRelated(card.input.message.attachments);
-  if(Object.keys(attachmentValues).length){const list=el('details','connector-extra');list.append(el('summary','','Attachments and related fields'),details(attachmentValues));content.append(list);}
+  if(Object.keys(attachmentValues).length){
+   const list=el('div','connector-email-attachments');const attachments=[...(Array.isArray(card.input?.attachments)?card.input.attachments:[]),...(Array.isArray(card.input?.attachment_ids)?card.input.attachment_ids:[]),...(Array.isArray(card.input?.message?.attachments)?card.input.message.attachments:[])];
+   if(attachments.length){list.append(el('span','muted','Attachments'));for(const item of attachments)list.append(el('span','connector-attachment-chip',typeof item==='string'?'Attached file':item.filename||item.name||item.file_name||'Attached file'));if(pending)list.append(button('Remove attachments',async()=>{try{await act('remove_attachments');}catch(error){showError(list,error);}},'subtle-button'));content.append(list);}
+   else if(Object.values(attachmentValues).some(v=>v&&(!Array.isArray(v)||v.length))){const extra=el('details','connector-extra');extra.append(el('summary','','Attachments and related fields'),details(attachmentValues));content.append(extra);}
+  }
  }else{
   content.append(el('h3','',shown.length===1?shown[0].title:card.title));
   if(!shown.length){content.append(details(card.input));if(!content.querySelector('dd'))content.append(el('p','muted','This tool provides no displayable item fields.'));
@@ -60,17 +64,17 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  };
  const showError=(form,error)=>{form.querySelector('[role=alert]')?.remove();const notice=el('p','connector-outcome-warning',error.message||String(error));notice.setAttribute('role','alert');form.append(notice);};
  const clearPanel=()=>{if(sending)return;const panel=root.querySelector('.connector-card-editor'),restore=panel?.contains(document.activeElement);panel?.remove();editorOpen=false;root.classList.remove('connector-editing');syncActionState();if(restore&&editorOpener?.isConnected)editorOpener.focus({preventScroll:true});editorOpener=null;};
- const openEditor=(form)=>{editorOpener=root.contains(document.activeElement)?document.activeElement:null;editorOpen=true;root.classList.add('connector-editing');form.addEventListener('keydown',e=>{if(e.key==='Escape'&&!sending){e.preventDefault();clearPanel();}});syncActionState();root.append(form);form.querySelector('input,textarea,select')?.focus();};
+ const openEditor=(form)=>{if(form.getAttribute('aria-label')==='Edit email draft')form.classList.add('email-draft-editor');editorOpener=root.contains(document.activeElement)?document.activeElement:null;editorOpen=true;root.classList.add('connector-editing');form.addEventListener('keydown',e=>{if(e.key==='Escape'&&!sending){e.preventDefault();clearPanel();}});syncActionState();root.append(form);form.querySelector('input,textarea,select')?.focus();};
  const editDescriptors=()=>{
   if(card.kind==='email')return Object.entries(email).filter(([,f])=>f?.editable).map(([key,f])=>({label:fieldNames[key]||key,key,text:f.text,type:key==='body'?'textarea':'text'}));
   return Object.entries(card.edit_fields||{}).filter(([,f])=>f&&f.text!==undefined&&f.key&&f.editable!==false).map(([key,f])=>({label:f.label||key,key:f.key,text:String(f.text??''),type:f.type||'text',options:Array.isArray(f.options)?f.options:[]}));
  };
  if(pending){
-  footer.append(button(card.email_send?'Approve & send':'Approve action',()=>act('approve'),'primary small-button'));
+  footer.append(button(card.email_send?'Send email':'Approve action',()=>act('approve'),'primary small-button'));
   const descriptors=editDescriptors();
   if(descriptors.length)footer.append(button(card.kind==='email'?'Edit draft':'Edit fields',()=>{
    clearPanel();const form=el('form','connector-card-editor'),inputs={};form.setAttribute('aria-label',card.kind==='email'?'Edit email draft':'Edit connector fields');
-   for(const field of descriptors){const label=el('label','',field.label),type=field.type==='textarea'?'textarea':'input',input=el(type);input.value=field.text;input.maxLength=field.type==='textarea'?100000:8000;input.name=field.key;input.dataset.editLabel=field.label;if(type==='textarea')input.rows=8;label.append(input);form.append(label);inputs[field.label]=input;}
+   for(const field of descriptors){const label=el('label','',field.label),type=field.type==='textarea'?'textarea':'input',input=el(type);input.value=field.text;input.maxLength=field.type==='textarea'?100000:8000;input.name=field.key;input.dataset.editLabel=field.label;if(type==='textarea')input.rows=10;input.autocomplete='off';input.spellcheck=field.key==='body'||field.key==='subject';label.append(input);form.append(label);inputs[field.label]=input;}
    const controls=el('div','connector-card-actions');const save=button(card.kind==='email'?'Save draft changes':'Save field changes',()=>{},'primary small-button');save.type='submit';controls.append(save,button('Cancel editing',clearPanel,'subtle-button'));form.append(el('p','muted small',card.kind==='email'?'Saving changes keeps this email here for review. It does not send it.':'Saving changes keeps this action here for review.'),controls);
    form.onsubmit=async e=>{e.preventDefault();if(sending)return;const fields=Object.fromEntries(descriptors.filter(f=>inputs[f.label].value!==f.text).map(f=>[f.key,inputs[f.label].value]));if(!Object.keys(fields).length){clearPanel();return;}try{await act('edit',{fields});clearPanel();}catch(error){showError(form,error);syncActionState();}};openEditor(form);
   },'outline-button'));
