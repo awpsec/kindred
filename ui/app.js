@@ -3083,6 +3083,27 @@ async function settingsComputer(){
   );
   root.append(devices);
  }
+// Launching QEMU does not prove the guest booted. Check the guest RPC without
+// rebooting, reinstalling, or changing its disk; stale checks cannot overwrite
+// a later shutdown/reboot or a different settings pane.
+async function checkComputerStartup({probe,active,report,now=()=>Date.now(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),timeout=300000}) {
+  const deadline=now()+timeout;
+  let lastError='';
+  while(active()&&now()<deadline){
+    try{
+      const resources=await probe();
+      if(!active())return;
+      if(!Number.isFinite(resources?.uptime_seconds))throw new Error('The computer returned an incomplete health response.');
+      report('Computer is responding.',false);
+      return;
+    }catch(error){
+      if(!active())return;
+      lastError=error.message||'Connection unavailable.';
+    }
+    if(now()<deadline)await sleep(5000);
+  }
+  if(active())report('The computer has not connected yet. Its disk is preserved. Connection error: '+lastError,true);
+}
 async function settingsBotComputer() {
   const root = $("settings-content");
   root.replaceChildren();
@@ -3123,16 +3144,22 @@ async function settingsBotComputer() {
   );
   const machineActions = node("div", "row-actions");
   const machineStatus=node('p','muted small');machineStatus.id='computer-action-status';machineStatus.setAttribute('role','status');machineStatus.setAttribute('aria-live','polite');machineStatus.hidden=true;
-  let machineControlBusy=false;
+  let machineControlBusy=false, computerStartCheck=0;
   async function controlComputer(action){
     if(machineControlBusy)return;
     machineControlBusy=true;
+    const check=++computerStartCheck;
     for(const control of machineActions.children)control.disabled=true;
     machineStatus.hidden=false;machineStatus.className='muted small';
     machineStatus.textContent={start:'Starting the computer…',reboot:'Restarting the computer…',shutdown:'Shutting down the computer…'}[action];
     try{
       await api('/vm/'+action,'POST',{});
-      machineStatus.textContent={start:'Computer started.',reboot:'Restart requested. The screen will reconnect when ready.',shutdown:'Shutdown requested.'}[action];
+      machineStatus.textContent={start:'Computer is booting. Waiting for a connection…',reboot:'Restart requested. The screen will reconnect when ready.',shutdown:'Shutdown requested.'}[action];
+      if(action==='start')void checkComputerStartup({
+        probe:()=>api('/computer/resources'),
+        active:()=>check===computerStartCheck&&machineStatus.isConnected&&$('settings-dialog').open,
+        report:(message,failed)=>{machineStatus.className=failed?'run-error small':'muted small';machineStatus.textContent=message;},
+      });
     }catch(error){machineStatus.className='run-error small';machineStatus.textContent=error.message;}
     finally{machineControlBusy=false;for(const control of machineActions.children)control.disabled=false;}
   }
