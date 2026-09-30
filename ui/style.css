@@ -5171,3 +5171,5 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .server-admin-dialog .settings-nav h2{font-size:calc(13px * var(--text-scale,1));white-space:nowrap}
 .server-admin-dialog .settings-nav button svg{width:16px;height:16px;flex:none}
 .server-admin-dialog .settings-nav button{white-space:nowrap;gap:8px}.server-admin-dialog .settings-nav .reset-request-count{padding-inline:4px;margin-left:auto}
+
+.server-user-row.is-disabled .server-user-copy{opacity:.45}
