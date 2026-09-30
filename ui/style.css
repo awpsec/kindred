@@ -5119,3 +5119,23 @@ html[data-motion=off] .pane-resizer::after{transition:none}
   background:color-mix(in srgb,var(--unread-color) 17%,var(--selected));
 }
 .sidebar .has-unread .bot-title-row strong {color:var(--fg)}
+
+/* Email review reads like a draft, with one clear send action. */
+.connector-kind-email{max-width:760px;background:var(--panel);border-radius:18px}
+.connector-kind-email>.connector-artifact-header{padding:16px 22px;border-bottom:1px solid var(--line)}
+.connector-kind-email .connector-card-status.status-pending{color:var(--fg);background:transparent;border:1px solid var(--line);padding:5px 9px;border-radius:7px;font-size:11px}
+.connector-kind-email>.connector-artifact-content{padding:24px;max-height:560px;scrollbar-gutter:auto}
+.connector-kind-email .connector-email-subject{font-size:18px;line-height:1.4;margin:0 0 18px;letter-spacing:-.2px}
+.connector-kind-email .connector-email-addresses{font-size:13px;line-height:1.6;gap:7px 14px;margin-bottom:20px}
+.connector-kind-email .connector-email-body{font-size:14px;line-height:1.7;padding-top:22px;max-height:340px}
+.connector-kind-email>footer{padding:15px 22px;gap:10px}
+.connector-kind-email>footer>.primary{order:5;margin-left:auto;padding:9px 17px;border-radius:9px}
+.connector-kind-email.connector-editing>.connector-artifact-content,.connector-kind-email.connector-editing>footer{display:none}
+.connector-kind-email .email-draft-editor{border-top:0;background:var(--panel);padding:22px;gap:16px}
+.email-draft-editor label{font-size:12px;font-weight:500;gap:8px;margin:0}
+.email-draft-editor input,.email-draft-editor textarea{box-sizing:border-box;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:14px;line-height:1.7;box-shadow:0 1px 2px #00000008}
+.email-draft-editor textarea{min-height:240px;resize:vertical}
+.email-draft-editor input:focus,.email-draft-editor textarea:focus{outline:2px solid color-mix(in srgb,var(--fg) 28%,transparent);outline-offset:2px;border-color:var(--muted)}
+@media(max-width:620px){.connector-kind-email>.connector-artifact-content,.connector-kind-email .email-draft-editor{padding:18px}.connector-kind-email>footer{padding:14px}.connector-kind-email>footer>.primary{margin-left:0}.connector-kind-email .connector-email-subject{font-size:17px}}
+
+.connector-email-attachments{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:20px;font-size:12px}.connector-attachment-chip{padding:6px 10px;border:1px solid var(--line);border-radius:7px;overflow-wrap:anywhere;max-width:100%}
