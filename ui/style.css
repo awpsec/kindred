@@ -5147,15 +5147,18 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .server-admin-page>.profile-invite{display:block;width:100%;margin:12px 0}
 .server-admin-page>.profile-invite[hidden]{display:none}
 .server-user-table{margin-top:20px;max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:10px}
-.server-user-row{display:grid;grid-template-columns:minmax(100px,1fr) 65px 135px;gap:12px;align-items:center;padding:12px;font-size:13px;background:var(--panel)}
-.server-user-row:nth-child(odd){background:color-mix(in srgb,var(--fg) 5%,var(--panel))}
-.server-user-row>div:first-child{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}
-.server-user-head{position:sticky;top:0;z-index:1;color:var(--muted);font-size:12px}
-.server-user-row .row-actions{justify-content:flex-end;gap:6px}
+.server-user-row{display:flex;gap:12px;align-items:center;min-height:40px;padding:5px 12px;font-size:13px;background:var(--panel)}
+.server-user-row:nth-child(even){background:color-mix(in srgb,var(--fg) 5%,var(--panel))}
+.server-user-copy{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1}
+.server-user-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.server-user-copy .muted{white-space:nowrap;font-size:12px}
+.server-user-row .row-actions{margin:0 0 0 auto;opacity:0;pointer-events:none;transition:opacity .12s ease}
+.server-user-row:hover .row-actions,.server-user-row:focus-within .row-actions{opacity:1;pointer-events:auto}
 .server-user-row .icon-button{width:28px;height:28px;flex:none}
 .server-user-row svg{width:16px;height:16px}
-@media(max-width:600px){.server-admin-content{padding:16px}.server-admin-dialog .profile-dialog-heading{padding:16px}.server-user-row{grid-template-columns:minmax(70px,1fr) 42px 110px;gap:6px}}
-
+@media(hover:none){.server-user-row .row-actions{opacity:1;pointer-events:auto}}
+@media(prefers-reduced-motion:reduce){.server-user-row .row-actions{transition:none}}
+@media(max-width:600px){.server-admin-content{padding:16px}.server-admin-dialog .profile-dialog-heading{padding:16px}}
 .reset-request-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 16px;border-bottom:1px solid var(--line);font-size:13px}
 .reset-request-row:nth-child(odd){background:color-mix(in srgb,var(--fg) 4%,var(--panel))}
 .reset-request-row:last-child{border-bottom:0}
