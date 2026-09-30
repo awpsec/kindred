@@ -3321,8 +3321,13 @@ html[data-motion='off'] .color-option {transition:none;scale:1;}
 .avatar-customize::after,.avatar-edit::after {transition:opacity .15s;}
 .avatar-customize .character-body > path:first-child,.avatar-edit .character-body > path:first-child,.shape-option .character-body > path:first-child {transition:stroke-width .15s,stroke-opacity .15s;}
 @media(prefers-reduced-motion:reduce){.avatar-customize::after,.avatar-edit::after,.avatar-customize .character-body > path:first-child,.avatar-edit .character-body > path:first-child,.shape-option .character-body > path:first-child {transition:none;}}
-.screenshot-dialog {width:min(1280px,94vw);max-height:94dvh;padding:16px;}
-.screenshot-dialog img {display:block;width:100%;max-height:78dvh;object-fit:contain;}
+.screenshot-dialog {width:fit-content;max-width:94vw;max-height:94dvh;padding:0;border:0;background:transparent;box-shadow:none;overflow:visible;}
+.screenshot-dialog .dialog-header {margin:0 0 10px;padding:0;gap:16px;border:0;background:transparent;color:#fff;}
+.screenshot-dialog .dialog-header h2 {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:400;text-shadow:0 1px 4px #000;}
+.screenshot-dialog .dialog-header button {flex:none;width:30px;height:30px;min-height:30px;padding:6px;border:0;border-radius:50%;background:#242424d9;color:#fff;}
+.screenshot-dialog .dialog-header button:hover {background:#444;}
+.screenshot-attachment figcaption:empty {display:none;}
+.screenshot-dialog img {display:block;width:auto;max-width:94vw;max-height:82dvh;object-fit:contain;border-radius:8px;}
 
 /* Frameless desktop chrome; the browser client keeps its own normal chrome. */
 .desktop-titlebar {height:32px;display:flex;align-items:center;justify-content:space-between;user-select:none;background:var(--bg);color:var(--soft);border-bottom:1px solid var(--line);position:relative;z-index:50;}

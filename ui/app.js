@@ -4005,6 +4005,9 @@ function modal(title, cls = "text-dialog") {
     node("h2", "", title),
     iconButton("close", "Close", () => d.close()),
   );
+  if(cls==='screenshot-dialog'){
+    d.addEventListener('click',event=>{if(event.target===d)d.close();});
+  }
   d.setAttribute('aria-label',title);
   d.append(head);
   d.onclose = () => d.remove();
@@ -7118,7 +7121,7 @@ function fileLinks(files){
     if(imageUpload(file)){
       download.title=file.name;
       const figure=node('figure','message-file-image'),image=node('img');image.alt=file.name;
-      const open=button('',async()=>{const blob=await uploadPreview(file),url=URL.createObjectURL(blob),dialog=modal(file.name,'screenshot-dialog'),full=node('img');full.src=url;full.alt=file.name;dialog.append(full);dialog.addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});},'uploaded-image-open');open.setAttribute('aria-label','Open image: '+file.name);open.append(image);figure.append(open,download);row.append(figure);fillUploadImage(image,file);
+      const open=button('',async()=>{const blob=await uploadPreview(file),url=URL.createObjectURL(blob),dialog=modal(file.name,'screenshot-dialog'),full=node('img');full.src=url;full.alt=file.name;dialog.append(full);dialog.addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});},'uploaded-image-open');open.setAttribute('aria-label','Open image: '+file.name);open.append(image);figure.append(open);row.append(figure);fillUploadImage(image,file);
     }else row.append(download);
   }
   return row;
@@ -7421,7 +7424,7 @@ function renderAttachments(target, attachments) {
     open.setAttribute('aria-label','Open screenshot: '+(attachment.title||'Screenshot'));
     image.alt=attachment.title||'Screenshot';open.append(image);
     const download=node('a','screenshot-download');download.append(icon('download',16));download.setAttribute('aria-label','Download screenshot');download.title='Download screenshot';download.tabIndex=0;download.download='kindred-screenshot.png';download.hidden=true;
-    frame.append(open,download);caption.append(node('span','',attachment.title||'Screenshot'));figure.append(frame,caption);target.append(figure);
+    frame.append(open,download);figure.append(frame,caption);target.append(figure);
     const load=async()=>{
       try {
         const blob=await screenshotBlob(attachment.id);
