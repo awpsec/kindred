@@ -5155,3 +5155,12 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .server-user-row .icon-button{width:28px;height:28px;flex:none}
 .server-user-row svg{width:16px;height:16px}
 @media(max-width:600px){.server-admin-content{padding:16px}.server-admin-dialog .profile-dialog-heading{padding:16px}.server-user-row{grid-template-columns:minmax(70px,1fr) 42px 110px;gap:6px}}
+
+.reset-request-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 16px;border-bottom:1px solid var(--line);font-size:13px}
+.reset-request-row:nth-child(odd){background:color-mix(in srgb,var(--fg) 4%,var(--panel))}
+.reset-request-row:last-child{border-bottom:0}
+.reset-request-row>div:first-child{display:grid;gap:7px;min-width:0;overflow-wrap:anywhere}
+.reset-request-code{font-size:12px;color:var(--muted)}
+.reset-request-row .row-actions{flex:none;gap:8px}
+@media(max-width:600px){.reset-request-row{align-items:flex-start;flex-direction:column}}
+.reset-request-count{margin-left:auto;padding:1px 6px;border-radius:6px;background:var(--line);font-size:11px}.reset-request-count[hidden]{display:none}

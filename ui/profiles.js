@@ -62,6 +62,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       if(form.tagName==='DIALOG')form.close();if(replacing)location.reload();else await connect();
     }catch(e){error.textContent=e.message;}finally{submit.disabled=false;}};
     if(mode==='login'&&(!meta?.legacy_claim||getToken()))fields.append(button('Create account',()=>authentication('register',form,selection)));
+    if(mode==='login')fields.append(button(sessionStorage.getItem('kindred-password-reset')?'Resume password reset':'Forgot password?',()=>passwordReset(username.value)));
     if(mode==='register')fields.append(button('Already have an account? Sign in',()=>authentication('login',form,selection)));
     if(form.id==='account-connect'&&window.__KINDRED_PROFILE_HOST&&nativeProfiles.length)fields.append(button('Choose a saved account',()=>accountChooser(form)));
     form.append(fields);username.focus();
@@ -193,12 +194,43 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const save=el('button','primary','Create profile');save.type='submit';form.append(save);
     const request_id=crypto.randomUUID();form.onsubmit=e=>{e.preventDefault();run(async()=>{const profile=await api('profiles',{name:name.value,request_id});d.close();await switchProfile(profile);},save);};
   }
+  async function passwordReset(username=''){
+    const d=dialog('Reset password'),content=el('div','profile-auth');d.append(content);let timer,closed=false;
+    d.addEventListener('close',()=>{closed=true;clearTimeout(timer);},{once:true});
+    let pending;try{pending=JSON.parse(sessionStorage.getItem('kindred-password-reset')||'null');}catch{}
+    function saveForm(){
+      content.replaceChildren();const form=el('form','profile-auth'),password=fieldSet(form,'New password','password','','new-password'),confirm=fieldSet(form,'Confirm password','password','','new-password');password.minLength=4;confirm.minLength=4;
+      const save=el('button','primary','Save password'),error=el('output','profile-form-error');save.type='submit';error.setAttribute('role','alert');form.append(save,error);content.append(form);
+      form.onsubmit=async e=>{e.preventDefault();error.textContent='';if(password.value!==confirm.value){error.textContent='Passwords do not match.';return;}save.disabled=true;try{await api('password-reset/finish',{token:pending.token,password:password.value,confirm_password:confirm.value});sessionStorage.removeItem('kindred-password-reset');password.value='';confirm.value='';content.replaceChildren(el('p','','Password saved. Sign in with your new password.'),button('Done',()=>d.close(),'primary'));}catch(e){error.textContent=e.message;}finally{save.disabled=false;}};password.focus();
+    }
+    async function wait(){
+      content.replaceChildren(el('p','','Waiting for administrator approval'),el('code','reset-request-code','Request '+pending.id.slice(0,8)));const status=el('p','muted');status.setAttribute('role','status');content.append(status);
+      async function poll(){if(closed)return;try{const value=await api('password-reset/status',{token:pending.token});if(closed)return;if(value.state==='approved'){saveForm();return;}if(['denied','expired'].includes(value.state)){sessionStorage.removeItem('kindred-password-reset');content.replaceChildren(el('p','',value.state==='denied'?'Your request was denied.':'Your request expired.'),button('Done',()=>d.close(),'outline-button'));return;}status.textContent='This page will update when your request is approved.';}catch{status.textContent='Reconnecting…';}if(!closed)timer=setTimeout(poll,2500);}await poll();
+    }
+    if(pending?.token&&pending?.id){await wait();return;}
+    const form=el('form','profile-auth'),login=fieldSet(form,'Username','text',username,'username');login.maxLength=80;
+    const submit=el('button','primary','Request password reset'),error=el('output','profile-form-error');submit.type='submit';error.setAttribute('role','alert');form.append(submit,error);content.append(form);
+    form.onsubmit=async e=>{e.preventDefault();submit.disabled=true;error.textContent='';try{pending=await api('password-reset/request',{login:login.value});sessionStorage.setItem('kindred-password-reset',JSON.stringify(pending));if(!closed)await wait();}catch(e){error.textContent=e.message;submit.disabled=false;}};login.focus();
+  }
   async function admin() {
     const d=dialog('Server administration');d.classList.add('settings-dialog','server-admin-dialog');
     const head=d.firstElementChild,nav=el('aside','settings-nav'),tabs=el('nav'),main=el('section','settings-main'),content=el('div','server-admin-content');
     nav.append(el('h2','','Server administration'),tabs);main.append(head,content);d.append(nav,main);
-    const pages={};for(const name of ['Users','Computers','Updates']){const page=el('div','server-admin-page');page.hidden=name!=='Users';pages[name]=page;content.append(page);const tab=button(name,()=>{for(const [key,value] of Object.entries(pages))value.hidden=key!==name;for(const b of tabs.children)b.classList.toggle('active',b===tab);head.querySelector('h2').textContent=name;},'');tab.classList.toggle('active',name==='Users');tabs.append(tab);}head.querySelector('h2').textContent='Users';
+    const pages={};for(const name of ['Users','Password resets','Computers','Updates']){const page=el('div','server-admin-page');page.hidden=name!=='Users';pages[name]=page;content.append(page);const tab=button(name,()=>{for(const [key,value] of Object.entries(pages))value.hidden=key!==name;for(const b of tabs.children)b.classList.toggle('active',b===tab);head.querySelector('h2').textContent=name;},'');tab.classList.toggle('active',name==='Users');tabs.append(tab);}head.querySelector('h2').textContent='Users';
     const data=await api('admin');
+    const requests=pages['Password resets'],resetBadge=el('span','reset-request-count');resetBadge.setAttribute('aria-hidden','true');resetBadge.hidden=true;[...tabs.children].find(b=>b.textContent==='Password resets').append(resetBadge);let resetTimer,resetClosed=false,lastRequests='';
+    d.addEventListener('close',()=>{resetClosed=true;clearTimeout(resetTimer);},{once:true});
+    async function loadResets(){
+      try{const value=await api('admin/password-resets');if(resetClosed)return;const pendingCount=(value.requests||[]).filter(r=>r.state==='pending').length;resetBadge.textContent=String(pendingCount);resetBadge.hidden=!pendingCount;const signature=JSON.stringify(value.requests||[]);if(signature!==lastRequests){lastRequests=signature;requests.replaceChildren();
+        if(!value.requests?.length)requests.append(el('p','muted','No password reset requests.'));
+        for(const request of value.requests||[]){const row=el('section','reset-request-row'),copy=el('div'),actions=el('div','row-actions');copy.append(el('strong','',request.username),el('code','reset-request-code','Request '+request.id.slice(0,8)),el('time','muted',new Date(request.created*1000).toLocaleString()),el('span','muted','Connection IP · '+request.ip));
+          if(request.state==='pending')for(const [action,title] of [['approve','Approve'],['deny','Deny']])actions.append(button(title,async()=>{for(const b of actions.children)b.disabled=true;try{await api('admin/password-resets',{id:request.id,action});lastRequests='';await loadResets();}finally{for(const b of actions.children)b.disabled=false;}},'outline-button'));
+          else actions.append(el('span','muted',request.state==='approved'?'Approved · awaiting new password':'Denied'));
+          row.append(copy,actions);requests.append(row);
+        }
+      }}catch(e){if(!lastRequests)requests.textContent=e.message;}finally{if(!resetClosed){clearTimeout(resetTimer);resetTimer=setTimeout(loadResets,5000);}}
+    }void loadResets();
+
     const updates=el('section','server-update-settings'),updateRow=el('div','row-actions');updates.append(el('h3','','Server updates'));updateRow.append(button('Check for updates',()=>{d.close();window.dispatchEvent(new Event('kindred-server-update'));},'outline-button'));updates.append(updateRow);pages.Updates.append(updates);
     if(window.__KINDRED_PROFILE_HOST&&location.origin==='http://127.0.0.1:9444'){
       const local=el('section','local-server-admin');local.append(el('h3','','Local server'),button('Manage local server',()=>nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark',section:'standalone'}),'outline-button'));pages.Updates.append(local);
