@@ -8,6 +8,18 @@ function readable(value){if(value===null||value===undefined)return '';if(typeof 
 function safeRelated(value){if(Array.isArray(value))return value.map(safeRelated);if(!value||typeof value!=='object')return value;return Object.fromEntries(Object.entries(value).filter(([k])=>!/contentBytes|authorization|token|secret|password|credential|^data$/i.test(k)).map(([k,v])=>[k,safeRelated(v)]));}
 function sourceTime(service,key,text){const millis=service==='clickup'&&key==='Due',seconds=service==='stripe'&&key==='Created';if(!(millis||seconds)||! /^-?\d+$/.test(text))return null;const raw=Number(text),value=raw*(millis?1:1000);if(!Number.isSafeInteger(raw)||!Number.isSafeInteger(value))return null;const date=new Date(value);if(!Number.isFinite(date.getTime()))return null;const iso=date.toISOString();return {iso,text:iso.replace('T',' ').replace('.000Z',' UTC').replace('Z',' UTC'),source:`Source timestamp: ${text} (${millis?'milliseconds':'seconds'})`};}
 function details(value,service){const box=el('dl','connector-record-fields');for(const[k,v]of Object.entries(value||{})){if(/token|secret|password|credential|authorization/i.test(k))continue;const text=readable(v);if(!text)continue;box.append(el('dt','',({CustomerRef:'Customer',TotalAmt:'Total',Balance:'Balance due',CurrencyRef:'Currency',DueDate:'Due date',DocNumber:'Number'}[k]||k.replace(/([a-z])([A-Z])/g,'$1 $2').replaceAll('_',' '))));const dd=el('dd');const href=/^(url|webUrl|web_url|Open source|Open form|Join meeting)$/i.test(k)?safeLink(text):null;if(href){const a=el('a','',/^(Open |Join )/.test(k)?k:'Open source');a.href=href;a.target='_blank';a.rel='noopener noreferrer';dd.append(a);}else{const time=sourceTime(service,k,text);if(time){const n=el('time','',time.text);n.dateTime=time.iso;n.title=time.source;dd.append(n);}else dd.textContent=text;}box.append(dd);}return box;}
+// Provider aliases ("me", template expressions, account IDs) are not sender
+// addresses. Never invent an address when the connector has not supplied one.
+export function emailSenderLabel(email,account){
+ const address=value=>{
+  if(value&&typeof value==='object')return address(value.emailAddress||value.address||value.email);
+  if(typeof value!=='string')return '';
+  const text=value.trim();
+  if(/[\r\n{}]/.test(text))return '';
+  return /^(?:[^<>]+<)?[^\s<>@]+@[^\s<>@]+(?:>)?$/.test(text)?text:'';
+ };
+ return address(email?.from?.text)||address(account)||'Connected account';
+}
 export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botName,sanitizeHtml}){
  const root=el('section','connector-artifact connector-kind-'+card.kind);root.dataset.connectorArtifact=card.id;root.setAttribute('aria-label',`${card.connection||card.connector}: ${card.title}`);
  const header=el('header','connector-artifact-header');header.append(heading(card.connection||card.connector,card.source,card.tool));
@@ -18,7 +30,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  const content=el('div','connector-artifact-content');content.tabIndex=0;content.setAttribute('role','region');content.setAttribute('aria-label','Connector contents');root.append(content);const email=card.email||{},pending=card.status==='pending';
  if(card.kind==='email'&&(email.body||email.subject||email.to)){
   content.append(el('h3','connector-email-subject',email.subject?.text||'(No subject supplied)'));
-  const meta=el('dl','connector-email-addresses');for(const key of ['from','to','cc','bcc']){const value=email[key]?.text||(key==='from'?card.account||'Sender resolved by the connected account':'');if(value){meta.append(el('dt','',fieldNames[key]),el('dd','',value));}}content.append(meta);
+  const meta=el('dl','connector-email-addresses');for(const key of ['from','to','cc','bcc']){const value=key==='from'?emailSenderLabel(email,card.account):email[key]?.text;if(value){meta.append(el('dt','',fieldNames[key]),el('dd','',value));}}content.append(meta);
   const body=el('div','connector-email-body');const text=email.body?.text||'No message body was supplied by this tool.';
   if(email.body?.format==='html'||email.body?.key?.includes('html')||card.input?.is_html===true||card.input?.body_type==='html'){body.classList.add('is-html');body.append(sanitizeHtml(text));}else body.textContent=text;
   content.append(body);
