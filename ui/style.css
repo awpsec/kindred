@@ -5139,3 +5139,19 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 @media(max-width:620px){.connector-kind-email>.connector-artifact-content,.connector-kind-email .email-draft-editor{padding:18px}.connector-kind-email>footer{padding:14px}.connector-kind-email>footer>.primary{margin-left:0}.connector-kind-email .connector-email-subject{font-size:17px}}
 
 .connector-email-attachments{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:20px;font-size:12px}.connector-attachment-chip{padding:6px 10px;border:1px solid var(--line);border-radius:7px;overflow-wrap:anywhere;max-width:100%}
+
+.server-admin-dialog .profile-dialog-heading{margin:0;padding:24px 30px;border-bottom:1px solid var(--line);flex:none}
+.server-admin-content{padding:24px 30px;overflow:auto;min-height:0;flex:1}
+.server-admin-page[hidden]{display:none}
+.server-admin-page>.remember-device{display:flex;gap:12px;align-items:center;margin-bottom:16px}
+.server-admin-page>.profile-invite{display:block;width:100%;margin:12px 0}
+.server-admin-page>.profile-invite[hidden]{display:none}
+.server-user-table{margin-top:20px;max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.server-user-row{display:grid;grid-template-columns:minmax(100px,1fr) 65px 135px;gap:12px;align-items:center;padding:12px;font-size:13px;background:var(--panel)}
+.server-user-row:nth-child(odd){background:color-mix(in srgb,var(--fg) 5%,var(--panel))}
+.server-user-row>div:first-child{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}
+.server-user-head{position:sticky;top:0;z-index:1;color:var(--muted);font-size:12px}
+.server-user-row .row-actions{justify-content:flex-end;gap:6px}
+.server-user-row .icon-button{width:28px;height:28px;flex:none}
+.server-user-row svg{width:16px;height:16px}
+@media(max-width:600px){.server-admin-content{padding:16px}.server-admin-dialog .profile-dialog-heading{padding:16px}.server-user-row{grid-template-columns:minmax(70px,1fr) 42px 110px;gap:6px}}

@@ -6,7 +6,7 @@
   const node=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls||'';if(text)n.textContent=text;return n;};
   const install=()=>{
     for(const dialog of document.querySelectorAll('dialog.profile-dialog')){
-      if(dialog.querySelector('.profile-dialog-heading h2')?.textContent!=='Server administration')continue;
+      if(!dialog.classList.contains('server-admin-dialog')&&dialog.querySelector('.profile-dialog-heading h2')?.textContent!=='Server administration')continue;
       let section=dialog.querySelector('.local-server-admin');
       if(section?.dataset.nativeLocalAdmin){for(const duplicate of dialog.querySelectorAll('.local-server-admin:not([data-native-local-admin])'))duplicate.remove();continue;}
       if(!section){section=node('section','local-server-admin');dialog.querySelector('.profile-dialog-heading').after(section);}
