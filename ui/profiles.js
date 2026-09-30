@@ -11,13 +11,13 @@ export function savedAccounts(entries,last) {
 // Profile switching reloads the application after rotating its scoped session.
 // That releases every chat, provider, image, VNC and native-operation cache.
 export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreAfterSwitch,nativeInvoke,notice}) {
-  let enabled=false, projection=null, polling=false, meta=null, nativeProfiles=[], nativeCounts={},nativeLast=null;
+  let enabled=false, projection=null, polling=false, meta=null, invitation='', nativeProfiles=[], nativeCounts={},nativeLast=null;
   const $=id=>document.getElementById(id);
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
   const run=async(action,control)=>{if(control?.disabled)return;if(control)control.disabled=true;try{return await action();}catch(e){notice(e.message,true);}finally{if(control)control.disabled=false;}};
   const button=(text,action,cls='subtle-button')=>{const b=el('button',cls,text);b.type='button';b.onclick=()=>run(action,b);return b;};
   async function api(path,body) {
-    const response=await fetch('/identity/'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getToken()},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store',signal:AbortSignal.timeout(30000)});
+    const response=await fetch('/identity/'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getToken()},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store',signal:AbortSignal.timeout(path==='admin/remove'?900000:30000)});
     const value=await response.json();if(!response.ok){const error=new Error(value.error||'The server could not complete this request.');error.status=response.status;throw error;}return value;
   }
   function saveToken(token) {
@@ -47,16 +47,16 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const username=fieldSet(fields,'Username','text',selection.username||'','username');username.maxLength=80;
     const name=mode==='register'?fieldSet(fields,'Display name','text','','nickname'):null;if(name){name.maxLength=80;if(claiming)name.value=projection.profiles.find(p=>p.active)?.name||'';}
     const password=fieldSet(fields,'Password','password','',mode==='register'?'new-password':'current-password');if(mode==='register')password.minLength=4;
-    const invite=mode==='register'&&!meta?.registration&&!meta?.first_user?fieldSet(fields,'Invitation code','text','', 'off'):null;
+    const invite=mode==='register'&&!meta?.registration&&!meta?.first_user?fieldSet(fields,'Invitation code','text',invitation, 'off'):null;
     const remember=el('label','remember-device'),check=el('input');check.type='checkbox';check.checked=$('remember-device').checked;
     remember.append(check,document.createTextNode('Keep this device connected'));fields.append(remember);
     let claimCheck=null;if(claiming){const row=el('label','remember-device');claimCheck=el('input');claimCheck.type='checkbox';claimCheck.required=true;row.append(claimCheck,document.createTextNode('Make this account the owner of my existing workspace'));fields.append(row);}
     const submit=el('button','primary',claiming?'Claim workspace':mode==='register'?'Create account':'Sign in');submit.type='submit';const error=el('output','profile-form-error');error.setAttribute('role','alert');fields.append(submit,error);
     fields.onsubmit=async event=>{event.preventDefault();submit.disabled=true;error.textContent='';try{
-      const value=await api(mode,{login:username.value,password:password.value,...(claiming?{claim_legacy:claimCheck.checked}:{}),profile_id:selection.newAccount?undefined:window.__KINDRED_INITIAL_PROFILE||undefined,...(name?{name:name.value}:{}),...(invite?{invite:invite.value}:{})});
+      const value=await api(mode,{login:username.value,password:password.value,...(claiming?{claim_legacy:claimCheck.checked}:{}),profile_id:selection.newAccount?undefined:window.__KINDRED_INITIAL_PROFILE||undefined,...(name?{name:name.value}:{}),...((invite||invitation)?{invite:invite?.value||invitation}:{})});
       password.value='';$('remember-device').checked=check.checked;
       if(!check.checked)localStorage.removeItem('kindred-token');
-      const replacing=!!getToken();if(replacing)await beforeSwitch(projection?.active,value.profile_id);
+      invitation='';const replacing=!!getToken();if(replacing)await beforeSwitch(projection?.active,value.profile_id);
       saveToken(value.token);
       if(window.__KINDRED_PROFILE_HOST)await nativeInvoke('remember_profile',{theme:document.documentElement.dataset.theme||'dark',token:value.token,profileId:value.profile_id,name:name?.value||'Kindred',remember:check.checked});
       if(form.tagName==='DIALOG')form.close();if(replacing)location.reload();else await connect();
@@ -172,14 +172,14 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   async function profileSettings(){
     const current=projection?.profiles?.find(p=>p.active);if(!current)return;
     const d=dialog('Account settings'),form=el('form','profile-auth');d.append(form);
-    const name=fieldSet(form,'Display name','text',current.name,'nickname');name.maxLength=80;
+    const name=fieldSet(form,'Profile name','text',current.name,'off');name.maxLength=80;
     form.append(el('p','muted','Server · '+location.origin));const save=el('button','primary','Save changes');save.type='submit';form.append(save);
     form.onsubmit=e=>{e.preventDefault();run(async()=>{await api('profile',{name:name.value});await connected();d.close();location.reload();},save);};
-    if(projection.profiles.length>1){
-      const existing=el('details','account-workspaces');existing.append(el('summary','','Existing workspaces'));
+    {
+      const existing=el('details','account-workspaces');existing.append(el('summary','','Profiles'));
       existing.append(el('p','muted','These workspaces share this account’s username and password.'));
       for(const p of projection.profiles){const row=button(p.name+(p.active?' · Current':''),()=>switchProfile(p));row.disabled=p.active;existing.append(row);}
-      form.append(existing);
+      existing.open=true;existing.append(button('Add profile',createProfile,'outline-button'));form.append(existing);
     }
     const transfer=await api('transfer');
     if(transfer?.state==='moved')form.append(el('p','muted','This workspace moved to '+transfer.destination+'. The original is retained here for reference.'));
@@ -187,16 +187,26 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     if(window.__KINDRED_PROFILE_HOST)form.append(button(transfer?'Resume workspace move':'Move workspace',async()=>{d.close();await nativeInvoke('open_profile_transfer',{theme:document.documentElement.dataset.theme||'dark'});},'outline-button'));
     else form.append(el('p','muted','Use the Kindred desktop app to move this workspace to another server.'));
   }
+  async function createProfile(){
+    const d=dialog('Add profile'),form=el('form','profile-auth');d.append(form);
+    const name=fieldSet(form,'Profile name','text','','off');name.maxLength=80;
+    const save=el('button','primary','Create profile');save.type='submit';form.append(save);
+    const request_id=crypto.randomUUID();form.onsubmit=e=>{e.preventDefault();run(async()=>{const profile=await api('profiles',{name:name.value,request_id});d.close();await switchProfile(profile);},save);};
+  }
   async function admin() {
-    const d=dialog('Server administration'),data=await api('admin');
-    const updates=el('section','server-update-settings'),updateRow=el('div','row-actions');updates.append(el('h3','','Server updates'));updateRow.append(button('Check for updates',()=>{d.close();window.dispatchEvent(new Event('kindred-server-update'));},'outline-button'));updates.append(updateRow);d.append(updates);
+    const d=dialog('Server administration');d.classList.add('settings-dialog','server-admin-dialog');
+    const head=d.firstElementChild,nav=el('aside','settings-nav'),tabs=el('nav'),main=el('section','settings-main'),content=el('div','server-admin-content');
+    nav.append(el('h2','','Server administration'),tabs);main.append(head,content);d.append(nav,main);
+    const pages={};for(const name of ['Users','Computers','Updates']){const page=el('div','server-admin-page');page.hidden=name!=='Users';pages[name]=page;content.append(page);const tab=button(name,()=>{for(const [key,value] of Object.entries(pages))value.hidden=key!==name;for(const b of tabs.children)b.classList.toggle('active',b===tab);head.querySelector('h2').textContent=name;},'');tab.classList.toggle('active',name==='Users');tabs.append(tab);}head.querySelector('h2').textContent='Users';
+    const data=await api('admin');
+    const updates=el('section','server-update-settings'),updateRow=el('div','row-actions');updates.append(el('h3','','Server updates'));updateRow.append(button('Check for updates',()=>{d.close();window.dispatchEvent(new Event('kindred-server-update'));},'outline-button'));updates.append(updateRow);pages.Updates.append(updates);
     if(window.__KINDRED_PROFILE_HOST&&location.origin==='http://127.0.0.1:9444'){
-      const local=el('section','local-server-admin');local.append(el('h3','','Local server'),button('Manage local server',()=>nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark',section:'standalone'}),'outline-button'));d.append(local);
+      const local=el('section','local-server-admin');local.append(el('h3','','Local server'),button('Manage local server',()=>nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark',section:'standalone'}),'outline-button'));pages.Updates.append(local);
     }
 
     const hardware=el('section','vm-resource-settings'),heading=el('h3','','Bot computer resources');
     const status=el('p','muted','Loading computer settings…');status.setAttribute('role','status');
-    hardware.append(heading,status);d.append(hardware);
+    hardware.append(heading,status,el('p','muted small','Compose controls server limits and default VM resources. These settings apply to this profile’s computer.'));pages.Computers.append(hardware);
     const form=el('form','vm-resource-form'),fields={},readouts={};
     for(const [key,title,min,max,step] of [['cpus','CPUs',1,32,1],['memory_mb','RAM (GB)',1,256,0.5],['disk_gb','Disk (GB)',8,2048,1]]){
       const f=label(title,'number','');f.input.min=min;f.input.max=max;f.input.step=step;f.input.required=true;fields[key]=f.input;const readout=el('div','vm-resource-readout');readout.append(el('span','',title),el('span','vm-resource-value'));readouts[key]=readout;form.append(f.root,readout);
@@ -211,7 +221,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     },'outline-button');actions.append(save,power);form.append(help,actions);hardware.append(form);form.hidden=true;
     function renderResourceControls(){const editable=resourceState!=='running'&&provisioned;save.hidden=!editable;save.disabled=resourceBusy||!editable;power.disabled=resourceBusy;power.textContent=resourceState==='running'?'Shut down':'Start computer';for(const [key,input] of Object.entries(fields)){input.disabled=resourceBusy||!editable;input.parentElement.hidden=!editable;readouts[key].hidden=editable;readouts[key].lastChild.textContent=input.value;}}
     async function loadResources(){
-      try{const value=await api('computer-settings');if(value.supported===false){status.textContent='This computer is managed by the host. Change its resources in your VM manager.';return;}
+      try{const value=await api('computer-settings');if(value.supported===false){status.textContent='This legacy computer is managed outside Kindred. Its host administrator controls its resources.';return;}
         provisioned=value.provisioned!==false;resourceState=value.state;for(const [key,input] of Object.entries(fields))input.value=key==='memory_mb'?value.resources[key]/1024:value.resources[key];fields.disk_gb.min=value.resources.disk_gb;form.hidden=false;status.textContent=!provisioned?'Start this computer once to configure its resources.':resourceState==='running'?'Running':'Stopped';renderResourceControls();
       }catch(e){status.textContent=e.message;}
     }
@@ -220,12 +230,21 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       catch(e){status.textContent=e.message;}finally{resourceBusy=false;renderResourceControls();}
     };void loadResources();
 
-    d.append(el('p','muted',`Up to ${data.max_users} accounts.`));
-    const open=el('label','remember-device'),check=el('input');check.type='checkbox';check.checked=data.registration;open.append(check,document.createTextNode('Allow new users to register'));d.append(open);
+    const users=pages.Users;
+    const open=el('label','remember-device'),check=el('input');check.type='checkbox';check.checked=data.registration;open.append(check,document.createTextNode('Allow new users to register'));users.append(open);
     check.onchange=()=>run(async()=>{try{await api('admin',{action:'registration',open:check.checked});}catch(e){check.checked=!check.checked;throw e;}},check);
-    const invite=el('output','profile-invite');d.append(button('Create one-use invitation',async()=>{const value=await api('admin',{action:'invite'});invite.textContent=value.invite;invite.hidden=false;}),invite);invite.hidden=true;
-    for(const user of data.users){const row=el('div','profile-admin-row');row.append(el('span','',user.username+(user.admin?' · administrator':'')));if(user.id!==projection.account_id)row.append(button(user.disabled?'Enable':'Disable',async()=>{await api('admin',{action:'disable',user_id:user.id,disabled:!user.disabled});d.close();await admin();}));d.append(row);}
+    const invite=el('input','profile-invite');invite.readOnly=true;invite.setAttribute('aria-label','One-use invitation link');invite.hidden=true;
+    users.append(button('Create invitation link',async()=>{const value=await api('admin',{action:'invite'});const url=new URL(location.origin);url.hash='invite='+encodeURIComponent(value.invite);invite.value=url.href;invite.hidden=false;invite.select();}),invite);
+    const table=el('div','server-user-table');table.setAttribute('role','table');table.setAttribute('aria-label','Server users');users.append(table);
+    const header=el('div','server-user-row server-user-head');header.setAttribute('role','row');for(const name of ['User','Profiles','Actions']){const cell=el('span','',name);cell.setAttribute('role','columnheader');header.append(cell);}table.append(header);
+    for(const user of data.users){
+      const row=el('div','server-user-row');row.setAttribute('role','row');const copy=el('div'),count=el('span','',String(user.profile_count)),actions=el('div','row-actions');for(const cell of [copy,count,actions])cell.setAttribute('role','cell');copy.append(el('strong','',user.username),el('span','muted',user.admin?'Administrator':user.disabled?'Disabled':'Member'));row.append(copy,count,actions);
+      if(user.id!==projection.account_id){actions.append(button(user.disabled?'Enable':'Disable',async()=>{await api('admin',{action:'disable',user_id:user.id,disabled:!user.disabled});d.close();await admin();}));
+        const remove=button('',()=>{const confirm=dialog('Remove '+user.username+'?');confirm.append(el('p','','This permanently deletes their account, all profiles, bot computers, chats and files.'));const error=el('p','profile-form-error');confirm.append(error);const cancel=button('Cancel',()=>confirm.close(),'outline-button'),go=button('Remove user',async()=>{go.disabled=true;cancel.disabled=true;go.textContent='Removing…';try{await api('admin/remove',{user_id:user.id,confirm:user.username});confirm.close();d.close();await admin();}catch(e){error.textContent=e.message;go.textContent='Retry removal';}finally{go.disabled=false;cancel.disabled=false;}},'outline-button');confirm.append(cancel,go);cancel.focus();},'icon-button');remove.append(menuIcon('M6 6l12 12 M18 6L6 18'));remove.setAttribute('aria-label','Remove '+user.username);actions.append(remove);
+      }else actions.append(el('span','muted','You'));table.append(row);
+    }
   }
+
   async function changePassword() {
     const d=dialog('Change password'),form=el('form','profile-auth');d.append(form);
     const current=fieldSet(form,'Current password','password','','current-password'),next=fieldSet(form,'New password','password','','new-password');next.minLength=4;
@@ -250,7 +269,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     root.append(el('div','profile-menu-label','Accounts'));
     const current=projection?.profiles?.find(p=>p.active);
     const accountRow=(name,server,action)=>{const row=button('',action,'profile-menu-row profile-account-row'),avatar=el('span','profile-menu-avatar',name.trim().split(/\s+/).slice(0,2).map(n=>n[0]||'').join('').toUpperCase()),copy=el('span','profile-menu-copy');let host=server;try{host=new URL(server).host;}catch{}copy.append(el('span','profile-menu-name',name),el('span','profile-menu-server',host));copy.title=name+' · '+server;row.append(avatar,copy);row.setAttribute('role','menuitem');return row;};
-    if(current){const row=accountRow(projection.username||current.name,location.origin,()=>{});row.setAttribute('aria-current','true');row.setAttribute('aria-disabled','true');row.tabIndex=-1;row.append(el('span','profile-current','Current'));root.append(row);}
+    if(current){const row=accountRow(projection.username?projection.username+' · '+current.name:current.name,location.origin,()=>{});row.setAttribute('aria-current','true');row.setAttribute('aria-disabled','true');row.tabIndex=-1;row.append(el('span','profile-current','Current'));root.append(row);}
     for(const account of savedAccounts(nativeProfiles,nativeLast).filter(a=>!a.workspaces.some(p=>p.server===location.origin&&p.profile_id===projection?.active))){
       const row=accountRow(account.name||account.username,account.server,()=>openSavedAccount(account,row));
       const n=account.workspaces.reduce((sum,p)=>sum+(nativeCounts[p.key]||0),0);if(n>0){const count=el('span','profile-notification',n>9?'9+':String(n));count.setAttribute('aria-label',n+' unread notifications');row.append(count);}root.append(row);
@@ -259,6 +278,8 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const action=(name,fn,path)=>{const row=button('',()=>{closeMenu();return fn();},'profile-menu-row');row.setAttribute('role','menuitem');row.append(menuIcon(path),el('span','',name));actions.append(row);};
     action('Add account',addAccount,'M12 5v14 M5 12h14');
     if(window.__KINDRED_PROFILE_HOST)action('Manage accounts',serverPicker,'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M13 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8');
+    if(!projection?.legacy&&projection?.profiles?.length>1){for(const profile of projection.profiles)if(!profile.active)action('Switch to '+profile.name,()=>switchProfile(profile),'M4 12h16 M14 6l6 6-6 6');}
+    if(!projection?.legacy)action('Add profile',createProfile,'M12 5v14 M5 12h14');
     if(!projection?.legacy)action('Account settings',profileSettings,'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2');
     if(!projection?.legacy)action('Change password',changePassword,'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2');
     if(projection?.admin)action('Server administration',admin,'M4 3h16v7H4z M4 14h16v7H4z M8 6h.01 M8 17h.01');
@@ -269,6 +290,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   async function init(pairCode) {
     const response=await fetch('/identity/meta',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(response.status===404)return;if(!response.ok)throw new Error('The server is reconnecting.');meta=await response.json();enabled=meta.profiles===true;
     if(!enabled)return;
+    const hash=new URLSearchParams(location.hash.slice(1));if(hash.has('invite')){invitation=hash.get('invite')||'';history.replaceState(null,'',location.pathname+location.search);}
     try{if(window.__KINDRED_PROFILE_HOST){const directory=await nativeInvoke('profile_home_state',{});nativeProfiles=directory.entries||[];nativeLast=directory.last;}}catch{}
     // Old create-profile links now lead to account sign-in, never a hidden workspace creation.
     if(new URLSearchParams(location.search).has('new_profile')){const clean=new URL(location.href);clean.searchParams.delete('new_profile');clean.searchParams.delete('request_id');history.replaceState(null,'',clean.href);}
@@ -285,7 +307,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       // Form nesting is invalid HTML: replace only the original token form's tag.
       const container=el('div','connect-card');container.id='account-connect';for(const child of [...host.children])container.append(child);host.replaceWith(container);
       if(window.__KINDRED_PROFILE_HOST&&nativeProfiles.length&&!window.__KINDRED_EXPLICIT_PROFILE&&(!window.__KINDRED_NEW_ACCOUNT||nativeProfiles.some(p=>p.server===location.origin)))accountChooser(container);
-      else await authentication(meta.first_user&&!meta.legacy_claim?'register':'login',container,{newAccount:!!window.__KINDRED_NEW_ACCOUNT,username:nativeProfiles.find(p=>p.server===location.origin&&p.profile_id===window.__KINDRED_INITIAL_PROFILE)?.username||''});
+      else await authentication(invitation||(meta.first_user&&!meta.legacy_claim)?'register':'login',container,{newAccount:!!window.__KINDRED_NEW_ACCOUNT,username:nativeProfiles.find(p=>p.server===location.origin&&p.profile_id===window.__KINDRED_INITIAL_PROFILE)?.username||''});
       if(meta.legacy_claim)container.append(button('Connect an existing device',()=>location.assign('/?legacy=1')));
     }
   }
