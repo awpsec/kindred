@@ -120,3 +120,5 @@ html[data-home-loading] main{visibility:hidden}
 #transfer-submit{margin-top:0}#transfer-error:empty{display:none}.transfer-actions{margin-top:8px}#transfer-fields>label:not(.check-row){margin:12px 0 6px}
 
 #docker-guide a{color:var(--fg);text-underline-offset:3px}#docker-guide a:focus-visible{outline:2px solid #529df3;outline-offset:3px}
+
+.account-server-group{margin:0 0 20px}.account-server-group>h3{font-size:12px;font-weight:500;color:var(--muted);margin:0 0 8px;overflow-wrap:anywhere}#known-server{width:100%;margin-bottom:12px}

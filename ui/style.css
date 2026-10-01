@@ -5206,3 +5206,5 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 @media(forced-colors:active){.sidebar .conversation-muted{background:Canvas;color:CanvasText;border-color:Canvas}}
 
 .sidebar .pinned-bot.is-muted>.unread-dot{right:auto;left:4px}
+
+.server-admin-identity{margin:auto 14px 16px;font-size:11px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
