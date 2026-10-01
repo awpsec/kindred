@@ -88,7 +88,7 @@ fn normalize_origins(values: Vec<String>) -> Result<Vec<String>> {
 fn validate(value: &str) -> Result<&str> {
     match value {
         "127.0.0.1" | "0.0.0.0" => Ok(value),
-        _ => Err("Choose this computer only or LAN and tailnet.".into()),
+        _ => Err("Choose this computer only or All interfaces.".into()),
     }
 }
 

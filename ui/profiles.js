@@ -217,11 +217,12 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const head=d.firstElementChild,nav=el('aside','settings-nav'),tabs=el('nav'),main=el('section','settings-main'),content=el('div','server-admin-content');
     nav.append(el('h2','','Server admin'),tabs);main.append(head,content);d.append(nav,main);
     const localNetwork=window.__KINDRED_PROFILE_HOST&&location.origin==='http://127.0.0.1:9444';
+    const identity=el('p','server-admin-identity',localNetwork?'Standalone (this machine)':(meta?.deployment==='standalone'?'Standalone':'Hosted')+' ('+location.host+')');identity.title=location.origin;nav.append(identity);
     const pages={};for(const name of ['Users','Password resets','Computers',...(localNetwork?['Network']:[]),'Updates']){const page=el('div','server-admin-page');page.hidden=name!=='Users';pages[name]=page;content.append(page);const tab=button(name,()=>{for(const [key,value] of Object.entries(pages))value.hidden=key!==name;for(const b of tabs.children)b.classList.toggle('active',b===tab);head.querySelector('h2').textContent=name;},'');tab.prepend(menuIcon({'Users':'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M20 8v6 M17 11h6','Password resets':'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2','Computers':'M3 4h18v13H3z M8 21h8 M12 17v4','Network':'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M3 12h18 M12 3v18','Updates':'M12 3v12 M7 10l5 5 5-5 M4 17v4h16v-4'}[name]));tab.classList.toggle('active',name==='Users');tabs.append(tab);}head.querySelector('h2').textContent='Users';
     const data=await api('admin');
     if(localNetwork){
       const page=pages.Network,form=el('form','profile-auth'),label=el('label','','Listen on'),select=el('select'),status=el('p','muted'),actions=el('div','row-actions');
-      for(const [value,text] of [['127.0.0.1','This computer only'],['0.0.0.0','LAN and tailnet']]){const option=el('option','',text);option.value=value;select.append(option);}
+      for(const [value,text] of [['127.0.0.1','This computer only'],['0.0.0.0','All interfaces']]){const option=el('option','',text);option.value=value;select.append(option);}
       label.append(select);status.setAttribute('role','status');
       const address=el('code'),hint=el('p','muted','Use this computer’s LAN or Tailscale address on port 9444. Your phone must be on that network.'),
         disruption=el('p','muted','Restarting interrupts active bot work and computer sessions.');
