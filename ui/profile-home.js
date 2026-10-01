@@ -1,3 +1,5 @@
+import {installThemedSelects} from './select-menu.js';
+installThemedSelects();
 import {savedAccounts} from './profiles.js';
 const invoke=(command,args={})=>window.__TAURI__.core.invoke(command,args),$=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search),embedded=params.get('embedded')==='1';
