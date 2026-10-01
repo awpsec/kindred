@@ -4567,8 +4567,13 @@ async function openArtifacts(){
 
 function questionCard(q){
   const card=node('section','question-card');card.dataset.questionId=q.id;card.tabIndex=-1;card.setAttribute('aria-label',q.question);
-  if(q.context){const context=markdown(q.context);context.className='question-context';card.append(context);}
   const title=node('strong','question-title',q.question);card.append(title);
+  if(q.context){
+    const paragraphs=q.context.trim().split(/\n\s*\n/),brief=paragraphs[0];
+    const short=q.context.length<=420,showBrief=!short&&brief.length<=320&&paragraphs.length>1;
+    if(short||showBrief){const context=markdown(short?q.context:brief);context.className='question-context';card.append(context);}
+    if(!short){const details=node('details','question-details'),summary=node('summary','','Details'),body=markdown(showBrief?paragraphs.slice(1).join('\n\n'):q.context);body.className='question-context';details.append(summary,body);card.append(details);}
+  }
   if(q.status!=='pending'){
     const receipt=node('div','question-receipt');
     if(q.status==='answered'){
@@ -4591,10 +4596,22 @@ function questionCard(q){
     option.append(node('span','question-letter',String.fromCharCode(65+i)),node('span','',label));choices.append(option);
   });
   const custom=button('Write my own response',()=>{
-    questionDrafts.set(q.id,questionDrafts.get(q.id)||'');form.hidden=false;custom.hidden=true;input.focus();
+    questionDrafts.set(q.id,questionDrafts.get(q.id)||'');form.hidden=false;custom.hidden=true;input.focus({preventScroll:true});resizeAnswer(true);
+    if(!chatMotionReduced()){
+      const height=form.getBoundingClientRect().height;
+      form.animate([{height:'0px',opacity:0,overflow:'hidden',transform:'translateY(-4px)'},{height:height+'px',opacity:1,overflow:'hidden',transform:'translateY(0)'}],{duration:180,easing:'cubic-bezier(.2,.8,.2,1)'}).finished.then(()=>resizeAnswer(true)).catch(()=>{});
+    }
   },'question-custom');custom.dataset.questionFocus='custom';
   const form=node('form','question-response'),input=node('textarea');input.rows=2;input.maxLength=4000;input.required=true;input.placeholder='Your response…';input.setAttribute('aria-label','Your response');input.dataset.questionFocus='input';input.value=questionDrafts.get(q.id)||'';
-  input.addEventListener('input',()=>questionDrafts.set(q.id,input.value));
+  const resizeAnswer=(reveal=false)=>{
+    if(!input.isConnected||form.hidden)return;
+    input.style.height='auto';input.style.height=Math.min(input.scrollHeight,240)+'px';
+    if(reveal){const bounds=form.getBoundingClientRect(),composer=$('composer')?.getBoundingClientRect(),limit=Math.min(innerHeight-16,composer?.top??innerHeight)-12;
+      if(bounds.bottom>limit){const messages=card.closest('.messages');if(messages)messages.scrollTop+=bounds.bottom-limit;}
+    }
+  };
+  input.addEventListener('input',()=>{questionDrafts.set(q.id,input.value);resizeAnswer(true);});
+  requestAnimationFrame(()=>resizeAnswer(false));
   const send=node('button','primary','Send response');send.type='submit';send.dataset.questionFocus='send';form.append(input,send);form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity())return;perform(()=>submit({custom:input.value.trim()}),send);};
   form.hidden=!questionDrafts.has(q.id);custom.hidden=!form.hidden;card.append(choices,custom,form);
   if(questionPending.has(q.id)){card.setAttribute('aria-busy','true');for(const control of card.querySelectorAll('button,textarea'))control.disabled=true;}
