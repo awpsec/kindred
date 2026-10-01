@@ -5208,3 +5208,16 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .sidebar .pinned-bot.is-muted>.unread-dot{right:auto;left:4px}
 
 .server-admin-identity{margin:auto 14px 16px;font-size:11px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+
+/* Native mobile hosts already inset the web view around hardware and keyboard. */
+html[data-mobile] body { overscroll-behavior:none; }
+html[data-mobile] .conversation-header { -webkit-app-region:no-drag; }
+@media (pointer:coarse) {
+ html[data-mobile] button.icon-button { min-width:44px;min-height:44px; }
+ html[data-mobile] input,html[data-mobile] textarea,html[data-mobile] select { font-size:max(16px,1em); }
+ html[data-mobile] .pane-resize-handle { display:none; }
+}
+@media (max-width:760px) {
+ html[data-mobile] .settings-dialog[open] { width:100%;max-width:100%;height:100dvh;max-height:100dvh;border-radius:0;margin:0; }
+ html[data-mobile] .message-bubble { overflow-wrap:anywhere; }
+}

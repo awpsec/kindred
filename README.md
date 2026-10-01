@@ -33,6 +33,9 @@ The bot computer is persistent; you can watch it, take control, and hand it back
 Check the release notes for OS signing/notarization status and platform-specific
 installation steps. Provider usage is billed by your provider, not included with Kindred.
 
+Android and iOS companion apps are available as [preview source](mobile/README.md).
+Android can be built locally; iOS still requires a Mac build and signing.
+
 ## Make it yours
 
 - Give each bot a role, appearance and model.

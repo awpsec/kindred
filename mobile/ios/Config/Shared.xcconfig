@@ -1,0 +1,8 @@
+// Values shared by every configuration. Override locally in
+// Config/Local.xcconfig (ignored by Git) — never commit a team ID or key.
+KINDRED_BUNDLE_IDENTIFIER = dev.kindred.companion
+KINDRED_DEVELOPMENT_TEAM =
+KINDRED_MARKETING_VERSION = 0.1.0
+KINDRED_BUILD_NUMBER = 1
+
+#include? "Local.xcconfig"

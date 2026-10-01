@@ -1,0 +1,83 @@
+# XcodeGen spec for the Kindred iOS companion. Generate with:
+#   cd mobile/ios && xcodegen generate
+# The .xcodeproj is a build product and is not committed.
+name: KindredCompanion
+options:
+  bundleIdPrefix: dev.kindred
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+packages:
+  KindredCore:
+    path: Packages/KindredCore
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+targets:
+  KindredCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - path: KindredCompanion
+        excludes:
+          - "**/*.md"
+    dependencies:
+      - package: KindredCore
+    settings:
+      base:
+        PRODUCT_NAME: Kindred
+        PRODUCT_BUNDLE_IDENTIFIER: $(KINDRED_BUNDLE_IDENTIFIER)
+        INFOPLIST_FILE: KindredCompanion/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: KindredCompanion/KindredCompanion.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: $(KINDRED_DEVELOPMENT_TEAM)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        MARKETING_VERSION: $(KINDRED_MARKETING_VERSION)
+        CURRENT_PROJECT_VERSION: $(KINDRED_BUILD_NUMBER)
+  KindredCompanionTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: KindredCompanionTests
+    dependencies:
+      - target: KindredCompanion
+      # The host app already links KindredCore; linking it again would load a
+      # second copy into the test process.
+      - package: KindredCore
+        link: false
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(KINDRED_BUNDLE_IDENTIFIER).tests
+        DEVELOPMENT_TEAM: $(KINDRED_DEVELOPMENT_TEAM)
+schemes:
+  KindredCompanion:
+    build:
+      targets:
+        KindredCompanion: all
+        KindredCompanionTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - KindredCompanionTests
+    archive:
+      config: Release
