@@ -4062,16 +4062,16 @@ html[data-input-modality=keyboard] :is(button,a,summary):focus{outline:2px solid
 
 /* Plain disclosures share the same small stroke chevron as our icon buttons.
    Rich summaries supply their own icon and retain their existing layout. */
-details:not(:is(.ai-account,.connector-stack,.connector-call,.task-recovery-history,.dictation-engine,.document-stack))>summary{
+details:not(:is(.ai-account,.connector-stack,.connector-call,.task-recovery-history,.dictation-engine,.document-stack,.question-details))>summary{
   position:relative;list-style:none;cursor:pointer;padding-inline-start:22px;min-height:20px;line-height:1.5;overflow-wrap:anywhere;
 }
 details>summary::-webkit-details-marker{display:none}
-details:not(:is(.ai-account,.connector-stack,.connector-call,.task-recovery-history,.dictation-engine,.document-stack))>summary::before{
+details:not(:is(.ai-account,.connector-stack,.connector-call,.task-recovery-history,.dictation-engine,.document-stack,.question-details))>summary::before{
   content:'';position:absolute;left:2px;top:calc(.75em - 7px);width:14px;height:14px;
   background:currentColor;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m9 5 7 7-7 7' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
   transform:rotate(0);transition:transform .2s cubic-bezier(.2,.8,.2,1);
 }
-details[open]:not(:is(.ai-account,.connector-stack,.connector-call,.task-recovery-history,.dictation-engine,.document-stack))>summary::before{transform:rotate(90deg)}
+details[open]:not(:is(.ai-account,.connector-stack,.connector-call,.task-recovery-history,.dictation-engine,.document-stack,.question-details))>summary::before{transform:rotate(90deg)}
 .activity>summary::before{margin-top:3px}
 :is(.workspace-before,.connection-tools)>summary::before{margin-top:8px}
 details.continue-task-preview>summary::before{left:12px;margin-top:14px}
