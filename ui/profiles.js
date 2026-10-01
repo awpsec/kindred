@@ -216,8 +216,32 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const d=dialog('Server administration');d.classList.add('settings-dialog','server-admin-dialog');
     const head=d.firstElementChild,nav=el('aside','settings-nav'),tabs=el('nav'),main=el('section','settings-main'),content=el('div','server-admin-content');
     nav.append(el('h2','','Server admin'),tabs);main.append(head,content);d.append(nav,main);
-    const pages={};for(const name of ['Users','Password resets','Computers','Updates']){const page=el('div','server-admin-page');page.hidden=name!=='Users';pages[name]=page;content.append(page);const tab=button(name,()=>{for(const [key,value] of Object.entries(pages))value.hidden=key!==name;for(const b of tabs.children)b.classList.toggle('active',b===tab);head.querySelector('h2').textContent=name;},'');tab.prepend(menuIcon({'Users':'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M20 8v6 M17 11h6','Password resets':'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2','Computers':'M3 4h18v13H3z M8 21h8 M12 17v4','Updates':'M12 3v12 M7 10l5 5 5-5 M4 17v4h16v-4'}[name]));tab.classList.toggle('active',name==='Users');tabs.append(tab);}head.querySelector('h2').textContent='Users';
+    const localNetwork=window.__KINDRED_PROFILE_HOST&&location.origin==='http://127.0.0.1:9444';
+    const pages={};for(const name of ['Users','Password resets','Computers',...(localNetwork?['Network']:[]),'Updates']){const page=el('div','server-admin-page');page.hidden=name!=='Users';pages[name]=page;content.append(page);const tab=button(name,()=>{for(const [key,value] of Object.entries(pages))value.hidden=key!==name;for(const b of tabs.children)b.classList.toggle('active',b===tab);head.querySelector('h2').textContent=name;},'');tab.prepend(menuIcon({'Users':'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M20 8v6 M17 11h6','Password resets':'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2','Computers':'M3 4h18v13H3z M8 21h8 M12 17v4','Network':'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M3 12h18 M12 3v18','Updates':'M12 3v12 M7 10l5 5 5-5 M4 17v4h16v-4'}[name]));tab.classList.toggle('active',name==='Users');tabs.append(tab);}head.querySelector('h2').textContent='Users';
     const data=await api('admin');
+    if(localNetwork){
+      const page=pages.Network,form=el('form','profile-auth'),label=el('label','','Listen on'),select=el('select'),status=el('p','muted'),actions=el('div','row-actions');
+      for(const [value,text] of [['127.0.0.1','This computer only'],['0.0.0.0','LAN and tailnet']]){const option=el('option','',text);option.value=value;select.append(option);}
+      label.append(select);status.setAttribute('role','status');
+      const address=el('code'),hint=el('p','muted','Use this computer’s LAN or Tailscale address on port 9444. Your phone must be on that network.'),
+        disruption=el('p','muted','Restarting interrupts active bot work and computer sessions.');
+      const addressLabel=el('label','','Connection addresses'),addresses=el('textarea');addresses.rows=2;addresses.placeholder='http://100.64.1.2:9444';addressLabel.append(addresses);
+      const save=button('Save',async()=>{await update({bind:select.value,addresses:addresses.value.split(/\n/).map(v=>v.trim()).filter(Boolean)});},'outline-button'),
+        restart=button('Restart now',async()=>{status.textContent='Restarting server…';await update({restart:true});},'outline-button');
+      actions.append(save,restart);form.append(label,address,addressLabel,hint,status,actions,disruption);page.append(form);form.onsubmit=e=>e.preventDefault();
+      let current=null,busy=false;
+      function draw(){save.disabled=busy||!current||select.value===current.bind&&addresses.value===(current.addresses||[]).join('\n');restart.hidden=!current?.pending;restart.disabled=busy||!current||select.value!==current.bind||addresses.value!==(current.addresses||[]).join('\n');select.disabled=busy;addresses.disabled=busy;disruption.hidden=!current?.pending;hint.hidden=select.value!=='0.0.0.0';address.textContent=select.value+':9444';}
+      async function update(args={}){
+        busy=true;draw();
+        try{current=await nativeInvoke('standalone_network',args);select.value=current.bind;addresses.value=(current.addresses||[]).join('\n');status.textContent=current.pending?'Saved. Applies at the next server restart.':'Active: '+current.active+':9444';}
+        catch(e){status.textContent=e.message||String(e);}
+        finally{busy=false;draw();}
+      }
+      addresses.oninput=()=>{status.textContent='Unsaved change';draw();};
+      select.onchange=()=>{status.textContent=select.value===current?.bind?(current.pending?'Saved. Restart required.':'Active: '+current.active+':9444'):'Unsaved change';draw();};
+      void update();
+    }
+
     const requests=pages['Password resets'],resetBadge=el('span','reset-request-count');resetBadge.setAttribute('aria-hidden','true');resetBadge.hidden=true;[...tabs.children].find(b=>b.textContent==='Password resets').append(resetBadge);let resetTimer,resetClosed=false,lastRequests='';
     d.addEventListener('close',()=>{resetClosed=true;clearTimeout(resetTimer);},{once:true});
     async function loadResets(){

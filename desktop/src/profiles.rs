@@ -438,7 +438,7 @@ pub fn close_profile_home(window: crate::surface::Surface) -> Result<()> {
     }
     Ok(())
 }
-fn hidden(command: &mut Command) {
+pub(crate) fn hidden(command: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -845,7 +845,7 @@ pub async fn profile_activity(
     }
     Ok(Value::Object(result))
 }
-fn docker_executable() -> PathBuf {
+pub(crate) fn docker_executable() -> PathBuf {
     #[cfg(windows)]
     {
         if let Some(base) = std::env::var_os("ProgramFiles") {
@@ -913,7 +913,7 @@ pub fn start_standalone(
     start_setup(window.app_handle().clone())
 }
 // Only the managed loopback workspace may operate its local installation.
-fn local_admin(window: &crate::surface::Surface) -> Result<()> {
+pub(crate) fn local_admin(window: &crate::surface::Surface) -> Result<()> {
     let url = window.url().map_err(error)?;
     if window.label() == "main"
         && url.origin().ascii_serialization() == crate::local_server::ORIGIN
@@ -1046,6 +1046,7 @@ fn start_setup_mode(app: tauri::AppHandle, prepare_only: bool, activate_only: bo
                         }
                     }
                 }
+                command.env("KINDRED_BIND",crate::standalone_network::saved(&root)?).env("KINDRED_PORT","9444").env("KINDRED_ALLOWED_ORIGINS",serde_json::to_string(&crate::standalone_network::origins(&root)?).map_err(error)?);
                 command.args(args);
                 if activate_only && index == 3 {
                     command.arg("--force-recreate");
