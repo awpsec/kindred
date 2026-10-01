@@ -4612,7 +4612,7 @@ function questionCard(q){
   };
   input.addEventListener('input',()=>{questionDrafts.set(q.id,input.value);resizeAnswer(true);});
   requestAnimationFrame(()=>resizeAnswer(false));
-  const send=node('button','primary','Send response');send.type='submit';send.dataset.questionFocus='send';form.append(input,send);form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity())return;perform(()=>submit({custom:input.value.trim()}),send);};
+  const send=node('button','question-send');send.append(icon('send',16));send.setAttribute('aria-label','Send response');send.title='Send response';send.type='submit';send.dataset.questionFocus='send';form.append(input,send);form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity())return;perform(()=>submit({custom:input.value.trim()}),send);};
   form.hidden=!questionDrafts.has(q.id);custom.hidden=!form.hidden;card.append(choices,custom,form);
   if(questionPending.has(q.id)){card.setAttribute('aria-busy','true');for(const control of card.querySelectorAll('button,textarea'))control.disabled=true;}
   return decisionReceipt(card,{key:'question:'+q.id,title:q.question,terminal:false});

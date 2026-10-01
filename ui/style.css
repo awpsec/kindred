@@ -5184,3 +5184,17 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .server-admin-dialog .settings-nav button{white-space:nowrap;gap:8px}.server-admin-dialog .settings-nav .reset-request-count{padding-inline:4px;margin-left:auto}
 
 .server-user-row.is-disabled .server-user-copy{opacity:.45}
+
+/* Decision replies share one quiet surface with an inset send control. */
+.question-details summary{display:flex;align-items:center;gap:8px;list-style:none;min-height:28px}
+.question-details summary::-webkit-details-marker{display:none}
+.question-details summary::before{content:"";flex:none;width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .18s ease}
+.question-details[open]>summary::before{transform:rotate(45deg)}
+.question-response{gap:0;padding:4px;border:1px solid var(--line);border-radius:12px;background:var(--surface);transition:border-color .18s ease}
+.question-response:focus-within{border-color:var(--muted)}
+.question-response textarea{background:transparent;border:0;border-radius:8px;padding:9px 10px;outline:none}
+.question-response textarea:focus{outline:none}
+.question-response>.question-send{align-self:flex-end;display:grid;place-items:center;width:30px;height:30px;min-height:30px;margin:0 3px 3px;padding:6px;border:0;border-radius:50%;background:var(--hover);color:var(--soft)}
+.question-response>.question-send:hover{background:var(--line);color:var(--fg)}
+.question-response>.question-send:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){.question-details summary::before,.question-response{transition:none}}
