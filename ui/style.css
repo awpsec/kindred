@@ -5198,3 +5198,11 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .question-response>.question-send:hover{background:var(--line);color:var(--fg)}
 .question-response>.question-send:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.question-details summary::before,.question-response{transition:none}}
+
+/* Avatar-anchored mute status stays visible in expanded and compact navigation. */
+.sidebar :is(.character,.participant-stack){position:relative}
+.sidebar .conversation-muted{position:absolute;top:-2px;right:-3px;z-index:4;display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--bg);color:var(--soft);border:2px solid var(--bg);pointer-events:none}
+.sidebar .conversation-muted>.icon{width:12px;height:12px}
+@media(forced-colors:active){.sidebar .conversation-muted{background:Canvas;color:CanvasText;border-color:Canvas}}
+
+.sidebar .pinned-bot.is-muted>.unread-dot{right:auto;left:4px}

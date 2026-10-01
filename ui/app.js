@@ -985,6 +985,7 @@ function renderSidebar() {
   const key = JSON.stringify([
     state.bots,
     state.general.name,state.general.separate_bot_chats,
+    Object.entries(state.attention.mutes||{}).map(([key,until])=>[key,until===-1||until>Date.now()/1000]),
     state.chats,
     Object.entries(state.attention.chats).map(([id,value])=>[id,value.unread]),
     state.chat?.id,
@@ -4683,6 +4684,15 @@ function acceptAttention(attention){
   }
 }
 function addUnreadDot(control,id,bot){
+  const avatar=control.querySelector('.character,.participant-stack');
+  avatar?.querySelector(':scope > .conversation-muted')?.remove();
+  const mutedUntil=key=>{const until=state.attention.mutes?.[key]||0;return until===-1||until>Date.now()/1000;};
+  const muted=mutedUntil('chat:'+id)||(bot&&(mutedUntil('bot:'+bot.id)||profile(bot).notifications===false));
+  control.classList.toggle('is-muted',!!muted);
+  if(muted&&avatar){
+    const badge=node('span','conversation-muted');badge.append(icon('bell-off',12));badge.title='Conversation muted';badge.setAttribute('aria-hidden','true');avatar.append(badge);
+    control.setAttribute('aria-label',(control.getAttribute('aria-label')||'Conversation')+', muted');
+  }
   if(!state.attention.chats[id]?.unread)return;
   const color=bot?profile(bot).color:null;
   control.classList.add('has-unread');
