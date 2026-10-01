@@ -56,6 +56,7 @@ fn main() {
             "start_standalone",
             "prepare_local_server",
             "restart_local_server",
+            "standalone_network",
             "standalone_status",
             "set_launch_on_startup",
             "set_hardware_acceleration",

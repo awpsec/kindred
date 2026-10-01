@@ -16,6 +16,7 @@ mod linux_update;
 mod local_access;
 mod local_files;
 mod local_server;
+mod standalone_network;
 mod mac_update;
 mod managed_process;
 #[cfg(target_os = "linux")]
@@ -213,6 +214,7 @@ fn main() {
             profiles::start_standalone,
             profiles::prepare_local_server,
             profiles::restart_local_server,
+            standalone_network::standalone_network,
             profiles::standalone_status,
             profiles::set_launch_on_startup,
             profiles::set_hardware_acceleration,
@@ -274,6 +276,7 @@ fn main() {
                 .window("main").local(false).remote("http://127.0.0.1:9444/".to_string())
                 .permission("allow-prepare-local-server")
                 .permission("allow-restart-local-server")
+                .permission("allow-standalone-network")
                 .permission("allow-standalone-status"))?;
             app.add_capability(tauri::ipc::CapabilityBuilder::new("embedded-local-permissions")
                 .webview("local-access-settings")
