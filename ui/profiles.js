@@ -1,3 +1,4 @@
+import {mobileSession,mobileAccounts} from './mobile.js';
 // Older installations may retain several workspaces under one sign-in.
 // Group only by a verified native account key or an exact server + username.
 export function savedAccounts(entries,last) {
@@ -22,7 +23,8 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   }
   function saveToken(token) {
     setToken(token);sessionStorage.setItem('kindred-token',token);
-    if(window.__KINDRED_PROFILE_HOST)localStorage.removeItem('kindred-token');
+    mobileSession(token);
+    if(window.__KINDRED_PROFILE_HOST||window.__KINDRED_MOBILE)localStorage.removeItem('kindred-token');
     else if($('remember-device').checked||localStorage.getItem('kindred-token'))localStorage.setItem('kindred-token',token);
   }
   function label(text,type='text',value='') {
@@ -84,6 +86,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   async function connected() {
     if(!enabled)return;
     await refresh();
+    mobileSession(getToken(),projection?.active||'');
     if(window.__KINDRED_PROFILE_HOST&&projection)await nativeInvoke('remember_profile',{theme:document.documentElement.dataset.theme||'dark',token:getToken(),profileId:projection.active,name:projection.profiles.find(p=>p.active)?.name||'Kindred',remember:$('remember-device').checked});
   }
   function paint() {
@@ -118,7 +121,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   async function switchProfile(profile) {
     if(profile.active)return;
     await beforeSwitch(projection.active,profile.id);
-    const value=await api('switch',{profile_id:profile.id});saveToken(value.token);
+    const value=await api('switch',{profile_id:profile.id});saveToken(value.token);mobileSession(value.token,profile.id);
     if(window.__KINDRED_PROFILE_HOST)await nativeInvoke('remember_profile',{theme:document.documentElement.dataset.theme||'dark',token:value.token,profileId:profile.id,name:profile.name,remember:$('remember-device').checked});
     location.reload();
   }
@@ -131,6 +134,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     await api('directory',{name:url.hostname,server:url.origin});location.assign(url.href);
   }
   async function serverPicker() {
+    if(mobileAccounts())return;
     $('profile-menu')?.remove();
     if(window.__KINDRED_DESKTOP?.platform==='linux'){await nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark'});return;}
     if($('account-manager-dialog'))return;

@@ -1,0 +1,5 @@
+#include "Shared.xcconfig"
+
+// Single source for both the `aps-environment` entitlement and the
+// `environment` the app reports to Kindred servers.
+KINDRED_APS_ENVIRONMENT = production

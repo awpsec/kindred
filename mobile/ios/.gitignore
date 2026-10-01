@@ -1,0 +1,12 @@
+*.xcodeproj/
+*.xcworkspace/
+!Packages/**/*.xcworkspace/
+DerivedData/
+.build/
+.swiftpm/
+xcuserdata/
+Config/Local.xcconfig
+*.p8
+*.mobileprovision
+*.ipa
+*.dSYM.zip

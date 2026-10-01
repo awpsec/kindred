@@ -1,3 +1,4 @@
+import {mobileSession,mobileConversationKey,mobileRequestedChat} from './mobile.js';
 import {createServerUpdater} from './server-update.js';
 import {settingsHeaderArt} from './settings-header-art.js';
 import {workspaceArtifactCard,artifactStudio,artifactUpdateRow,artifactUpdateBatches} from './workspace-artifacts.js';
@@ -95,7 +96,8 @@ const profilesUI = createProfileUI({
     dictationUI?.cancel();
     saveDraft();
     if(previous)sessionStorage.setItem('kindred-profile-draft-'+previous,JSON.stringify(conversationSnapshot()));
-    let saved={};try{saved=JSON.parse(sessionStorage.getItem('kindred-profile-draft-'+next)||'{}');}catch{}
+    if(window.__KINDRED_MOBILE)persistConversation();
+    let saved={};try{saved=JSON.parse(sessionStorage.getItem('kindred-profile-draft-'+next)||(mobileConversationKey(next)&&localStorage.getItem(mobileConversationKey(next)))||'{}');}catch{}
     for(const [key,value] of Object.entries({drafts:saved.drafts||[],replies:saved.replies||[],files:saved.files||[],sends:saved.sends||[],selection:saved.selection||{}}))sessionStorage.setItem('kindred-reload-'+key,JSON.stringify(value));
     disconnectDesktop();
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:''});
@@ -436,7 +438,7 @@ async function connect() {
   await api("/status");
   state.status={};state.controlNoticeKey='';state.dismissedControlNotice='';$('control-notice').hidden=true;
   sessionStorage.setItem("kindred-token", state.token);
-  if ($("remember-device").checked && !window.__KINDRED_PROFILE_HOST)
+  if ($("remember-device").checked && !window.__KINDRED_PROFILE_HOST && !window.__KINDRED_MOBILE)
     localStorage.setItem("kindred-token", state.token);
   else localStorage.removeItem("kindred-token");
   [state.general, state.connections] = await Promise.all([
@@ -452,6 +454,8 @@ async function connect() {
   $("app").hidden = false;
   await refresh(true);
   await profilesUI.connected();
+  mobileSession(state.token);
+  void openMobileNotification();
   if(window.__KINDRED_DESKTOP)await nativeInvoke("start_desktop",{token:state.token});
   else void pollBrowserNotifications();
 }
@@ -531,7 +535,8 @@ async function refresh(force = false) {
       try {
         const updateKey=await restartDraftKey();
         state.reloadResumeKey=updateKey.replace('kindred-update-resume-','kindred-tab-resume-');
-        const stored=localStorage.getItem(updateKey)||(!sessionStorage.getItem('kindred-reload-selection')&&sessionStorage.getItem(state.reloadResumeKey));
+        state.mobileDraftKey=mobileConversationKey();
+        const stored=localStorage.getItem(updateKey)||(!sessionStorage.getItem('kindred-reload-selection')&&(sessionStorage.getItem(state.reloadResumeKey)||(mobileConversationKey()&&localStorage.getItem(mobileConversationKey()))));
         if(stored){const resume=JSON.parse(stored);for(const key of ["drafts","replies","files","sends","selection"])sessionStorage.setItem("kindred-reload-"+key,JSON.stringify(resume[key]||(key==="selection"?{}:[])));localStorage.removeItem(updateKey);}
         state.drafts = new Map(
           JSON.parse(sessionStorage.getItem("kindred-reload-drafts") || "[]"),
@@ -2274,6 +2279,7 @@ async function settingsGeneral(revision) {
         sessionStorage.removeItem("kindred-token");
         localStorage.removeItem("kindred-token");
         state.token = "";
+        mobileSession("");
         commandsUI?.reset();
         browserNotificationCursor=null;
         screenshotCache.clear();releaseScreenshotUrls();
@@ -5930,6 +5936,16 @@ function syncArtifactRoute(){
 }
 window.addEventListener('popstate',syncArtifactRoute);
 window.addEventListener('hashchange',syncArtifactRoute);
+window.addEventListener('hashchange',()=>void openMobileNotification());
+async function openMobileNotification(){
+  const id=mobileRequestedChat();if(!id||!state.token||!state.restoredReload)return;
+  history.replaceState({},'',location.pathname+location.search);
+  try {
+    if(id.startsWith('dm-')){const bot=state.bots.find(b=>'dm-'+b.id===id);if(bot){await chooseBot(bot);return;}}
+    const chat=state.chats.find(c=>c.id===id);
+    if(chat)await chooseChat(chat);else notice('This conversation is no longer available in this profile.',true);
+  }catch(e){notice(e.message||'Could not open this conversation.',true);}
+}
 $('artifacts-button').onclick=()=>{history.pushState({},'','/artifacts');syncArtifactRoute();};
 $('artifacts-button').replaceChildren(icon('folder'),node('span','','Artifacts'));
 $("marketplace-button").onclick = () => perform(openMarketplace);
@@ -6314,7 +6330,15 @@ function conversationSnapshot(){
 }
 function persistConversation(){
   if(!state.reloadResumeKey)return;
-  try{sessionStorage.setItem(state.reloadResumeKey,JSON.stringify(conversationSnapshot()));}catch{/* Storage failure cannot block sending or navigation. */}
+  try{const snapshot=JSON.stringify(conversationSnapshot());sessionStorage.setItem(state.reloadResumeKey,snapshot);const key=state.mobileDraftKey;if(key)localStorage.setItem(key,snapshot);}catch{/* Storage failure cannot block sending or navigation. */}
+}
+let mobileDraftTimer;
+if(window.__KINDRED_MOBILE){
+  $('prompt').addEventListener('input',()=>{clearTimeout(mobileDraftTimer);mobileDraftTimer=setTimeout(persistConversation,300);});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)persistConversation();});
+  $('prompt').addEventListener('blur',persistConversation);
+  window.addEventListener('kindred-mobile-suspend',persistConversation);
+  window.addEventListener('kindred-mobile-error',event=>notice(String(event.detail||'Could not save this file.'),true));
 }
 addEventListener('pagehide',()=>{
   pageSuspended=true;
