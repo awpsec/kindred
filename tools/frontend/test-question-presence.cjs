@@ -4,7 +4,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test-results');fs.mkdirSync(artifacts,{recursive:true});
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
- const engine=process.env.WEBKIT?'webkit':'edge',browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true,channel:'msedge'});
+ const engine=process.env.WEBKIT?'webkit':'edge',browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true,channel:process.env.KINDRED_TEST_BROWSER_CHANNEL||'msedge'});
  try{
   const p=await browser.newPage({viewport:{width:1320,height:900}});p.setDefaultTimeout(12000);
   const errors=[];p.on('pageerror',e=>errors.push(e.message));
@@ -18,6 +18,9 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
    if(name==='/chats/'+chat.id)return send({chat,messages});
    if(name.startsWith('/runs/')){const run=runs.find(r=>r.id===name.slice(6));return send({run,events:details.get(run.id)||[],approvals:[],attachments:[]});}
    if(name==='/activity'){const run=runs[0];return send({leet:{run_id:run.id,status:run.status,shape:label==='Searching'?'investigate':'think',label,started_at:now}});}
+   if(name==='/questions/stale/dismiss'){
+    const stale=messages.find(m=>m.question?.id==='stale').question;stale.status='dismissed';stale.answer='';stale.selected=null;return send(stale);
+   }
    if(name==='/questions/choice/answer'){
     question.status='answered';question.selected=0;question.answer=question.options[0];
     runs.unshift({...original,id:'continuation',status:'running',output:'',created:now+2});label='Searching';
@@ -35,7 +38,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   messages.push({seq:2,sender:'leet',kind:'question',question,run_id:original.id,text:question.question,created:now+1});
   const card=p.locator('[data-question-id="choice"]');await card.waitFor();
   await p.waitForFunction(()=>document.querySelectorAll('#content .work-line').length===0);
-  await card.getByRole('button',{name:/Scan local files/}).click();await card.locator('.question-receipt').waitFor();
+  await card.getByRole('button',{name:/Scan local files/}).click();await card.locator('.decision-receipt-summary').waitFor();assert.equal(await card.locator('.decision-receipt-outcome').innerText(),'Answered');
   await p.waitForFunction(()=>document.querySelectorAll('#content .work-line').length===1&&document.querySelector('#content .work-label > span')?.textContent==='Searching');
   await p.waitForTimeout(3200);assert.equal(await workers.count(),1,'Polling must not revive the question turn');
   await workers.hover();await p.screenshot({path:path.join(artifacts,engine+'-question-continuation.png')});
@@ -47,7 +50,18 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   const quiet={...original,id:'quiet',status:'running',output:''};runs.unshift(quiet);await workers.waitFor();
   quiet.status='completed';quiet.output='No new findings.';details.set(quiet.id,[{seq:4,kind:'tool_result',body:{tool:'finish_quietly',failed:false},created:now+3}]);
   await p.waitForFunction(()=>document.querySelectorAll('#content .work-line').length===0);
-  await p.waitForTimeout(1600);assert.equal(await workers.count(),0);assert.deepEqual(errors,[]);
+  await p.waitForTimeout(1600);assert.equal(await workers.count(),0);
+  const countBefore=runs.length;
+  messages.push({seq:3,sender:'leet',kind:'question',question:{...question,id:'stale',status:'pending',answer:'',selected:null},run_id:original.id,text:question.question,created:now+4});
+  const stale=p.locator('[data-question-id="stale"]');await stale.waitFor();
+  await stale.getByRole('button',{name:'Write my own response'}).click();
+  await stale.getByRole('textbox',{name:'Your response'}).fill('Unsubmitted draft');
+  await stale.getByRole('button',{name:'Dismiss',exact:true}).click();
+  await p.waitForFunction(()=>document.querySelector('[data-question-id="stale"] .decision-receipt-outcome')?.textContent==='Dismissed');
+  assert.equal(runs.length,countBefore,'Dismiss must not start a continuation');
+  assert.equal(await workers.count(),0);assert.equal(await stale.getByRole('textbox').count(),0);
+  await stale.scrollIntoViewIfNeeded();await p.screenshot({path:path.join(artifacts,engine+'-question-dismissed-mobile.png')});
+  assert.deepEqual(errors,[]);
   console.log(JSON.stringify({passed:true,engine,questionHandoff:true,singleContinuationAvatar:true,liveActivityLabels:true,emptyCompletion:true,quietCompletion:true,mobile:true}));
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

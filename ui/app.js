@@ -4586,14 +4586,14 @@ function questionCard(q){
     if(q.status==='answered'){
       if(q.selected!==null && q.selected!==undefined)receipt.append(node('span','question-letter',String.fromCharCode(65+q.selected)));
       receipt.append(node('span','',q.answer),icon('check',16));
-    }else receipt.append(node('span','muted','This question was cancelled.'));
-    card.append(receipt);return decisionReceipt(card,{key:'question:'+q.id,title:q.question,outcome:q.status==='answered'?'Answered':'Cancelled',terminal:true});
+    }else receipt.append(node('span','muted',q.status==='dismissed'?'Dismissed without an answer.':'This question was cancelled.'));
+    card.append(receipt);return decisionReceipt(card,{key:'question:'+q.id,title:q.question,outcome:q.status==='answered'?'Answered':q.status==='dismissed'?'Dismissed':'Cancelled',terminal:true});
   }
   const choices=node('div','question-choices');
   const submit=async body=>{
     if(questionPending.has(q.id))return;questionPending.add(q.id);card.setAttribute('aria-busy','true');for(const control of card.querySelectorAll('button,textarea'))control.disabled=true;
     try{
-      const saved=await api(q.shared_seq?'/server-chats/'+q.chat_id+'/questions/'+q.shared_seq+'/answer':'/questions/'+q.id+'/answer','POST',body);questionDrafts.delete(q.id);
+      const saved=await api(q.shared_seq?'/server-chats/'+q.chat_id+'/questions/'+q.shared_seq+'/answer':'/questions/'+q.id+(body.dismiss?'/dismiss':'/answer'),'POST',body);questionDrafts.delete(q.id);
       for(const entry of chatHistory.values())for(const m of entry.messages)if(m.question?.id===q.id)m.question=saved;
       await refresh(true);
     }finally{questionPending.delete(q.id);state.chatKey='';await renderChat(true,'cached');}
@@ -4620,7 +4620,9 @@ function questionCard(q){
   input.addEventListener('input',()=>{questionDrafts.set(q.id,input.value);resizeAnswer(true);});
   requestAnimationFrame(()=>resizeAnswer(false));
   const send=node('button','question-send');send.append(icon('send',16));send.setAttribute('aria-label','Send response');send.title='Send response';send.type='submit';send.dataset.questionFocus='send';form.append(input,send);form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity())return;perform(()=>submit({custom:input.value.trim()}),send);};
-  form.hidden=!questionDrafts.has(q.id);custom.hidden=!form.hidden;card.append(choices,custom,form);
+  const dismiss=button('Dismiss',()=>submit({dismiss:true}),'question-dismiss');dismiss.dataset.questionFocus='dismiss';dismiss.title='Dismiss without answering';
+  const actions=node('div','question-actions');actions.append(custom,dismiss);
+  form.hidden=!questionDrafts.has(q.id);custom.hidden=!form.hidden;card.append(choices,actions,form);
   if(questionPending.has(q.id)){card.setAttribute('aria-busy','true');for(const control of card.querySelectorAll('button,textarea'))control.disabled=true;}
   return decisionReceipt(card,{key:'question:'+q.id,title:q.question,terminal:false});
 }
