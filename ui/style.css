@@ -5228,3 +5228,7 @@ html[data-mobile] .conversation-header { -webkit-app-region:no-drag; }
 .server-admin-page .vm-resource-form > p{margin:0;line-height:1.5}
 .server-admin-page .vm-resource-form > .row-actions{margin:8px 0 0}
 .server-admin-page .server-update-settings{margin-bottom:24px}
+
+.question-actions {display:flex;align-items:baseline;justify-content:space-between;gap:16px;}
+.question-dismiss {margin-left:auto;padding:12px 2px 0;color:var(--soft);font-size:calc(12px * var(--text-scale, 1));}
+.question-dismiss:hover,.question-custom:hover {color:var(--fg);}
