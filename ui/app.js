@@ -5208,7 +5208,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       for(const delivery of m.delivery||[]) {
         const recipient=state.bots.find(b=>b.id===delivery.bot_id)?.name||'Bot';
         const working=state.allRuns.find(r=>r.bot_id===delivery.bot_id&&r.chat_id===chat.id&&active(r));
-        const text=delivery.status==='steered'?`${recipient} · included in this task${['failed','interrupted','cancelled'].includes(delivery.task_status)?' · task stopped':''}`:delivery.status==='queued'&&working&&!m.command?.command?`${recipient} · ${delivery.steer_requested?'will receive this after the current action':'queued for the next task'}`:'';
+        const text=delivery.status==='steered'?`${recipient} · included in this task${['failed','interrupted','cancelled'].includes(delivery.task_status)?' · task stopped':''}`:delivery.status==='queued'&&working&&!m.command?.command&&!delivery.steer_requested?`${recipient} · queued for the next task`:'';
         if(text)bubble.append(node('span','message-delivery',text));
         if(delivery.status==='queued'&&working&&!m.command?.command&&delivery.run_id&&!delivery.steer_requested){const controls=node('div','message-steering');const steer=button('Steer now',async()=>{await api('/runs/'+encodeURIComponent(delivery.run_id)+'/steer','POST',{run_id:working.id});await refresh(true);},'subtle-button');steer.title='Send to '+recipient+' after the current action, without stopping the task';steer.setAttribute('aria-label','Steer '+recipient+' with this message');controls.append(steer);group.prepend(controls);}
       }
