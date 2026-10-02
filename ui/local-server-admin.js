@@ -7,9 +7,15 @@
   const install=()=>{
     for(const dialog of document.querySelectorAll('dialog.profile-dialog')){
       if(!dialog.classList.contains('server-admin-dialog')&&dialog.querySelector('.profile-dialog-heading h2')?.textContent!=='Server administration')continue;
+      const modern=dialog.classList.contains('server-admin-dialog');
+      const updates=dialog.querySelector('.server-admin-page[data-page="Updates"]');
+      // The native observer can run while the async admin dialog is being built.
+      // Wait for its Updates page instead of inserting controls above every tab.
+      if(modern&&!updates)continue;
       let section=dialog.querySelector('.local-server-admin');
+      if(section&&updates&&section.parentElement!==updates)updates.append(section);
       if(section?.dataset.nativeLocalAdmin){for(const duplicate of dialog.querySelectorAll('.local-server-admin:not([data-native-local-admin])'))duplicate.remove();continue;}
-      if(!section){section=node('section','local-server-admin');dialog.querySelector('.profile-dialog-heading').after(section);}
+      if(!section){section=node('section','local-server-admin');if(updates)updates.append(section);else dialog.querySelector('.profile-dialog-heading').after(section);}
       section.dataset.nativeLocalAdmin='true';section.replaceChildren();
       const style=node('style');style.textContent=`.local-server-admin{padding:0 0 24px;margin-bottom:24px;border-bottom:1px solid var(--line)}.local-server-admin .local-update-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.local-server-admin h3{margin:0;font-size:14px}.local-server-admin .local-update-version{font-size:12px;margin:5px 0 0;color:var(--muted)}.local-server-admin .local-update-message{font-size:13px;margin:14px 0 0;overflow-wrap:anywhere}.local-server-admin progress{display:block;width:100%;height:5px;margin-top:16px;accent-color:var(--text);border-radius:4px}.local-server-admin [hidden]{display:none!important}.local-server-admin details{font-size:12px;margin-top:12px}.local-server-admin pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:120px;overflow:auto}.local-server-admin button{margin:0;flex-shrink:0}`;
       const row=node('div','local-update-row'),copy=node('div'),title=node('h3','','Local server'),version=node('p','local-update-version','Checking version…');copy.append(title,version);
