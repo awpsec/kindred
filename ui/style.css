@@ -5221,3 +5221,10 @@ html[data-mobile] .conversation-header { -webkit-app-region:no-drag; }
  html[data-mobile] .settings-dialog[open] { width:100%;max-width:100%;height:100dvh;max-height:100dvh;border-radius:0;margin:0; }
  html[data-mobile] .message-bubble { overflow-wrap:anywhere; }
 }
+
+/* Admin pages share one inset and section rhythm, including native updates. */
+.server-admin-page > section:last-child{margin-bottom:0;padding-bottom:0;border-bottom:0}
+.server-admin-page .vm-resource-settings > p{margin:0 0 12px;line-height:1.5}
+.server-admin-page .vm-resource-form > p{margin:0;line-height:1.5}
+.server-admin-page .vm-resource-form > .row-actions{margin:8px 0 0}
+.server-admin-page .server-update-settings{margin-bottom:24px}
