@@ -1,8 +1,8 @@
 import KindredCore
 import SwiftUI
 
-/// Native shell: a slim navigation bar with the current account and an
-/// accounts button, and below it the server's own web UI.
+/// The server's chat header owns navigation once it is ready. Native account
+/// controls remain available during loading, sign-in and page failures.
 @MainActor
 struct RootView: View {
     @Environment(AppModel.self) private var model
@@ -18,6 +18,7 @@ struct RootView: View {
                 .toolbar { toolbar }
                 .toolbarBackground(Theme.chrome, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
+                .toolbar(isShowingConversation ? .hidden : .visible, for: .navigationBar)
                 .sheet(item: $model.download) { file in
                     ShareSheet(items: [file.url])
                 }
@@ -64,6 +65,11 @@ struct RootView: View {
         } else {
             WelcomeView()
         }
+    }
+
+    private var isShowingConversation: Bool {
+        guard let account = model.activeAccount else { return false }
+        return model.isSignedIn(account.id) && model.session(for: account).presentation.hasChatInterface
     }
 
     @ToolbarContentBuilder

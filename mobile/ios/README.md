@@ -6,10 +6,12 @@ native layer handles accounts, credentials, navigation safety, downloads and
 notifications. iOS 17 or later, iPhone and iPad.
 
 > **Mac verification (2026-10-02):** the app builds with Xcode 27.2 beta 2.
-> All 39 core tests and 10 native tests pass on an iPhone 18 Pro simulator
-> running iOS 27.2. The welcome and sign-in screens were inspected in portrait
-> and landscape, including the software keyboard. Live server workflows,
-> iPhone Duo transitions and end-to-end APNs delivery still await verification.
+> The core suite passes all 39 tests; all 11 native sign-in, Keychain and
+> layout/fallback tests pass on iOS 27.2. Live sign-in, account navigation, conversation switching,
+> a sent message and received response, and portrait/landscape software-keyboard
+> layouts were verified on iPhone 18 Pro. Drafts survive rotation. WebKit layout
+> checks cover phone, landscape keyboard and tablet-size viewports. iPhone Duo
+> hardware transitions and end-to-end APNs delivery still await verification.
 
 ## Layout
 
@@ -98,6 +100,16 @@ with an existing persistent web data store.
 
 ### Web UI
 
+- The app bundles `Web/MobileLayout.css` and `.js` so older servers also receive
+  mobile text sizing, touch targets, a dismissible conversation drawer and
+  native account navigation. These run only in the account's main-frame origin.
+  The chat uses one header; native accounts/reload controls return if the web
+  page fails to load. A very short landscape keyboard layout hides the chat
+  header until there is room for it again. Messages stop above the composer.
+- Run `node tools/frontend/test-ios-layout.cjs` from the repository root with
+  Playwright/WebKit installed to check bundled layout resources and the bridge
+  against the local frontend fixture. Set `KINDRED_PLAYWRIGHT_MODULE` when
+  Playwright is installed outside this checkout.
 - Each account has its own `WKWebsiteDataStore(forIdentifier: account UUID)`,
   so cookies, local/session storage and caches never mix between accounts.
   Removing an account deletes its data store (retried at next launch if the

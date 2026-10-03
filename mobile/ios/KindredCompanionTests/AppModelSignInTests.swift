@@ -94,6 +94,26 @@ final class AppModelSignInTests: XCTestCase {
         XCTAssertEqual(model.accounts.map(\.id), [first])
     }
 
+    func testMobileLayoutIsBundledWithNativeNavigationFallback() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("kindred.example.com")
+        try await model.signIn(origin: origin, login: "ada", password: "pw")
+        let account = try XCTUnwrap(model.accounts.first)
+        let session = model.session(for: account)
+        let layout = try XCTUnwrap(session.webView.configuration.userContentController.userScripts.first { $0.injectionTime == .atDocumentEnd })
+        XCTAssertTrue(layout.isForMainFrameOnly)
+        XCTAssertTrue(layout.source.contains("window.location.origin !== \"https://kindred.example.com\""))
+        XCTAssertTrue(layout.source.contains("text-size-adjust:100%"))
+        XCTAssertTrue(layout.source.contains("ios-accounts"))
+        session.webView.stopLoading()
+        session.presentation.hasChatInterface = true
+        session.webView(session.webView, didFailProvisionalNavigation: nil, withError: URLError(.cancelled))
+        XCTAssertTrue(session.presentation.hasChatInterface, "A cancelled download must not restore duplicate navigation")
+        session.webView(session.webView, didFailProvisionalNavigation: nil, withError: URLError(.notConnectedToInternet))
+        XCTAssertFalse(session.presentation.hasChatInterface, "Native accounts/reload navigation must return after a page failure")
+        try await model.remove(account.id, ignoringNotificationFailure: false)
+    }
+
     func testRedirectedSignInIsRefusedAndNothingIsSaved() async throws {
         serveKindred(loginStatus: 302)
         let origin = try ServerAddress.normalize("kindred.example.com")

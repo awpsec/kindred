@@ -17,6 +17,14 @@ struct AccountsSheet: View {
                     Section {
                         CurrentAccountHeader(account: current, signedIn: model.isSignedIn(current.id))
                             .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+                        if model.isSignedIn(current.id) {
+                            Button {
+                                model.reloadActive()
+                                dismiss()
+                            } label: {
+                                Label("Reload Conversation", systemImage: "arrow.clockwise")
+                            }
+                        }
                     }
                 }
                 ForEach(model.groups) { group in

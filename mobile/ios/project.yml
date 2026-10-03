@@ -32,6 +32,12 @@ targets:
       - path: KindredCompanion
         excludes:
           - "**/*.md"
+          - "Web/MobileLayout.js"
+          - "Web/MobileLayout.css"
+      - path: KindredCompanion/Web/MobileLayout.js
+        buildPhase: resources
+      - path: KindredCompanion/Web/MobileLayout.css
+        buildPhase: resources
     dependencies:
       - package: KindredCore
     settings:

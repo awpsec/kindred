@@ -1,0 +1,35 @@
+/* SwiftUI provides hardware/keyboard safe areas. Never inset them twice. */
+html[data-kindred-ios] { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+html[data-kindred-ios] body { overscroll-behavior:none; }
+html[data-kindred-ios] .shell { height:100%; position:relative; }
+html[data-kindred-ios] :is(input,textarea,select,#prompt) { font-size:max(16px,1em); }
+html[data-kindred-ios] :is(.conversation-header,#composer) .icon-button { min-width:44px; min-height:44px; flex-shrink:0; }
+html[data-kindred-ios] .conversation-header { padding-inline:8px; gap:4px; -webkit-app-region:no-drag; }
+html[data-kindred-ios] .header-actions { gap:0; flex-shrink:0; }
+html[data-kindred-ios] .bot-heading { flex:1; max-width:none; margin-right:auto; }
+html[data-kindred-ios] #header-avatar { flex-shrink:0; }
+html[data-kindred-ios] .message-bubble { overflow-wrap:anywhere; }
+html[data-kindred-ios] .conversation-history { overflow:hidden; }
+html[data-kindred-ios] .conversation>.composer-area { position:relative; inset:auto; flex:none; background:var(--bg); pointer-events:auto; }
+html[data-kindred-ios] .conversation .messages { padding-bottom:12px; scroll-padding-bottom:12px; }
+html[data-kindred-ios] #composer { grid-template-columns:44px minmax(0,1fr) 32px 44px; }
+html[data-kindred-ios] #composer.dictation-enabled { grid-template-columns:44px minmax(0,1fr) 32px 44px 44px; }
+html[data-kindred-ios] #composer:is(.dictation-empty,.is-dictating) { grid-template-columns:44px minmax(0,1fr) 32px 44px; }
+html[data-kindred-ios] #send { width:44px; height:44px; }
+html[data-kindred-ios] #ios-sidebar-backdrop { display:none; }
+@media (max-width:760px), (max-height:500px) {
+  html[data-kindred-ios] .shell>.sidebar { display:none; position:absolute; inset:0 auto 0 0; width:min(320px,calc(100% - 56px)); margin:0; z-index:6; box-shadow:var(--shadow); }
+  html[data-kindred-ios] .shell.sidebar-open>.sidebar { display:flex; }
+  html[data-kindred-ios] .mobile-only { display:inline-flex; }
+  html[data-kindred-ios] .shell.sidebar-open>#ios-sidebar-backdrop:not([hidden]) { display:block; position:absolute; inset:0; z-index:5; background:#0005; border-radius:0; padding:0; }
+  html[data-kindred-ios] .shell>:is(.details-panel,.computer-panel) { position:absolute; inset:0; width:100%; max-width:100%; min-width:0; z-index:4; }
+  html[data-kindred-ios] .pane-resizer { display:none; }
+  html[data-kindred-ios] .messages { padding-inline:12px; }
+  html[data-kindred-ios] .composer-area { padding-inline:8px; }
+  html[data-kindred-ios] .settings-dialog[open] { width:100%; max-width:100%; height:100%; max-height:100%; margin:0; border-radius:0; }
+}
+/* A landscape keyboard can leave less room than the header and composer need. */
+@media (max-height:180px) {
+  html[data-kindred-ios] .conversation-header,html[data-kindred-ios] .jump-latest { display:none; }
+  html[data-kindred-ios] .composer-area { padding-block:4px; }
+}

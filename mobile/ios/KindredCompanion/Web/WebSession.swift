@@ -1,6 +1,13 @@
 import KindredCore
+import Observation
 import UIKit
 import WebKit
+
+@MainActor
+@Observable
+final class WebPresentationState {
+    var hasChatInterface = false
+}
 
 @MainActor
 protocol WebSessionHost: AnyObject {
@@ -27,6 +34,7 @@ final class WebSession: NSObject {
     let accountID: UUID
     let origin: ServerOrigin
     let webView: WKWebView
+    let presentation = WebPresentationState()
     private var profileID: String?
     private var latestToken: String?
     private let policy: NavigationPolicy
@@ -93,6 +101,23 @@ final class WebSession: NSObject {
         controller.removeAllUserScripts()
         let source = WebBootstrap.documentStartScript(origin: origin, token: token, profileID: profileID)
         controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        // Bundle the presentation layer so an older server still fits an iPhone.
+        // The same exact-origin check as the session bootstrap scopes this script.
+        if let cssURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "css"),
+           let jsURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "js"),
+           let css = try? String(contentsOf: cssURL, encoding: .utf8),
+           let js = try? String(contentsOf: jsURL, encoding: .utf8) {
+            let layout = """
+            (function () {
+              if (window.top !== window.self || window.location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
+              const style = document.createElement('style');
+              style.textContent = \(WebBootstrap.javaScriptString(css));
+              document.head.append(style);
+              \(js)
+            })();
+            """
+            controller.addUserScript(WKUserScript(source: layout, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .page))
+        }
     }
 
     func open(_ url: URL) {
@@ -126,6 +151,7 @@ final class WebSession: NSObject {
     }
 
     func tearDown() {
+        presentation.hasChatInterface = false
         webView.stopLoading()
         let controller = webView.configuration.userContentController
         controller.removeAllScriptMessageHandlers()
@@ -146,6 +172,10 @@ final class WebSession: NSObject {
         case WebSession.sessionHandler:
             if let parsed = SessionMessage(body: message.body) { host?.webSession(self, didReceive: parsed) }
         case WebSession.accountsHandler:
+            if let body = message.body as? [String: Any], body["action"] as? String == "interface-ready" {
+                presentation.hasChatInterface = true
+                return
+            }
             if AccountsMessage(body: message.body) != nil { host?.webSessionRequestedAccounts(self) }
         default:
             break
@@ -195,6 +225,10 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
 }
 
 extension WebSession: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        presentation.hasChatInterface = false
+    }
+
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let url = navigationAction.request.url
@@ -257,6 +291,7 @@ extension WebSession: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        presentation.hasChatInterface = false
         // Reloading runs the current bootstrap script, i.e. the latest token.
         reload()
     }
@@ -266,6 +301,7 @@ extension WebSession: WKNavigationDelegate {
         if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled { return }
         // WebKitErrorFrameLoadInterruptedByPolicyChange: downloads and refused loads.
         if error.domain == "WebKitErrorDomain" && error.code == 102 { return }
+        presentation.hasChatInterface = false
         notify(KindredAPIClient.describe(error))
     }
 }
