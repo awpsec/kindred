@@ -11,7 +11,7 @@ export function savedAccounts(entries,last) {
 }
 // Profile switching reloads the application after rotating its scoped session.
 // That releases every chat, provider, image, VNC and native-operation cache.
-export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreAfterSwitch,nativeInvoke,notice}) {
+export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreAfterSwitch,nativeInvoke,notice,getServerAddress=()=>location.origin}) {
   let enabled=false, projection=null, polling=false, meta=null, invitation='', nativeProfiles=[], nativeCounts={},nativeLast=null;
   const $=id=>document.getElementById(id);
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
@@ -340,6 +340,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     if(window.__KINDRED_PROFILE_HOST)action('Manage accounts',serverPicker,'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M13 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8');
     if(!projection?.legacy&&projection?.profiles?.length>1){for(const profile of projection.profiles)if(!profile.active)action('Switch to '+profile.name,()=>switchProfile(profile),'M4 12h16 M14 6l6 6-6 6');}
     if(!projection?.legacy)action('Add profile',createProfile,'M12 5v14 M5 12h14');
+    action('Connect mobile app',connectMobile,'M7 2h10v20H7z M11 18h2');
     if(!projection?.legacy)action('Account settings',profileSettings,'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2');
     if(!projection?.legacy)action('Change password',changePassword,'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2');
     if(projection?.admin)action('Server administration',admin,'M4 3h16v7H4z M4 14h16v7H4z M8 6h.01 M8 17h.01');
@@ -371,6 +372,54 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       if(meta.legacy_claim)container.append(button('Connect an existing device',()=>location.assign('/?legacy=1')));
     }
   }
+  async function connectMobile() {
+    await refresh();
+    const d=dialog('Connect mobile app');d.classList.add('mobile-pairing-dialog');
+    const body=el('div','mobile-pairing-body');d.append(body);
+    if(!meta?.mobile_pairing){body.append(el('p','','Update this server to connect the mobile app with a QR code.'));return;}
+    if(projection?.legacy){body.append(el('p','','Set up your Kindred account to connect the mobile app.'),button('Set up account',()=>{d.close();return authentication(projection.claim_available?'register':'login');},'outline-button'));return;}
+    const account=el('div','mobile-pairing-account');account.append(el('strong','',projection?.username||'Your account'),el('span','muted',projection?.profiles?.find(p=>p.active)?.name||''));body.append(account);
+    const address=label('Server address','url',location.protocol==='https:'?location.origin:getServerAddress());address.input.placeholder='https://kindred.example.com';address.input.autocomplete='off';address.input.spellcheck=false;
+    const qr=el('div','mobile-pairing-qr'),status=el('p','mobile-pairing-status');status.setAttribute('role','status');
+    const actions=el('div','mobile-pairing-actions'),help=el('details','mobile-pairing-help');help.append(el('summary','','Connection help'));
+    const tips=el('ul');for(const text of ['Keep the server computer on and awake.','For direct network access to Standalone, open Server admin → Network, select All interfaces, save, then restart when no bots are working.','Use a trusted HTTPS proxy or Tailscale Serve. Add its HTTPS address under Network → Connection addresses; All interfaces alone does not enable HTTPS.','Use the same LAN or turn on your VPN (such as Tailscale) on the phone. Check firewall access and the server address.'])tips.append(el('li','',text));help.append(tips);
+    const regenerate=button('Create QR code',generate,'outline-button'),copy=button('Copy pairing link',async()=>{if(!issued||Date.now()/1000>=issued.expires_at)return;await navigator.clipboard.writeText(issued.url);notice('Pairing link copied.');},'subtle-button');copy.hidden=true;
+    actions.append(regenerate,copy);body.append(address.root,qr,status,actions,help);
+    body.append(el('p','muted small mobile-pairing-note','In Kindred on your phone, choose Add account → Scan pairing code. This code works once.'));
+    let issued=null,timer=null,polling=false,closed=false,generation=0;
+    const endpoint=id=>'/identity/mobile-pairing/'+encodeURIComponent(id);
+    const cancel=id=>fetch(endpoint(id),{method:'DELETE',headers:{Authorization:'Bearer '+getToken()},cache:'no-store',keepalive:true}).catch(()=>{});
+    function clear(){clearInterval(timer);timer=null;qr.replaceChildren();copy.hidden=true;}
+    function drawQR(data){
+      const width=data?.width,modules=data?.modules;if(!Number.isInteger(width)||width<21||width>177||!Array.isArray(modules)||modules.length!==width*width)throw new Error('The server returned an invalid QR code.');
+      const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${width+8} ${width+8}`);svg.setAttribute('role','img');svg.setAttribute('aria-label','Scan to connect this account');svg.setAttribute('shape-rendering','crispEdges');
+      const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('fill','#000');path.setAttribute('d',modules.map((dark,i)=>dark===true?`M${i%width+4} ${Math.floor(i/width)+4}h1v1h-1z`:'').join(''));svg.append(path);qr.replaceChildren(svg);
+    }
+    async function generate(){
+      const version=++generation;clear();const old=issued;issued=null;if(old)await cancel(old.id);
+      regenerate.disabled=true;status.textContent='Creating a pairing code…';
+      try{
+        const result=await api('mobile-pairing',{server:address.input.value.trim()});
+        if(closed||version!==generation){await cancel(result.id);return;}
+        issued=result;address.input.value=result.server;drawQR(result.qr);copy.hidden=false;regenerate.textContent='New code';
+        const tick=async()=>{
+          if(closed||issued!==result)return;
+          const left=Math.max(0,Math.ceil(result.expires_at-Date.now()/1000));
+          if(!left){clear();issued=null;status.textContent='Code expired. Create a new one.';return;}
+          status.textContent=`Waiting for your phone · ${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`;
+          if(polling||document.hidden)return;polling=true;
+          try{const response=await fetch(endpoint(result.id),{headers:{Authorization:'Bearer '+getToken()},cache:'no-store',signal:AbortSignal.timeout(8000)});if([400,401,403].includes(response.status)){if(!closed&&issued===result){clear();issued=null;status.textContent='Pairing session ended. Sign in again to create a new code.';}return;}if(!response.ok)throw new Error();const state=await response.json();if(closed||issued!==result)return;
+            if(state.status==='claimed'){clear();issued=null;status.textContent='Code used. Finish connecting on your phone.';}
+            else if(state.status==='expired'){clear();issued=null;status.textContent='Code expired or cancelled. Create a new one.';}
+          }catch{if(issued===result)status.textContent='Connection interrupted. Checking again…';}finally{polling=false;}
+        };void tick();timer=setInterval(tick,2000);
+      }catch(e){if(!closed&&version===generation){status.textContent=e.message||'Could not create a pairing code.';help.open=true;}}finally{if(!closed&&version===generation)regenerate.disabled=false;}
+    }
+    address.input.addEventListener('input',()=>{++generation;clear();if(issued)void cancel(issued.id);issued=null;regenerate.disabled=false;regenerate.textContent='Create QR code';status.textContent='Create a new code for this address.';});
+    d.addEventListener('close',()=>{closed=true;++generation;clear();if(issued)void cancel(issued.id);issued=null;},{once:true});
+    if(address.input.value.startsWith('https://'))void generate();else{status.textContent='Enter the server’s HTTPS address reachable from your phone.';help.open=true;address.input.value='';address.input.focus();}
+  }
+
   async function disconnect(){if(enabled&&projection&&!projection.legacy)await api('logout',{});}
-  return {init,connected,refresh,disconnect,enabled:()=>enabled,projection:()=>projection};
+  return {init,connected,refresh,disconnect,connectMobile,enabled:()=>enabled,projection:()=>projection};
 }

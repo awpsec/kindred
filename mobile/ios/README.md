@@ -19,7 +19,8 @@ mobile/ios/
   Config/                     xcconfigs: bundle ID, team, version, APNs environment
   KindredCompanion/           app target (SwiftUI + WebKit + UserNotifications)
     App/                      @main app, UIApplicationDelegate, notification delegate
-    Model/AppModel.swift      accounts, sessions, sign-in/out, push registration
+    Model/AppModel.swift      accounts, sessions, sign-in/out, pairing, push registration
+    Pairing/                  QR scanner (AVFoundation) and pairing sheet
     Web/                      WebSession (WKWebView + policy + bridge), host view
     Views/                    root shell, Accounts sheet, Add Account sheet, detail
     Assets.xcassets           icon, accent/canvas/chrome colors, Kindred mark
@@ -69,6 +70,19 @@ the account metadata store. App tests cover the Keychain store (round trip,
   {"login","password"}` and receives `{"token","profile_id"}`.
   `GET /identity/profiles` supplies the server account UUID, username and
   workspace name.
+- **Phone pairing** needs no password. In Kindred on the computer, choose
+  Connect mobile app. On the phone, choose Scan Pairing Code, or paste the
+  link: `kindred://pair?server=<HTTPS origin>#code=<64 hex>`. The camera
+  app can also open that link. QR codes are decoded on the device with
+  AVFoundation. The app shows the server and sends nothing until you choose
+  Connect. It then checks `GET /identity/meta` and sends
+  `POST /identity/mobile-pairing/claim {"code"}` without an Origin header.
+  Redirects are refused. Before anything is saved, `GET /identity/profiles`
+  must confirm the returned `account_id`, `login` and `profile_id`.
+  Same server plus same account refreshes that saved account. Other accounts
+  are untouched. Links pointing at loopback, plain HTTP or ambiguous numeric
+  hosts are refused. If the server can't be reached, Help shows a checklist and the same code can be tried again. If the connection drops after the code was sent, the result is unconfirmed and a new code is needed. A
+  rejected code says to create a new one. Nothing is retried automatically.
 - **Server addresses** are HTTPS only. A missing scheme means `https://`.
   Addresses with credentials, a path, query, fragment, backslash, non-ASCII
   characters (use punycode) or an invalid port are refused with a specific
@@ -201,6 +215,11 @@ answer 404 and the app says notifications aren't offered.
   is no background refresh or badge management.
 
 ## Verifying on a Mac
+
+Pairing: scan a code from Connect mobile app and confirm the server screen.
+Check a second scan of the same account, an expired or used code, a server
+that is asleep (Help), a dark-mode QR, denied camera permission (paste
+fallback) and opening the link from the Camera app.
 
 1. `swift test` in `Packages/KindredCore`, then the app test scheme above.
 2. Run on a simulator against an HTTPS Kindred server: add two accounts on

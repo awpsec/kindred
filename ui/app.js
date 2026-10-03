@@ -83,7 +83,7 @@ const state = {
 const serverChatsUI=createServerChatsUI({api,state,node,button,field,select,modal,icon,buddy,notice,refresh:()=>refresh(true),chooseChat,chooseBot});
 const workspaceUI = createWorkspaceImportUI({api,node,button,field,select,modal,notice,getBots:()=>state.bots,refresh:()=>{commandsUI?.invalidate();return refresh(true);},openBot:async id=>{const bot=state.bots.find(b=>b.id===id);if(bot){$("settings-dialog").close();await chooseBot(bot);}}});
 const profilesUI = createProfileUI({
-  getToken:()=>state.token, setToken:token=>{state.token=token;}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
+  getServerAddress:()=>state.status?.public_url||location.origin, getToken:()=>state.token, setToken:token=>{state.token=token;}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
   restoreAfterSwitch:async()=>{
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:state.token});
     if(!$('computer-panel').hidden)await connectDesktop();
@@ -2196,6 +2196,7 @@ async function settingsGeneral(revision) {
   const identity=settingsPane('Account'),name=field('Name',state.general.name,'input',{required:true,maxLength:80});
   const account=node('div','settings-account');account.append(node('span','user-avatar',personInitials(state.general.name)),name.label);identity.body.append(account);
   const about=node('details','settings-about'),prefs=field('What should your bots know about you?',state.general.identity,'textarea',{rows:3,maxLength:16000,placeholder:'How you work, what you care about, how you like replies…'});about.append(node('summary','','About you'),prefs.label);identity.body.append(about);
+  if(profilesUI.enabled())identity.body.append(settingRow('Mobile app',button('Connect mobile app',()=>profilesUI.connectMobile(),'outline-button')));
   const appearance=settingsPane('Appearance'),theme=select([['system','Follow System'],['dark','Dark'],['light','Light']],state.general.theme||'system');
   const motion=settingSwitch('Reduce motion',state.general.reduced_motion),activity=settingSwitch('Show activity in chats',state.general.show_activity===true);
   const separateBots=settingSwitch('Separate bot conversations',state.general.separate_bot_chats!==false);

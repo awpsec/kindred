@@ -66,6 +66,12 @@ class MainActivity : AppCompatActivity() {
         if (allowed && pending != null && current?.server?.let { ServerAddress.sameOrigin(pending.origin.toString(), it) } == true)
             pending.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) else pending?.deny()
     }
+    private lateinit var pairing: PairingFlow
+    private val scanner = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = if (result.resultCode == Activity.RESULT_OK) result.data else null
+        val link = data?.getStringExtra(ScanActivity.EXTRA_LINK)
+        if (link != null) pairing.start(link) else if (data?.getBooleanExtra(ScanActivity.EXTRA_PASTE, false) == true) pairing.paste()
+    }
     private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
         notificationAccount?.let { if (allowed) enableAlerts(it) else showError("Notifications are off. You can enable them in Android settings.") }; notificationAccount = null
     }
@@ -78,6 +84,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         accounts = Accounts(this)
         downloads = Downloads(this)
+        pairing = PairingFlow(this, accounts, scan = { scanner.launch(Intent(this, ScanActivity::class.java)) },
+            signInWithPassword = { server -> signIn(server?.let { Account("", it, "", "", "") }) },
+            opened = { account ->
+                if (current?.id == account.id) { destroyWeb(); current = null }
+                open(account); if (account.alerts) syncAlerts()
+            })
         PushRegistration.channel(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val light=(resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
@@ -116,9 +128,19 @@ class MainActivity : AppCompatActivity() {
                 accounts.find(requested)?.let { open(it) } ?: showAccounts()
             }
         } catch (_: Exception) { showError("Saved accounts could not be opened. Your device's secure storage is unavailable.") }
+        if (savedInstanceState == null) routePairing(intent)
     }
     override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent); setIntent(intent); routeNotification(intent)
+        super.onNewIntent(intent); setIntent(intent); if (!routePairing(intent)) routeNotification(intent)
+    }
+    /** `kindred://pair` from the camera app or a browser: always confirm first, never claim on arrival. */
+    private fun routePairing(intent: Intent): Boolean {
+        if (intent.action != Intent.ACTION_VIEW || intent.data?.scheme?.equals("kindred", true) != true) return false
+        val raw = intent.dataString.orEmpty()
+        // Drop the one-time code from the retained intent.
+        setIntent(Intent(this, MainActivity::class.java))
+        pairing.start(raw)
+        return true
     }
     private fun routeNotification(intent: Intent): Boolean {
         val id=intent.getStringExtra("installation_uuid") ?: intent.getStringExtra("account_id") ?: return false
@@ -181,7 +203,7 @@ class MainActivity : AppCompatActivity() {
         scroll.addView(list); content.addView(scroll)
         list.addView(text("Accounts",28f))
         val saved = accounts.all()
-        if (saved.isEmpty()) list.addView(text("Your bots, wherever you are.\nConnect to your Kindred server.",16f))
+        if (saved.isEmpty()) list.addView(text("Your bots, wherever you are.\nPair with Kindred on your computer, or sign in to your server.",16f))
         for ((server, entries) in saved.groupBy { it.server }) {
             list.addView(text(Uri.parse(server).authority ?: server,13f))
             for (entry in entries) {
@@ -191,7 +213,12 @@ class MainActivity : AppCompatActivity() {
                 list.addView(row)
             }
         }
-        list.addView(action("Add account") { signIn() })
+        list.addView(MaterialButton(this).apply {
+            text = "Scan pairing code"; isAllCaps = false; minHeight = dp(52); setIconResource(R.drawable.ic_qr_scan)
+            setOnClickListener { scanner.launch(Intent(this@MainActivity, ScanActivity::class.java)) }
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        list.addView(action("Paste pairing link") { pairing.paste() })
+        list.addView(action("Sign in with password") { signIn() })
     }
     private fun accountOptions(account: Account) {
         val items = arrayOf(if(account.alerts) "Disable alerts" else "Enable alerts", "Remove account")

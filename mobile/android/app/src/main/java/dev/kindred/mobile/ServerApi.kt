@@ -7,7 +7,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-class ApiFailure(val status: Int, message: String) : Exception(message)
+/** `fromServer` is true when the body carried Kindred's own `{"error": ...}`. */
+class ApiFailure(val status: Int, message: String, val fromServer: Boolean = false) : Exception(message)
 object ServerApi {
     private val client = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
         .connectTimeout(15, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS).build()
@@ -25,7 +26,8 @@ object ServerApi {
             val value = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
             if (!response.isSuccessful) throw ApiFailure(response.code,
                 if (response.isRedirect) "The server redirected this request. Enter its final HTTPS address."
-                else value.optString("error", "The server could not complete this request (${response.code})."))
+                else value.optString("error", "The server could not complete this request (${response.code})."),
+                !response.isRedirect && value.optString("error").isNotBlank())
             return value
         }
     }

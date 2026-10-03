@@ -38,8 +38,13 @@ struct RootView: View {
             case .addAccount(let prefill):
                 AddAccountSheet(prefill: prefill)
                     .environment(model)
+            case .pair(let request):
+                PairDeviceSheet(request: request)
+                    .environment(model)
             }
         }
+        // `kindred://pair` links from the camera app open the confirmation screen.
+        .onOpenURL { model.handleOpenURL($0) }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
@@ -120,21 +125,33 @@ struct WelcomeView: View {
             VStack(spacing: 6) {
                 Text("Kindred")
                     .font(.largeTitle.weight(.semibold))
-                Text("Sign in to your Kindred server to pick up your conversations.")
+                Text("Pair with Kindred on your computer, or sign in to your server to pick up your conversations.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-            Button {
-                model.sheet = .addAccount(AccountPrefill())
-            } label: {
-                Text("Add Account")
-                    .font(.body.weight(.semibold))
-                    .frame(maxWidth: 280)
-                    .padding(.vertical, 4)
+            VStack(spacing: 10) {
+                Button {
+                    model.sheet = .pair(PairingRequest())
+                } label: {
+                    Label("Scan Pairing Code", systemImage: "qrcode.viewfinder")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: 280)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                Button {
+                    model.sheet = .addAccount(AccountPrefill())
+                } label: {
+                    Text("Sign In with Password")
+                        .font(.body.weight(.medium))
+                        .frame(maxWidth: 280)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
             Spacer()
             Spacer()
         }

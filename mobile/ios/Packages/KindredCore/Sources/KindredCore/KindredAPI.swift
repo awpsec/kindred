@@ -275,7 +275,7 @@ public final class KindredAPIClient: NSObject, URLSessionTaskDelegate, @unchecke
         return trimmed.isEmpty ? nil : String(trimmed.prefix(300))
     }
 
-    private func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(Data, HTTPURLResponse), Error>) in
             let task = session.dataTask(with: request) { data, response, error in
                 if let error {

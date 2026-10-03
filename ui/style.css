@@ -5232,3 +5232,19 @@ html[data-mobile] .conversation-header { -webkit-app-region:no-drag; }
 .question-actions {display:flex;align-items:baseline;justify-content:space-between;gap:16px;}
 .question-dismiss {margin-left:auto;padding:12px 2px 0;color:var(--soft);font-size:calc(12px * var(--text-scale, 1));}
 .question-dismiss:hover,.question-custom:hover {color:var(--fg);}
+
+.mobile-pairing-dialog {width:min(420px,calc(100vw - 32px));}
+.mobile-pairing-body {display:flex;flex-direction:column;gap:16px;min-width:0;}
+.mobile-pairing-account {display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.mobile-pairing-body > label {display:flex;flex-direction:column;gap:7px;font-size:13px;}
+.mobile-pairing-body input {width:100%;box-sizing:border-box;}
+.mobile-pairing-qr:empty {display:none;}
+.mobile-pairing-qr {align-self:center;width:min(272px,100%);padding:0;background:#fff;border-radius:12px;overflow:hidden;}
+.mobile-pairing-qr svg {display:block;width:100%;height:auto;}
+.mobile-pairing-status {margin:0;text-align:center;font-size:13px;color:var(--soft);}
+.mobile-pairing-actions {display:flex;justify-content:center;gap:14px;align-items:center;flex-wrap:wrap;}
+.mobile-pairing-help {font-size:12px;line-height:1.6;color:var(--soft);}
+.mobile-pairing-help summary {cursor:pointer;}
+.mobile-pairing-help ul {padding-left:18px;margin-bottom:0;}
+.mobile-pairing-help li+li {margin-top:7px;}
+.mobile-pairing-note {margin:0;line-height:1.5;text-align:center;}

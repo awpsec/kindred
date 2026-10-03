@@ -1,0 +1,11 @@
+<resources>
+    <string name="pairing_scan_instruction">Scan the pairing code shown in Kindred on your computer.</string>
+    <string name="pairing_paste_link">Paste pairing link</string>
+    <string name="pairing_close">Close scanner</string>
+    <string name="pairing_not_kindred">That isn\'t a Kindred pairing code.</string>
+    <string name="pairing_camera_off">Camera access is off</string>
+    <string name="pairing_camera_off_detail">Allow camera access in Settings to scan a pairing code, or paste the pairing link instead.</string>
+    <string name="pairing_no_camera">No camera available</string>
+    <string name="pairing_no_camera_detail">Paste the pairing link copied from Kindred on your computer.</string>
+    <string name="pairing_open_settings">Open settings</string>
+</resources>
