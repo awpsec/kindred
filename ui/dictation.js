@@ -7,9 +7,9 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   if(preferences.model && !preferences.model.startsWith('local:') && !(preferences.model==='native'&&nativeAvailable())){preferences.enabled=false;preferences.model='';}
   const usesNative=()=>preferences.model==='native'&&nativeAvailable();
   const available=()=>window.__KINDRED_DICTATION_MODELS===true;
-  const modelCatalogue=[['base','Base',59707625],['small','Small',190085487],['medium','Medium',539212467],['large-v3-turbo','Large v3 Turbo',574041195],['large-v3','Large v3',1081140203]];
+  const modelCatalogue=[['whistle','Whistle',16919407],['base','Base',59707625],['small','Small',190085487],['medium','Medium',539212467],['large-v3-turbo','Large v3 Turbo',574041195],['large-v3','Large v3',1081140203]];
   let settingsEvents=null,renderedStop=null;
-  let generation=0,phase='idle',stream=null,context=null,processor=null,source=null,mute=null,chunks=[],samples=0,timer=null,native={phase:'off'},settings=null,poll=null,liveTimer=null,inflight=null,lastDecodedSpeech=0,lastAudibleSample=0,lastRequestAt=0,session=null,rate=16000;
+  let generation=0,phase='idle',stream=null,context=null,processor=null,source=null,mute=null,chunks=[],samples=0,timer=null,native={phase:'off'},settings=null,poll=null,liveTimer=null,inflight=null,lastDecodedSpeech=0,lastAudibleSample=0,lastRequestAt=0,decodeDuration=0,session=null,rate=16000;
   // Utterance segmentation: completed utterances are kept as text and their audio
   // is excluded from later decodes. Boundaries are only placed inside verified
   // silence (every 20 ms frame below the floor), never between words.
@@ -88,17 +88,32 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     const pad=Math.ceil(rate*padSeconds),speech=lastAudibleSample;
     const fresh=speech>lastDecodedSpeech&&speech>utteranceStart;
     const repad=!final&&speech===lastDecodedSpeech&&speech>utteranceStart&&decodedStart===utteranceStart&&decodedEnd<speech+pad&&samples-speech>=rate*pauseSeconds;
-    const end=Math.min(samples,speech+pad);
+    let end=Math.min(samples,speech+pad),bounded=false;
+    if(preferences.model==='local:whistle'&&end-utteranceStart>rate*28){end=utteranceStart+Math.floor(rate*28);bounded=true;}
+    // Finish at an observed pause before processing speech beyond that pause.
+    const boundary=preferences.model==='local:whistle'&&pauses.find(p=>p>utteranceStart&&p+pad<=end&&!(decodedStart===utteranceStart&&!decodedText&&decodedEnd>=p+pad));
+    if(boundary){end=boundary+pad;bounded=false;}
     if((!fresh&&!repad)||end-utteranceStart<rate*.2)return null;
     const recorded=[];let offset=0;
     for(const chunk of chunks){const from=Math.max(0,utteranceStart-offset),to=Math.min(chunk.length,end-offset);if(to>from)recorded.push(chunk.subarray(from,to));offset+=chunk.length;if(offset>=end)break;}
-    return {recorded,start:utteranceStart,speech,end};
+    return {recorded,start:utteranceStart,speech:Math.min(speech,boundary||end),end,bounded};
   }
-  async function transcribeSnapshot({recorded,start,speech,end},thisGeneration){
+  async function transcribeSnapshot({recorded,start,speech,end,bounded},thisGeneration){
     const audio=encodeWav(recorded,rate);lastRequestAt=performance.now();
-    const result=await nativeInvoke('transcribe_dictation',{audio});
+    const began=performance.now();const result=await nativeInvoke('transcribe_dictation',{audio});
     // A result for audio from before the current utterance boundary is stale.
     if(thisGeneration!==generation||start!==utteranceStart)return;
+    decodeDuration=performance.now()-began;
+    if(bounded){
+      // Commit only complete timestamped words, leaving lookahead audio for the
+      // next window. Never split raw audio through a word at the 30-second cap.
+      const words=(result.words||[]).filter(w=>typeof w.word==='string'&&Number.isFinite(w.start)&&Number.isFinite(w.end)&&w.start>=0&&w.end>w.start&&w.end<=24);
+      if(!words.length)throw new Error('Whistle could not segment this recording. Try a shorter phrase or another engine.');
+      const text=words.map(w=>w.word.trim()).join(' ');showTranscript(text,thisGeneration);
+      session.committed=session.text;session.current='';decodedText='';
+      utteranceStart=start+Math.floor(words.at(-1).end*rate);lastDecodedSpeech=utteranceStart;
+      pauses=pauses.filter(p=>p>utteranceStart);return;
+    }
     lastDecodedSpeech=speech;decodedStart=start;decodedEnd=end;decodedText=(result.text||'').trim();showTranscript(decodedText,thisGeneration);commitUtterance();
   }
   // Commit only when the latest decode of this utterance produced visible text,
@@ -110,12 +125,12 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     if(!pauses.includes(speech)&&!(speech===lastAudibleSample&&samples-speech>=rate*pauseSeconds))return;
     session.committed=session.text;session.current='';decodedText='';utteranceStart=speech+pad;pauses=pauses.filter(p=>p>utteranceStart);
   }
-  function scheduleLive(thisGeneration,delay=Math.max(100,700-(performance.now()-lastRequestAt))){
+  function scheduleLive(thisGeneration,delay=Math.max(250,Math.min(2500,decodeDuration*.5),1000-(performance.now()-lastRequestAt))){
     if(phase!=='recording'||generation!==thisGeneration)return;
     liveTimer=setTimeout(async()=>{
       if(phase!=='recording'||generation!==thisGeneration)return;
       commitUtterance();const next=snapshot();if(!next){scheduleLive(thisGeneration,500);return;}
-      // One bounded decode at a time. New audio keeps recording while Whisper works.
+      // One decode at a time, with breathing room proportional to inference cost.
       const job=transcribeSnapshot(next,thisGeneration);inflight=job;render();
       try{await job;}catch(e){if(generation===thisGeneration&&phase==='recording'){finishTranscript(false);await cancel();fail(e);return;}}
       finally{if(inflight===job){inflight=null;render();}}
@@ -147,10 +162,10 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
         if(thisGeneration===generation){phase='idle';render();}
         return;
       }
-      if(!available())throw new Error('Update the desktop app to use local Whisper dictation.');
+      if(!available())throw new Error('Update the desktop app to use local dictation.');
       native=await deviceReply(nativeInvoke('dictation_status'),'The speech worker did not respond. Try again.',5000);
       if(thisGeneration!==generation||!preferences.enabled)return;
-      if(native.phase!=='ready')throw new Error(native.error||(native.phase==='loading'?'Your Whisper model is loading.':'Download and load a Whisper model in General settings.'));
+      if(native.phase!=='ready')throw new Error(native.error||(native.phase==='loading'?'Your dictation model is loading.':'Download and load a dictation model in General settings.'));
       if(!navigator.mediaDevices?.getUserMedia)throw new Error(window.__KINDRED_DESKTOP
         ? 'This desktop build cannot access the microphone. Update Kindred to a build with microphone capture support. Your downloaded Whisper models will be kept.'
         : !window.isSecureContext?'Microphone access requires a secure connection. Open Kindred over HTTPS or localhost.'
@@ -171,7 +186,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
         for(let i=0;i<chunk.length;i+=frame){const end=Math.min(chunk.length,i+frame);let energy=0;for(let j=i;j<end;j++)energy+=chunk[j]*chunk[j];if(energy/(end-i)>=0.0000004){if(lastAudibleSample&&samples+i-lastAudibleSample>=rate*pauseSeconds)pauses.push(lastAudibleSample);lastAudibleSample=samples+end;}}
         chunks.push(chunk);samples+=chunk.length;if(remaining<=data.length)void stop().catch(fail);
       };
-      source.connect(processor);processor.connect(mute);mute.connect(context.destination);lastDecodedSpeech=0;lastAudibleSample=0;resetSegments();lastRequestAt=performance.now();beginTranscript(chatId(),thisGeneration);phase='recording';render();scheduleLive(thisGeneration);timer=setTimeout(()=>void stop().catch(fail),60000);
+      source.connect(processor);processor.connect(mute);mute.connect(context.destination);lastDecodedSpeech=0;lastAudibleSample=0;resetSegments();decodeDuration=0;lastRequestAt=performance.now();beginTranscript(chatId(),thisGeneration);phase='recording';render();scheduleLive(thisGeneration);timer=setTimeout(()=>void stop().catch(fail),60000);
     }catch(e){if(thisGeneration===generation){await cancel();throw new Error(e.name==='NotAllowedError'?'Microphone access was not allowed. Try again and allow it when prompted, or check microphone permissions in your device or browser settings.':['NotFoundError','OverconstrainedError'].includes(e.name)?'The selected microphone is unavailable. Choose another microphone or System Default in General settings.':stage==='audio'?'Microphone access was allowed, but the audio engine could not start. '+(window.__KINDRED_DESKTOP?.platform==='linux'?'Check the Linux GStreamer audio plugins and your output device. ':'Check your input and output devices. ')+(e.message?'Details: '+e.message.slice(0,200):'Then retry.'):e.message||'The microphone could not start.');}}
   }
   async function stop(){
@@ -188,10 +203,10 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
         // A failed live preview must not skip the final captured words. The final
         // snapshot still includes any audio that has not decoded successfully.
         let previewError;try{if(pending)await pending;}catch(error){previewError=error;}
-        const finalSnapshot=thisGeneration===generation&&snapshot(true);
-        if(finalSnapshot)await transcribeSnapshot(finalSnapshot,thisGeneration);
-        else if(previewError)throw previewError;
-      })(),'Transcription took too long. The words already shown have been kept.',20000);
+        let drained=false;
+        while(thisGeneration===generation){const finalSnapshot=snapshot(true);if(!finalSnapshot)break;await transcribeSnapshot(finalSnapshot,thisGeneration);drained=true;}
+        if(!drained&&previewError)throw previewError;
+      })(),'Transcription took too long. The words already shown have been kept.',Math.min(120000,Math.max(20000,15000+decodeDuration*1.5*(1+Math.ceil((lastAudibleSample-utteranceStart)/(24*rate))))));
     }catch(e){if(thisGeneration===generation)notice(e.message||'Transcription failed. The words already shown have been kept.',true);}
     if(thisGeneration!==generation)return;
     try{finishTranscript(false);}finally{await cancel();}
@@ -212,9 +227,9 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     picker.disabled=!available()&&!nativeAvailable();
     const models=native.models||modelCatalogue.map(([id,name,bytes])=>({id,name,bytes}));
     const selected=models.find(m=>m.id===native.model),loaded=selected?.loaded;
-    settings.querySelector('.whisper-picker-label').textContent=selected&&(loaded||native.phase==='loading')?selected.name:'Choose a Whisper model';
+    settings.querySelector('.whisper-picker-label').textContent=selected&&(loaded||native.phase==='loading')?selected.name:'Choose a dictation model';
     for(const row of settings.querySelectorAll('.whisper-model-entry')){
-      const m=models.find(m=>m.id===row.dataset.model);if(!m)continue;
+      const m=models.find(m=>m.id===row.dataset.model);if(!m){row.hidden=!!row.dataset.model;continue;}row.hidden=false;
       const choose=row.querySelector('.whisper-load'),download=row.querySelector('.whisper-download');
       row.classList.toggle('is-downloaded',!!m.downloaded);row.classList.toggle('is-loaded',!!m.loaded);
       choose.disabled=!m.downloaded;choose.setAttribute('aria-pressed',String(!!m.loaded));
@@ -229,8 +244,8 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
       settings.querySelector('.whisper-picker-label').textContent='Native (built-in)';
       progress.hidden=true;detail.textContent='Uses macOS Dictation and its system microphone and language settings.';return;
     }
-    if(!available()){detail.textContent='Update the desktop app to use local Whisper dictation.';return;}
-    if(native.supported===false){detail.textContent='Local Whisper is unavailable on this platform.';return;}
+    if(!available()){detail.textContent='Update the desktop app to use local dictation.';return;}
+    if(native.supported===false){detail.textContent='Local dictation is unavailable on this platform.';return;}
     if(native.phase==='loading'){detail.textContent='Loading '+(selected?.name||'Whisper')+'…';}
     else if(native.phase==='error'){detail.textContent=native.error||'The model could not load. Select it to retry.';}
     else if(native.download_error){detail.textContent=native.download_error;}
@@ -299,7 +314,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     const control=document.createElement('div');control.className='whisper-control';
     const picker=document.createElement('button');picker.type='button';picker.className='whisper-picker';picker.setAttribute('aria-label','Dictation model');picker.setAttribute('aria-expanded','false');picker.setAttribute('aria-haspopup','dialog');
     const chosen=document.createElement('span');chosen.className='whisper-picker-label';picker.append(chosen,icon('chevron'));
-    const menu=document.createElement('div');menu.className='whisper-model-menu';menu.hidden=true;menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Whisper models');
+    const menu=document.createElement('div');menu.className='whisper-model-menu';menu.hidden=true;menu.setAttribute('role','dialog');menu.setAttribute('aria-label','Dictation engines');
     const close=()=>{menu.hidden=true;picker.setAttribute('aria-expanded','false');};
     const openMenu=()=>{
       menu.hidden=false;picker.setAttribute('aria-expanded','true');

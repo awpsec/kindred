@@ -22,4 +22,5 @@ cp /deps/vulkan/LICENSE.md /build/package/VULKAN-HEADERS-LICENSE.txt
 cp /deps/spirv/LICENSE /build/package/SPIRV-HEADERS-LICENSE.txt
 cp /usr/share/doc/mingw-w64-common/copyright /build/package/MINGW-RUNTIME-LICENSE.txt
 cp /usr/share/doc/gcc-mingw-w64-x86-64-posix-runtime/copyright /build/package/GCC-RUNTIME-LICENSE.txt
+python3 /source/build-whistle.py /build/package x86_64-pc-windows-msvc
 python3 /source/package-runtime.py

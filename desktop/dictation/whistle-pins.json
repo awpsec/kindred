@@ -1,0 +1,21 @@
+{
+  "revision": "c7c415a3d1b3d929014bc6e866d51ebb971f7089",
+  "targets": {
+    "x86_64-unknown-linux-gnu": {
+      "file": "python/cactus_needle-3.1.0-py3-none-manylinux2014_x86_64.whl",
+      "sha256": "a0fc2f682ef18525d4d18583081ac31c1f6f211abe6c0b3bee44811ed7e0347e"
+    },
+    "aarch64-apple-darwin": {
+      "file": "python/cactus_needle-3.1.0-py3-none-macosx_11_0_arm64.whl",
+      "sha256": "ad1cba80ede4c058692370964eec4d881a1fdc80014f7210b2d13891bad7d1c6"
+    },
+    "x86_64-apple-darwin": {
+      "file": "python/cactus_needle-3.1.0-py3-none-macosx_11_0_x86_64.whl",
+      "sha256": "31a90adbaa898ea65e92b370e80ba5830a346348022a913a8bb254ab7d20bad6"
+    },
+    "x86_64-pc-windows-msvc": {
+      "file": "python/cactus_needle-3.1.0-py3-none-win_amd64.whl",
+      "sha256": "4f5fc86abfc50d551cdb237a34b501f36d82d4b6f5911ee7bec4e9532d44dd95"
+    }
+  }
+}
