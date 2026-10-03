@@ -33,10 +33,18 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const sidebarBox = await page.locator('.sidebar').boundingBox();
     assert.equal(sidebarBox.width,402,'conversations must be a separate full-width screen');
     assert(await page.locator('.conversation').evaluate(node=>node.inert));
-    await page.getByRole('button',{name:'Accounts',exact:true}).click();
+    await page.locator('#ios-accounts').click();
+    await page.locator('#settings-dialog').waitFor({state:'visible'});
+    await page.waitForTimeout(280);
+    const settingsBox=await page.locator('#settings-dialog').boundingBox();
+    assert(settingsBox.y>0 && Math.abs(settingsBox.y+settingsBox.height-780)<2,'settings must rise from the bottom while leaving the list behind');
+    assert(await page.locator('#settings-button').isHidden(),'settings entry belongs to the profile circle');
+    assert(await page.locator('#ios-settings-account').isVisible());
+    await page.getByRole('button',{name:'Manage accounts',exact:true}).click();
     assert((await page.evaluate(()=>window.accountRequests)).some(value=>value.action==='open'));
+    await page.getByRole('button',{name:'Close settings sheet',exact:true}).click();
     await page.locator('.bot-link').first().click();
-    assert(await page.getByRole('button',{name:'Accounts',exact:true}).isHidden());
+    assert(await page.locator('#ios-accounts').isHidden());
     const avatarBox=await page.locator('#header-avatar').boundingBox();
     assert(Math.abs(avatarBox.x+avatarBox.width/2-201)<2,'bot avatar must be centered independently of side controls');
     await prompt.fill('');
@@ -83,6 +91,22 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
         assert(await page.locator('.sidebar').evaluate(node=>node.inert));
       }
     }
+    // iOS can shrink only visualViewport when the native host stays full size.
+    await page.setViewportSize({width:874,height:350});
+    await page.evaluate(()=>{
+      Object.defineProperty(window.visualViewport,'height',{configurable:true,value:120});
+      window.visualViewport.dispatchEvent(new Event('resize'));
+    });
+    await page.waitForTimeout(100);
+    assert(await page.locator('.conversation-header').isHidden());
+    const keyboardComposer=await page.locator('#composer-area').boundingBox();
+    assert(Math.abs(keyboardComposer.y+keyboardComposer.height-120)<2,'composer must stop at the visible keyboard boundary, without a second inset');
+    await page.evaluate(()=>{delete window.visualViewport.height;window.visualViewport.dispatchEvent(new Event('resize'));});
+    await page.setViewportSize({width:840,height:720});
+    await page.locator('#ios-accounts').click();
+    await page.locator('#settings-dialog').waitFor({state:'visible'});
+    assert(await page.getByRole('button',{name:'Manage accounts',exact:true}).isVisible(),'Accounts entry must remain reachable on wider mobile screens');
+    await page.getByRole('button',{name:'Close settings sheet',exact:true}).click();
     await page.setViewportSize({width:402,height:780});
     await page.locator('#show-computer').click();
     await page.locator('#computer-panel').waitFor({state:'visible'});

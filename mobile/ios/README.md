@@ -9,7 +9,9 @@ notifications. iOS 17 or later, iPhone and iPad.
 > The core suite passes all 39 tests; all 11 native sign-in, Keychain and
 > layout/fallback tests pass on iOS 27.2. Live sign-in, account navigation, conversation switching,
 > a sent message and received response, and portrait/landscape software-keyboard
-> layouts were verified on iPhone 18 Pro. Drafts survive rotation. WebKit layout
+> layouts were verified on iPhone 18 Pro. The browser form-navigation toolbar is
+> suppressed. The profile settings sheet, section tabs, swipe dismissal and
+> Accounts in both light and dark mode were also checked. Drafts survive rotation. WebKit layout
 > checks cover phone, landscape keyboard and tablet-size viewports. iPhone Duo
 > hardware transitions and end-to-end APNs delivery still await verification.
 
@@ -102,7 +104,10 @@ with an existing persistent web data store.
 
 - The app bundles `Web/MobileLayout.css` and `.js` so older servers also receive
   separate full-screen chat/list views, floating navigation controls, a centered
-  bot avatar and name, compact composer, and native account navigation. Native
+  bot avatar and name, compact composer, and native account navigation. The
+  profile circle opens a bottom settings sheet with horizontal section tabs;
+  tapping the name card opens Accounts. Native accounts and sign-in sheets
+  follow the selected app appearance. Native
   safe-area colors follow the page theme and select dropdowns use the iOS picker. These run only in the account's main-frame origin.
   The chat uses one header; native accounts/reload controls return if the web
   page fails to load. A very short landscape keyboard layout hides the chat
@@ -151,8 +156,12 @@ with an existing persistent web data store.
 - **Uploads** use WebKit's built-in `<input type=file>` picker (Photos,
   Camera, Files). Camera/microphone prompts for dictation are allowed for the
   server's main frame only, and iOS still asks the person.
-- **Layout:** the web view sits inside the safe area and SwiftUI shrinks it
-  above the keyboard; its scroll view doesn't add a second inset. The same
+- **Layout:** the web view respects the top/side safe areas and extends behind
+  the home indicator with hardware padding supplied to the page. WebKit's
+  visible viewport sets the page height above the keyboard; SwiftUI doesn't
+  subtract that space again. A public `WKWebView.inputAccessoryView` override
+  removes the browser's previous/next/Done toolbar while retaining the system
+  keyboard, suggestions and editing controls. The same
   `WKWebView` instance is kept across rotation, Split View / Stage Manager
   resizing and account switches (up to three live accounts), so page state
   survives size changes. Multiple windows are disabled because one web view

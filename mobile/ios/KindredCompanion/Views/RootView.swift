@@ -34,14 +34,17 @@ struct RootView: View {
         }
         .animation(.snappy, value: model.banner)
         .sheet(item: $model.sheet) { route in
-            switch route {
-            case .accounts:
-                AccountsSheet()
-                    .environment(model)
-            case .addAccount(let prefill):
-                AddAccountSheet(prefill: prefill)
-                    .environment(model)
+            Group {
+                switch route {
+                case .accounts:
+                    AccountsSheet()
+                        .environment(model)
+                case .addAccount(let prefill):
+                    AddAccountSheet(prefill: prefill)
+                        .environment(model)
+                }
             }
+            .preferredColorScheme(pageIsDark.map { $0 ? .dark : .light })
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -62,6 +65,9 @@ struct RootView: View {
                 WebContainerView(session: model.session(for: account))
                     .id(account.id)
                     .ignoresSafeArea(.container, edges: .bottom)
+                    // WebKit shrinks its visible viewport for the keyboard.
+                    // Keep SwiftUI from subtracting the same space again.
+                    .ignoresSafeArea(.keyboard)
             } else {
                 SignedOutView(account: account)
             }

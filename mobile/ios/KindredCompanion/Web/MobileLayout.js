@@ -7,6 +7,16 @@
   const shell = document.querySelector('#app');
   const header = document.querySelector('.conversation-header');
   if (!shell || !header) return;
+  // WebKit owns keyboard avoidance; use the visible viewport exactly once.
+  // Fixing the root prevents focus from scrolling the entire chat off screen.
+  const updateViewport = () => {
+    const height = window.visualViewport?.height || window.innerHeight;
+    html.style.setProperty('--ios-viewport-height', `${height}px`);
+    html.toggleAttribute('data-ios-short-viewport', height <= 180);
+  };
+  window.visualViewport?.addEventListener('resize', updateViewport);
+  window.addEventListener('resize', updateViewport);
+  updateViewport();
   const compact = matchMedia('(max-width:760px), (max-height:500px)');
   const menu = document.querySelector('#mobile-menu');
   const sidebar = shell.querySelector('.sidebar');
@@ -21,10 +31,10 @@
   accounts.id = 'ios-accounts';
   accounts.type = 'button';
   accounts.className = 'icon-button';
-  accounts.setAttribute('aria-label', 'Accounts');
-  accounts.title = 'Accounts';
+  accounts.setAttribute('aria-label', 'Settings');
+  accounts.title = 'Settings';
   accounts.textContent = 'You';
-  accounts.onclick = () => window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'open'});
+  accounts.onclick = () => document.querySelector('#settings-button')?.click();
   const top = sidebar?.querySelector('.sidebar-top');
   top?.prepend(accounts);
   const search = document.createElement('button');
@@ -44,9 +54,51 @@
       if (input) { input.value = ''; input.dispatchEvent(new Event('input', {bubbles:true})); }
     }
   };
+  const settings = document.querySelector('#settings-dialog');
+  const settingsHeader = document.createElement('div');
+  settingsHeader.className = 'ios-settings-header';
+  const settingsClose = document.createElement('button');
+  settingsClose.type = 'button';
+  settingsClose.className = 'icon-button';
+  settingsClose.setAttribute('aria-label', 'Close settings sheet');
+  settingsClose.innerHTML = icon('<path d="m6 6 12 12M18 6 6 18"/>');
+  settingsClose.onclick = () => document.querySelector('#settings-close')?.click();
+  const accountEntry = document.createElement('button');
+  accountEntry.id = 'ios-settings-account';
+  accountEntry.type = 'button';
+  accountEntry.setAttribute('aria-label', 'Manage accounts');
+  const accountInitial = document.createElement('span');
+  accountInitial.className = 'ios-account-initial';
+  const accountCopy = document.createElement('span');
+  accountCopy.className = 'ios-account-copy';
+  const accountName = document.createElement('strong');
+  const accountCaption = document.createElement('span');
+  accountCaption.textContent = 'Accounts and servers';
+  accountCopy.append(accountName, accountCaption);
+  const accountChevron = document.createElement('span');
+  accountChevron.innerHTML = icon('<path d="m9 5 7 7-7 7"/>');
+  accountEntry.append(accountInitial, accountCopy, accountChevron);
+  accountEntry.onclick = () => window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'open'});
+  settingsHeader.append(settingsClose, accountEntry);
+  settings?.prepend(settingsHeader);
+  // The sheet is a destination from the list; dismissing it returns there.
+  // A downward pull at the top dismisses it without interfering with content scrolling.
+  let sheetPull;
+  settingsHeader.addEventListener('touchstart', event => { sheetPull = event.touches[0]?.clientY; }, {passive:true});
+  settingsHeader.addEventListener('touchend', event => {
+    if (sheetPull !== undefined && event.changedTouches[0]?.clientY - sheetPull > 80) settingsClose.click();
+    sheetPull = undefined;
+  }, {passive:true});
   const avatar = document.querySelector('#user-avatar');
-  const updateAccount = () => { accounts.textContent = avatar?.textContent.trim() || 'You'; };
+  const updateAccount = () => {
+    const initial = avatar?.textContent.trim() || 'You';
+    accounts.textContent = initial;
+    accountInitial.textContent = initial;
+    accountName.textContent = document.querySelector('#identity-name')?.textContent.trim() || 'Your account';
+  };
   if (avatar) new MutationObserver(updateAccount).observe(avatar, {subtree:true, childList:true, characterData:true});
+  const identityName = document.querySelector('#identity-name');
+  if (identityName) new MutationObserver(updateAccount).observe(identityName, {subtree:true, childList:true, characterData:true});
   updateAccount();
   const computer = document.querySelector('#computer-panel');
   if (computer) {

@@ -100,6 +100,8 @@ final class AppModelSignInTests: XCTestCase {
         try await model.signIn(origin: origin, login: "ada", password: "pw")
         let account = try XCTUnwrap(model.accounts.first)
         let session = model.session(for: account)
+        XCTAssertTrue(session.webView is KindredWebView)
+        XCTAssertNil(session.webView.inputAccessoryView, "Chat inputs should not show the browser's form-navigation toolbar")
         let layout = try XCTUnwrap(session.webView.configuration.userContentController.userScripts.first { $0.injectionTime == .atDocumentEnd })
         XCTAssertTrue(layout.isForMainFrameOnly)
         XCTAssertTrue(layout.source.contains("window.location.origin !== \"https://kindred.example.com\""))

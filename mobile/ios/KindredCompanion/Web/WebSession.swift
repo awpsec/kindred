@@ -3,6 +3,13 @@ import Observation
 import UIKit
 import WebKit
 
+/// WebKit forwards its focused editor's accessory view to this public property.
+/// Keep the system keyboard and editing tools, without the browser form toolbar.
+@MainActor
+final class KindredWebView: WKWebView {
+    override var inputAccessoryView: UIView? { nil }
+}
+
 @MainActor
 @Observable
 final class WebPresentationState {
@@ -62,7 +69,7 @@ final class WebSession: NSObject {
         configuration.defaultWebpagePreferences.preferredContentMode = .mobile
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         configuration.applicationNameForUserAgent = "KindredMobile/" + version
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = KindredWebView(frame: .zero, configuration: configuration)
         super.init()
 
         let controller = webView.configuration.userContentController
@@ -78,8 +85,8 @@ final class WebSession: NSObject {
         webView.isOpaque = false
         webView.backgroundColor = UIColor(named: "Canvas")
         webView.underPageBackgroundColor = UIColor(named: "Canvas")
-        // SwiftUI already lays the web view out inside the safe area and above
-        // the keyboard; letting the scroll view inset again would double it.
+        // The page handles hardware padding and WebKit's visible viewport.
+        // Letting the scroll view add safe-area insets would count them twice.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.keyboardDismissMode = .interactive
         #if DEBUG
@@ -125,7 +132,7 @@ final class WebSession: NSObject {
     }
 
     /// Presentation values only, delivered to the trusted main frame. The host
-    /// extends behind the home indicator while SwiftUI still avoids the keyboard.
+    /// extends behind the home indicator while WebKit avoids the keyboard.
     func updateLayout(bottomInset: CGFloat, isSlab: Bool) {
         guard layoutBottom != bottomInset || layoutIsSlab != isSlab else { return }
         layoutBottom = bottomInset

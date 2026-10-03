@@ -1,7 +1,8 @@
-/* The native host extends the page behind the home indicator, but still avoids
-   the keyboard. It supplies the hardware inset rather than applying it twice. */
+/* The native host extends behind the home indicator. WebKit's visible viewport
+   avoids the keyboard; the host supplies only the hardware bottom inset. */
 html[data-kindred-ios] { -webkit-text-size-adjust:100%; text-size-adjust:100%; --ios-safe-bottom:0px; }
-html[data-kindred-ios] body { overscroll-behavior:none; }
+html[data-kindred-ios],html[data-kindred-ios] body { height:var(--ios-viewport-height,100%); overflow:hidden; }
+html[data-kindred-ios] body { position:fixed; inset:0; overscroll-behavior:none; }
 html[data-kindred-ios] .shell { height:100%; position:relative; }
 html[data-kindred-ios] :is(input,textarea,select,#prompt) { font-size:max(16px,1em); }
 html[data-kindred-ios] .message-bubble { overflow-wrap:anywhere; }
@@ -81,4 +82,34 @@ html[data-kindred-ios] #ios-search { margin-left:auto; }
   html[data-kindred-ios] .conversation-header,html[data-kindred-ios] .jump-latest { display:none; }
   html[data-kindred-ios] .composer-area { padding-block:4px; }
 }
+html[data-kindred-ios][data-ios-short-viewport] .conversation-header,html[data-kindred-ios][data-ios-short-viewport] .jump-latest { display:none; }
 html[data-kindred-ios] #composer.is-multiline #prompt { min-height:32px; padding:4px 7px; }
+
+/* Profile settings arrive as a bottom sheet over the conversation list. */
+  html[data-kindred-ios] #settings-button { display:none; }
+  html[data-kindred-ios] #settings-dialog[open] { display:flex; flex-direction:column; position:fixed; inset:auto 0 0; width:100%; max-width:760px; height:calc(100% - 76px); max-height:calc(100% - 76px); margin:0 auto; border:0; border-radius:28px 28px 0 0; background:var(--bg); padding-bottom:var(--ios-safe-bottom); animation:ios-sheet-in 240ms cubic-bezier(.2,.8,.2,1); }
+  html[data-kindred-ios] #settings-dialog::backdrop { background:#0006; }
+  html[data-kindred-ios] .ios-settings-header { display:flex; flex-direction:column; flex:none; gap:20px; padding:16px 16px 12px; }
+  html[data-kindred-ios] .ios-settings-header>.icon-button { display:flex; justify-content:center; align-items:center; width:44px; height:44px; min-height:44px; min-width:44px; padding:11px; border-radius:50%; border:1px solid var(--line); background:var(--surface); }
+  html[data-kindred-ios] #ios-settings-account { display:flex; align-items:center; gap:12px; width:100%; min-height:84px; padding:16px; text-align:left; background:var(--surface); border-radius:20px; }
+  html[data-kindred-ios] .ios-account-initial { display:grid; place-items:center; flex:none; width:44px; height:44px; border-radius:50%; background:var(--hover); color:var(--soft); font-size:16px; font-weight:600; }
+  html[data-kindred-ios] .ios-account-copy { display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }
+  html[data-kindred-ios] .ios-account-copy strong { font-size:16px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  html[data-kindred-ios] .ios-account-copy>span { color:var(--muted); font-size:13px; }
+  html[data-kindred-ios] #ios-settings-account>span:last-child { color:var(--muted); }
+  html[data-kindred-ios] #settings-dialog>.settings-nav { width:100%; padding:0 16px 10px; background:transparent; border:0; min-width:0; }
+  html[data-kindred-ios] #settings-dialog .settings-nav :is(h2,.settings-version) { display:none; }
+  html[data-kindred-ios] #settings-nav { display:flex; flex-wrap:nowrap; gap:6px; overflow-x:auto; padding:4px 0; scrollbar-width:none; }
+  html[data-kindred-ios] #settings-nav button { width:auto; flex:none; min-height:44px; margin:0; padding:10px 14px; border-radius:22px; white-space:nowrap; font-size:14px; }
+  html[data-kindred-ios] #settings-dialog .settings-main>header { display:none; }
+  html[data-kindred-ios] #settings-content { padding:12px 16px 24px; scroll-padding:12px; }
+  html[data-kindred-ios] #settings-content .setting-box { border-radius:20px; }
+@keyframes ios-sheet-in { from { transform:translateY(100%); } to { transform:translateY(0); } }
+@media (prefers-reduced-motion:reduce) { html[data-kindred-ios] #settings-dialog[open] { animation:none; } }
+html[data-kindred-ios][data-motion=off] #settings-dialog[open] { animation:none; }
+
+@media (min-width:600px) and (max-height:500px) {
+  html[data-kindred-ios] #settings-dialog[open] { height:calc(100% - 12px); max-height:calc(100% - 12px); max-width:100%; }
+  html[data-kindred-ios] .ios-settings-header { display:grid; grid-template-columns:44px minmax(0,1fr); align-items:center; gap:12px; padding:8px 16px; }
+  html[data-kindred-ios] #ios-settings-account { min-height:64px; padding:10px 14px; }
+}
