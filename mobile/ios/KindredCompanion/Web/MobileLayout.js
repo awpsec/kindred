@@ -14,15 +14,19 @@
   const shell = document.querySelector('#app');
   const header = document.querySelector('.conversation-header');
   if (!shell || !header) return;
-  // WebKit owns keyboard avoidance; use the visible viewport exactly once.
-  // Fixing the root prevents focus from scrolling the entire chat off screen.
+  // UIKit sizes WKWebView to the keyboard layout guide. Once native geometry
+  // arrives, do not subtract WebKit's transient visualViewport height again.
+  let nativeHeight = 0, nativePortrait;
   const updateViewport = () => {
-    const height = window.visualViewport?.height || window.innerHeight;
+    const height = nativeHeight || window.visualViewport?.height || window.innerHeight;
     html.style.setProperty('--ios-viewport-height', `${height}px`);
     html.toggleAttribute('data-ios-short-viewport', height <= 180);
   };
   window.visualViewport?.addEventListener('resize', updateViewport);
   window.addEventListener('resize', updateViewport);
+  window.visualViewport?.addEventListener('scroll', () => {
+    if (nativeHeight && (window.scrollY || window.scrollX)) window.scrollTo(0,0);
+  });
   updateViewport();
   const compact = matchMedia('(max-width:760px), (max-height:500px)');
   const menu = document.querySelector('#mobile-menu');
@@ -31,6 +35,76 @@
   const statusBlur = document.createElement('div');
   statusBlur.id = 'ios-status-blur'; statusBlur.setAttribute('aria-hidden','true');
   document.body.append(statusBlur);
+  // Older servers request browser permission when notification preferences
+  // change. Keep their preference save, but route device setup to the app and
+  // replace the browser-only failure before it can paint.
+  const notificationMessage = () => window.__KINDRED_IOS_PUSH_AVAILABLE
+    ? 'Manage iPhone notifications in Accounts.'
+    : 'Background notifications require Apple Developer Program push signing. This free Personal Team build cannot receive them.';
+  document.addEventListener('change', event => {
+    const control = event.target;
+    const label = control.closest?.('label,.setting-row');
+    const title = control.getAttribute?.('aria-label') || label?.querySelector('.setting-label,span')?.textContent.trim();
+    if (title !== 'Notifications' || (control.type === 'checkbox' ? !control.checked : control.value === 'none')) return;
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'notification-settings'});
+  },true);
+  const notice = document.querySelector('#notice');
+  if (notice) new MutationObserver(() => {
+    if (notice.textContent === 'This browser does not support notifications. Use the desktop app.' ||
+        notice.textContent === 'Notifications are blocked in your browser settings.') notice.textContent = notificationMessage();
+  }).observe(notice,{childList:true,characterData:true,subtree:true});
+
+  // Stop is a deliberate second tap on iOS, never a permanent hover action.
+  const workerSelector = '.work-line,.group-working-row';
+  let revealedStopRun = null;
+  const collapseStops = except => {
+    revealedStopRun = except?.querySelector('.work-stop')?.dataset.run || null;
+    adaptStops();
+  };
+  function adaptStops() {
+    for (const stop of document.querySelectorAll('.work-stop')) {
+      const row = stop.closest(workerSelector), label = row?.querySelector('.work-label,.group-working-label');
+      const revealed = !!revealedStopRun && stop.dataset.run === revealedStopRun;
+      row?.classList.toggle('ios-stop-revealed',revealed);
+      stop.tabIndex = revealed ? 0 : -1;
+      stop.setAttribute('aria-hidden', String(!revealed));
+      if (label) { label.tabIndex = 0; label.setAttribute('role','button'); label.setAttribute('aria-expanded',String(!!revealed)); }
+    }
+  }
+  let statusPress, handledStatusClick = false;
+  document.addEventListener('pointerdown', event => {
+    handledStatusClick = false;
+    const stop = event.target.closest?.(workerSelector)?.querySelector('.work-stop');
+    statusPress = stop && !event.target.closest('.work-stop')
+      ? {run:stop.dataset.run,x:event.clientX,y:event.clientY,pointer:event.pointerId} : null;
+  },true);
+  document.addEventListener('pointercancel', () => { statusPress = null; },true);
+  document.addEventListener('pointerup', event => {
+    const press = statusPress; statusPress = null;
+    if (!press || press.pointer !== event.pointerId || Math.hypot(event.clientX-press.x,event.clientY-press.y)>8) return;
+    // Blurring the composer can replace the status DOM between down and up.
+    // Carry the task ID through that change instead of losing the first tap.
+    revealedStopRun = revealedStopRun === press.run ? null : press.run;
+    adaptStops(); handledStatusClick = true;
+  },true);
+  document.addEventListener('click', event => {
+    const row = event.target.closest?.(workerSelector);
+    if (event.target.closest?.('.work-stop')) return;
+    if (handledStatusClick) { handledStatusClick = false; event.preventDefault(); event.stopImmediatePropagation(); return; }
+    if (row?.querySelector('.work-stop')) {
+      const show = row.querySelector('.work-stop').dataset.run !== revealedStopRun;
+      collapseStops(show ? row : null);
+      event.preventDefault(); event.stopImmediatePropagation();
+    } else collapseStops();
+  },true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') collapseStops();
+    if (!['Enter',' '].includes(event.key) || !event.target.matches?.('.work-label,.group-working-label')) return;
+    event.preventDefault(); event.stopImmediatePropagation(); event.target.click();
+  },true);
+  const messages = document.querySelector('.messages');
+  if (messages) new MutationObserver(adaptStops).observe(messages,{childList:true,subtree:true});
+  adaptStops();
   // Editing message/artifact source is a desktop workflow. Preserve reply,
   // copy, reactions, previews and metadata controls in the iOS app.
   const desktopEditControl = '[data-message-action="edit"],.artifact-workbench-actions button[aria-label^="Edit "],.artifact-workbench-actions button[aria-label="Finish editing"],.workspace-artifact-actions>button:first-child';
@@ -373,6 +447,25 @@
     adaptControlNotice();
   }
   if (computer) {
+    let resumeScreen = null;
+    // The server attaches desktop's click-to-expand listener to this host.
+    // Replace that host before opening a VNC connection; its content survives,
+    // and future RFB instances attach to the new #desktop. Canvas listeners
+    // belong to noVNC and are left intact.
+    const detachDesktopExpansion = () => {
+      const oldDesktop = computer.querySelector('#desktop');
+      if (!oldDesktop) return;
+      const desktop = oldDesktop.cloneNode(false);
+      desktop.append(...oldDesktop.childNodes); oldDesktop.replaceWith(desktop);
+    };
+    if (computer.hidden) detachDesktopExpansion();
+    document.addEventListener('click', event => {
+      if (computer.hidden && event.target.closest?.('#show-computer')) detachDesktopExpansion();
+    },true);
+    document.addEventListener('pointerdown', event => {
+      if (!event.target.closest?.('#desktop') || computer.classList.contains('is-controlling')) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+    },true);
     const back = document.createElement('button');
     back.id = 'ios-computer-back';
     back.className = 'icon-button';
@@ -437,16 +530,35 @@
       const active = document.activeElement === input;
       computer.classList.toggle('ios-keyboard-active',active);
     };
-    input.addEventListener('focus',keyboardState); input.addEventListener('blur',keyboardState);
-    let awaitingControl = false, controlTimeout, hadControl = false;
+    let restoringFocus = false;
+    input.addEventListener('focus',keyboardState);
+    input.addEventListener('blur',() => {
+      keyboardState();
+      if (!restoringFocus && canvas()) window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'computer-keyboard'});
+    });
+    let awaitingControl = false, controlTimeout, hadControl = false, inputWanted = false;
+    const portrait = () => nativePortrait ?? (window.innerHeight >= window.innerWidth);
+    window.__kindredComputerInput = {
+      focus(force = false) {
+        if (!canvas() || !portrait()) return;
+        restoringFocus = true;
+        if (force) input.blur();
+        input.focus({preventScroll:true}); restoringFocus = false;
+      }
+    };
     // Focus during the user's tap, before the asynchronous takeover request;
     // iOS won't summon its keyboard from a later network callback alone.
     document.querySelector('#take-control')?.addEventListener('click', event => {
       if (event.currentTarget.disabled) return;
       clearTimeout(controlTimeout);
-      if (canvas()) { awaitingControl = false; input.blur(); return; }
-      awaitingControl = true; resetInput(); input.focus({preventScroll:true});
-      controlTimeout = setTimeout(() => { awaitingControl = false; if (!canvas()) input.blur(); },35000);
+      if (canvas()) { awaitingControl = false; return; }
+      awaitingControl = true; resetInput();
+      updateControl();
+      controlTimeout = setTimeout(() => { awaitingControl = false; updateControl(); },35000);
+    },true);
+    document.addEventListener('click', event => {
+      if (!event.target.closest?.('#computer-close')) return;
+      resumeScreen = canvas() ? document.querySelector('#screen-picker')?.value : null;
     },true);
     // Remote clicks may focus the canvas; restore native entry after the click.
     let restoreKeyboard = false;
@@ -454,21 +566,43 @@
       if (event.target.matches('.desktop-canvas canvas')) restoreKeyboard = computer.classList.contains('ios-keyboard-active');
     },true);
     computer.addEventListener('pointerup', event => {
-      if (event.target.matches('.desktop-canvas canvas') && restoreKeyboard && canvas()) input.focus({preventScroll:true});
+      if (event.target.matches('.desktop-canvas canvas') && restoreKeyboard && canvas()) window.__kindredComputerInput.focus();
       restoreKeyboard = false;
     });
+    let paneWasHidden = computer.hidden;
     const updateControl = () => {
+      // Other server actions can open the pane too. The connection awaits its
+      // endpoint before constructing RFB, so clear legacy host listeners at
+      // the hidden->visible transition, before the live canvas is attached.
+      if (paneWasHidden && !computer.hidden) detachDesktopExpansion();
+      paneWasHidden = computer.hidden;
       const controlling = !!canvas();
       if (controlling) {
         awaitingControl = false; clearTimeout(controlTimeout);
         if (!hadControl) {
-          resetInput(); input.focus({preventScroll:true});
+          resetInput(); window.__kindredComputerInput.focus();
           window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'computer-keyboard'});
         }
       } else if ((!awaitingControl || computer.hidden) && document.activeElement === input) {
         awaitingControl = false; clearTimeout(controlTimeout); input.blur();
       }
+      const wanted = !computer.hidden && (controlling || awaitingControl);
+      if (wanted !== inputWanted) {
+        inputWanted = wanted;
+        window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'computer-input',enabled:wanted});
+      }
       hadControl = controlling;
+      if (!computer.hidden && resumeScreen) {
+        const choice = document.querySelector('#screen-picker')?.value;
+        const action = document.querySelector('#take-control');
+        const label = action?.getAttribute('aria-label');
+        if (choice !== resumeScreen) resumeScreen = null;
+        else if (!action.disabled && label === 'Use screen') {
+          // Resume only the screen we left under manual control. "Use screen"
+          // reattaches its existing lease; it never interrupts a new bot task.
+          resumeScreen = null; action.click();
+        } else if (!action.disabled && /^(Take control|Stop task & take control)$/.test(label)) resumeScreen = null;
+      }
       const screen = computer.querySelector('.desktop-canvas canvas');
       if (screen?.width > 0 && screen?.height > 0) computer.style.setProperty('--ios-screen-ratio',screen.width / screen.height);
     };
@@ -492,6 +626,10 @@
     html.style.setProperty('--ios-safe-top', `${Math.max(0, Number(value.topInset) || 0)}px`);
     html.dataset.iosSlab = String(value.isSlab === true);
     html.style.setProperty('--ios-safe-bottom', `${Math.max(0, Number(value.bottomInset) || 0)}px`);
+    nativeHeight = Math.max(0, Number(value.viewportHeight) || 0);
+    nativePortrait = typeof value.isPortrait === 'boolean' ? value.isPortrait : undefined;
+    updateViewport();
+    window.__kindredComputerInput?.focus();
   }
   window.addEventListener('kindred-ios-layout', event => updateEnvironment(event.detail));
   updateEnvironment(window.__KINDRED_IOS_LAYOUT);

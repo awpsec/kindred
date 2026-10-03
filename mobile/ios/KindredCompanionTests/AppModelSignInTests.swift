@@ -49,6 +49,58 @@ final class AppModelSignInTests: XCTestCase {
         try? FileManager.default.removeItem(at: folder)
     }
 
+    func testComputerPortraitLockBelongsOnlyToTheControllingView() {
+        let first = WKWebView(), second = WKWebView()
+        let policy = ComputerOrientation.shared
+        policy.update(webView: first, active: true)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            XCTAssertEqual(policy.mask, .portrait)
+            policy.update(webView: second, active: false)
+            XCTAssertEqual(policy.mask, .portrait, "Another account cannot release the owner's portrait lock")
+        }
+        policy.update(webView: first, active: false)
+        XCTAssertTrue(policy.mask.contains(.landscapeLeft))
+        XCTAssertTrue(policy.mask.contains(.landscapeRight))
+    }
+
+    func testNativeKeyboardGuideSizesWebViewExactlyOnce() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let account = try XCTUnwrap(model.activeAccount)
+        let session = model.session(for: account)
+        session.webView.stopLoading()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let oldKey = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        window.rootViewController = controller
+        let host = WebHostView()
+        host.attach(session)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        controller.view.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.topAnchor.constraint(equalTo: controller.view.topAnchor),
+            host.bottomAnchor.constraint(equalTo: controller.view.bottomAnchor),
+            host.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor)
+        ])
+        let input = UITextField(frame: CGRect(x: 20, y: 120, width: 240, height: 44))
+        controller.view.addSubview(input)
+        window.makeKeyAndVisible()
+        controller.view.layoutIfNeeded()
+        defer { input.resignFirstResponder(); window.isHidden = true; oldKey?.makeKey() }
+        XCTAssertEqual(session.webView.frame.maxY, host.bounds.maxY, accuracy: 1, "Hidden keyboard retains the full canvas")
+        let shown = expectation(description: "Software keyboard shown")
+        let observer = NotificationCenter.default.addObserver(forName: UIResponder.keyboardDidShowNotification, object: nil, queue: .main) { _ in shown.fulfill() }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        input.becomeFirstResponder()
+        await fulfillment(of: [shown], timeout: 5)
+        controller.view.layoutIfNeeded()
+        XCTAssertLessThan(session.webView.frame.maxY, host.bounds.maxY - 100)
+        XCTAssertEqual(session.webView.frame.maxY, host.keyboardLayoutGuide.layoutFrame.minY, accuracy: 1, "Web content ends exactly at the real keyboard edge")
+        XCTAssertEqual(session.webView.bounds.height, host.keyboardLayoutGuide.layoutFrame.minY, accuracy: 1, "Keyboard height is subtracted only once")
+    }
+
     private func serveKindred(loginStatus: Int = 200) {
         let token = self.token
         let account = serverAccount

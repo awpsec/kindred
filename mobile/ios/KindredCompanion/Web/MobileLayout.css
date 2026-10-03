@@ -1,5 +1,5 @@
-/* The native host extends behind the status bar and home indicator. WebKit's
-   visible viewport avoids the keyboard; the host supplies hardware insets. */
+/* The native host extends behind system chrome; UIKit supplies the size above
+   its keyboard layout guide, so keyboard space is subtracted only once. */
 html[data-kindred-ios] { -webkit-text-size-adjust:100%; text-size-adjust:100%; --ios-safe-top:env(safe-area-inset-top,0px); --ios-safe-bottom:0px; }
 html[data-kindred-ios],html[data-kindred-ios] body { height:var(--ios-viewport-height,100%); overflow:hidden; }
 html[data-kindred-ios] body { position:fixed; inset:0; overscroll-behavior:none; }
@@ -9,6 +9,9 @@ html[data-kindred-ios] :is(.conversation-header,.sidebar-top,.panel-header) { mi
 html[data-kindred-ios] #app.shell>:is(.details-panel,.computer-panel) { border:0; box-shadow:none; }
 html[data-kindred-ios] :is(input,textarea,select,#prompt) { font-size:max(16px,1em); }
 html[data-kindred-ios] .message-bubble { overflow-wrap:anywhere; }
+html[data-kindred-ios] :is(.work-line,.group-working-row) .work-stop { opacity:0; pointer-events:none; transition:opacity 160ms; }
+html[data-kindred-ios] :is(.work-line,.group-working-row).ios-stop-revealed .work-stop { opacity:1; pointer-events:auto; }
+html[data-kindred-ios] :is(.work-label,.group-working-label) { -webkit-user-select:none; user-select:none; cursor:pointer; pointer-events:auto; }
 html[data-kindred-ios] .conversation-history { overflow:hidden; }
 html[data-kindred-ios] .conversation>.composer-area { position:absolute; inset:auto 0 0; flex:none; background:transparent; pointer-events:none; padding-bottom:calc(8px + var(--ios-safe-bottom)); }
 html[data-kindred-ios] .conversation .messages { padding-top:calc(var(--ios-chat-top,64px) + 8px); padding-bottom:calc(var(--ios-chat-bottom,62px) + 12px); scroll-padding-top:calc(var(--ios-chat-top,64px) + 8px); scroll-padding-bottom:calc(var(--ios-chat-bottom,62px) + 12px); }

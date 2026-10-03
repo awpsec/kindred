@@ -1,6 +1,7 @@
 import KindredCore
 import UIKit
 import UserNotifications
+import WebKit
 
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate {
@@ -22,6 +23,43 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         model.didFailToRegisterForRemoteNotifications(error)
+    }
+
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        ComputerOrientation.shared.mask
+    }
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        if let account = model.activeAccount, model.isSignedIn(account.id) {
+            model.session(for: account).restoreComputerKeyboard(force: true)
+        }
+    }
+}
+
+/// Only remote typing on phones is portrait-only; watching the computer and
+/// ordinary chats retain rotation. No private device-orientation APIs.
+@MainActor
+final class ComputerOrientation {
+    static let shared = ComputerOrientation()
+    private weak var owner: WKWebView?
+    var mask: UIInterfaceOrientationMask {
+        owner == nil ? (UIDevice.current.userInterfaceIdiom == .phone ? .allButUpsideDown : .all) : .portrait
+    }
+
+    func update(webView: WKWebView, active: Bool) {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        if active {
+            guard owner !== webView else { return }
+            owner = webView
+        } else {
+            guard owner === webView else { return }
+            owner = nil
+        }
+        guard let scene = webView.window?.windowScene else { return }
+        let root = webView.window?.rootViewController
+        root?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        root?.presentedViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        if active { scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) }
     }
 }
 

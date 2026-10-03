@@ -23,7 +23,6 @@ struct WebContainerView: UIViewRepresentable {
 final class WebHostView: UIView {
     private weak var session: WebSession?
     private var hasDivision = false
-    private var keyboardVisible = false
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -39,12 +38,22 @@ final class WebHostView: UIView {
         if #available(iOS 27.1, *) {
             hasDivision = hasDivision || !(window?.reservedRegions(kind: .division, options: .includeInactive).isEmpty ?? true)
         }
-        session?.updateLayout(topInset: safeAreaInsets.top, bottomInset: keyboardVisible ? 0 : safeAreaInsets.bottom, isSlab: UIDevice.current.userInterfaceIdiom == .phone && !hasDivision)
+        guard let session else { return }
+        let keyboardVisible = session.webView.frame.maxY < bounds.maxY - safeAreaInsets.bottom - 1
+        session.updateLayout(topInset: safeAreaInsets.top, bottomInset: keyboardVisible ? 0 : safeAreaInsets.bottom,
+                             isSlab: UIDevice.current.userInterfaceIdiom == .phone && !hasDivision,
+                             viewportHeight: session.webView.bounds.height,
+                             isPortrait: window?.windowScene?.interfaceOrientation.isPortrait ?? (bounds.height >= bounds.width))
+        session.restoreComputerKeyboard()
     }
-    @objc private func keyboardFrameChanged(_ notification: Notification) {
-        guard let window, let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-        let local = window.convert(frame, from: window.screen.coordinateSpace)
-        keyboardVisible = local.minY < window.bounds.maxY - window.safeAreaInsets.bottom - 1
+
+    @objc private func keyboardDidHide() {
+        session?.restoreComputerKeyboard(force: true)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        session?.computerHostAttachmentChanged()
         updateEnvironment()
     }
 
@@ -53,13 +62,15 @@ final class WebHostView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = UIColor(named: "Canvas")
-        NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrameChanged(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        keyboardLayoutGuide.usesBottomSafeArea = false
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardDidHide), name: UIResponder.keyboardDidHideNotification, object: nil)
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         backgroundColor = UIColor(named: "Canvas")
-        NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrameChanged(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        keyboardLayoutGuide.usesBottomSafeArea = false
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardDidHide), name: UIResponder.keyboardDidHideNotification, object: nil)
     }
 
     func attach(_ session: WebSession) {
@@ -74,7 +85,10 @@ final class WebHostView: UIView {
             webView.leadingAnchor.constraint(equalTo: leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: trailingAnchor),
             webView.topAnchor.constraint(equalTo: topAnchor),
-            webView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            // UIKit tracks the real keyboard edge, including focus/rotation
+            // animations. WebKit no longer has to subtract its height in CSS.
+            webView.bottomAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor),
         ])
+        setNeedsLayout()
     }
 }

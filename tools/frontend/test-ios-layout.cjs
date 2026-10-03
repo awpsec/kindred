@@ -360,6 +360,20 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const keyboardComposer=await page.locator('#composer-area').boundingBox();
     assert(Math.abs(keyboardComposer.y+keyboardComposer.height-120)<2,'composer must stop at the visible keyboard boundary, without a second inset');
     await page.evaluate(()=>{delete window.visualViewport.height;window.visualViewport.dispatchEvent(new Event('resize'));});
+    // The physical app receives UIKit's actual height above the keyboard.
+    // Transient focus/animation heights in visualViewport must not shrink it a
+    // second time, or leave the composer stranded after dismissal/refocus.
+    await page.setViewportSize({width:402,height:780});
+    for (const height of [490,780,490,780]) {
+      await page.evaluate(height=>{
+        Object.defineProperty(window.visualViewport,'height',{configurable:true,value:180});
+        window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{topInset:62,bottomInset:height===780?34:0,isSlab:true,viewportHeight:height,isPortrait:true}}));
+        window.visualViewport.dispatchEvent(new Event('resize'));
+      },height);
+      const box=await page.locator('#composer-area').boundingBox();
+      assert(Math.abs(box.y+box.height-height)<2,'native keyboard geometry wins over transient WebKit height');
+    }
+    await page.evaluate(()=>{delete window.visualViewport.height;window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{bottomInset:0,isSlab:true}}));});
     await page.setViewportSize({width:840,height:720});
     await page.locator('#ios-accounts').click();
     await page.locator('#settings-dialog').waitFor({state:'visible'});
@@ -388,9 +402,31 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       const panel=document.querySelector('#computer-panel'),host=document.createElement('div');host.className='desktop-canvas';
       const canvas=document.createElement('canvas');canvas.width=1600;canvas.height=1000;host.append(canvas);document.querySelector('#desktop').replaceChildren(host);
       window.iosRemoteKeys=[];canvas.addEventListener('keydown',event=>window.iosRemoteKeys.push(event.key));
+      window.iosRemotePointerEvents=0;canvas.addEventListener('pointerdown',()=>window.iosRemotePointerEvents++);
+    });
+    await page.locator('.desktop-canvas canvas').dispatchEvent('pointerdown',{button:0});
+    assert.equal(await page.evaluate(()=>window.iosRemotePointerEvents),0,'watching screen taps cannot reach desktop expand/input');
+    assert(!(await page.locator('#computer-panel').evaluate(node=>node.classList.contains('expanded'))),'watching screen taps do not expand');
+    await page.evaluate(()=>{
+      const panel=document.querySelector('#computer-panel');
       panel.classList.add('is-controlling');
     });
     assert(await page.locator('#ios-computer-input').evaluate(node=>node===document.activeElement));
+    await page.locator('.desktop-canvas canvas').dispatchEvent('pointerdown',{button:0});
+    assert.equal(await page.evaluate(()=>window.iosRemotePointerEvents),1,'controlled taps reach the actual canvas');
+    assert(!(await page.locator('#computer-panel').evaluate(node=>node.classList.contains('expanded'))),'controlled taps do not trigger desktop expansion');
+    await page.setViewportSize({width:874,height:350});
+    await page.evaluate(()=>{
+      document.querySelector('#ios-computer-input').blur();
+      window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{viewportHeight:350,isSlab:true,isPortrait:false}}));
+      window.__kindredComputerInput.focus(true);
+    });
+    assert(await page.locator('#ios-computer-input').evaluate(node=>node!==document.activeElement),'remote keyboard is never focused in landscape');
+    await page.setViewportSize({width:402,height:780});
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{viewportHeight:780,isSlab:true,isPortrait:true}})));
+    assert(await page.locator('#ios-computer-input').evaluate(node=>node===document.activeElement),'portrait rotation restores remote typing');
+    await page.evaluate(()=>{document.querySelector('#ios-computer-input').blur();window.__kindredComputerInput.focus(true);});
+    assert(await page.locator('#ios-computer-input').evaluate(node=>node===document.activeElement),'dismissed keyboard can be restored while controlling');
     await page.evaluate(()=>{
       const input=document.querySelector('#ios-computer-input');input.value+='Hi é';input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));
       input.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'deleteContentBackward'}));
@@ -411,6 +447,7 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.evaluate(()=>document.querySelector('#computer-panel').classList.remove('is-controlling'));
     assert(await page.locator('#ios-computer-input').evaluate(node=>node!==document.activeElement),'returning control dismisses native entry');
     await page.setViewportSize({width:402,height:780});
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{isSlab:true,bottomInset:0}})));
     assert(await page.locator('#computer-expand').isHidden(),'slab computer already occupies its own screen');
     assert.equal(await page.locator('#screen-picker span').first().evaluate(node=>getComputedStyle(node).webkitUserSelect),'none','screen picker label must not select text');
     const screens=await openNativeMenu(page.locator('#screen-picker'));
@@ -451,6 +488,38 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.locator('#control-notice').waitFor({state:'hidden'});
     assert.deepEqual(returnRequest,{enabled:false,bot_id:'piper',control_id:'ios-test-pause'},'mobile action returns the correct bot and pause');
     assert(await page.locator('#queue-status').isHidden());
+    // Real running-task UI: the first tap only reveals, outside taps hide, and
+    // the second tap preserves the server's cancellation request.
+    let cancellations=0;
+    const run={id:'ios-working',bot_id:'piper',chat_id:'dm-piper',status:'running',created:Math.floor(Date.now()/1000),prompt:'Mobile interruption check',output:''};
+    await page.route('**/api/runs',route=>route.fulfill({json:[run]}));
+    await page.route('**/api/runs/ios-working',route=>route.fulfill({json:{run,events:[],attachments:[],approvals:[]}}));
+    await page.route('**/api/activity',route=>route.fulfill({json:{piper:{status:'running',run_id:run.id,shape:'working',started_at:run.created,server_time:run.created}}}));
+    await page.route('**/api/runs/ios-working/cancel',route=>{cancellations++;return route.fulfill({json:{}});});
+    await page.reload();
+    const work=page.locator('.work-line'),stop=work.locator('.work-stop');
+    await work.waitFor({state:'visible'});
+    assert.equal(await stop.evaluate(node=>getComputedStyle(node).pointerEvents),'none');
+    assert.equal(await stop.getAttribute('tabindex'),'-1');
+    await work.locator('.work-label').click();
+    assert.equal(cancellations,0,'status tap does not cancel');
+    assert.equal(await stop.getAttribute('tabindex'),'0');
+    await page.locator('#prompt').click();
+    assert.equal(await stop.evaluate(node=>getComputedStyle(node).pointerEvents),'none','outside tap hides the stop action');
+    await work.locator('.work-label').click();
+    await stop.click();
+    assert.equal(cancellations,1,'revealed stop invokes exactly one cancellation');
+    // The bundled iOS adapter also covers older servers, preserving the
+    // preference save while replacing the browser-only warning.
+    await page.locator('#mobile-menu').click();
+    await page.locator('#ios-accounts').click();
+    const notifications=page.locator('#settings-content select[aria-label="Notifications"]');
+    await notifications.waitFor({state:'visible'});
+    await notifications.selectOption('none');
+    await notifications.selectOption('all');
+    await page.waitForFunction(()=>window.accountRequests.some(value=>value.action==='notification-settings'));
+    assert((await page.locator('#notice').innerText()).includes('Personal Team'),'iOS explains the real signing limitation');
+    assert(!(await page.locator('#notice').innerText()).includes('Use the desktop app'));
     assert.deepEqual(errors.filter(error=>!error.startsWith('ResizeObserver loop')),[]);
     console.log('iOS layout: native composer/file/avatar/screen/new/library/artifact menus and actions, conversation pin/mute, artifact navigation/drafts, native selects/theme and rotation/keyboard bounds passed.');
   } finally { await browser.close(); server.close(); }

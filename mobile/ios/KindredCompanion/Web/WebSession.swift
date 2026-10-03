@@ -50,6 +50,10 @@ final class WebSession: NSObject {
     private var layoutTop: CGFloat = 0
     private var layoutBottom: CGFloat = 0
     private var layoutIsSlab = false
+    private var layoutHeight: CGFloat = 0
+    private var layoutIsPortrait = true
+    private var computerInputWanted = false
+    private var computerFocusPending = false
     private var profileID: String?
     private var latestToken: String?
     private let policy: NavigationPolicy
@@ -127,10 +131,12 @@ final class WebSession: NSObject {
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
         let revision = Bundle.main.object(forInfoDictionaryKey: "KindredSourceRevision") as? String ?? ""
         let versionLabel = "iOS " + version + " (" + build + ")" + (revision.isEmpty ? "" : " · " + String(revision.prefix(8)))
+        let hasPushSigning = APNsEnvironment(configurationValue: Bundle.main.object(forInfoDictionaryKey: "KindredAPNsEnvironment") as? String) != nil
         let source = WebBootstrap.documentStartScript(origin: origin, token: token, profileID: profileID) + """
         ;(() => {
           if (window.top !== window.self || location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
           window.__KINDRED_IOS_APP_VERSION = \(WebBootstrap.javaScriptString(versionLabel));
+          window.__KINDRED_IOS_PUSH_AVAILABLE = \(hasPushSigning ? "true" : "false");
           const appearance = \(WebBootstrap.javaScriptString(presentation.isDark.map { $0 ? "dark" : "light" } ?? "system"));
           if (appearance !== 'system') document.documentElement.dataset.theme = appearance;
           // iPhone keyboard dictation owns speech input. Reset only this account's
@@ -167,11 +173,13 @@ final class WebSession: NSObject {
 
     /// Presentation values only, delivered to the trusted main frame. The host
     /// extends behind system chrome while WebKit avoids the keyboard.
-    func updateLayout(topInset: CGFloat, bottomInset: CGFloat, isSlab: Bool) {
-        guard layoutTop != topInset || layoutBottom != bottomInset || layoutIsSlab != isSlab else { return }
+    func updateLayout(topInset: CGFloat, bottomInset: CGFloat, isSlab: Bool, viewportHeight: CGFloat = 0, isPortrait: Bool = true) {
+        guard layoutTop != topInset || layoutBottom != bottomInset || layoutIsSlab != isSlab || layoutHeight != viewportHeight || layoutIsPortrait != isPortrait else { return }
         layoutTop = topInset
         layoutBottom = bottomInset
         layoutIsSlab = isSlab
+        layoutHeight = viewportHeight
+        layoutIsPortrait = isPortrait
         publishLayout()
     }
 
@@ -179,11 +187,32 @@ final class WebSession: NSObject {
         guard origin.matches(webView.url) else { return }
         let script = """
         if (window.top !== window.self || location.origin !== expectedOrigin) return;
-        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, isSlab};
+        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, isSlab, viewportHeight, isPortrait};
         window.dispatchEvent(new CustomEvent('kindred-ios-layout', {detail: window.__KINDRED_IOS_LAYOUT}));
         """
         webView.callAsyncJavaScript(script, arguments: ["expectedOrigin": origin.serialized,
-            "topInset": Double(layoutTop), "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab], in: nil, in: .page) { _ in }
+            "topInset": Double(layoutTop), "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab,
+            "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait], in: nil, in: .page) { _ in }
+    }
+
+    func computerHostAttachmentChanged() {
+        ComputerOrientation.shared.update(webView: webView, active: computerInputWanted && webView.window != nil)
+    }
+
+    func restoreComputerKeyboard(force: Bool = false) {
+        guard computerInputWanted, layoutIsPortrait, webView.window != nil,
+              UIApplication.shared.applicationState == .active, origin.matches(webView.url), !computerFocusPending else { return }
+        computerFocusPending = true
+        webView.evaluateJavaScript("window.__kindredComputerInput?.focus(\(force ? "true" : "false"))") { [weak self] _, _ in
+            self?.computerFocusPending = false
+        }
+    }
+
+    private func setComputerInput(_ enabled: Bool) {
+        computerInputWanted = enabled
+        webView.scrollView.keyboardDismissMode = enabled ? .none : .interactive
+        computerHostAttachmentChanged()
+        if enabled { restoreComputerKeyboard() }
     }
 
     func open(_ url: URL) {
@@ -238,17 +267,19 @@ final class WebSession: NSObject {
         case WebSession.sessionHandler:
             if let parsed = SessionMessage(body: message.body) { host?.webSession(self, didReceive: parsed) }
         case WebSession.accountsHandler:
+            if let body = message.body as? [String: Any], body["action"] as? String == "computer-input",
+               let enabled = body["enabled"] as? Bool {
+                setComputerInput(enabled)
+                return
+            }
             if let body = message.body as? [String: Any], body["action"] as? String == "computer-keyboard" {
-                // Client-initiated focus through this public API can summon the
-                // iOS keyboard after an asynchronous remote takeover completes.
-                webView.evaluateJavaScript("""
-                (() => {
-                  const panel = document.getElementById('computer-panel');
-                  const input = document.getElementById('ios-computer-input');
-                  if (!panel || panel.hidden || !panel.classList.contains('is-controlling') || !input) return;
-                  input.blur(); input.focus({preventScroll:true});
-                })();
-                """, completionHandler:nil)
+                restoreComputerKeyboard(force: true)
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "notification-settings" {
+                if APNsEnvironment(configurationValue: Bundle.main.object(forInfoDictionaryKey: "KindredAPNsEnvironment") as? String) == nil {
+                    host?.webSession(self, show: "Background notifications require Apple Developer Program push signing. This free Personal Team build cannot receive them.", isError: false)
+                } else { host?.webSessionRequestedAccounts(self) }
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "native-menu" {
@@ -349,6 +380,7 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
 
 extension WebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        setComputerInput(false)
         // Keep established web navigation in charge while a route/reload starts.
         // Clearing this flag briefly restores the native account toolbar above
         // artifacts. A real page failure still restores recovery controls.

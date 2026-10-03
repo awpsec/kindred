@@ -87,7 +87,7 @@ struct RootView: View {
                 WebContainerView(session: model.session(for: account))
                     .id(account.id)
                     .ignoresSafeArea(.container, edges: isShowingConversation ? [.top, .bottom] : .bottom)
-                    // WebKit shrinks its visible viewport for the keyboard.
+                    // WebHostView's keyboard layout guide owns avoidance.
                     // Keep SwiftUI from subtracting the same space again.
                     .ignoresSafeArea(.keyboard)
             } else {

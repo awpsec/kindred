@@ -6,7 +6,7 @@ native layer handles accounts, credentials, navigation safety, downloads and
 notifications. iOS 17 or later, iPhone and iPad.
 
 > **Mac verification (2026-10-03):** the app builds with Xcode 27.2 beta 2.
-> The core suite passes all 39 tests; all 17 native sign-in, Keychain, appearance and
+> The core suite passes all 39 tests; all 25 native sign-in, Keychain, appearance and
 > layout/fallback tests pass on iOS 27.2. Live sign-in, account navigation, conversation switching,
 > a sent message and received response, and portrait/landscape software-keyboard
 > layouts were verified on iPhone 18 Pro. The browser form-navigation toolbar is
@@ -164,7 +164,17 @@ with an existing persistent web data store.
   Reduce Motion fade and bounded reveal. The OS static launch screen follows device appearance;
   the animated handoff follows the cached account appearance.
   Slab phones use the entire computer screen without an expansion button; in
-  landscape, controls/resources scroll beside the desktop. Division reserved
+  landscape, watching keeps controls/resources beside the desktop. Taking
+  control on a phone rotates the app upright and locks portrait until control
+  is returned or the pane is closed. The keyboard stays available while the
+  controlled screen is visible; reopening restores it. View-only screen taps
+  have no expansion or remote-input action. UIKit's keyboard layout guide
+  sizes the web view once, keeping the composer at the real keyboard edge
+  through focus changes and rotation. A task's stop action appears only after
+  tapping its status line; tapping elsewhere hides it, and status refreshes
+  preserve the reveal. Notification preferences retain their server save but
+  device setup uses native Accounts. Free Personal Team builds explain the
+  push-signing limit rather than showing the browser/desktop warning. Division reserved
   regions (including inactive regions) retain foldable expansion controls.
 - Run `node tools/frontend/test-ios-layout.cjs` from the repository root with
   Playwright/WebKit installed to check bundled layout resources and the bridge
