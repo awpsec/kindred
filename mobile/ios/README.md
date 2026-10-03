@@ -207,7 +207,7 @@ On touch/mobile layouts, message action and timestamp rows are hidden. A
 leftward hold/swipe reveals timestamps beside the bubbles; releasing returns
 them to their hidden state. Vertical scrolling stays native. Pressing a
 message opens UIKit's context menu on iOS with React, Reply and Copy message,
-using the existing server actions. Queued messages retain their Edit action.
+using the existing server actions. Queued-message editing is omitted on iOS.
 Text selection is suppressed on message bubbles; use Copy message instead.
 Links and existing reaction badges retain their normal actions.
 
@@ -220,6 +220,12 @@ update the running server.
 WebKit fixture checks cover menu actions, stale action rejection, timestamps,
 vertical scrolling and the portable press menu. Native tests cover UIKit menu
 construction. A physical press/swipe on an iPhone still needs hands-on checking.
+
+iOS also omits artifact source editing in the library and inline chat cards.
+Preview, refresh, creation, and metadata controls remain available. Established
+web navigation stays in charge during route changes/reloads so opening an
+artifact cannot briefly restore the native account toolbar; a page failure
+still exposes native recovery controls.
 
 ### Notifications
 

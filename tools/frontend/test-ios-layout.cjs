@@ -187,21 +187,22 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert(await library.evaluate(node=>node.inert));
     assert.equal((await workbench.boundingBox()).width,402,'document uses the entire page without a drawer gutter');
     assert(await page.locator('.artifact-workbench-actions [aria-label="Download"]').isHidden(),'iOS artifacts do not offer Download');
-    for (const label of ['Refresh document','Edit document']) {
+    for (const label of ['Refresh document']) {
       const button=page.getByRole('button',{name:label,exact:true});
       const style=await button.evaluate(node=>({radius:getComputedStyle(node).borderRadius,blur:getComputedStyle(node).backdropFilter,border:getComputedStyle(node).borderTopWidth}));
       assert.equal(style.radius,'50%'); assert.equal(style.border,'1px'); assert(style.blur.includes('blur'),'document actions share the glass circle styling');
       const box=await button.boundingBox(); assert(box.width===44 && box.height===44);
     }
-    await page.getByRole('button',{name:'Edit document',exact:true}).click();
-    const sourceEditor=page.getByRole('textbox',{name:'Document',exact:true});
-    await sourceEditor.fill('Unsaved mobile draft');
+    assert(await page.locator('.artifact-workbench-actions [aria-label="Edit document"]').isHidden(),'source editing belongs to desktop');
+    await page.locator('.artifact-workbench-actions [aria-label="Edit document"]').evaluate(button=>button.click());
+    assert.equal(await page.locator('.artifact-source-editor').count(),0,'hidden source editing cannot be invoked programmatically');
+    assert(await page.locator('.workspace-artifact-actions>button:first-child').isHidden(),'inline artifact Edit also belongs to desktop');
+    const documentPreview=await page.locator('.workspace-artifact-stage').innerText();
     await page.getByRole('button',{name:'Back to artifacts',exact:true}).click();
     await page.waitForURL('**/artifacts');
     assert(await workbench.isHidden());
     await page.locator('[data-artifact-id="mobile-document"]').click();
-    assert.equal(await sourceEditor.inputValue(),'Unsaved mobile draft','returning through the list preserves the editor and unsaved text');
-    await page.getByRole('button',{name:'Save changes',exact:true}).click();
+    assert.equal(await page.locator('.workspace-artifact-stage').innerText(),documentPreview,'returning through the list retains the preview');
     await page.getByRole('button',{name:'Back to artifacts',exact:true}).click();
     const createMenu=await openNativeMenu(artifactAdd);
     assert.deepEqual(createMenu.items.map(item=>item.title),['New doc','New sheet','New slides','New app','New folder']);
@@ -255,6 +256,16 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert((await chooser).isMultiple(),'native action must still invoke the existing file chooser');
     await page.evaluate(id=>window.__kindredNativeMenus.perform(id),composerMenu.items[1].id);
     assert(await page.locator('#computer-panel').isHidden(),'an expired composer action must not start teaching');
+    const queuedEditMenu=await page.evaluate(()=>{
+      const group=document.querySelector('#content .message-group[data-message]');
+      const button=document.createElement('button');button.dataset.messageAction='edit';button.textContent='Edit queued message';
+      button.onclick=()=>window.iosQueuedEditOpened=true;group.querySelector('.message-actions').append(button);
+      group.querySelector('.message-bubble').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'touch'}));
+      const menu=window.__kindredMobileMessages.describe(group.dataset.mobileMessageKey);
+      button.click();button.remove();return menu;
+    });
+    assert(!queuedEditMenu.items.some(item=>item.title==='Edit queued message'),'native message menus omit queued editing');
+    assert.equal(await page.evaluate(()=>window.iosQueuedEditOpened),undefined,'queued editing cannot open its desktop composer from iOS');
     await page.evaluate(async()=>{
       const {fileCard}=await import('/artifacts.js');
       window.fileMenuReads=0;

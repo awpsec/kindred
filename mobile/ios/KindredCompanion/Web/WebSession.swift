@@ -332,7 +332,9 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
 
 extension WebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        presentation.hasChatInterface = false
+        // Keep established web navigation in charge while a route/reload starts.
+        // Clearing this flag briefly restores the native account toolbar above
+        // artifacts. A real page failure still restores recovery controls.
         presentation.hasLoadedChats = false
     }
 

@@ -28,6 +28,20 @@
   const menu = document.querySelector('#mobile-menu');
   const sidebar = shell.querySelector('.sidebar');
   const conversation = shell.querySelector('.conversation');
+  // Editing message/artifact source is a desktop workflow. Preserve reply,
+  // copy, reactions, previews and metadata controls in the iOS app.
+  const desktopEditControl = '[data-message-action="edit"],.artifact-workbench-actions button[aria-label^="Edit "],.artifact-workbench-actions button[aria-label="Finish editing"],.workspace-artifact-actions>button:first-child';
+  document.addEventListener('click', event => {
+    if (!event.target.closest?.(desktopEditControl)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+  }, true);
+  if (window.__kindredMobileMessages) {
+    const describe = window.__kindredMobileMessages.describe;
+    window.__kindredMobileMessages.describe = key => {
+      const model = describe(key);
+      return model ? {...model,items:model.items.filter(item => item.title !== 'Edit queued message')} : model;
+    };
+  }
   // UIKit owns conversation context menus. Preserve the server's action
   // closures so permissions, current pin state and mute choices stay authoritative.
   const rowSelector = '.sidebar .nav-entry, .sidebar .pinned-entry';
@@ -147,7 +161,7 @@
       show(false);
       library.querySelector('.artifact-studio-library-item.selected')?.focus({preventScroll:true});
     };
-    // The server rebuilds the document toolbar when changing edit/preview mode.
+    // The server rebuilds the document toolbar when refreshing a preview.
     const placeBack = () => { if (back.parentElement !== toolbar) toolbar.prepend(back); };
     const toolbarObserver = new MutationObserver(placeBack);
     toolbarObserver.observe(toolbar, {childList:true}); placeBack();
@@ -156,7 +170,7 @@
       if (!row || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
       page.ignoredRoute = null;
       if (row.getAttribute('aria-current') !== 'page') return;
-      // Reopening the selected document keeps its current source editor/draft.
+      // Reopening the selected document retains its current preview.
       event.preventDefault(); event.stopImmediatePropagation();
       history.pushState({}, '', '/artifacts/' + encodeURIComponent(row.dataset.artifactId));
       show(true);

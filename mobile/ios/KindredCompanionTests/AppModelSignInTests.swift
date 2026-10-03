@@ -128,6 +128,10 @@ final class AppModelSignInTests: XCTestCase {
         XCTAssertTrue(layout.source.contains("ios-accounts"))
         session.webView.stopLoading()
         session.presentation.hasChatInterface = true
+        session.presentation.hasLoadedChats = true
+        session.webView(session.webView, didStartProvisionalNavigation: nil)
+        XCTAssertTrue(session.presentation.hasChatInterface, "Opening an artifact/reloading must not flash native account navigation")
+        XCTAssertFalse(session.presentation.hasLoadedChats, "A new document still needs to report its own readiness")
         session.webView(session.webView, didFailProvisionalNavigation: nil, withError: URLError(.cancelled))
         XCTAssertTrue(session.presentation.hasChatInterface, "A cancelled download must not restore duplicate navigation")
         session.webView(session.webView, didFailProvisionalNavigation: nil, withError: URLError(.notConnectedToInternet))
@@ -305,7 +309,7 @@ final class AppModelSignInTests: XCTestCase {
         XCTAssertEqual(artifactTarget.kind, .artifact)
         let artifactItems = session.conversationMenuElements([["title":"Pin artifact", "id":"3-0"], ["title":"Rename", "id":"3-1", "disabled":true]], kind:.artifact)
         XCTAssertEqual(artifactItems.map(\.title), ["Pin artifact", "Rename"])
-        XCTAssertTrue(artifactItems[1].attributes.contains(.disabled))
+        XCTAssertTrue(try XCTUnwrap(artifactItems[1] as? UIAction).attributes.contains(.disabled))
         session.webView.stopLoading()
     }
 

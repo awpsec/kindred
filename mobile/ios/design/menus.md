@@ -15,7 +15,8 @@ the companion, including when connected to an older server.
 | Artifact context actions: pin / rename / move / details | UIKit press context menu; native action sheet for keyboard/context-event entry; desktop library pinning omitted |
 | Delivered file More: preview / source link / repeat download | Native action sheet preserving available actions |
 | Conversation press menus and mute durations | Existing UIKit context menus |
-| Message reactions / reply / copy / queued edit | Existing UIKit context menus |
+| Message reactions / reply / copy | Existing UIKit context menus; queued edit omitted on iOS |
+| Artifact source/inline card editing | Omitted on iOS; previews and metadata remain available |
 | Form selects, including searchable desktop model selectors | WebKit's native iOS select picker; themed duplicate suppressed |
 | Desktop identity/usage hover flyouts | Desktop identity entry is hidden; account/settings entry uses the existing mobile sheet |
 | Desktop dictation model picker | Hidden; iPhone keyboard owns dictation |

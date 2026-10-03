@@ -191,6 +191,7 @@ html[data-kindred-ios] .artifact-workbench-title { flex:1; min-width:80px; }
 html[data-kindred-ios] .artifact-workbench-actions { margin-left:auto; }
 html[data-kindred-ios] .artifact-workbench-actions button { width:44px; height:44px; min-width:44px; min-height:44px; padding:11px; border-radius:50%; color:var(--fg); }
 html[data-kindred-ios] .artifact-workbench-actions button[aria-label=Download] { display:none; }
+html[data-kindred-ios] :is(.artifact-workbench-actions button[aria-label^="Edit "],.artifact-workbench-actions button[aria-label="Finish editing"],.workspace-artifact-actions>button:first-child,[data-message-action=edit]) { display:none; }
 html[data-kindred-ios] .artifact-workbench-body { padding:16px; }
 html[data-kindred-ios] .artifact-workbench-body:has(>.artifact-studio-preview) { padding:0; }
 html[data-kindred-ios] .artifact-studio :is(.artifact-new-dialog,.artifact-metadata-dialog) { max-width:calc(100% - 24px); max-height:calc(100% - 24px); overflow:auto; border-radius:24px; }
