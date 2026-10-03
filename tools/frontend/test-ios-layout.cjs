@@ -228,6 +228,8 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await prompt.dispatchEvent('input');
     await page.waitForTimeout(200);
     assert((await page.locator('#composer').boundingBox()).height<=48,'default composer should stay compact');
+    assert(await page.locator('#composer-hint').isHidden(),'iOS composer omits the provider logo');
+    assert.equal(await page.locator('#composer').evaluate(node=>getComputedStyle(node).gridTemplateColumns.split(' ').length),3,'provider column must be reclaimed for the message field');
     await prompt.fill('Keep the iOS draft through rotation.');
     // Keep native select defaults, without running desktop picker listeners.
     await page.evaluate(()=>{const select=document.createElement('select');select.id='ios-picker-test';select.innerHTML='<option>A</option><option>B</option>';document.body.append(select);});
@@ -302,6 +304,10 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-402)<1);
     assert((await page.locator('#desktop').boundingBox()).height>390,'portrait computer should use available vertical space');
     assert(await page.locator('#computer-expand').isHidden(),'slab computer already occupies its own screen');
+    assert.equal(await page.locator('#screen-picker span').first().evaluate(node=>getComputedStyle(node).webkitUserSelect),'none','screen picker label must not select text');
+    await page.locator('#screen-picker').click();
+    assert(await page.locator('#screen-picker-menu').isVisible(),'screen picker still opens after selection is disabled');
+    await page.locator('#screen-picker').click();
     await page.setViewportSize({width:874,height:350});
     await page.waitForTimeout(350);
     const desktop=await page.locator('#desktop').boundingBox(),footer=await page.locator('.desktop-footer').boundingBox();

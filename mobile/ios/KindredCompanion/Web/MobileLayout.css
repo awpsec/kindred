@@ -10,16 +10,20 @@ html[data-kindred-ios] .message-bubble { overflow-wrap:anywhere; }
 html[data-kindred-ios] .conversation-history { overflow:hidden; }
 html[data-kindred-ios] .conversation>.composer-area { position:absolute; inset:auto 0 0; flex:none; background:transparent; pointer-events:none; padding-bottom:calc(8px + var(--ios-safe-bottom)); }
 html[data-kindred-ios] .conversation .messages { padding-top:calc(var(--ios-chat-top,64px) + 8px); padding-bottom:calc(var(--ios-chat-bottom,62px) + 12px); scroll-padding-top:calc(var(--ios-chat-top,64px) + 8px); scroll-padding-bottom:calc(var(--ios-chat-bottom,62px) + 12px); }
-html[data-kindred-ios] #composer { grid-template-columns:44px minmax(0,1fr) 28px 44px; padding:0 3px; column-gap:2px; }
-html[data-kindred-ios] #composer.dictation-enabled { grid-template-columns:44px minmax(0,1fr) 28px 44px 44px; }
-html[data-kindred-ios] #composer:is(.dictation-empty,.is-dictating) { grid-template-columns:44px minmax(0,1fr) 28px 44px; }
+html[data-kindred-ios] #composer { grid-template-columns:44px minmax(0,1fr) 44px; padding:0 3px; column-gap:2px; }
+html[data-kindred-ios] #composer.dictation-enabled { grid-template-columns:44px minmax(0,1fr) 44px 44px; }
+html[data-kindred-ios] #composer:is(.dictation-empty,.is-dictating) { grid-template-columns:44px minmax(0,1fr) 44px; }
+html[data-kindred-ios] #composer #send { grid-column:3; }
+html[data-kindred-ios] #composer.dictation-enabled #send { grid-column:4; }
+html[data-kindred-ios] #composer .dictation-button { grid-column:3; }
+html[data-kindred-ios] #composer #composer-hint { display:none; }
 html[data-kindred-ios] #prompt { min-height:36px; padding:6px 2px; line-height:24px; align-self:center; }
-/* 44pt targets, with smaller circles inside them to balance the provider mark. */
+/* 44pt targets, with smaller circles inside the compact composer. */
 html[data-kindred-ios] #composer :is(#composer-actions,#send,.dictation-button) { position:relative; width:44px; height:44px; min-width:44px; min-height:44px; padding:12px; border-radius:50%; background:transparent; }
 html[data-kindred-ios] #composer :is(#composer-actions,#send)::before { content:''; position:absolute; inset:6px; border-radius:50%; background:var(--hover); }
 html[data-kindred-ios] #composer #send::before { background:var(--button); }
 html[data-kindred-ios] #composer :is(#composer-actions,#send) svg { position:relative; width:20px; height:20px; }
-html[data-kindred-ios] #composer-hint { align-self:center; }
+html[data-kindred-ios] :is(#screen-picker,#screen-picker *) { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 html[data-kindred-ios] #ios-computer-back { display:none; }
 html[data-kindred-ios] .ios-computer-controls { display:contents; }
 html[data-kindred-ios] .computer-panel.expanded .ios-computer-controls>.resource-stats { display:none; }
