@@ -323,3 +323,9 @@ checks, native opt-out/sign-out and account-routing tests, and the server's
 mobile-push tests pass. These checks do not establish APNs delivery: enabling
 alerts, receiving a background banner and tapping it into a live conversation
 still require a server offering iOS push plus matching APNs signing/configuration.
+
+### Approved launch animation
+
+The [wake-up animation handoff](design/launch/README.md) contains the approved
+light/dark previews and exact motion reference for native integration. It keeps
+the mobile navigation unbranded; startup integration is pending Mac validation.
