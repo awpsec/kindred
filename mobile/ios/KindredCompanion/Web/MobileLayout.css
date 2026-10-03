@@ -122,6 +122,9 @@ html[data-kindred-ios][data-motion=off] #settings-dialog[open] { animation:none;
 /* Conversation actions are UIKit press menus, including pinned conversations. */
 html[data-kindred-ios] .sidebar :is(.nav-pin,.nav-more) { display:none !important; }
 html[data-kindred-ios] .sidebar .nav-entry .bot-link { padding-right:14px; }
-html[data-kindred-ios] .sidebar :is(.nav-entry,.pinned-entry) { -webkit-touch-callout:none; user-select:none; }
+/* Apply the WebKit rule to the text descendants as well as their cards:
+   native selection otherwise competes with the UIKit press menu on iOS. */
+html[data-kindred-ios] .sidebar :is(.nav-entry,.pinned-entry),
+html[data-kindred-ios] .sidebar :is(.nav-entry,.pinned-entry) * { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 html[data-kindred-ios] .sidebar .pinned-bot { touch-action:pan-x !important; }
 html[data-kindred-ios] body>.chat-context-menu { display:none !important; }

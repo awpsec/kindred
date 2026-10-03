@@ -115,7 +115,7 @@ struct AccountDetailView: View {
         Section {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: statusSymbol(account))
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(.secondary)
                 Text(statusText(account, signedIn: signedIn))
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)

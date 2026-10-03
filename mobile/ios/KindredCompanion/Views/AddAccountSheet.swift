@@ -104,6 +104,7 @@ struct AddAccountSheet: View {
             .disabled(working)
             .onAppear(perform: prepare)
         }
+        .tint(.primary)
     }
 
     private var canSubmit: Bool {

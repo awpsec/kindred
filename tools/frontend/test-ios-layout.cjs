@@ -34,6 +34,24 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const errors=[]; page.on('pageerror',error => errors.push(error.message));
     await page.goto('http://127.0.0.1:'+server.address().port+'/#kindred-chat=dm-piper');
     const prompt=page.locator('#prompt'); await prompt.waitFor({state:'visible'});
+    // Exercise actual WebKit selection on a card's nested name/preview text,
+    // alongside ordinary message text that must still be selectable.
+    await page.evaluate(()=>{
+      const probe=document.createElement('div');probe.id='ios-selection-probe';
+      probe.style.cssText='position:fixed;left:20px;top:160px;width:350px;z-index:99999;background:white;color:black;';
+      probe.innerHTML='<div class="sidebar" style="display:block;position:static;width:100%"><div class="nav-entry"><strong id="selection-card-name">Conversation title</strong><p id="selection-card-preview">Latest message preview</p></div><div class="pinned-entry"><span id="selection-pin-name">Pinned conversation</span></div></div><p id="selection-message">Selectable message content</p>';
+      document.body.append(probe);
+    });
+    for(const id of ['selection-card-name','selection-card-preview','selection-pin-name']) {
+      const text=page.locator('#'+id),box=await text.boundingBox();
+      await page.mouse.dblclick(box.x+Math.min(30,box.width/2),box.y+box.height/2);
+      assert.equal(await page.evaluate(()=>getSelection().toString()),'','conversation card text must not select during a press');
+    }
+    const messageBox=await page.locator('#selection-message').boundingBox();
+    await page.mouse.dblclick(messageBox.x+30,messageBox.y+messageBox.height/2);
+    assert((await page.evaluate(()=>getSelection().toString())).length>0,'message text must remain selectable');
+    await page.evaluate(()=>{getSelection().removeAllRanges();document.querySelector('#ios-selection-probe').remove();});
+
     await prompt.fill('Keep the iOS draft through rotation.');
     assert(await prompt.evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=16),'focused composer must not trigger iOS text zoom');
     await page.locator('#mobile-menu').click();
