@@ -40,6 +40,7 @@ html[data-kindred-ios] .desktop-toolbar #desktop-mode { flex-basis:100%; order:2
 html[data-kindred-ios] .desktop-toolbar :is(#desktop-paste,.desktop-action) { display:inline-flex; flex:none; align-items:center; justify-content:center; min-width:44px; width:44px; min-height:44px; height:44px; border-radius:50%; padding:11px; color:var(--fg); }
 html[data-kindred-ios] .desktop-toolbar :is(.desktop-action-label,#desktop-paste>span) { display:none; }
 html[data-kindred-ios] .desktop-toolbar :is(#desktop-paste,.desktop-action) svg { width:22px; height:22px; }
+html[data-kindred-ios] .desktop-toolbar :is(#take-control,#done-subtask) { margin-left:auto; }
 html[data-kindred-ios] .desktop-toolbar #teach-task { display:none; }
 html[data-kindred-ios] .computer-panel.ios-keyboard-active :is(.resource-stats,.computer-routines,#desktop-mode) { display:none; }
 /* One pause reminder, adjacent to input, rather than a desktop overlay and
