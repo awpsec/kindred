@@ -34,6 +34,9 @@ for backend in ['cpu', 'metal']:
     dest = package / ('whisper-'+backend)
     shutil.copy2(build / 'kindred-whisper', dest)
     run('codesign', '--force', '--sign', '-', dest)
+import importlib.util
+spec=importlib.util.spec_from_file_location('whistle',source/'build-whistle.py'); module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+module.build(package,target)
 shutil.copy2(whisper / 'LICENSE', package / 'WHISPER-LICENSE.txt')
 metadata = {'whisper_commit': commit, 'target': target,
             'files': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in package.iterdir() if p.name != 'BUILD.json'}}

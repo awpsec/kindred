@@ -22,7 +22,8 @@ struct Model {
     size: u64,
     hash: &'static str,
 }
-const MODELS: [Model; 5] = [
+const MODELS: [Model; 6] = [
+    Model { id: "whistle", name: "Whistle", file: "whistle.cact", size: 16919407, hash: "b6e02f048568ac5d01a2042556c658061e699acbc0aa2a1439f52f3d461dffeb" },
     Model {
         id: "base",
         name: "Base",
@@ -64,7 +65,7 @@ fn model(name: &str) -> Result<Model> {
         .iter()
         .find(|m| m.id == name)
         .copied()
-        .ok_or("Choose a supported Whisper model.".into())
+        .ok_or("Choose a supported dictation model.".into())
 }
 fn root() -> Result<PathBuf> {
     Ok(crate::profiles::data_root()?.join("dictation"))
@@ -237,7 +238,9 @@ fn begin_load(
         s.model = selected.id.into();
         s.phase = "loading".into();
         s.error.clear();
-        s.fallback_reason = if cpu_only {
+        s.fallback_reason = if selected.id == "whistle" {
+            "Whistle runs locally on CPU."
+        } else if cpu_only {
             "GPU inference failed. The model was reloaded on CPU."
         } else if cfg!(target_os = "linux") {
             "This Linux build runs local Whisper on the CPU."
@@ -282,7 +285,7 @@ fn load(
     }
     let runtime = install_runtime(root)?;
     current(shared, generation)?;
-    let try_gpu = !cpu_only && dictation_runtime::gpu_runtime_available();
+    let try_gpu = selected.id != "whistle" && !cpu_only && dictation_runtime::gpu_runtime_available();
     let mut last_error = String::new();
     for gpu in if try_gpu {
         vec![true, false]
@@ -291,7 +294,7 @@ fn load(
     } {
         current(shared, generation)?;
         let (process, mut channel) =
-            match dictation_runtime::launch(&runtime, &root.join(selected.file), gpu) {
+            match dictation_runtime::launch(&runtime, &root.join(selected.file), gpu, selected.id == "whistle") {
                 Ok(value) => value,
                 Err(e) => {
                     last_error = e;
@@ -478,8 +481,9 @@ async fn download(
         .map_err(error)?;
     let mut response = client
         .get(format!(
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
-            m.file
+            "https://huggingface.co/{}/resolve/{}/{}",
+            if m.id == "whistle" { "Cactus-Compute/whistle" } else { "ggerganov/whisper.cpp" },
+            if m.id == "whistle" { "b358ddadd89b7a713b5aa131f23032d3cca1b251" } else { "main" }, m.file
         ))
         .send()
         .await
@@ -531,6 +535,7 @@ fn install_runtime(root: &Path) -> Result<PathBuf> {
         let mut entry = zip.by_index(i).map_err(error)?;
         let name = entry.name().to_owned();
         if ![
+            "whistle-worker", "whistle-worker.exe", "libneedle.so", "libneedle.dll", "libneedle.dylib", "NEEDLE-LICENSE.txt", "LLVM-LICENSE.txt",
             "whisper-cpu.exe",
             "whisper-vulkan.exe",
             "whisper-cpu",
@@ -565,7 +570,7 @@ fn install_runtime(root: &Path) -> Result<PathBuf> {
         {
             use std::os::unix::fs::PermissionsExt;
             if target.file_name().is_some_and(|n| {
-                n == "whisper-cpu" || n == "whisper-cpu-avx2" || n == "whisper-metal"
+                n == "whistle-worker" || n == "whisper-cpu" || n == "whisper-cpu-avx2" || n == "whisper-metal"
             }) {
                 fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).map_err(error)?;
             }
@@ -600,7 +605,7 @@ fn validate_wav(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn decode(shared: &Arc<Mutex<State>>, audio: &[u8], generation: u64) -> Result<String> {
+fn decode(shared: &Arc<Mutex<State>>, audio: &[u8], generation: u64) -> Result<Value> {
     let mut channel = {
         let mut s = shared.lock().map_err(error)?;
         if !s.enabled || s.generation != generation || s.phase != "ready" {
@@ -674,7 +679,7 @@ pub async fn transcribe_dictation(
             }
             result = decode(&shared, &bytes, next);
         }
-        result.map(|text| json!({"text":text}))
+        result
     })
     .await
     .map_err(error)?
