@@ -250,13 +250,13 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.locator('.bot-link').first().click();
     assert(await page.locator('#ios-accounts').isHidden());
     const composerMenu=await openNativeMenu(page.locator('#composer-actions'));
-    assert.deepEqual(composerMenu.items.map(item=>item.title),['Attach files','Teach a task']);
+    assert.deepEqual(composerMenu.items.map(item=>item.title),['Attach files'],'mobile omits teaching from the composer too');
     assert(await page.locator('#composer-menu').isHidden(),'desktop attachment/teaching menu is suppressed');
     const chooser=page.waitForEvent('filechooser');
     await chooseNative(composerMenu,'Attach files');
     assert((await chooser).isMultiple(),'native action must still invoke the existing file chooser');
-    await page.evaluate(id=>window.__kindredNativeMenus.perform(id),composerMenu.items[1].id);
-    assert(await page.locator('#computer-panel').isHidden(),'an expired composer action must not start teaching');
+    await page.evaluate(id=>window.__kindredNativeMenus.perform(id),composerMenu.items[0].id);
+    assert(await page.locator('#computer-panel').isHidden(),'an expired composer action must not open another screen');
     const queuedEditMenu=await page.evaluate(()=>{
       const group=document.querySelector('#content .message-group[data-message]');
       const button=document.createElement('button');button.dataset.messageAction='edit';button.textContent='Edit queued message';
@@ -374,7 +374,7 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-402)<1);
     assert(await page.locator('#desktop-reconnect').isHidden());
     assert(await page.locator('#computer-settings-link').isHidden());
-    assert(await page.locator('#desktop-paste').evaluate(node=>node.parentElement.matches('.desktop-toolbar')),'Paste belongs alongside control/teach below the screen');
+    assert(await page.locator('#desktop-paste').evaluate(node=>node.parentElement.matches('.desktop-toolbar')),'Paste belongs alongside control below the screen');
     assert(await page.locator('#ios-computer-input').evaluate(node=>node!==document.activeElement),'view-only screens do not raise the keyboard');
     await page.evaluate(()=>{
       const panel=document.querySelector('#computer-panel'),host=document.createElement('div');host.className='desktop-canvas';
@@ -394,7 +394,12 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const portraitScreen=await page.locator('#desktop').boundingBox(),portraitActions=await page.locator('.desktop-toolbar').boundingBox();
     assert(portraitActions.y>=portraitScreen.y+portraitScreen.height-1,'actions remain below the top-aligned screen');
     assert(portraitActions.y+portraitActions.height<=490,'computer actions remain above the software keyboard');
-    for (const id of ['desktop-paste','teach-task','take-control']) assert((await page.locator('#'+id).boundingBox()).height>=44,'computer actions retain native touch targets');
+    assert(await page.locator('#teach-task').isHidden(),'teaching is a desktop workflow');
+    for (const id of ['desktop-paste','take-control']) {
+      const action=page.locator('#'+id),bounds=await action.boundingBox();
+      assert(Math.abs(bounds.height-44)<0.01); assert(Math.abs(bounds.width-44)<0.01,'computer actions are compact circular targets');
+      assert(await action.getAttribute('aria-label'),'icon-only actions retain accessible names');
+    }
     await page.evaluate(()=>document.querySelector('#computer-panel').classList.remove('is-controlling'));
     assert(await page.locator('#ios-computer-input').evaluate(node=>node!==document.activeElement),'returning control dismisses native entry');
     await page.setViewportSize({width:402,height:780});
@@ -414,6 +419,30 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     // Older servers use a textarea instead of the current contenteditable.
     await page.evaluate(()=>{const old=document.querySelector('#prompt');const textarea=document.createElement('textarea');textarea.id='prompt';old.replaceWith(textarea);});
     assert(await page.locator('#prompt').evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=16));
+    // Exercise the actual server pause state, including the desktop UI's three
+    // reminders. iOS presents one location and preserves the return API action.
+    let paused=true,returnRequest;
+    await page.route('**/api/status?*',route=>route.fulfill({json:{version:'0.12.1',screen_bot_id:'piper',takeover:paused,vm_enabled:true,control_pauses:paused?[{bot_id:'piper',name:'Piper',control_id:'ios-test-pause',reason:'manual',queued:0}]:[]}}));
+    await page.route('**/api/takeover',route=>{returnRequest=route.request().postDataJSON();paused=false;return route.fulfill({json:{takeover:false}});});
+    await page.setViewportSize({width:402,height:780});
+    await page.goto('http://127.0.0.1:'+server.address().port+'/#kindred-chat=dm-piper');
+    await page.locator('#queue-status.ios-control-paused').waitFor({state:'visible'});
+    assert(await page.locator('#composer-caption').isHidden(),'pause warning below input is suppressed');
+    assert.equal(await page.locator('#queue-status button svg').count(),1,'fallback reminder has a return icon');
+    await page.locator('#show-computer').click();
+    await page.locator('#ios-computer-back').click();
+    await page.locator('#control-notice').waitFor({state:'visible'});
+    assert(await page.locator('#queue-status').isHidden(),'same pause is not repeated above input');
+    assert(await page.locator('.control-notice-heading').isHidden());
+    assert(await page.locator('.control-notice-copy p').isHidden(),'desktop explanation is replaced by a compact paused label');
+    const reminder=await page.locator('#control-notice').boundingBox(),composerBounds=await page.locator('#composer').boundingBox();
+    assert(reminder.y>500 && reminder.y+reminder.height<=composerBounds.y,'pause reminder sits immediately above the composer');
+    const returnAction=page.getByRole('button',{name:'Return control to Piper',exact:true});
+    assert(Math.abs((await returnAction.boundingBox()).width-44)<0.01);
+    await returnAction.click();
+    await page.locator('#control-notice').waitFor({state:'hidden'});
+    assert.deepEqual(returnRequest,{enabled:false,bot_id:'piper',control_id:'ios-test-pause'},'mobile action returns the correct bot and pause');
+    assert(await page.locator('#queue-status').isHidden());
     assert.deepEqual(errors.filter(error=>!error.startsWith('ResizeObserver loop')),[]);
     console.log('iOS layout: native composer/file/avatar/screen/new/library/artifact menus and actions, conversation pin/mute, artifact navigation/drafts, native selects/theme and rotation/keyboard bounds passed.');
   } finally { await browser.close(); server.close(); }

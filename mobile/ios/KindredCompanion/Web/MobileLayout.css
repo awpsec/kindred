@@ -30,17 +30,32 @@ html[data-kindred-ios] :is([role=menu],#new-menu,.deliverable-menu,.avatar-popov
 html[data-kindred-ios] #ios-computer-back { display:none; }
 html[data-kindred-ios] .ios-computer-controls { display:contents; }
 html[data-kindred-ios] .computer-panel.expanded .ios-computer-controls>.resource-stats { display:none; }
-html[data-kindred-ios] :is(#desktop-reconnect,#computer-settings-link,.desktop-footer,#desktop-actions) { display:none; }
+html[data-kindred-ios] :is(#desktop-reconnect,#computer-settings-link,.desktop-footer,#desktop-actions,#teach-task,#composer-caption) { display:none; }
 html[data-kindred-ios] .computer-panel .desktop { background:var(--bg); }
 html[data-kindred-ios] .computer-panel .desktop::after,html[data-kindred-ios] .computer-panel .desktop>.desktop-glass { display:none; }
 html[data-kindred-ios] .desktop-canvas canvas { margin:0 auto !important; border-radius:0; }
 html[data-kindred-ios] #ios-computer-input { position:absolute; top:64px; left:0; width:1px; height:1px; padding:0; border:0; opacity:0; pointer-events:none; }
 html[data-kindred-ios] .computer-panel .desktop-toolbar { flex-wrap:wrap; justify-content:flex-start; gap:6px; padding:8px 12px; }
 html[data-kindred-ios] .desktop-toolbar #desktop-mode { flex-basis:100%; order:2; }
-html[data-kindred-ios] .desktop-toolbar :is(#desktop-paste,.desktop-action) { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; height:44px; border-radius:22px; padding:10px; }
-html[data-kindred-ios] .desktop-toolbar .desktop-action-label { display:inline; }
-html[data-kindred-ios] .desktop-toolbar .desktop-action { width:auto; }
+html[data-kindred-ios] .desktop-toolbar :is(#desktop-paste,.desktop-action) { display:inline-flex; flex:none; align-items:center; justify-content:center; min-width:44px; width:44px; min-height:44px; height:44px; border-radius:50%; padding:11px; color:var(--fg); }
+html[data-kindred-ios] .desktop-toolbar :is(.desktop-action-label,#desktop-paste>span) { display:none; }
+html[data-kindred-ios] .desktop-toolbar :is(#desktop-paste,.desktop-action) svg { width:22px; height:22px; }
+html[data-kindred-ios] .desktop-toolbar #teach-task { display:none; }
 html[data-kindred-ios] .computer-panel.ios-keyboard-active :is(.resource-stats,.computer-routines,#desktop-mode) { display:none; }
+/* One pause reminder, adjacent to input, rather than a desktop overlay and
+   repeated warnings above and below the composer. */
+html[data-kindred-ios] #control-notice { position:static; width:100%; max-width:100%; max-height:140px; margin:0 0 8px; padding:4px 10px; border-radius:24px; pointer-events:auto; font-size:13px; }
+html[data-kindred-ios] #control-notice :is(.control-notice-heading,.control-notice-copy p) { display:none; }
+html[data-kindred-ios] #control-notice .control-notice-row { margin:0; padding:0; border:0; gap:8px; }
+html[data-kindred-ios] #control-notice .control-notice-copy { flex:1; }
+html[data-kindred-ios] #control-notice .control-notice-copy strong { font-weight:500; }
+html[data-kindred-ios] #control-notice .control-notice-copy strong::after { content:' · Paused'; color:var(--muted); font-weight:400; }
+html[data-kindred-ios] #queue-status.ios-control-paused { display:flex; align-items:center; gap:8px; padding:4px 10px; margin:0 0 8px; border-radius:24px; pointer-events:auto; }
+html[data-kindred-ios] #queue-status.ios-control-paused>span:not(.ios-control-copy),html[data-kindred-ios] #queue-status.ios-control-duplicate { display:none; }
+html[data-kindred-ios] #queue-status .ios-control-copy { flex:1; font-size:13px; }
+html[data-kindred-ios] :is(#control-notice .control-notice-row,#queue-status.ios-control-paused) button { display:inline-flex; flex:none; align-items:center; justify-content:center; width:44px; min-width:44px; height:44px; min-height:44px; margin:0; padding:11px; border-radius:50%; font-size:0; background:var(--hover); color:var(--fg); }
+html[data-kindred-ios] :is(#control-notice,#queue-status.ios-control-paused) button svg { width:22px; height:22px; }
+html[data-kindred-ios] :is(#control-notice,#queue-status.ios-control-paused,.desktop-toolbar) { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 html[data-kindred-ios] #ios-accounts { font-size:14px; font-weight:600; }
 html[data-kindred-ios] .sidebar-top .wordmark { display:none; }
 html[data-kindred-ios] #ios-search { margin-left:auto; }
@@ -149,7 +164,7 @@ html[data-kindred-ios] body>.chat-context-menu { display:none !important; }
 
 /* Glass styling for web controls. UIKit sheets and press menus use system
    materials; WebKit controls keep their existing editing and server actions. */
-html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-heading,.sidebar-top .icon-button,.ios-artifact-button,.artifact-workbench-actions button) {
+html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-heading,.sidebar-top .icon-button,.ios-artifact-button,.artifact-workbench-actions button,.desktop-toolbar #desktop-paste,.desktop-toolbar .desktop-action,#control-notice,#queue-status.ios-control-paused) {
   background:color-mix(in srgb,var(--surface) 48%,transparent);
   -webkit-backdrop-filter:blur(24px) saturate(180%); backdrop-filter:blur(24px) saturate(180%);
   border:1px solid color-mix(in srgb,var(--fg) 12%,transparent);
@@ -169,7 +184,7 @@ html[data-kindred-ios] .conversation>.composer-area::before { top:-28px; -webkit
 html[data-kindred-ios] .jump-latest { bottom:calc(var(--ios-chat-bottom,62px) + 8px); }
 html[data-kindred-ios] :is(.dictation-settings,.version-actions,[data-client-update-status],.dictation-button,.dictation-status,.dictation-cancel) { display:none !important; }
 @media (prefers-reduced-transparency:reduce) {
-  html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-heading,.sidebar-top .icon-button,.ios-artifact-button,.artifact-workbench-actions button) { background:var(--surface); -webkit-backdrop-filter:none; backdrop-filter:none; }
+  html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-heading,.sidebar-top .icon-button,.ios-artifact-button,.artifact-workbench-actions button,.desktop-toolbar #desktop-paste,.desktop-toolbar .desktop-action,#control-notice,#queue-status.ios-control-paused) { background:var(--surface); -webkit-backdrop-filter:none; backdrop-filter:none; }
   html[data-kindred-ios] .conversation-header::before,html[data-kindred-ios] .conversation>.composer-area::before { -webkit-backdrop-filter:none; backdrop-filter:none; }
 }
 

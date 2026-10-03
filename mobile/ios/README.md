@@ -235,11 +235,16 @@ including Delete, Return, and composed text. Input is gated by the active contro
 session. The host uses public WKWebView focus to show the keyboard after the
 asynchronous takeover finishes.
 
-Portrait places the screen at the top and Paste, Teach a task, and control
-actions immediately below it. Resources and routines collapse during keyboard
+Portrait places the screen at the top and circular Paste and Take/Return control
+icon buttons immediately below it. Teaching remains a desktop workflow.
+Resources and routines collapse during keyboard
 entry. The iOS app omits the decorative screen backdrop, reconnect button,
 server address, and Computer settings shortcut. Landscape keeps controls beside
 the screen.
+
+When leaving a paused computer, one compact glass reminder above the chat
+composer offers Return control. The desktop popup and duplicated composer
+warnings are consolidated, with the server's bot/pause action and errors retained.
 
 In Xcode 27 Device Hub, disable **Device → Keyboard → Simulate Hardware
 Keyboard** when checking software keyboard behavior. **Toggle Software

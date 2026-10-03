@@ -32,7 +32,9 @@
   // copy, reactions, previews and metadata controls in the iOS app.
   const desktopEditControl = '[data-message-action="edit"],.artifact-workbench-actions button[aria-label^="Edit "],.artifact-workbench-actions button[aria-label="Finish editing"],.workspace-artifact-actions>button:first-child';
   document.addEventListener('click', event => {
-    if (!event.target.closest?.(desktopEditControl)) return;
+    const action = event.target.closest?.('button');
+    const teaching = action?.id === 'teach-task' || (action?.closest('#composer-menu') && action.textContent.trim() === 'Teach a task');
+    if (!teaching && !event.target.closest?.(desktopEditControl)) return;
     event.preventDefault(); event.stopImmediatePropagation();
   }, true);
   if (window.__kindredMobileMessages) {
@@ -336,6 +338,37 @@
   if (identityName) new MutationObserver(updateAccount).observe(identityName, {subtree:true, childList:true, characterData:true});
   updateAccount();
   const computer = document.querySelector('#computer-panel');
+  // Keep pause reminders in one compact place above the composer. Reuse the
+  // server's return buttons so bot identity, pause IDs and errors stay intact.
+  const controlNotice = document.querySelector('#control-notice');
+  const queueStatus = document.querySelector('#queue-status');
+  const composerHost = document.querySelector('#composer-area');
+  if (controlNotice && queueStatus && composerHost) {
+    composerHost.prepend(controlNotice);
+    const returnIcon = icon('<path d="m10 5-7 7 7 7"/><path d="M3 12h12a6 6 0 0 1 6 6"/>');
+    const adaptControlNotice = () => {
+      const queueAction = queueStatus.querySelector('button');
+      queueStatus.classList.toggle('ios-control-paused', !!queueAction);
+      const duplicate = queueAction && !controlNotice.hidden && [...controlNotice.querySelectorAll('.control-notice-row button')]
+        .some(action => action.getAttribute('aria-label') === queueAction.getAttribute('aria-label') ||
+          action.getAttribute('aria-label') === 'Return control to ' + document.querySelector('#heading')?.textContent.trim());
+      queueStatus.classList.toggle('ios-control-duplicate', !!duplicate);
+      if (queueAction) {
+        if (!queueAction.hasAttribute('aria-label')) queueAction.setAttribute('aria-label', 'Return control');
+        let copy = queueStatus.querySelector('.ios-control-copy');
+        if (!copy) { copy = document.createElement('span'); copy.className = 'ios-control-copy'; queueStatus.prepend(copy); }
+        const queued = [...queueStatus.children].find(child => child.matches('span:not(.ios-control-copy)'))?.textContent.match(/^\d+ messages? queued/);
+        const label = 'Computer paused' + (queued ? ' · ' + queued[0] : '');
+        if (copy.textContent !== label) copy.textContent = label;
+      } else queueStatus.querySelector('.ios-control-copy')?.remove();
+      for (const action of [...controlNotice.querySelectorAll('.control-notice-row button'), ...(queueAction ? [queueAction] : [])]) {
+        if (!action.querySelector('svg')) action.insertAdjacentHTML('beforeend', returnIcon);
+      }
+    };
+    const pauseObserver = new MutationObserver(adaptControlNotice);
+    for (const source of [controlNotice,queueStatus]) pauseObserver.observe(source,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['hidden']});
+    adaptControlNotice();
+  }
   if (computer) {
     const back = document.createElement('button');
     back.id = 'ios-computer-back';
@@ -354,7 +387,10 @@
     computer.append(controls);
     const toolbar = controls.querySelector('.desktop-toolbar');
     const paste = document.querySelector('#desktop-paste');
-    if (paste && toolbar) toolbar.prepend(paste);
+    if (paste && toolbar) {
+      paste.setAttribute('aria-label','Paste'); paste.title = 'Paste';
+      toolbar.prepend(paste);
+    }
     // A remote canvas cannot advertise its text fields to iOS. Keep a real
     // native text input focused while forwarding text to noVNC's keyboard.
     const input = document.createElement('textarea');
@@ -577,7 +613,7 @@
     const generation = String(++actionMenuSerial), context = menuContext();
     const remember = button => {
       const title = (button.getAttribute('aria-label') || button.textContent || button.title).trim().slice(0,100);
-      if (!title) return null;
+      if (!title || title === 'Teach a task' || title === 'Review lesson') return null;
       const id = `${generation}-${menuActions.size}`;
       menuActions.set(id, {button,source,element,context});
       return {id,title,disabled:button.disabled || button.getAttribute('aria-disabled') === 'true',

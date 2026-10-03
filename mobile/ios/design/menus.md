@@ -6,7 +6,7 @@ the companion, including when connected to an older server.
 
 | Surface | iOS presentation |
 | --- | --- |
-| Composer +: Attach files / Teach a task | Native action sheet; original file chooser and teaching callbacks |
+| Composer +: Attach files | Native action sheet; original file chooser callback; teaching is desktop only |
 | Conversation list +: New bot / New chat | Native action sheet |
 | Library More: Artifacts / Marketplace | Native action sheet |
 | Computer screen picker | Native action sheet with selected screen marked |
