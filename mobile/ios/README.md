@@ -106,7 +106,8 @@ with an existing persistent web data store.
   separate full-screen chat/list views, floating navigation controls, a centered
   bot avatar and name, compact composer, and native account navigation. The
   profile circle opens a bottom settings sheet with horizontal section tabs;
-  tapping the name card opens Accounts. Native accounts and sign-in sheets
+  tapping the name card opens Accounts. Artifacts and Marketplace share the
+  three-dot menu beside the profile circle. Native accounts and sign-in sheets
   follow the selected app appearance. Native
   safe-area colors follow the page theme and select dropdowns use the iOS picker. These run only in the account's main-frame origin.
   The chat uses one header; native accounts/reload controls return if the web

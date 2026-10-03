@@ -25,6 +25,11 @@ html[data-kindred-ios] .computer-panel.expanded .ios-computer-controls>.resource
 html[data-kindred-ios] #ios-accounts { font-size:14px; font-weight:600; }
 html[data-kindred-ios] .sidebar-top .wordmark { display:none; }
 html[data-kindred-ios] #ios-search { margin-left:auto; }
+html[data-kindred-ios] .shell>.sidebar>.sidebar-bottom :is(#artifacts-button,#marketplace-button) { display:none; }
+html[data-kindred-ios] #ios-library-menu { position:fixed; inset:auto; margin:0; width:220px; max-width:calc(100% - 24px); padding:6px; border:1px solid var(--line); border-radius:20px; background:var(--surface); color:var(--fg); box-shadow:0 12px 40px #0004; }
+html[data-kindred-ios] #ios-library-menu button { display:flex; align-items:center; gap:12px; width:100%; min-height:44px; padding:10px 12px; border-radius:14px; text-align:left; font-size:16px; }
+html[data-kindred-ios] #ios-library-menu button:is(:hover,:focus-visible) { background:var(--hover); }
+html[data-kindred-ios] #ios-library-menu svg { flex:none; }
 @media (max-width:760px), (max-height:500px) {
   html[data-kindred-ios] .shell>.sidebar { display:none; position:absolute; inset:0; width:100%; margin:0; z-index:6; border:0; background:var(--bg); padding-bottom:var(--ios-safe-bottom); }
   html[data-kindred-ios] .shell.sidebar-open>.sidebar { display:flex; }

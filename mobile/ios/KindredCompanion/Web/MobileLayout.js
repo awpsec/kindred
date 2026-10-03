@@ -37,6 +37,70 @@
   accounts.onclick = () => document.querySelector('#settings-button')?.click();
   const top = sidebar?.querySelector('.sidebar-top');
   top?.prepend(accounts);
+  const more = document.createElement('button');
+  more.id = 'ios-library-more';
+  more.type = 'button';
+  more.className = 'icon-button';
+  more.setAttribute('aria-label', 'More');
+  more.setAttribute('aria-haspopup', 'menu');
+  more.setAttribute('aria-controls', 'ios-library-menu');
+  more.setAttribute('aria-expanded', 'false');
+  more.innerHTML = icon('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>');
+  accounts.after(more);
+  const libraryMenu = document.createElement('div');
+  libraryMenu.id = 'ios-library-menu';
+  libraryMenu.setAttribute('popover', 'auto');
+  libraryMenu.setAttribute('role', 'menu');
+  libraryMenu.setAttribute('aria-label', 'More');
+  // Keep the original navigation entries in place: the Artifacts workspace
+  // reuses its entry as the return-to-Chats action while it is open.
+  for (const [id, label, path] of [
+    ['artifacts-button', 'Artifacts', '<path d="M3 7h7l2 2h9v11H3z"/>'],
+    ['marketplace-button', 'Marketplace', '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM17 14v6M14 17h6"/>'],
+  ]) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.setAttribute('role', 'menuitem');
+    item.innerHTML = icon(path);
+    const text = document.createElement('span');
+    text.textContent = label;
+    item.append(text);
+    item.onclick = () => {
+      libraryMenu.hidePopover();
+      document.getElementById(id)?.click();
+    };
+    libraryMenu.append(item);
+  }
+  sidebar?.append(libraryMenu);
+  const positionLibraryMenu = () => {
+    if (!libraryMenu.matches(':popover-open')) return;
+    const anchor = more.getBoundingClientRect();
+    libraryMenu.style.left = `${Math.max(12, Math.min(anchor.left, innerWidth - libraryMenu.offsetWidth - 12))}px`;
+    libraryMenu.style.top = `${anchor.bottom + 8}px`;
+  };
+  more.onclick = () => {
+    libraryMenu.togglePopover();
+    positionLibraryMenu();
+  };
+  libraryMenu.addEventListener('toggle', event => more.setAttribute('aria-expanded', String(event.newState === 'open')));
+  libraryMenu.addEventListener('keydown', event => {
+    const items = [...libraryMenu.querySelectorAll('button')];
+    const index = items.indexOf(document.activeElement);
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[next].focus();
+    }
+  });
+  more.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      libraryMenu.showPopover();
+      positionLibraryMenu();
+      libraryMenu.querySelector('button')?.focus();
+    }
+  });
+  window.addEventListener('resize', positionLibraryMenu);
   const search = document.createElement('button');
   search.id = 'ios-search';
   search.type = 'button';
@@ -124,6 +188,7 @@
     const open = shell.classList.contains('sidebar-open');
     menu?.setAttribute('aria-expanded', String(open));
     if (sidebar) sidebar.inert = compact.matches && !open;
+    if (sidebar?.inert && libraryMenu.matches(':popover-open')) libraryMenu.hidePopover();
     if (conversation) conversation.inert = compact.matches && open;
   }
   compact.addEventListener('change', updateNavigation);

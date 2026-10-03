@@ -24,6 +24,8 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       },{once:true});
     },{token,css:fs.readFileSync(path.join(resources,'MobileLayout.css'),'utf8'),js:fs.readFileSync(path.join(resources,'MobileLayout.js'),'utf8')});
     const page = await context.newPage();
+    await page.route('**/api/composio', route => route.fulfill({json:{configured:false,apps:[]}}));
+    await page.route('**/api/workspace-artifacts', route => route.fulfill({json:[]}));
     const errors=[]; page.on('pageerror',error => errors.push(error.message));
     await page.goto('http://127.0.0.1:'+server.address().port+'/#kindred-chat=dm-piper');
     const prompt=page.locator('#prompt'); await prompt.waitFor({state:'visible'});
@@ -33,6 +35,28 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const sidebarBox = await page.locator('.sidebar').boundingBox();
     assert.equal(sidebarBox.width,402,'conversations must be a separate full-width screen');
     assert(await page.locator('.conversation').evaluate(node=>node.inert));
+    const profileBox=await page.locator('#ios-accounts').boundingBox(),moreBox=await page.locator('#ios-library-more').boundingBox(),searchBox=await page.locator('#ios-search').boundingBox();
+    assert(moreBox.x>=profileBox.x+profileBox.width && moreBox.x+moreBox.width<=searchBox.x,'More belongs immediately to the right of the profile, before search');
+    assert(await page.locator('.sidebar-bottom #artifacts-button').isHidden());
+    assert(await page.locator('.sidebar-bottom #marketplace-button').isHidden());
+    await page.getByRole('button',{name:'More',exact:true}).click();
+    await page.getByRole('menu',{name:'More',exact:true}).waitFor({state:'visible'});
+    assert.equal(await page.getByRole('menuitem').count(),2);
+    await page.getByRole('menuitem',{name:'Marketplace',exact:true}).click();
+    await page.locator('#marketplace-dialog').waitFor({state:'visible'});
+    assert(await page.locator('#ios-library-menu').isHidden(),'selecting a destination dismisses the menu');
+    await page.locator('#marketplace-dialog').getByRole('button',{name:'Close',exact:true}).click();
+    await page.getByRole('button',{name:'More',exact:true}).click();
+    await page.getByRole('menuitem',{name:'Artifacts',exact:true}).click();
+    await page.waitForURL('**/artifacts');
+    await page.locator('.artifact-studio').waitFor({state:'visible'});
+    assert(await page.locator('#ios-library-menu').isHidden());
+    await page.getByRole('button',{name:'Show artifact library',exact:true}).click();
+    await page.locator('.artifact-studio #artifacts-button').getByText('Chats',{exact:true}).click();
+    await page.locator('.artifact-studio').waitFor({state:'detached'});
+    await page.getByRole('button',{name:'More',exact:true}).click();
+    await page.keyboard.press('Escape');
+    await page.locator('#ios-library-menu').waitFor({state:'hidden'});
     await page.locator('#ios-accounts').click();
     await page.locator('#settings-dialog').waitFor({state:'visible'});
     await page.waitForTimeout(280);
@@ -123,6 +147,6 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.evaluate(()=>{const old=document.querySelector('#prompt');const textarea=document.createElement('textarea');textarea.id='prompt';old.replaceWith(textarea);});
     assert(await page.locator('#prompt').evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=16));
     assert.deepEqual(errors.filter(error=>!error.startsWith('ResizeObserver loop')),[]);
-    console.log('iOS layout: separate views, avatar, compact composer, native pickers/theme, slab/foldable controls and rotation/keyboard bounds passed.');
+    console.log('iOS layout: library menu destinations/dismissal, separate views, avatar, compact composer, native pickers/theme, slab/foldable controls and rotation/keyboard bounds passed.');
   } finally { await browser.close(); server.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;server.close();});
