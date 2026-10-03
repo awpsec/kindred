@@ -1,9 +1,11 @@
-/* The native host extends behind the home indicator. WebKit's visible viewport
-   avoids the keyboard; the host supplies only the hardware bottom inset. */
-html[data-kindred-ios] { -webkit-text-size-adjust:100%; text-size-adjust:100%; --ios-safe-bottom:0px; }
+/* The native host extends behind the status bar and home indicator. WebKit's
+   visible viewport avoids the keyboard; the host supplies hardware insets. */
+html[data-kindred-ios] { -webkit-text-size-adjust:100%; text-size-adjust:100%; --ios-safe-top:env(safe-area-inset-top,0px); --ios-safe-bottom:0px; }
 html[data-kindred-ios],html[data-kindred-ios] body { height:var(--ios-viewport-height,100%); overflow:hidden; }
 html[data-kindred-ios] body { position:fixed; inset:0; overscroll-behavior:none; }
 html[data-kindred-ios] .shell { height:100%; position:relative; }
+html[data-kindred-ios] #ios-status-blur { position:fixed; inset:0 0 auto; height:calc(var(--ios-safe-top) + 18px); z-index:1000; pointer-events:none; background:color-mix(in srgb,var(--bg) 25%,transparent); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); -webkit-mask-image:linear-gradient(#000 0 var(--ios-safe-top),transparent); mask-image:linear-gradient(#000 0 var(--ios-safe-top),transparent); }
+html[data-kindred-ios] :is(.conversation-header,.sidebar-top,.panel-header) { min-height:calc(64px + var(--ios-safe-top)); padding-top:calc(10px + var(--ios-safe-top)); }
 html[data-kindred-ios] #app.shell>:is(.details-panel,.computer-panel) { border:0; box-shadow:none; }
 html[data-kindred-ios] :is(input,textarea,select,#prompt) { font-size:max(16px,1em); }
 html[data-kindred-ios] .message-bubble { overflow-wrap:anywhere; }
@@ -69,7 +71,7 @@ html[data-kindred-ios] #ios-library-menu svg { flex:none; }
   html[data-kindred-ios] .shell>.sidebar { display:none; position:absolute; inset:0; width:100%; margin:0; z-index:6; border:0; background:var(--bg); padding-bottom:var(--ios-safe-bottom); }
   html[data-kindred-ios] .shell.sidebar-open>.sidebar { display:flex; }
   html[data-kindred-ios] .shell.sidebar-open>.conversation { visibility:hidden; }
-  html[data-kindred-ios] .sidebar-top { height:72px; padding:12px 16px; gap:8px; }
+  html[data-kindred-ios] .sidebar-top { height:calc(72px + var(--ios-safe-top)); padding:calc(12px + var(--ios-safe-top)) 16px 12px; gap:8px; }
   html[data-kindred-ios] :is(.sidebar-top,.conversation-header,.panel-header) .icon-button { display:inline-flex; justify-content:center; align-items:center; width:44px; height:44px; min-width:44px; min-height:44px; padding:11px; border-radius:50%; background:color-mix(in srgb,var(--surface) 88%,transparent); border:1px solid var(--line); }
   html[data-kindred-ios] .sidebar>.search { display:none; height:44px; margin:4px 16px 12px; border-radius:22px; }
   html[data-kindred-ios] .sidebar.ios-searching>.search { display:flex; }
@@ -82,9 +84,9 @@ html[data-kindred-ios] #ios-library-menu svg { flex:none; }
   html[data-kindred-ios] .nav-entry .bot-link { padding-block:14px; }
   html[data-kindred-ios] .sidebar-bottom { background:var(--bg); }
   html[data-kindred-ios] #identity-row { display:none; }
-  html[data-kindred-ios] .conversation-header { height:64px; position:absolute; inset:0 0 auto; z-index:4; background:transparent; pointer-events:none; padding:10px 16px; gap:4px; border:0; -webkit-app-region:no-drag; align-items:flex-start; }
+  html[data-kindred-ios] .conversation-header { height:calc(64px + var(--ios-safe-top)); position:absolute; inset:0 0 auto; z-index:4; background:transparent; pointer-events:none; padding:calc(10px + var(--ios-safe-top)) 16px 10px; gap:4px; border:0; -webkit-app-region:no-drag; align-items:flex-start; }
   html[data-kindred-ios] .mobile-only { display:inline-flex; }
-  html[data-kindred-ios] .bot-heading { position:absolute; left:50%; top:10px; transform:translateX(-50%); display:flex; flex-direction:row; align-items:center; gap:8px; height:44px; padding:5px 12px 5px 8px; margin:0; max-width:calc(100% - 144px); border-radius:24px; }
+  html[data-kindred-ios] .bot-heading { position:absolute; left:50%; top:calc(10px + var(--ios-safe-top)); transform:translateX(-50%); display:flex; flex-direction:row; align-items:center; gap:8px; height:44px; padding:5px 12px 5px 8px; margin:0; max-width:calc(100% - 144px); border-radius:24px; }
   html[data-kindred-ios] #header-avatar { flex-shrink:0; }
   html[data-kindred-ios] #header-avatar .character { width:32px !important; height:32px !important; }
   html[data-kindred-ios] .bot-heading>span:last-child { margin:0; border:0; background:transparent; padding:0; min-width:0; max-width:100%; z-index:1; }
@@ -96,21 +98,21 @@ html[data-kindred-ios] #ios-library-menu svg { flex:none; }
   html[data-kindred-ios] .message-bubble { font-size:16px; line-height:1.5; }
   html[data-kindred-ios] .composer-area { padding-inline:10px; padding-top:6px; }
   html[data-kindred-ios] #app.shell>:is(.details-panel,.computer-panel) { position:absolute; inset:0; width:100%; max-width:100%; min-width:0; z-index:7; padding-bottom:var(--ios-safe-bottom); }
-  html[data-kindred-ios] .panel-header { min-height:64px; padding:10px 16px; border:0; gap:8px; }
+  html[data-kindred-ios] .panel-header { min-height:calc(64px + var(--ios-safe-top)); padding:calc(10px + var(--ios-safe-top)) 16px 10px; border:0; gap:8px; }
   html[data-kindred-ios] #ios-computer-back { display:inline-flex; }
   html[data-kindred-ios] #computer-close { display:none; }
   html[data-kindred-ios] .computer-panel .computer-routines { flex:none; max-height:120px; overflow:auto; }
   html[data-kindred-ios] .pane-resizer { display:none; }
   html[data-kindred-ios] .settings-dialog[open] { width:100%; max-width:100%; height:100%; max-height:100%; margin:0; border-radius:0; }
   html[data-kindred-ios][data-ios-slab=true] #computer-expand { display:none; }
-  html[data-kindred-ios][data-ios-slab=true] .computer-panel .desktop { flex:none; aspect-ratio:var(--ios-screen-ratio,1.6); min-height:0; max-height:calc(var(--ios-viewport-height) - 148px); margin:0; border-radius:0; }
+  html[data-kindred-ios][data-ios-slab=true] .computer-panel .desktop { flex:none; aspect-ratio:var(--ios-screen-ratio,1.6); min-height:0; max-height:calc(var(--ios-viewport-height) - 148px - var(--ios-safe-top)); margin:0; border-radius:0; }
   html[data-kindred-ios] .computer-panel .desktop-canvas { min-height:0; }
   html[data-kindred-ios] .computer-panel>.ios-computer-controls { display:flex; flex:1; min-height:0; overflow-y:auto; flex-direction:column; }
   html[data-kindred-ios][data-ios-slab=true] .desktop-preview-open { display:none; }
 }
 @media (min-width:600px) and (max-height:500px) {
-  html[data-kindred-ios] .conversation-header { height:64px; }
-  html[data-kindred-ios][data-ios-slab=true] .computer-panel:not([hidden]) { display:grid; grid-template-columns:minmax(0,1fr) 220px; grid-template-rows:64px minmax(0,1fr); height:100%; overflow:hidden; }
+  html[data-kindred-ios] .conversation-header { height:calc(64px + var(--ios-safe-top)); }
+  html[data-kindred-ios][data-ios-slab=true] .computer-panel:not([hidden]) { display:grid; grid-template-columns:minmax(0,1fr) 220px; grid-template-rows:calc(64px + var(--ios-safe-top)) minmax(0,1fr); height:100%; overflow:hidden; }
   html[data-kindred-ios][data-ios-slab=true] .computer-panel>.panel-header { grid-column:1/-1; grid-row:1; }
   html[data-kindred-ios][data-ios-slab=true] .computer-panel>.desktop { grid-column:1; grid-row:2; min-height:0; aspect-ratio:auto; max-height:none; height:100%; }
   html[data-kindred-ios][data-ios-slab=true] .computer-panel>.ios-computer-controls { grid-column:2; grid-row:2; display:flex; flex-direction:column; min-height:0; overflow-y:auto; margin:0; padding-bottom:8px; }
@@ -181,12 +183,14 @@ html[data-kindred-ios] .conversation>.composer-area::before {
   -webkit-mask-image:linear-gradient(#000,transparent); mask-image:linear-gradient(#000,transparent);
 }
 html[data-kindred-ios] .conversation-header { isolation:isolate; }
+html[data-kindred-ios] .conversation-header::before { top:var(--ios-safe-top); }
 html[data-kindred-ios] .conversation>.composer-area::before { top:-28px; -webkit-mask-image:linear-gradient(transparent,#000); mask-image:linear-gradient(transparent,#000); }
 html[data-kindred-ios] .jump-latest { bottom:calc(var(--ios-chat-bottom,62px) + 8px); }
 html[data-kindred-ios] :is(.dictation-settings,.version-actions,[data-client-update-status],.dictation-button,.dictation-status,.dictation-cancel) { display:none !important; }
 @media (prefers-reduced-transparency:reduce) {
   html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-heading,.sidebar-top .icon-button,.ios-artifact-button,.artifact-workbench-actions button,.desktop-toolbar #desktop-paste,.desktop-toolbar .desktop-action,#control-notice,#queue-status.ios-control-paused) { background:var(--surface); -webkit-backdrop-filter:none; backdrop-filter:none; }
   html[data-kindred-ios] .conversation-header::before,html[data-kindred-ios] .conversation>.composer-area::before { -webkit-backdrop-filter:none; backdrop-filter:none; }
+  html[data-kindred-ios] #ios-status-blur { background:var(--bg); -webkit-backdrop-filter:none; backdrop-filter:none; }
 }
 
 /* The iOS artifact library and document are separate full-width pages. */
@@ -195,10 +199,10 @@ html[data-kindred-ios] #app .artifact-studio-library { position:absolute; inset:
 html[data-kindred-ios] .artifact-studio :is(.artifact-library-brand-row,.artifact-library-pin,.artifact-library-reveal,.artifact-library-backdrop,.pane-resizer,.sidebar-bottom) { display:none !important; }
 html[data-kindred-ios] .artifact-studio[data-ios-artifact-view=list]>.artifact-workbench,
 html[data-kindred-ios] #app .artifact-studio[data-ios-artifact-view=document]>.artifact-studio-library { display:none; }
-html[data-kindred-ios] .ios-artifact-navigation { position:relative; display:flex; align-items:center; flex:none; gap:8px; height:72px; padding:12px 16px; }
+html[data-kindred-ios] .ios-artifact-navigation { position:relative; display:flex; align-items:center; flex:none; gap:8px; height:calc(72px + var(--ios-safe-top)); padding:calc(12px + var(--ios-safe-top)) 16px 12px; }
 html[data-kindred-ios] .ios-artifact-navigation>button:nth-child(2) { margin-left:auto; }
 html[data-kindred-ios] .artifact-studio .ios-artifact-button { display:inline-flex; flex:none; align-items:center; justify-content:center; width:44px; height:44px; min-width:44px; min-height:44px; border-radius:50%; padding:11px; color:var(--fg); }
-html[data-kindred-ios] .ios-artifact-navigation>.artifact-add-menu { top:64px; right:16px; left:auto; min-width:220px; border-radius:18px; padding:6px; }
+html[data-kindred-ios] .ios-artifact-navigation>.artifact-add-menu { top:calc(64px + var(--ios-safe-top)); right:16px; left:auto; min-width:220px; border-radius:18px; padding:6px; }
 html[data-kindred-ios] .artifact-add-menu button { min-height:44px; font-size:16px; border-radius:12px; }
 html[data-kindred-ios] .artifact-studio-library-heading { padding:12px 24px 16px; }
 html[data-kindred-ios] .artifact-studio-library-heading h1 { color:var(--fg); font-size:26px; font-weight:650; }
@@ -215,7 +219,7 @@ html[data-kindred-ios] :is(.artifact-studio-library-item,.artifact-folder-headin
 html[data-kindred-ios] .artifact-studio-library-status { padding:12px 24px 0; font-size:12px; }
 html[data-kindred-ios] .artifact-studio-library-empty { padding:24px 16px; font-size:16px; }
 html[data-kindred-ios] .artifact-workbench { padding-bottom:var(--ios-safe-bottom); }
-html[data-kindred-ios] .artifact-workbench-header { flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; min-height:72px; padding:12px 16px; border:0; }
+html[data-kindred-ios] .artifact-workbench-header { flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; min-height:calc(72px + var(--ios-safe-top)); padding:calc(12px + var(--ios-safe-top)) 16px 12px; border:0; }
 html[data-kindred-ios] .artifact-workbench-title { flex:1; min-width:80px; }
 html[data-kindred-ios] .artifact-workbench-actions { margin-left:auto; }
 html[data-kindred-ios] .artifact-workbench-actions button { width:44px; height:44px; min-width:44px; min-height:44px; padding:11px; border-radius:50%; color:var(--fg); }

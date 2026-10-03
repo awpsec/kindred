@@ -62,7 +62,7 @@ struct RootView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbar }
                 .toolbarBackground(Theme.chrome, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(isShowingConversation ? .hidden : .visible, for: .navigationBar)
                 .toolbar(isShowingConversation ? .hidden : .visible, for: .navigationBar)
                 .sheet(item: $model.download) { file in
                     ShareSheet(items: [file.url])
@@ -86,7 +86,7 @@ struct RootView: View {
             if model.isSignedIn(account.id) {
                 WebContainerView(session: model.session(for: account))
                     .id(account.id)
-                    .ignoresSafeArea(.container, edges: .bottom)
+                    .ignoresSafeArea(.container, edges: isShowingConversation ? [.top, .bottom] : .bottom)
                     // WebKit shrinks its visible viewport for the keyboard.
                     // Keep SwiftUI from subtracting the same space again.
                     .ignoresSafeArea(.keyboard)

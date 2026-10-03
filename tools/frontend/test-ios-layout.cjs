@@ -65,6 +65,14 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const prompt=page.locator('#prompt'); await prompt.waitFor({state:'visible'});
     const viewport=await page.locator('meta[name=viewport]').getAttribute('content');
     assert(viewport.includes('minimum-scale=1, maximum-scale=1, user-scalable=no'),'the iOS app prevents double-tap and pinch page zoom');
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{topInset:62,bottomInset:34,isSlab:true}})));
+    const statusBlur=page.locator('#ios-status-blur');
+    assert.equal((await statusBlur.boundingBox()).y,0,'status material covers the actual top of the viewport');
+    assert.equal((await statusBlur.boundingBox()).height,80,'status blur fades below the hardware inset');
+    assert(await statusBlur.evaluate(node=>getComputedStyle(node).backdropFilter.includes('blur')));
+    for (const control of ['#mobile-menu','.bot-heading','#show-computer']) assert((await page.locator(control).boundingBox()).y>=62,'chat controls clear the status bar and notch');
+    assert.equal((await page.locator('.conversation').boundingBox()).y,0,'chat extends behind status chrome');
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{topInset:0,bottomInset:0,isSlab:true}})));
     assert.equal(await page.evaluate(()=>window.accountRequests.filter(value=>value.action==='launch-ready').length),1,'cold-launch readiness waits for loaded conversations and signals once');
     // Exercise actual WebKit selection on a card's nested name/preview text,
     // alongside ordinary message text that must still be selectable.

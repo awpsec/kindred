@@ -47,6 +47,7 @@ final class WebSession: NSObject {
     let presentation = WebPresentationState()
     private var conversationTarget: ConversationMenuTarget?
     private weak var nativeMenuAlert: UIAlertController?
+    private var layoutTop: CGFloat = 0
     private var layoutBottom: CGFloat = 0
     private var layoutIsSlab = false
     private var profileID: String?
@@ -163,9 +164,10 @@ final class WebSession: NSObject {
     }
 
     /// Presentation values only, delivered to the trusted main frame. The host
-    /// extends behind the home indicator while WebKit avoids the keyboard.
-    func updateLayout(bottomInset: CGFloat, isSlab: Bool) {
-        guard layoutBottom != bottomInset || layoutIsSlab != isSlab else { return }
+    /// extends behind system chrome while WebKit avoids the keyboard.
+    func updateLayout(topInset: CGFloat, bottomInset: CGFloat, isSlab: Bool) {
+        guard layoutTop != topInset || layoutBottom != bottomInset || layoutIsSlab != isSlab else { return }
+        layoutTop = topInset
         layoutBottom = bottomInset
         layoutIsSlab = isSlab
         publishLayout()
@@ -175,11 +177,11 @@ final class WebSession: NSObject {
         guard origin.matches(webView.url) else { return }
         let script = """
         if (window.top !== window.self || location.origin !== expectedOrigin) return;
-        window.__KINDRED_IOS_LAYOUT = {bottomInset, isSlab};
+        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, isSlab};
         window.dispatchEvent(new CustomEvent('kindred-ios-layout', {detail: window.__KINDRED_IOS_LAYOUT}));
         """
         webView.callAsyncJavaScript(script, arguments: ["expectedOrigin": origin.serialized,
-            "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab], in: nil, in: .page) { _ in }
+            "topInset": Double(layoutTop), "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab], in: nil, in: .page) { _ in }
     }
 
     func open(_ url: URL) {

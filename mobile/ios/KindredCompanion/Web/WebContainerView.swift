@@ -39,7 +39,7 @@ final class WebHostView: UIView {
         if #available(iOS 27.1, *) {
             hasDivision = hasDivision || !(window?.reservedRegions(kind: .division, options: .includeInactive).isEmpty ?? true)
         }
-        session?.updateLayout(bottomInset: keyboardVisible ? 0 : safeAreaInsets.bottom, isSlab: UIDevice.current.userInterfaceIdiom == .phone && !hasDivision)
+        session?.updateLayout(topInset: safeAreaInsets.top, bottomInset: keyboardVisible ? 0 : safeAreaInsets.bottom, isSlab: UIDevice.current.userInterfaceIdiom == .phone && !hasDivision)
     }
     @objc private func keyboardFrameChanged(_ notification: Notification) {
         guard let window, let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }

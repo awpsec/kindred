@@ -227,6 +227,11 @@ web navigation stays in charge during route changes/reloads so opening an
 artifact cannot briefly restore the native account toolbar; a page failure
 still exposes native recovery controls.
 
+Conversation content extends behind the iOS status bar. A fading blur keeps
+the system time and indicators readable, while hardware insets keep chat,
+computer, list, and artifact buttons clear of the notch. Reduce Transparency
+uses an opaque status material instead.
+
 ### Bot computer keyboard
 
 Taking control opens the native iPhone keyboard; returning control or closing

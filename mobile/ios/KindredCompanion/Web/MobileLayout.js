@@ -28,6 +28,9 @@
   const menu = document.querySelector('#mobile-menu');
   const sidebar = shell.querySelector('.sidebar');
   const conversation = shell.querySelector('.conversation');
+  const statusBlur = document.createElement('div');
+  statusBlur.id = 'ios-status-blur'; statusBlur.setAttribute('aria-hidden','true');
+  document.body.append(statusBlur);
   // Editing message/artifact source is a desktop workflow. Preserve reply,
   // copy, reactions, previews and metadata controls in the iOS app.
   const desktopEditControl = '[data-message-action="edit"],.artifact-workbench-actions button[aria-label^="Edit "],.artifact-workbench-actions button[aria-label="Finish editing"],.workspace-artifact-actions>button:first-child';
@@ -486,6 +489,7 @@
   updateNavigation();
   function updateEnvironment(value) {
     if (!value) return;
+    html.style.setProperty('--ios-safe-top', `${Math.max(0, Number(value.topInset) || 0)}px`);
     html.dataset.iosSlab = String(value.isSlab === true);
     html.style.setProperty('--ios-safe-bottom', `${Math.max(0, Number(value.bottomInset) || 0)}px`);
   }
