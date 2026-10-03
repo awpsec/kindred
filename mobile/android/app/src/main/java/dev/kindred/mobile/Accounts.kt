@@ -13,10 +13,12 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
- data class Account(val id: String, val server: String, val username: String, val token: String, val profile: String, val alerts: Boolean = false) {
-    fun json() = JSONObject().put("id", id).put("server", server).put("username", username).put("token", token).put("profile", profile).put("alerts", alerts)
+ /** `accountId` is the server's account UUID when known (paired accounts); empty for older saves. */
+ data class Account(val id: String, val server: String, val username: String, val token: String, val profile: String, val alerts: Boolean = false, val accountId: String = "") {
+    fun json() = JSONObject().put("id", id).put("server", server).put("username", username).put("token", token).put("profile", profile).put("alerts", alerts).put("account_id", accountId)
+    override fun toString() = "Account(id=$id, server=$server, username=$username, profile=$profile, token=<redacted>)"
     companion object {
-        fun read(v: JSONObject) = Account(v.getString("id"), ServerAddress.normalize(v.getString("server")), v.getString("username"), v.getString("token"), v.getString("profile"), v.optBoolean("alerts"))
+        fun read(v: JSONObject) = Account(v.getString("id"), ServerAddress.normalize(v.getString("server")), v.getString("username"), v.getString("token"), v.getString("profile"), v.optBoolean("alerts"), v.optString("account_id"))
     }
 }
 

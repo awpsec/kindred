@@ -8,13 +8,23 @@ import WebKit
 enum SheetRoute: Identifiable, Equatable {
     case accounts
     case addAccount(AccountPrefill)
+    case pair(PairingRequest)
 
     var id: String {
         switch self {
         case .accounts: return "accounts"
         case .addAccount(let prefill): return "add-" + prefill.id.uuidString
+        case .pair(let request): return "pair-" + request.id.uuidString
         }
     }
+}
+
+/// Opens the pairing sheet on the scanner, or on confirmation for a link
+/// that arrived from outside the app.
+struct PairingRequest: Equatable, Identifiable {
+    var id = UUID()
+    /// Raw text, parsed by the sheet so problems are shown there.
+    var link: String?
 }
 
 /// Starting values for the native sign-in sheet.
@@ -262,12 +272,22 @@ final class AppModel {
         let identity = try? await api.identity(origin: origin, token: result.token)
 
         let existing = AccountGrouping.existing(in: accounts, origin: origin, login: identity?.username ?? login)
+        try await adopt(token: result.token, origin: origin, login: identity?.username ?? login,
+                        profileID: identity?.activeProfileID ?? result.profileID, identity: identity, replacing: existing)
+    }
+
+    /// Saves a verified new session: Keychain first, then metadata. Reuses the
+    /// matched account's local ID (web data, alert installation) and ends the
+    /// session it replaces. Every other account is left as it was.
+    @discardableResult
+    private func adopt(token: String, origin: ServerOrigin, login: String, profileID: String,
+                       identity: IdentitySummary?, replacing existing: Account?) async throws -> UUID {
         let id = existing?.id ?? UUID()
         let previousToken = existing.flatMap { self.storedToken($0.id) }
-        try storeToken(result.token, for: id)
+        try storeToken(token, for: id)
 
-        var account = existing ?? Account(id: id, origin: origin, login: (identity?.username ?? login).lowercased())
-        account.profileID = identity?.activeProfileID ?? result.profileID
+        var account = existing ?? Account(id: id, origin: origin, login: login.lowercased())
+        account.profileID = profileID
         if let name = identity?.activeProfileName { account.profileName = name }
         if let serverAccountID = identity?.serverAccountID { account.serverAccountID = serverAccountID }
         account.lastUsedAt = Date()
@@ -284,11 +304,70 @@ final class AppModel {
 
         // End the replaced session before registering under the new one, so the
         // server's logout cleanup can't race the new registration.
-        if let previousToken, previousToken != result.token {
+        if let previousToken, previousToken != token {
             try? await api.logout(origin: origin, token: previousToken)
         }
         if account.push.wanted || account.push.mayExistOnServer {
             await syncPush(accountID: id, force: true)
+        }
+        return id
+    }
+
+    // MARK: Phone pairing
+
+    /// Set while a code is being claimed, so a second link can't start another claim.
+    private(set) var isPairing = false
+
+    /// Opened from the camera app or another app: always lands on the
+    /// confirmation screen, never claims by itself.
+    func handleOpenURL(_ url: URL) {
+        guard url.scheme?.lowercased() == "kindred" else { return }
+        guard !isPairing else {
+            show("Finish the current pairing before opening another code.")
+            return
+        }
+        sheet = .pair(PairingRequest(link: url.absoluteString))
+    }
+
+    /// Called only after the person confirmed `link.origin`. The code is spent
+    /// at most once; failures are reported, never retried here.
+    @discardableResult
+    func pair(with link: PairingLink) async throws -> UUID {
+        guard !isPairing else { throw PairingError.server("Another pairing is already in progress.") }
+        isPairing = true
+        defer { isPairing = false }
+        let origin = link.origin
+
+        do {
+            try await api.verifyKindredServer(origin)
+        } catch {
+            throw PairingError.from(error)
+        }
+        let claim = try await api.claimPairing(link)
+
+        // From here the new session exists on the server; end it on any failure.
+        let identity: IdentitySummary
+        do {
+            identity = try await api.identity(origin: origin, token: claim.token)
+        } catch {
+            try? await api.logout(origin: origin, token: claim.token)
+            throw PairingError.afterCodeSent(error)
+        }
+        guard claim.isConfirmed(by: identity) else {
+            try? await api.logout(origin: origin, token: claim.token)
+            throw PairingError.accountMismatch
+        }
+        let existing = AccountGrouping.existing(in: accounts, origin: origin, serverAccountID: claim.serverAccountID,
+                                                login: claim.login)
+        do {
+            let id = try await adopt(token: claim.token, origin: origin, login: identity.username ?? claim.login,
+                                     profileID: identity.activeProfileID ?? claim.profileID, identity: identity,
+                                     replacing: existing)
+            if let username = identity.username { update(id) { $0.login = username.lowercased() } }
+            return id
+        } catch {
+            try? await api.logout(origin: origin, token: claim.token)
+            throw PairingError.storage(error.localizedDescription)
         }
     }
 
