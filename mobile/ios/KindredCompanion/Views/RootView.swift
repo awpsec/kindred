@@ -13,7 +13,7 @@ struct RootView: View {
         NavigationStack {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.canvas)
+                .background(pageCanvas)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbar }
                 .toolbarBackground(Theme.chrome, for: .navigationBar)
@@ -23,6 +23,8 @@ struct RootView: View {
                     ShareSheet(items: [file.url])
                 }
         }
+        .background(pageCanvas.ignoresSafeArea())
+        .preferredColorScheme(pageIsDark.map { $0 ? .dark : .light })
         .overlay(alignment: .top) {
             if let banner = model.banner {
                 BannerView(banner: banner) { model.banner = nil }
@@ -59,12 +61,23 @@ struct RootView: View {
             if model.isSignedIn(account.id) {
                 WebContainerView(session: model.session(for: account))
                     .id(account.id)
+                    .ignoresSafeArea(.container, edges: .bottom)
             } else {
                 SignedOutView(account: account)
             }
         } else {
             WelcomeView()
         }
+    }
+
+    private var pageCanvas: Color {
+        guard let account = model.activeAccount, isShowingConversation else { return Theme.canvas }
+        return Color(model.session(for: account).presentation.canvas)
+    }
+
+    private var pageIsDark: Bool? {
+        guard let account = model.activeAccount, isShowingConversation else { return nil }
+        return model.session(for: account).presentation.isDark
     }
 
     private var isShowingConversation: Bool {

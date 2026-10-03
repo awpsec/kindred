@@ -7,6 +7,8 @@ import WebKit
 @Observable
 final class WebPresentationState {
     var hasChatInterface = false
+    var canvas = UIColor(named: "Canvas") ?? .systemBackground
+    var isDark: Bool?
 }
 
 @MainActor
@@ -35,6 +37,8 @@ final class WebSession: NSObject {
     let origin: ServerOrigin
     let webView: WKWebView
     let presentation = WebPresentationState()
+    private var layoutBottom: CGFloat = 0
+    private var layoutIsSlab = false
     private var profileID: String?
     private var latestToken: String?
     private let policy: NavigationPolicy
@@ -120,6 +124,26 @@ final class WebSession: NSObject {
         }
     }
 
+    /// Presentation values only, delivered to the trusted main frame. The host
+    /// extends behind the home indicator while SwiftUI still avoids the keyboard.
+    func updateLayout(bottomInset: CGFloat, isSlab: Bool) {
+        guard layoutBottom != bottomInset || layoutIsSlab != isSlab else { return }
+        layoutBottom = bottomInset
+        layoutIsSlab = isSlab
+        publishLayout()
+    }
+
+    private func publishLayout() {
+        guard origin.matches(webView.url) else { return }
+        let script = """
+        if (window.top !== window.self || location.origin !== expectedOrigin) return;
+        window.__KINDRED_IOS_LAYOUT = {bottomInset, isSlab};
+        window.dispatchEvent(new CustomEvent('kindred-ios-layout', {detail: window.__KINDRED_IOS_LAYOUT}));
+        """
+        webView.callAsyncJavaScript(script, arguments: ["expectedOrigin": origin.serialized,
+            "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab], in: nil, in: .page) { _ in }
+    }
+
     func open(_ url: URL) {
         guard origin.matches(url) else { return }
         webView.load(URLRequest(url: url))
@@ -174,6 +198,18 @@ final class WebSession: NSObject {
         case WebSession.accountsHandler:
             if let body = message.body as? [String: Any], body["action"] as? String == "interface-ready" {
                 presentation.hasChatInterface = true
+                publishLayout()
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "appearance",
+               let rgb = body["rgb"] as? [Double], rgb.count == 3,
+               rgb.allSatisfy({ $0.isFinite && (0...255).contains($0) }) {
+                let color = UIColor(red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255, alpha: 1)
+                presentation.canvas = color
+                presentation.isDark = body["followsSystem"] as? Bool == true ? nil : (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722) < 128
+                webView.backgroundColor = color
+                webView.underPageBackgroundColor = color
+                webView.superview?.backgroundColor = color
                 return
             }
             if AccountsMessage(body: message.body) != nil { host?.webSessionRequestedAccounts(self) }

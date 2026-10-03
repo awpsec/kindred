@@ -101,11 +101,15 @@ with an existing persistent web data store.
 ### Web UI
 
 - The app bundles `Web/MobileLayout.css` and `.js` so older servers also receive
-  mobile text sizing, touch targets, a dismissible conversation drawer and
-  native account navigation. These run only in the account's main-frame origin.
+  separate full-screen chat/list views, floating navigation controls, a centered
+  bot avatar and name, compact composer, and native account navigation. Native
+  safe-area colors follow the page theme and select dropdowns use the iOS picker. These run only in the account's main-frame origin.
   The chat uses one header; native accounts/reload controls return if the web
   page fails to load. A very short landscape keyboard layout hides the chat
   header until there is room for it again. Messages stop above the composer.
+  Slab phones use the entire computer screen without an expansion button; in
+  landscape, controls/resources scroll beside the desktop. Division reserved
+  regions (including inactive regions) retain foldable expansion controls.
 - Run `node tools/frontend/test-ios-layout.cjs` from the repository root with
   Playwright/WebKit installed to check bundled layout resources and the bridge
   against the local frontend fixture. Set `KINDRED_PLAYWRIGHT_MODULE` when

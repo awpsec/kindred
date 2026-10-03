@@ -1,35 +1,84 @@
-/* SwiftUI provides hardware/keyboard safe areas. Never inset them twice. */
-html[data-kindred-ios] { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+/* The native host extends the page behind the home indicator, but still avoids
+   the keyboard. It supplies the hardware inset rather than applying it twice. */
+html[data-kindred-ios] { -webkit-text-size-adjust:100%; text-size-adjust:100%; --ios-safe-bottom:0px; }
 html[data-kindred-ios] body { overscroll-behavior:none; }
 html[data-kindred-ios] .shell { height:100%; position:relative; }
 html[data-kindred-ios] :is(input,textarea,select,#prompt) { font-size:max(16px,1em); }
-html[data-kindred-ios] :is(.conversation-header,#composer) .icon-button { min-width:44px; min-height:44px; flex-shrink:0; }
-html[data-kindred-ios] .conversation-header { padding-inline:8px; gap:4px; -webkit-app-region:no-drag; }
-html[data-kindred-ios] .header-actions { gap:0; flex-shrink:0; }
-html[data-kindred-ios] .bot-heading { flex:1; max-width:none; margin-right:auto; }
-html[data-kindred-ios] #header-avatar { flex-shrink:0; }
 html[data-kindred-ios] .message-bubble { overflow-wrap:anywhere; }
 html[data-kindred-ios] .conversation-history { overflow:hidden; }
-html[data-kindred-ios] .conversation>.composer-area { position:relative; inset:auto; flex:none; background:var(--bg); pointer-events:auto; }
+html[data-kindred-ios] .conversation>.composer-area { position:relative; inset:auto; flex:none; background:var(--bg); pointer-events:auto; padding-bottom:calc(8px + var(--ios-safe-bottom)); }
 html[data-kindred-ios] .conversation .messages { padding-bottom:12px; scroll-padding-bottom:12px; }
-html[data-kindred-ios] #composer { grid-template-columns:44px minmax(0,1fr) 32px 44px; }
-html[data-kindred-ios] #composer.dictation-enabled { grid-template-columns:44px minmax(0,1fr) 32px 44px 44px; }
-html[data-kindred-ios] #composer:is(.dictation-empty,.is-dictating) { grid-template-columns:44px minmax(0,1fr) 32px 44px; }
-html[data-kindred-ios] #send { width:44px; height:44px; }
-html[data-kindred-ios] #ios-sidebar-backdrop { display:none; }
+html[data-kindred-ios] #composer { grid-template-columns:44px minmax(0,1fr) 28px 44px; padding:0 3px; column-gap:2px; }
+html[data-kindred-ios] #composer.dictation-enabled { grid-template-columns:44px minmax(0,1fr) 28px 44px 44px; }
+html[data-kindred-ios] #composer:is(.dictation-empty,.is-dictating) { grid-template-columns:44px minmax(0,1fr) 28px 44px; }
+html[data-kindred-ios] #prompt { min-height:36px; padding:6px 2px; line-height:24px; align-self:center; }
+/* 44pt targets, with smaller circles inside them to balance the provider mark. */
+html[data-kindred-ios] #composer :is(#composer-actions,#send,.dictation-button) { position:relative; width:44px; height:44px; min-width:44px; min-height:44px; padding:12px; border-radius:50%; background:transparent; }
+html[data-kindred-ios] #composer :is(#composer-actions,#send)::before { content:''; position:absolute; inset:6px; border-radius:50%; background:var(--hover); }
+html[data-kindred-ios] #composer #send::before { background:var(--button); }
+html[data-kindred-ios] #composer :is(#composer-actions,#send) svg { position:relative; width:20px; height:20px; }
+html[data-kindred-ios] #composer-hint { align-self:center; }
+html[data-kindred-ios] #ios-computer-back { display:none; }
+html[data-kindred-ios] .ios-computer-controls { display:contents; }
+html[data-kindred-ios] .computer-panel.expanded .ios-computer-controls>.resource-stats { display:none; }
+html[data-kindred-ios] #ios-accounts { font-size:14px; font-weight:600; }
+html[data-kindred-ios] .sidebar-top .wordmark { display:none; }
+html[data-kindred-ios] #ios-search { margin-left:auto; }
 @media (max-width:760px), (max-height:500px) {
-  html[data-kindred-ios] .shell>.sidebar { display:none; position:absolute; inset:0 auto 0 0; width:min(320px,calc(100% - 56px)); margin:0; z-index:6; box-shadow:var(--shadow); }
+  html[data-kindred-ios] .shell>.sidebar { display:none; position:absolute; inset:0; width:100%; margin:0; z-index:6; border:0; background:var(--bg); padding-bottom:var(--ios-safe-bottom); }
   html[data-kindred-ios] .shell.sidebar-open>.sidebar { display:flex; }
+  html[data-kindred-ios] .shell.sidebar-open>.conversation { visibility:hidden; }
+  html[data-kindred-ios] .sidebar-top { height:72px; padding:12px 16px; gap:8px; }
+  html[data-kindred-ios] :is(.sidebar-top,.conversation-header,.panel-header) .icon-button { display:inline-flex; justify-content:center; align-items:center; width:44px; height:44px; min-width:44px; min-height:44px; padding:11px; border-radius:50%; background:color-mix(in srgb,var(--surface) 88%,transparent); border:1px solid var(--line); }
+  html[data-kindred-ios] .sidebar>.search { display:none; height:44px; margin:4px 16px 12px; border-radius:22px; }
+  html[data-kindred-ios] .sidebar.ios-searching>.search { display:flex; }
+  html[data-kindred-ios] .search kbd { display:none; }
+  html[data-kindred-ios] .pinned-bots { flex:none; flex-wrap:nowrap; justify-content:flex-start; overflow-x:auto; gap:18px; padding:16px 24px 24px; }
+  html[data-kindred-ios] .pinned-entry { flex:none; }
+  html[data-kindred-ios] .pinned-bot { width:108px; gap:10px; font-size:14px; border-radius:20px; padding:10px 8px; }
+  html[data-kindred-ios] .pinned-bot .character { width:72px !important; height:72px !important; }
+  html[data-kindred-ios] #bots { padding-inline:8px; }
+  html[data-kindred-ios] .nav-entry .bot-link { padding-block:14px; }
+  html[data-kindred-ios] .sidebar-bottom { background:var(--bg); }
+  html[data-kindred-ios] #identity-row { display:none; }
+  html[data-kindred-ios] .conversation-header { height:106px; position:relative; padding:10px 16px; gap:4px; border:0; -webkit-app-region:no-drag; align-items:flex-start; }
   html[data-kindred-ios] .mobile-only { display:inline-flex; }
-  html[data-kindred-ios] .shell.sidebar-open>#ios-sidebar-backdrop:not([hidden]) { display:block; position:absolute; inset:0; z-index:5; background:#0005; border-radius:0; padding:0; }
-  html[data-kindred-ios] .shell>:is(.details-panel,.computer-panel) { position:absolute; inset:0; width:100%; max-width:100%; min-width:0; z-index:4; }
+  html[data-kindred-ios] .bot-heading { position:absolute; left:50%; top:8px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:0; padding:0 4px; margin:0; max-width:calc(100% - 144px); border-radius:24px; }
+  html[data-kindred-ios] #header-avatar { flex-shrink:0; }
+  html[data-kindred-ios] #header-avatar .character { width:60px !important; height:60px !important; }
+  html[data-kindred-ios] .bot-heading>span:last-child { margin-top:-14px; border:1px solid var(--line); background:color-mix(in srgb,var(--surface) 92%,transparent); border-radius:18px; padding:5px 12px; max-width:100%; z-index:1; }
+  html[data-kindred-ios] .bot-heading strong { font-size:15px; line-height:20px; }
+  html[data-kindred-ios] .header-actions { margin-left:auto; flex-shrink:0; }
+  html[data-kindred-ios] #chat-actions { display:none; }
+  html[data-kindred-ios] .messages { padding:8px 12px 12px; }
+  html[data-kindred-ios] .message-row { max-width:100%; }
+  html[data-kindred-ios] .message-bubble { font-size:16px; line-height:1.5; }
+  html[data-kindred-ios] .composer-area { padding-inline:10px; padding-top:6px; }
+  html[data-kindred-ios] .shell>:is(.details-panel,.computer-panel) { position:absolute; inset:0; width:100%; max-width:100%; min-width:0; z-index:7; padding-bottom:var(--ios-safe-bottom); }
+  html[data-kindred-ios] .panel-header { min-height:64px; padding:10px 16px; border:0; gap:8px; }
+  html[data-kindred-ios] #ios-computer-back { display:inline-flex; }
+  html[data-kindred-ios] #computer-close { display:none; }
+  html[data-kindred-ios] .computer-panel .computer-routines { flex:none; max-height:120px; overflow:auto; }
   html[data-kindred-ios] .pane-resizer { display:none; }
-  html[data-kindred-ios] .messages { padding-inline:12px; }
-  html[data-kindred-ios] .composer-area { padding-inline:8px; }
   html[data-kindred-ios] .settings-dialog[open] { width:100%; max-width:100%; height:100%; max-height:100%; margin:0; border-radius:0; }
+  html[data-kindred-ios][data-ios-slab=true] #computer-expand { display:none; }
+  html[data-kindred-ios][data-ios-slab=true] .computer-panel .desktop { flex:1; aspect-ratio:auto; min-height:100px; margin:0; border-radius:0; }
+  html[data-kindred-ios][data-ios-slab=true] .desktop-preview-open { display:none; }
 }
-/* A landscape keyboard can leave less room than the header and composer need. */
+@media (min-width:600px) and (max-height:500px) {
+  html[data-kindred-ios] .conversation-header { height:64px; }
+  html[data-kindred-ios] .bot-heading { flex-direction:row; top:8px; gap:8px; }
+  html[data-kindred-ios] #header-avatar .character { width:42px !important; height:42px !important; }
+  html[data-kindred-ios] .bot-heading>span:last-child { margin-top:0; }
+  html[data-kindred-ios][data-ios-slab=true] .computer-panel:not([hidden]) { display:grid; grid-template-columns:minmax(0,1fr) 220px; grid-template-rows:64px minmax(0,1fr); height:100%; overflow:hidden; }
+  html[data-kindred-ios][data-ios-slab=true] .computer-panel>.panel-header { grid-column:1/-1; grid-row:1; }
+  html[data-kindred-ios][data-ios-slab=true] .computer-panel>.desktop { grid-column:1; grid-row:2; min-height:0; }
+  html[data-kindred-ios][data-ios-slab=true] .computer-panel>.ios-computer-controls { grid-column:2; grid-row:2; display:flex; flex-direction:column; min-height:0; overflow-y:auto; margin:0; padding-bottom:8px; }
+  html[data-kindred-ios][data-ios-slab=true] .desktop-toolbar { flex-wrap:wrap; gap:6px; padding:8px 12px; }
+  html[data-kindred-ios][data-ios-slab=true] .desktop-footer { flex-direction:column; align-items:flex-start; gap:8px; }
+}
 @media (max-height:180px) {
   html[data-kindred-ios] .conversation-header,html[data-kindred-ios] .jump-latest { display:none; }
   html[data-kindred-ios] .composer-area { padding-block:4px; }
 }
+html[data-kindred-ios] #composer.is-multiline #prompt { min-height:32px; padding:4px 7px; }
