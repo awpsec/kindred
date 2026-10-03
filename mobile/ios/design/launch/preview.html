@@ -1,0 +1,216 @@
+<!doctype html>
+<!-- Approved iOS-only launch reference: Wake up and dissolve.
+Design reference, not production startup code. See README.md.
+390x844; ?theme=light|dark&paused=1; window.renderAt(milliseconds).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Kindred iOS — Wake up</title>
+<style>
+@font-face{font-family:Inter;src:url('../../../../ui/fonts/InterVariable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:block}
+/* Neutral tokens from ui/style.css (:root / [data-theme="light"]). Launch colours:
+   --canvas = iOS LaunchScreen colour (Assets Canvas: #fff / #000);
+   --launch-backdrop = neutral grey one step off the theme, so the eyes visibly consume it. */
+:root{
+  color-scheme:dark;
+  --bg:#000;--sidebar:#0d0d0d;--surface:#1c1c1c;--hover:#272727;--line:#2b2b2b;
+  --fg:#ededed;--muted:#919191;--soft:#b2b2b2;--button:#e7e7e7;--button-fg:#191919;--bot-ink:#fff;
+  --canvas:#000;--launch-backdrop:#181818;--system:#fff;
+  font:15px/1.4 Inter,system-ui,sans-serif;
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#fff;--sidebar:#f5f5f5;--surface:#f0f0f0;--hover:#e8e8e8;--line:#e1e1e1;
+  --fg:#202020;--muted:#797979;--soft:#5d5d5d;--button:#252525;--button-fg:#fff;--bot-ink:#fff;
+  --canvas:#fff;--launch-backdrop:#ededed;--system:#000;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased}
+body{position:relative}
+.icon{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- Kindred mobile chats list (shared web UI at phone width) ---------- */
+.app{position:absolute;inset:0;display:flex;flex-direction:column;padding:47px 0 34px;will-change:opacity,transform}
+.top{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 20px}
+.wordmark{font-size:21px;letter-spacing:-.8px;font-weight:650}
+.wordmark-dot{color:var(--muted)}
+.top-actions{display:flex;align-items:center}
+.icon-button{width:44px;height:44px;display:grid;place-items:center;color:var(--soft)}
+.user-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--hover);color:var(--muted);font-size:11px;font-weight:600}
+.search{margin:2px 16px 10px;height:38px;border-radius:10px;background:var(--surface);display:flex;align-items:center;gap:8px;padding:0 12px;color:var(--muted);font-size:15px}
+.search .icon{width:17px;height:17px}
+.list{flex:1;overflow:hidden;padding:0 8px}
+.row{display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:12px}
+.row .avatar{width:46px;height:46px;flex:none;position:relative}
+.row .avatar .dot{position:absolute;right:1px;bottom:3px;width:11px;height:11px;border-radius:50%;background:#2ec767;border:2px solid var(--bg)}
+.info{min-width:0;flex:1}
+.info b{display:flex;align-items:baseline;gap:6px;font-weight:600;font-size:15.5px}
+.info b em{font-style:normal;font-weight:500;font-size:11px;color:var(--muted);background:var(--hover);padding:1px 6px;border-radius:5px}
+.info b small{margin-left:auto;font-weight:400;color:var(--muted);font-size:12px}
+.info p{margin:2px 0 0;color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.unread{width:9px;height:9px;border-radius:50%;background:var(--fg);flex:none;opacity:.75}
+.group{display:grid;grid-template-columns:1fr 1fr;gap:2px;width:46px;height:46px}
+.group svg{width:22px;height:22px}
+.bottom{display:flex;justify-content:space-around;padding:6px 20px 0;border-top:1px solid var(--line);color:var(--soft);font-size:11px}
+.bottom span{display:flex;flex-direction:column;align-items:center;gap:2px;padding-top:6px}
+
+/* ---------- iOS system chrome (always on top) ---------- */
+.system{position:absolute;inset:0;pointer-events:none;color:var(--system)}
+.status{position:absolute;top:0;left:0;right:0;height:47px;display:flex;align-items:center;justify-content:space-between;padding:4px 30px 0 46px;font-weight:600;font-size:16px;letter-spacing:-.2px}
+.status svg{display:block}
+.island{position:absolute;top:11px;left:50%;width:124px;height:36px;margin-left:-62px;border-radius:18px;background:#000}
+.home{position:absolute;bottom:8px;left:50%;width:134px;height:5px;margin-left:-67px;border-radius:3px;background:var(--system)}
+
+/* ---------- Launch layer ---------- */
+/* Stacking: app (fades in last) < launch-under (backdrop, mark, launch status bar)
+   < launch-eyes (the eyes, which consume everything beneath them). */
+.launch{position:absolute;inset:0;pointer-events:none}
+#launch-under{z-index:2}
+#launch-eyes{z-index:3;width:100%;height:100%;overflow:visible}
+#launch-under > svg{position:absolute;inset:0;width:100%;height:100%}
+.top{padding-left:20px}.page-title{font-size:22px;font-weight:650;letter-spacing:-.6px}.system{z-index:5}.wordmark{font-size:22px;letter-spacing:-.85px}.row,.search,.top,.bottom{will-change:opacity,transform} #launch-eyes{display:none}
+</style>
+</head>
+<body>
+<div class="app" id="app" aria-hidden="true">
+  <div class="top"><span class="page-title">Chats</span>
+    <span class="top-actions"><span class="icon-button"><svg class="icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg></span>
+      <span class="icon-button"><span class="user-avatar">YO</span></span></span></div>
+  <div class="search"><svg class="icon" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4 13.5 13.5"/></svg>Search</div>
+  <nav class="list" id="list"></nav>
+  <div class="bottom">
+    <span><svg class="icon" viewBox="0 0 20 20"><path d="M4 5.5h12M4 10h12M4 14.5h8"/></svg>Chats</span>
+    <span><svg class="icon" viewBox="0 0 20 20"><rect x="3.5" y="3.5" width="5.5" height="5.5" rx="1.2"/><rect x="11" y="3.5" width="5.5" height="5.5" rx="1.2"/><rect x="3.5" y="11" width="5.5" height="5.5" rx="1.2"/><path d="M13.75 11v5.5M11 13.75h5.5"/></svg>Marketplace</span>
+    <span><svg class="icon" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6"/></svg>Settings</span>
+  </div>
+</div>
+
+<div id="launch-under" class="launch" aria-hidden="true">
+  <svg xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <!-- Mark body/gradient verbatim from desktop/icons/icon.svg (= ui/favicon.svg). -->
+      <linearGradient id="apricot" x1="25" y1="12" x2="98" y2="116" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#ffd180"/><stop offset=".5" stop-color="#ffb15b"/><stop offset="1" stop-color="#f38b51"/>
+      </linearGradient>
+    </defs>
+    
+    
+    <g id="logo">
+      <path d="M44 9C61 9 70 22 65 40L77 25C89 10 110 19 110 35C110 47 95 57 84 65C97 74 111 83 111 96C111 114 90 122 76 109L64 98C66 114 56 121 41 119C22 117 16 105 16 87V42C16 23 26 9 44 9Z" fill="url(#apricot)" stroke="#da8045" stroke-width="1.1" stroke-linejoin="round"/>
+      <path d="M44 13C55 13 62 20 62 30" fill="none" stroke="#fff4d7" stroke-opacity=".55" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+  </svg>
+</div>
+<!-- The mark's eyes: solid pills in viewport px, above everything and never clipped to the mark. -->
+<svg id="launch-eyes" class="launch" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <path id="eye-l"/><path id="eye-r"/>
+</svg>
+
+<template id="system-chrome"><div class="system" aria-hidden="true">
+  <div class="status"><span>9:41</span>
+    <span style="display:flex;gap:6px;align-items:center">
+      <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.4c2.3 0 4.4.9 6 2.4l1.2-1.2C13.3 1.7 10.8.7 8 .7S2.7 1.7.8 3.6L2 4.8c1.6-1.5 3.7-2.4 6-2.4Zm0 3.4c1.4 0 2.6.5 3.6 1.4l1.2-1.2C11.5 4.8 9.8 4.1 8 4.1S4.5 4.8 3.2 6l1.2 1.2c1-.9 2.2-1.4 3.6-1.4Zm0 3.4c.5 0 1 .2 1.3.5L8 11.1 6.7 9.7c.3-.3.8-.5 1.3-.5Z"/></svg>
+      <svg width="27" height="13" viewBox="0 0 27 13"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="20" height="9" rx="2" fill="currentColor"/><path d="M25 4.5v4c.8-.3 1.4-1.1 1.4-2s-.6-1.7-1.4-2Z" fill="currentColor" opacity=".45"/></svg>
+    </span></div>
+  <div class="island"></div>
+  <div class="home"></div>
+</div></template>
+
+<script type="module">
+const params = new URLSearchParams(location.search);
+const theme = params.get('theme') === 'light' ? 'light' : 'dark';
+document.documentElement.dataset.theme = theme;
+const motionParam = params.get('motion');
+const reduced = motionParam === 'reduced' ||
+  (motionParam !== 'full' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+// ---------- Chats list: real bot shapes (ui/avatar-data.js), palette colours (ui/characters.js),
+// and the same parallel-sided pill eyes the bots use. ----------
+const shapes = {
+  round: "M92 52A42 42 0 1 1 8 52A42 42 0 1 1 92 52Z",
+  capsule: "M31 25H69C85 25 95 36 95 51.5C95 67 85 78 69 78H31C15 78 5 67 5 51.5C5 36 15 25 31 25Z",
+  triangle: "M44 13C46.7 8 53.3 8 56 13L90 75C94.5 83.5 90.5 92 81 92H19C9.5 92 5.5 83.5 10 75Z",
+  cloud: "M20 41C17 27 27 17 39 20C43 21 46 23 48 26C54 15 71 17 77 28C79 32 80 36 79 40C91 41 97 50 94 62C93 67 90 71 86 73C86 84 76 91 65 87C61 86 58 84 56 81C49 92 33 94 24 85C21 83 19 80 18 77C7 76 2 67 6 56C9 48 14 43 20 41Z",
+  hexagon: "M43 9Q50 5 57 9L82 24Q89 28 89 37L89 68Q89 76 82 81L57 96Q50 100 43 96L18 81Q11 77 11 68L11 37Q11 29 18 24Z",
+};
+const faceY = {round: 51, capsule: 52, triangle: 62, cloud: 56, hexagon: 52};
+const avatar = (shape, color) =>
+  `<svg viewBox="0 0 100 104" width="100%" height="100%"><path d="${shapes[shape]}" fill="${color}"/>` +
+  `<g fill="var(--bot-ink)"><rect x="37.2" y="${faceY[shape] - 9.6}" width="8.6" height="19.2" rx="4.3"/>` +
+  `<rect x="54.2" y="${faceY[shape] - 9.6}" width="8.6" height="19.2" rx="4.3"/></g></svg>`;
+const rows = [
+  ['cloud', '#2475ff', 'Piper', 'Assistant', '9:41 AM', "Morning! I've gathered this week's notes.", true, true],
+  ['capsule', '#ff9638', 'Izabella', 'Inbox', '9:02 AM', "Three emails need a reply today."],
+  ['round', '#ff6952', 'Leet', '', 'Yesterday', "Here's where things stand on the build."],
+  ['triangle', '#a3d92b', 'Viv', '', 'Mon', 'Both sources confirm it.', true],
+  ['hexagon', '#7960ff', 'Atlas', 'Research', 'Sun', 'I saved the comparison as an artifact.'],
+  ['round', '#14bfc7', 'Juniper', '', 'Sat', 'Your reminder is set for 8:00 AM.'],
+];
+document.getElementById('list').innerHTML = rows.map(([s, c, n, tag, t, p, unread, online]) =>
+  `<div class="row"><span class="avatar">${avatar(s, c)}${online ? '<i class="dot"></i>' : ''}</span>` +
+  `<div class="info"><b>${n}${tag ? `<em>${tag}</em>` : ''}<small>${t}</small></b><p>${p}</p></div>` +
+  `${unread ? '<i class="unread"></i>' : ''}</div>`).join('') +
+  `<div class="row"><span class="group">${avatar('capsule', '#ff9638')}${avatar('cloud', '#2475ff')}${avatar('round', '#ff6952')}</span>` +
+  `<div class="info"><b>general<small>Fri</small></b><p>Izabella: I'll keep the shared list tidy.</p></div></div>`;
+
+
+// Preview: same wake-up expression; mascot lifts out and dissolves, leaving no persistent branding.
+document.body.append(document.getElementById('system-chrome').content.cloneNode(true));
+const DURATION=3600;
+const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v));
+const p=(t,a,b)=>clamp((t-a)/(b-a));
+const mix=(a,b,k)=>a+(b-a)*k;
+const smooth=k=>k*k*(3-2*k);
+const out=k=>1-Math.pow(1-k,3);
+const ease=k=>k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
+const logo=document.getElementById('logo');
+const app=document.getElementById('app');
+const ns='http://www.w3.org/2000/svg';
+const eyes=[40,58].map(x=>{const e=document.createElementNS(ns,'rect'); e.setAttribute('fill','#29221e');logo.append(e);return {e,x};});
+const list=[...document.querySelectorAll('.row')];
+const top=document.querySelector('.top');
+const search=document.querySelector('.search');
+const bottom=document.querySelector('.bottom');
+const reveal=(el,k,y=10)=>{el.style.opacity=k;el.style.transform=`translateY(${(1-k)*y}px)`;};
+function renderAt(t){
+ const W=innerWidth,H=innerHeight;
+ if(reduced){
+   logo.style.opacity=0;app.style.opacity=out(p(t,0,220));return;
+ }
+ app.style.opacity=1;
+ // One blink, then a curious head tilt and a gently brighter, open expression.
+ const blink=Math.sin(Math.PI*p(t,260,400))**2;
+ const curiosity=smooth(p(t,400,590))*(1-smooth(p(t,770,960)));
+ const awake=out(p(t,430,620));
+ const launch=ease(p(t,830,1480));
+ const anticipation=Math.sin(Math.PI*p(t,730,900));
+ const start=1.40;
+ const scale=mix(start,.72,launch);
+ const x=W/2+Math.sin(Math.PI*launch)*10;
+ const y=mix(H*.455,H*.29,launch)-Math.sin(Math.PI*launch)*12;
+ const angle=-7*curiosity+Math.sin(Math.PI*launch)*5;
+ const sx=1+.035*anticipation;
+ const sy=1-.045*anticipation;
+ logo.setAttribute('transform',`translate(${x} ${y}) rotate(${angle}) scale(${scale*sx} ${scale*sy}) translate(-63.5 -65)`);
+ logo.style.opacity=out(p(t,0,170))*(1-smooth(p(t,950,1340)));
+ eyes.forEach(({e,x},i)=>{
+   const gaze=curiosity*1.5;
+   const h=mix(14.2,16.4,awake)*(1-.84*blink)*(i===0?1-.15*curiosity:1);
+   e.setAttribute('x',x-3.5+gaze);e.setAttribute('y',54-h/2-1.2*curiosity);e.setAttribute('width',7);e.setAttribute('height',h);e.setAttribute('rx',Math.min(3.5,h/2));
+ });
+ reveal(top,out(p(t,1170,1540)),5);
+ reveal(search,out(p(t,1230,1640)),12);
+ list.forEach((row,i)=>reveal(row,out(p(t,1290+i*28,1670+i*28)),14));
+ reveal(bottom,out(p(t,1330,1740)),8);
+}
+window.LAUNCH_DURATION=DURATION;
+window.previewReady=document.fonts.ready;
+let raf=0,start=0;
+window.renderAt=t=>{cancelAnimationFrame(raf);renderAt(t);};
+function loop(now){if(!start)start=now;renderAt((now-start)%DURATION);raf=requestAnimationFrame(loop);}
+renderAt(Number(params.get('t')||0));
+if(!params.has('paused')&&!params.has('t'))window.previewReady.then(()=>raf=requestAnimationFrame(loop));
+</script></body></html>

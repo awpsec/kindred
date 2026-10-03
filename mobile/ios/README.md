@@ -235,3 +235,9 @@ fallback) and opening the link from the Camera app.
    the registration with `GET /api/mobile/push-status?installation_uuid=…`,
    trigger a message, tap the alert, then Turn Off Alerts and confirm
    `registered:false`.
+
+### Approved launch animation
+
+The [wake-up animation handoff](design/launch/README.md) contains the approved
+light/dark previews and exact motion reference for native integration. It keeps
+the mobile navigation unbranded; startup integration is pending Mac validation.
