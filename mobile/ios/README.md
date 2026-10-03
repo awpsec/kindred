@@ -123,8 +123,8 @@ with an existing persistent web data store.
   glass styling; native sheets and press menus use system materials. Versions
   shows the installed iOS version/build and connected server version without an
   updater. Dictation uses the iPhone keyboard; desktop speech settings are hidden.
-  The native K eye animation plays once per process, with a Reduce Motion fade
-  and bounded loading wait. The OS static launch screen follows device appearance;
+  The approved native K blink/tilt/lift/dissolve plays once per process, with a
+  Reduce Motion fade and bounded reveal. The OS static launch screen follows device appearance;
   the animated handoff follows the cached account appearance.
   Slab phones use the entire computer screen without an expansion button; in
   landscape, controls/resources scroll beside the desktop. Division reserved
@@ -327,5 +327,21 @@ still require a server offering iOS push plus matching APNs signing/configuratio
 ### Approved launch animation
 
 The [wake-up animation handoff](design/launch/README.md) contains the approved
-light/dark previews and exact motion reference for native integration. It keeps
-the mobile navigation unbranded; startup integration is pending Mac validation.
+light/dark previews and exact motion reference. `KindredLaunchView` implements
+its mark geometry and timing natively over the existing root, with separately
+drawn pill eyes and no persistent branding added to navigation. The static OS
+launch screen and raster assets are unchanged.
+
+The real UI starts loading concurrently. Its fade/settle normally starts at
+1.17 seconds; late content can delay that by at most 130 ms. The layer is removed
+by 1.97 seconds even with an unavailable server, exposing the existing loading,
+sign-in or error controls. Reduce Motion skips the mark animation and travel,
+using a 220 ms opacity transition. Motion starts after scene activation so the
+static iOS launch snapshot and animated mark do not overlap.
+
+Simulator checks cover light and dark cold launches, Reduce Motion, signed-out
+startup, the existing signed-in chat, background return without replay, and taps
+after the layer disappears. Native keyframes were compared with the approved
+GIFs. The 22 native tests also cover the exact motion phases, late/unavailable
+content, opacity-only reduced motion, and completion surviving activation,
+reload and account switches. Physical-device startup still awaits verification.

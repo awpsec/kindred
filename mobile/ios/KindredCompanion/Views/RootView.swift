@@ -7,38 +7,27 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var launchFrame = KindredLaunchFrame.at(milliseconds: 0)
 
     var body: some View {
         @Bindable var model = model
-        NavigationStack {
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(pageCanvas)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { toolbar }
-                .toolbarBackground(Theme.chrome, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-                .toolbar(isShowingConversation ? .hidden : .visible, for: .navigationBar)
-                .sheet(item: $model.download) { file in
-                    ShareSheet(items: [file.url])
-                }
-        }
-        .background(pageCanvas.ignoresSafeArea())
-        .preferredColorScheme(pageIsDark.map { $0 ? .dark : .light })
-        .overlay(alignment: .top) {
-            if let banner = model.banner {
-                BannerView(banner: banner) { model.banner = nil }
-                    .padding(.top, 52)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .animation(.snappy, value: model.banner)
-        .overlay {
+        ZStack {
             if !model.hasCompletedLaunch {
-                KindredLaunchView(ready: launchContentReady) { model.hasCompletedLaunch = true }
-                    .preferredColorScheme(pageIsDark.map { $0 ? .dark : .light })
+                (pageIsDark ?? (colorScheme == .dark) ? Color.black : Color.white)
+                    .ignoresSafeArea()
+            }
+            appContent
+                .opacity(model.hasCompletedLaunch ? 1 : launchFrame.contentOpacity)
+                .offset(y: model.hasCompletedLaunch || reduceMotion ? 0 : (1 - launchFrame.contentOpacity) * 5)
+                .allowsHitTesting(model.hasCompletedLaunch)
+                .accessibilityHidden(!model.hasCompletedLaunch)
+            if !model.hasCompletedLaunch {
+                KindredLaunchView(ready: launchContentReady, frame: $launchFrame) { model.hasCompletedLaunch = true }
             }
         }
+        .preferredColorScheme(pageIsDark.map { $0 ? .dark : .light })
         .sheet(item: $model.sheet) { route in
             Group {
                 switch route {
@@ -62,6 +51,33 @@ struct RootView: View {
                 break
             }
         }
+    }
+
+    private var appContent: some View {
+        @Bindable var model = model
+        return NavigationStack {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(pageCanvas)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbar }
+                .toolbarBackground(Theme.chrome, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbar(isShowingConversation ? .hidden : .visible, for: .navigationBar)
+                .sheet(item: $model.download) { file in
+                    ShareSheet(items: [file.url])
+                }
+        }
+        .background(pageCanvas.ignoresSafeArea())
+        .preferredColorScheme(pageIsDark.map { $0 ? .dark : .light })
+        .overlay(alignment: .top) {
+            if let banner = model.banner {
+                BannerView(banner: banner) { model.banner = nil }
+                    .padding(.top, 52)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: model.banner)
     }
 
     @ViewBuilder

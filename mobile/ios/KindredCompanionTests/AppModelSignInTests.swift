@@ -95,6 +95,22 @@ final class AppModelSignInTests: XCTestCase {
         XCTAssertEqual(model.accounts.map(\.id), [first])
     }
 
+    func testLaunchCompletionSurvivesActivationReloadAndAccountSwitch() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("kindred.example.com")
+        XCTAssertFalse(model.hasCompletedLaunch)
+        try await model.signIn(origin: origin, login: "ada", password: "pw")
+        let first = try XCTUnwrap(model.activeAccountID)
+        model.hasCompletedLaunch = true
+        model.sceneBecameActive()
+        model.reloadActive()
+        XCTAssertTrue(model.hasCompletedLaunch)
+        try await model.signIn(origin: origin, login: "bert", password: "pw")
+        model.activate(first)
+        XCTAssertTrue(model.hasCompletedLaunch)
+        for account in model.accounts { model.session(for: account).webView.stopLoading() }
+    }
+
     func testMobileLayoutIsBundledWithNativeNavigationFallback() async throws {
         serveKindred()
         let origin = try ServerAddress.normalize("kindred.example.com")
