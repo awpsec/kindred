@@ -520,7 +520,7 @@
     closeActionMenu(element, source);
     if (!allowed.length) { menuActions.clear(); return; }
     const model = {action:'native-menu',key:generation,
-      title:element.getAttribute('aria-label') || '',rect:[rect.x,rect.y,rect.width,rect.height],items:allowed};
+      title:element === libraryMenu ? '' : element.getAttribute('aria-label') || '',rect:[rect.x,rect.y,rect.width,rect.height],items:allowed};
     if (present) window.webkit?.messageHandlers?.kindredAccounts?.postMessage(model);
     return model;
   };

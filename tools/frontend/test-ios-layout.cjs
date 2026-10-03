@@ -140,6 +140,7 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert(await page.locator('.sidebar-bottom #artifacts-button').isHidden());
     assert(await page.locator('.sidebar-bottom #marketplace-button').isHidden());
     const libraryMenu=await openNativeMenu(page.getByRole('button',{name:'More',exact:true}));
+    assert.equal(libraryMenu.title,'','library menu shows only its destination buttons');
     assert.equal(libraryMenu.items.length,2);
     assert(await page.getByRole('menu',{name:'More',exact:true}).isHidden(),'desktop More popover is suppressed');
     await chooseNative(libraryMenu,'Marketplace');
