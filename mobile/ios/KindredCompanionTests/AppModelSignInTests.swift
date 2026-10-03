@@ -1,5 +1,6 @@
 import KindredCore
 import XCTest
+import WebKit
 @testable import Kindred
 
 /// Serves canned responses so sign-in runs without a network or server.
@@ -128,6 +129,26 @@ final class AppModelSignInTests: XCTestCase {
         XCTAssertNil(try secrets.token(for: id))
         XCTAssertNil(model.activeAccountID)
         XCTAssertTrue(StubProtocol.paths.contains("/identity/logout"))
+    }
+
+    func testRemoveDeletesExistingWebDataStore() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("kindred.example.com")
+        try await model.signIn(origin: origin, login: "ada", password: "pw")
+        let id = try XCTUnwrap(model.accounts.first?.id)
+        var store: WKWebsiteDataStore? = WKWebsiteDataStore(forIdentifier: id)
+        let cookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: "kindred.example.com", .path: "/", .name: "qa", .value: "test",
+        ]))
+        await store!.httpCookieStore.setCookie(cookie)
+        store = nil
+        let before = await WKWebsiteDataStore.allDataStoreIdentifiers
+        XCTAssertTrue(before.contains(id))
+
+        try await model.remove(id, ignoringNotificationFailure: false)
+
+        let after = await WKWebsiteDataStore.allDataStoreIdentifiers
+        XCTAssertFalse(after.contains(id), "removing an account deletes its persisted web data")
     }
 
     func testRemovalStopsWhenNotificationRemovalFails() async throws {

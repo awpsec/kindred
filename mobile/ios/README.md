@@ -5,11 +5,11 @@ settings and everything else are the shared web UI loaded in a `WKWebView`; the
 native layer handles accounts, credentials, navigation safety, downloads and
 notifications. iOS 17 or later, iPhone and iPad.
 
-> **Status:** the app target has **not been compiled or run**; it was written
-> on Linux without Xcode. `KindredCore` builds and its tests pass on Linux
-> (Swift 6.1 container), and every app/test file passes `swiftc -parse`, but
-> UIKit/SwiftUI/WebKit code is unchecked until the first Mac build (see
-> "Verifying on a Mac").
+> **Mac verification (2026-10-02):** the app builds with Xcode 27.2 beta 2.
+> All 39 core tests and 10 native tests pass on an iPhone 18 Pro simulator
+> running iOS 27.2. The welcome and sign-in screens were inspected in portrait
+> and landscape, including the software keyboard. Live server workflows,
+> iPhone Duo transitions and end-to-end APNs delivery still await verification.
 
 ## Layout
 
@@ -30,8 +30,12 @@ mobile/ios/
 
 ## Setup
 
-1. Install Xcode 15.3+ (Xcode 16 recommended) and XcodeGen
-   (`brew install xcodegen`).
+1. Install Xcode 15.3+ and XcodeGen (`brew install xcodegen`), complete Xcode's
+   first-run setup, and install an iOS simulator runtime. Xcode 27.2 beta 2 was
+   used for the Mac verification above. For iPhone Duo, Apple's
+   [27.2 release notes](https://developer.apple.com/documentation/xcode-release-notes/xcode-27_2-release-notes)
+   require the SDK and simulator support supplied by Xcode 27.1 beta; the
+   standard iOS 27.2 runtime does not support the Duo device type.
 2. Create `Config/Local.xcconfig` (ignored by Git) with your values:
    ```
    KINDRED_BUNDLE_IDENTIFIER = com.example.kindred
@@ -58,6 +62,12 @@ push payload routing, request construction, response/redirect validation and
 the account metadata store. App tests cover the Keychain store (round trip,
 `…ThisDeviceOnly` accessibility) and `AppModel` sign-in/removal against a
 `URLProtocol` stub.
+
+Keep simulator code signing enabled when running the native tests. Ad hoc
+simulator signing does not require a developer team, but an unsigned build
+(`CODE_SIGNING_ALLOWED=NO`) fails the real Keychain tests with error -34018.
+Removal tests cover both accounts that never opened a web page and accounts
+with an existing persistent web data store.
 
 ## How it works
 
@@ -184,7 +194,8 @@ answer 404 and the app says notifications aren't offered.
 
 ## Known limitations
 
-- Not compiled, not run on a simulator or device, no UI review on hardware.
+- Live server workflows, iPhone Duo transitions and UI on physical hardware
+  have not yet been verified.
 - HTTPS origins only; plain HTTP and self-signed certificates (without a
   trusted profile installed on the device) won't connect. Servers under a
   path prefix aren't supported.

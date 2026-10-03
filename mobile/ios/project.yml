@@ -66,6 +66,9 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(KINDRED_BUNDLE_IDENTIFIER).tests
         DEVELOPMENT_TEAM: $(KINDRED_DEVELOPMENT_TEAM)
+        # The app's product is Kindred, while its target is KindredCompanion.
+        # XcodeGen otherwise derives a test host that does not exist.
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Kindred.app/Kindred
 schemes:
   KindredCompanion:
     build:

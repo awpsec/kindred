@@ -342,7 +342,15 @@ final class AppModel {
     /// Web data stores can only be deleted once no web view uses them; anything
     /// left is retried on the next launch.
     private func removePendingWebsiteData() async {
+        guard !pendingDataRemovals.isEmpty else { return }
+        let existing = Set(await WKWebsiteDataStore.allDataStoreIdentifiers)
         for id in pendingDataRemovals where sessions[id] == nil {
+            // An account removed before opening its page has no web data store.
+            // Avoid asking WebKit to delete a store that was never created.
+            guard existing.contains(id) else {
+                pendingDataRemovals.removeAll { $0 == id }
+                continue
+            }
             do {
                 try await WKWebsiteDataStore.remove(forIdentifier: id)
                 pendingDataRemovals.removeAll { $0 == id }
