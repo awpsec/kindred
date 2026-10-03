@@ -5,12 +5,12 @@ settings and everything else are the shared web UI loaded in a `WKWebView`; the
 native layer handles accounts, credentials, navigation safety, downloads and
 notifications. iOS 17 or later, iPhone and iPad.
 
-> **Mac verification (2026-10-02):** the app builds with Xcode 27.2 beta 2.
-> The core suite passes all 39 tests; all 11 native sign-in, Keychain and
+> **Mac verification (2026-10-03):** the app builds with Xcode 27.2 beta 2.
+> The core suite passes all 39 tests; all 17 native sign-in, Keychain, appearance and
 > layout/fallback tests pass on iOS 27.2. Live sign-in, account navigation, conversation switching,
 > a sent message and received response, and portrait/landscape software-keyboard
 > layouts were verified on iPhone 18 Pro. The browser form-navigation toolbar is
-> suppressed. The profile settings sheet, section tabs, swipe dismissal and
+> suppressed, and the system keyboard Dictate button is available. The profile settings sheet, section tabs, swipe dismissal and
 > Accounts in both light and dark mode were also checked. Drafts survive rotation. WebKit layout
 > checks cover phone, landscape keyboard and tablet-size viewports. iPhone Duo
 > hardware transitions and end-to-end APNs delivery still await verification.
@@ -104,7 +104,7 @@ with an existing persistent web data store.
 
 - The app bundles `Web/MobileLayout.css` and `.js` so older servers also receive
   separate full-screen chat/list views, floating navigation controls, a centered
-  bot avatar and name, compact composer, and native account navigation. The
+  glass tag with the avatar beside the name, compact glass composer, and native account navigation. The
   profile circle opens a bottom settings sheet with horizontal section tabs;
   tapping the name card opens Accounts. Artifacts and Marketplace share the
   three-dot menu beside the profile circle. Native accounts and sign-in sheets
@@ -112,7 +112,14 @@ with an existing persistent web data store.
   safe-area colors follow the page theme and select dropdowns use the iOS picker. These run only in the account's main-frame origin.
   The chat uses one header; native accounts/reload controls return if the web
   page fails to load. A very short landscape keyboard layout hides the chat
-  header until there is room for it again. Messages stop above the composer.
+  header until there is room for it again. Messages scroll behind graduated fades and floating controls, with measured
+  padding to keep the first and last messages reachable. Web controls use CSS
+  glass styling; native sheets and press menus use system materials. Versions
+  shows the installed iOS version/build and connected server version without an
+  updater. Dictation uses the iPhone keyboard; desktop speech settings are hidden.
+  The native K eye animation plays once per process, with a Reduce Motion fade
+  and bounded loading wait. The OS static launch screen follows device appearance;
+  the animated handoff follows the cached account appearance.
   Slab phones use the entire computer screen without an expansion button; in
   landscape, controls/resources scroll beside the desktop. Division reserved
   regions (including inactive regions) retain foldable expansion controls.
@@ -155,7 +162,7 @@ with an existing persistent web data store.
   Files land in a temporary folder and open the share sheet (Save to Files,
   AirDrop…). The folder is cleared on the next launch.
 - **Uploads** use WebKit's built-in `<input type=file>` picker (Photos,
-  Camera, Files). Camera/microphone prompts for dictation are allowed for the
+  Camera, Files). Camera/microphone prompts for attachments are allowed for the
   server's main frame only, and iOS still asks the person.
 - **Layout:** the web view respects the top/side safe areas and extends behind
   the home indicator with hardware padding supplied to the page. WebKit's

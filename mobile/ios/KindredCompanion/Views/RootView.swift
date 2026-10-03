@@ -33,6 +33,12 @@ struct RootView: View {
             }
         }
         .animation(.snappy, value: model.banner)
+        .overlay {
+            if !model.hasCompletedLaunch {
+                KindredLaunchView(ready: launchContentReady) { model.hasCompletedLaunch = true }
+                    .preferredColorScheme(pageIsDark.map { $0 ? .dark : .light })
+            }
+        }
         .sheet(item: $model.sheet) { route in
             Group {
                 switch route {
@@ -76,13 +82,18 @@ struct RootView: View {
         }
     }
 
+    private var launchContentReady: Bool {
+        guard let account = model.activeAccount, model.isSignedIn(account.id) else { return true }
+        return model.session(for: account).presentation.hasLoadedChats
+    }
+
     private var pageCanvas: Color {
-        guard let account = model.activeAccount, isShowingConversation else { return Theme.canvas }
+        guard let account = model.activeAccount, model.isSignedIn(account.id) else { return Theme.canvas }
         return Color(model.session(for: account).presentation.canvas)
     }
 
     private var pageIsDark: Bool? {
-        guard let account = model.activeAccount, isShowingConversation else { return nil }
+        guard let account = model.activeAccount, model.isSignedIn(account.id) else { return nil }
         return model.session(for: account).presentation.isDark
     }
 

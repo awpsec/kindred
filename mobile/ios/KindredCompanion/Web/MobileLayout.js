@@ -256,6 +256,33 @@
   }
   window.addEventListener('kindred-ios-layout', event => updateEnvironment(event.detail));
   updateEnvironment(window.__KINDRED_IOS_LAYOUT);
+  // Floating controls share the message viewport. Reserve their measured sizes,
+  // including attachments/replies and keyboard/rotation changes, for scroll ends.
+  const composerArea = document.querySelector('#composer-area');
+  const updateClearance = () => {
+    const top = header.getBoundingClientRect().height;
+    const bottom = composerArea?.hidden ? 0 : composerArea?.getBoundingClientRect().height || 0;
+    conversation.style.setProperty('--ios-chat-top', `${top}px`);
+    conversation.style.setProperty('--ios-chat-bottom', `${bottom}px`);
+  };
+  const clearanceObserver = new ResizeObserver(updateClearance);
+  clearanceObserver.observe(header);
+  if (composerArea) clearanceObserver.observe(composerArea);
+  updateClearance();
+
+  // The store manages the installed app. Keep both version labels, with no
+  // browser/server updater or desktop speech controls exposed on this device.
+  const settingsContent = document.querySelector('#settings-content');
+  const adaptDeviceSettings = () => {
+    for (const version of settingsContent?.querySelectorAll('[data-client-version]') || []) {
+      const value = window.__KINDRED_IOS_APP_VERSION || 'iOS app';
+      if (version.textContent !== value) version.textContent = value;
+      const label = version.closest('.setting-row')?.querySelector('.setting-label');
+      if (label && label.textContent !== 'iOS app on this device') label.textContent = 'iOS app on this device';
+    }
+  };
+  if (settingsContent) new MutationObserver(adaptDeviceSettings).observe(settingsContent, {subtree:true, childList:true, characterData:true});
+  adaptDeviceSettings();
   // Clear a stale desktop multiline measurement after the draft becomes empty.
   document.addEventListener('input', event => {
     const editor = event.target;
@@ -270,12 +297,25 @@
       if (event.target instanceof HTMLSelectElement) event.stopImmediatePropagation();
     }, true);
   }
+  let launchReadySent = false;
+  const markLaunchReady = () => {
+    if (launchReadySent) return;
+    launchReadySent = true;
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'launch-ready'});
+  };
+  const checkLoadedRows = () => { if (sidebar.querySelector('.bot-link,.pinned-bot')) markLaunchReady(); };
+  new MutationObserver(checkLoadedRows).observe(sidebar, {childList:true, subtree:true});
+  checkLoadedRows();
   let lastAppearance = '', themePreference;
-  // Observe only the appearance preference in existing settings responses. No
-  // extra request or persistence: the original response still goes to the app.
+  // Observe existing settings and chat responses without extra requests.
+  // The original response still goes to the server UI unchanged.
   const fetch = window.fetch;
   window.fetch = function (...args) {
     return fetch.apply(this, args).then(response => {
+      if (response.ok && response.url === new URL('/api/chats', location.origin).href) {
+        // Include an empty account, after the server UI consumes the response.
+        response.clone().json().then(() => requestAnimationFrame(() => requestAnimationFrame(markLaunchReady))).catch(() => {});
+      }
       if (response.ok && response.url === new URL('/api/settings', location.origin).href) {
         response.clone().json().then(value => {
           if (['system', 'dark', 'light'].includes(value.theme)) {
@@ -300,7 +340,7 @@
     const appearance = `${color}:${themePreference}`;
     if (!rgb || appearance === lastAppearance) return;
     lastAppearance = appearance;
-    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'appearance', rgb, followsSystem:themePreference === 'system'});
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'appearance', rgb, followsSystem:themePreference === 'system', appearanceKnown:themePreference !== undefined});
   }
   new MutationObserver(updateAppearance).observe(html, {attributes:true, attributeFilter:['data-theme', 'class', 'style']});
   updateAppearance();

@@ -14,6 +14,7 @@ final class KindredWebView: WKWebView {
 @Observable
 final class WebPresentationState {
     var hasChatInterface = false
+    var hasLoadedChats = false
     var canvas = UIColor(named: "Canvas") ?? .systemBackground
     var isDark: Bool?
 }
@@ -72,6 +73,11 @@ final class WebSession: NSObject {
         configuration.applicationNameForUserAgent = "KindredMobile/" + version
         webView = KindredWebView(frame: .zero, configuration: configuration)
         super.init()
+        // Match a saved explicit appearance before the first web frame arrives.
+        if let saved = CachedWebAppearance.load(accountID: account.id), !saved.followsSystem {
+            presentation.canvas = saved.color
+            presentation.isDark = saved.isDark
+        }
 
         let controller = webView.configuration.userContentController
         let proxy = ScriptMessageProxy(session: self)
@@ -86,8 +92,9 @@ final class WebSession: NSObject {
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = false
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(named: "Canvas")
-        webView.underPageBackgroundColor = UIColor(named: "Canvas")
+        webView.overrideUserInterfaceStyle = presentation.isDark.map { $0 ? .dark : .light } ?? .unspecified
+        webView.backgroundColor = presentation.canvas
+        webView.underPageBackgroundColor = presentation.canvas
         // The page handles hardware padding and WebKit's visible viewport.
         // Letting the scroll view add safe-area insets would count them twice.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
@@ -113,7 +120,23 @@ final class WebSession: NSObject {
     private func installBootstrap(token: String?) {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
-        let source = WebBootstrap.documentStartScript(origin: origin, token: token, profileID: profileID)
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        let source = WebBootstrap.documentStartScript(origin: origin, token: token, profileID: profileID) + """
+        ;(() => {
+          if (window.top !== window.self || location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
+          window.__KINDRED_IOS_APP_VERSION = \(WebBootstrap.javaScriptString("iOS " + version + " (" + build + ")"));
+          const appearance = \(WebBootstrap.javaScriptString(presentation.isDark.map { $0 ? "dark" : "light" } ?? "system"));
+          if (appearance !== 'system') document.documentElement.dataset.theme = appearance;
+          // iPhone keyboard dictation owns speech input. Reset only this account's
+          // isolated WebKit speech preference before the server module reads it.
+          try {
+            const key = 'kindred-dictation-v1';
+            const saved = JSON.parse(localStorage.getItem(key) || '{}');
+            localStorage.setItem(key, JSON.stringify({...saved, enabled:false, model:''}));
+          } catch { localStorage.removeItem('kindred-dictation-v1'); }
+        })();
+        """
         controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
         // Bundle the presentation layer so an older server still fits an iPhone.
         // The same exact-origin check as the session bootstrap scopes this script.
@@ -214,6 +237,10 @@ final class WebSession: NSObject {
                 conversationTarget = nil
                 return
             }
+            if let body = message.body as? [String: Any], body["action"] as? String == "launch-ready" {
+                presentation.hasLoadedChats = true
+                return
+            }
             if let body = message.body as? [String: Any], body["action"] as? String == "interface-ready" {
                 presentation.hasChatInterface = true
                 publishLayout()
@@ -223,6 +250,9 @@ final class WebSession: NSObject {
                let rgb = body["rgb"] as? [Double], rgb.count == 3,
                rgb.allSatisfy({ $0.isFinite && (0...255).contains($0) }) {
                 let color = UIColor(red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255, alpha: 1)
+                if body["appearanceKnown"] as? Bool == true {
+                    CachedWebAppearance(rgb: rgb, followsSystem: body["followsSystem"] as? Bool == true).save(accountID: accountID)
+                }
                 presentation.canvas = color
                 presentation.isDark = body["followsSystem"] as? Bool == true ? nil : (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722) < 128
                 webView.overrideUserInterfaceStyle = presentation.isDark.map { $0 ? .dark : .light } ?? .unspecified
@@ -282,6 +312,7 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
 extension WebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         presentation.hasChatInterface = false
+        presentation.hasLoadedChats = false
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
@@ -542,5 +573,32 @@ extension WebSession: UIContextMenuInteractionDelegate {
         // UIKit may end its animation before the selected page action runs.
         // Its next describe() replaces old closures; do not clear a pending action.
         conversationTarget = nil
+    }
+}
+
+/// Public appearance preference only; no credentials or page content. Cache the
+/// account's last known theme for cold launch before the server responds.
+struct CachedWebAppearance: Codable {
+    let rgb: [Double]
+    let followsSystem: Bool
+    var isDark: Bool { (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722) < 128 }
+    var color: UIColor { UIColor(red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255, alpha: 1) }
+    private static func location(accountID: UUID) -> URL? {
+        guard let support = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return nil }
+        return support.appendingPathComponent("Kindred/Appearance", isDirectory: true).appendingPathComponent(accountID.uuidString + ".json")
+    }
+    static func load(accountID: UUID) -> Self? {
+        guard let url = location(accountID: accountID), let data = try? Data(contentsOf: url),
+              let saved = try? JSONDecoder().decode(Self.self, from: data), saved.rgb.count == 3,
+              saved.rgb.allSatisfy({ $0.isFinite && (0...255).contains($0) }) else { return nil }
+        return saved
+    }
+    static func clear(accountID: UUID) {
+        if let url = location(accountID: accountID) { try? FileManager.default.removeItem(at: url) }
+    }
+    func save(accountID: UUID) {
+        guard let url = Self.location(accountID: accountID), let data = try? JSONEncoder().encode(self) else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 }

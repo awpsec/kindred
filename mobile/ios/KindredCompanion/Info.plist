@@ -29,7 +29,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Kindred uses the camera when you choose to take a photo or video to attach to a conversation.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Kindred uses the microphone when you choose to dictate or record audio in a conversation.</string>
+	<string>Kindred uses the microphone when you choose to record audio or video in a conversation.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Kindred saves an image to your photo library only when you choose to save it.</string>
 	<key>UIApplicationSceneManifest</key>
@@ -37,11 +37,8 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
-	<key>UILaunchScreen</key>
-	<dict>
-		<key>UIColorName</key>
-		<string>Canvas</string>
-	</dict>
+	<key>UILaunchStoryboardName</key>
+	<string>KindredLaunchScreen</string>
 	<key>UIRequiresFullScreen</key>
 	<false/>
 	<key>UISupportedInterfaceOrientations</key>

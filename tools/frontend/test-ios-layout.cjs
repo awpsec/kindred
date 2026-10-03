@@ -11,6 +11,7 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const context = await browser.newContext({viewport:{width:402,height:780},hasTouch:true});
     await context.addInitScript(({token,css,js}) => {
       window.__KINDRED_MOBILE = true;
+      window.__KINDRED_IOS_APP_VERSION = 'iOS 0.1 (1)';
       window.__KINDRED_IOS_LAYOUT = {bottomInset:0,isSlab:true};
       window.__KINDRED_MOBILE_PROFILE = 'ios-fixture';
       window.__KINDRED_NATIVE_SESSION_BOOTSTRAP = true;
@@ -34,6 +35,7 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const errors=[]; page.on('pageerror',error => errors.push(error.message));
     await page.goto('http://127.0.0.1:'+server.address().port+'/#kindred-chat=dm-piper');
     const prompt=page.locator('#prompt'); await prompt.waitFor({state:'visible'});
+    assert.equal(await page.evaluate(()=>window.accountRequests.filter(value=>value.action==='launch-ready').length),1,'cold-launch readiness waits for loaded conversations and signals once');
     // Exercise actual WebKit selection on a card's nested name/preview text,
     // alongside ordinary message text that must still be selectable.
     await page.evaluate(()=>{
@@ -128,13 +130,23 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert(settingsBox.y>0 && Math.abs(settingsBox.y+settingsBox.height-780)<2,'settings must rise from the bottom while leaving the list behind');
     assert(await page.locator('#settings-button').isHidden(),'settings entry belongs to the profile circle');
     assert(await page.locator('#ios-settings-account').isVisible());
+    await page.locator('[data-client-version]').waitFor({state:'visible'});
+    assert.equal(await page.locator('[data-client-version]').innerText(),'iOS 0.1 (1)');
+    assert(await page.getByText('iOS app on this device',{exact:true}).isVisible());
+    assert(await page.locator('[data-server-version]').isVisible());
+    assert(await page.locator('.version-actions').isHidden(),'iOS must not expose the browser/server updater');
+    assert(await page.locator('.dictation-settings').isHidden(),'iPhone speech input belongs to the system keyboard');
     await page.getByRole('button',{name:'Manage accounts',exact:true}).click();
     assert((await page.evaluate(()=>window.accountRequests)).some(value=>value.action==='open'));
     await page.getByRole('button',{name:'Close settings sheet',exact:true}).click();
     await page.locator('.bot-link').first().click();
     assert(await page.locator('#ios-accounts').isHidden());
     const avatarBox=await page.locator('#header-avatar').boundingBox();
-    assert(Math.abs(avatarBox.x+avatarBox.width/2-201)<2,'bot avatar must be centered independently of side controls');
+    const headingBox=await page.locator('.bot-heading').boundingBox(),backBox=await page.locator('#mobile-menu').boundingBox();
+    assert(Math.abs(headingBox.x+headingBox.width/2-201)<2,'avatar/name tag must be centered independently of side controls');
+    const nameBox=await page.locator('.bot-heading strong').boundingBox();
+    assert(avatarBox.x+avatarBox.width<=nameBox.x,'avatar belongs to the left of the name inside the tag');
+    assert(Math.abs(headingBox.y-backBox.y)<2 && Math.abs(headingBox.height-backBox.height)<2,'tag and corner buttons share the same height and alignment');
     await prompt.fill('');
     await prompt.dispatchEvent('input');
     await page.waitForTimeout(200);
@@ -168,7 +180,13 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       const send=await page.locator('#send').boundingBox();
       assert(send.width>=44 && send.height>=44 && send.x+send.width<=size.width+1 && send.y+send.height<=size.height+1 && (send.x>=box.x+box.width-1 || send.y>=box.y+box.height-1),'send target must fit without overlapping the draft');
       const history=await page.locator('.conversation-history').boundingBox(),composer=await page.locator('#composer-area').boundingBox();
-      assert(history.y+history.height<=composer.y+1,'messages must stop above the mobile composer');
+      assert(history.y<composer.y && history.y+history.height>=composer.y+composer.height-1,'messages should scroll behind the floating composer');
+      const clearance=await page.locator('.messages').evaluate(node=>({bottom:parseFloat(getComputedStyle(node).paddingBottom),top:parseFloat(getComputedStyle(node).paddingTop)}));
+      assert(clearance.bottom>=composer.height+10,'last message needs clearance above the floating composer');
+      const header=await page.locator('.conversation-header').boundingBox();
+      assert(clearance.top>=(header?.height||0),'first message needs clearance below the floating header');
+      assert.equal(await page.locator('.conversation-header').evaluate(node=>getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)');
+      assert.equal(await page.locator('#composer-area').evaluate(node=>getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)');
       if (size.height>180 && (size.width<=760 || size.height<=500)) {
         assert(await page.locator('.sidebar').evaluate(node=>node.inert));
         await page.locator('#mobile-menu').click();

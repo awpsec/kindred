@@ -278,4 +278,23 @@ final class AppModelSignInTests: XCTestCase {
         session.webView.stopLoading()
     }
 
+    func testColdLaunchRestoresExplicitAppearanceAndLeavesSystemAppearanceDynamic() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let account = try XCTUnwrap(model.accounts.first)
+        defer { CachedWebAppearance.clear(accountID: account.id) }
+        CachedWebAppearance(rgb: [0, 0, 0], followsSystem: false).save(accountID: account.id)
+        let explicit = WebSession(account: account, token: nil, host: model)
+        explicit.webView.stopLoading()
+        XCTAssertFalse(explicit.presentation.hasChatInterface)
+        XCTAssertEqual(explicit.presentation.isDark, true, "The first native frame should already follow the saved account appearance")
+        XCTAssertEqual(explicit.webView.overrideUserInterfaceStyle, .dark)
+        XCTAssertNil(CachedWebAppearance.load(accountID: UUID()), "Another account must not inherit the theme")
+        CachedWebAppearance(rgb: [0, 0, 0], followsSystem: true).save(accountID: account.id)
+        let system = WebSession(account: account, token: nil, host: model)
+        system.webView.stopLoading()
+        XCTAssertNil(system.presentation.isDark)
+        XCTAssertEqual(system.webView.overrideUserInterfaceStyle, .unspecified)
+    }
+
 }
