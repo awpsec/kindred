@@ -125,10 +125,12 @@ final class WebSession: NSObject {
         controller.removeAllUserScripts()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        let revision = Bundle.main.object(forInfoDictionaryKey: "KindredSourceRevision") as? String ?? ""
+        let versionLabel = "iOS " + version + " (" + build + ")" + (revision.isEmpty ? "" : " · " + String(revision.prefix(8)))
         let source = WebBootstrap.documentStartScript(origin: origin, token: token, profileID: profileID) + """
         ;(() => {
           if (window.top !== window.self || location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
-          window.__KINDRED_IOS_APP_VERSION = \(WebBootstrap.javaScriptString("iOS " + version + " (" + build + ")"));
+          window.__KINDRED_IOS_APP_VERSION = \(WebBootstrap.javaScriptString(versionLabel));
           const appearance = \(WebBootstrap.javaScriptString(presentation.isDark.map { $0 ? "dark" : "light" } ?? "system"));
           if (appearance !== 'system') document.documentElement.dataset.theme = appearance;
           // iPhone keyboard dictation owns speech input. Reset only this account's

@@ -24,6 +24,8 @@
 	<false/>
 	<key>KindredAPNsEnvironment</key>
 	<string>$(KINDRED_APS_ENVIRONMENT)</string>
+	<key>KindredSourceRevision</key>
+	<string>$(KINDRED_SOURCE_REVISION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>

@@ -52,6 +52,43 @@ mobile/ios/
    App ID in the Apple Developer portal. The entitlement file already
    declares `aps-environment` from the build configuration.
 
+### Free Personal Team installation
+
+For a seven-day personal-device test, choose the **KindredPersonal** scheme.
+Its **Personal** configuration uses an empty entitlement file and no APNs
+environment. Debug and Release retain their existing push configuration.
+The app remains version 0.1.0, build 1; this is a direct Xcode installation.
+
+Sign into Xcode's **Settings → Apple Accounts**, connect and unlock the iPhone,
+trust the Mac, and enable Developer Mode on the phone when prompted. Select
+your Personal Team under the app target's **Signing & Capabilities** with
+automatic signing enabled. Select the physical iPhone as the destination and
+Run. Rebuild and reinstall after the provisioning profile expires in seven days.
+
+To preserve signing when regenerating the project, put the selected team ID
+and a unique bundle identifier in ignored `Config/Local.xcconfig`, as above.
+Keep the bundle identifier stable during renewals to retain the installation's
+account data. Background push requires the paid signing configuration and APNs
+server setup; it is unavailable in this Personal build.
+
+For repeatable installs and renewals from exactly the pushed source, use:
+
+```
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
+  python3 mobile/ios/tools/install-personal.py --device YOUR_IPHONE_IDENTIFIER
+```
+
+Run from the repository root after configuring local signing. The command refuses
+uncommitted changes or a checkout that differs from its fetched upstream branch,
+generates the project, signs/builds the app, checks parity again, then installs
+and launches it. It records the source commit in the app's Versions display and
+an ignored `DerivedData/PersonalDevice/installation.json` receipt. Use `--check`
+to check source parity alone. Keep the phone connected/unlocked for installation.
+Push completed iOS changes to GitHub before repeating this command; it updates
+the existing installation with the same bundle identifier. GitHub pushes do not
+automatically install updates on the phone, and the seven-day signature still
+requires renewal from the Mac.
+
 ## Tests
 
 ```

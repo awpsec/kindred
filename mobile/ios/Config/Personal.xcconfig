@@ -1,0 +1,6 @@
+#include "Shared.xcconfig"
+
+// Free Personal Teams cannot provision APNs. Keep the app's reported push
+// environment and signed entitlements in agreement for this test-only build.
+KINDRED_APS_ENVIRONMENT =
+KINDRED_CODE_SIGN_ENTITLEMENTS = KindredCompanion/Personal.entitlements

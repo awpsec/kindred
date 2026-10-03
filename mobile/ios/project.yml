@@ -10,9 +10,11 @@ options:
   developmentLanguage: en
 configs:
   Debug: debug
+  Personal: debug
   Release: release
 configFiles:
   Debug: Config/Debug.xcconfig
+  Personal: Config/Personal.xcconfig
   Release: Config/Release.xcconfig
 packages:
   KindredCore:
@@ -48,7 +50,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(KINDRED_BUNDLE_IDENTIFIER)
         INFOPLIST_FILE: KindredCompanion/Info.plist
         GENERATE_INFOPLIST_FILE: NO
-        CODE_SIGN_ENTITLEMENTS: KindredCompanion/KindredCompanion.entitlements
+        CODE_SIGN_ENTITLEMENTS: $(KINDRED_CODE_SIGN_ENTITLEMENTS)
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: $(KINDRED_DEVELOPMENT_TEAM)
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -78,6 +80,14 @@ targets:
         # XcodeGen otherwise derives a test host that does not exist.
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/Kindred.app/Kindred
 schemes:
+  KindredPersonal:
+    build:
+      targets:
+        KindredCompanion: all
+    run:
+      config: Personal
+    archive:
+      config: Personal
   KindredCompanion:
     build:
       targets:
