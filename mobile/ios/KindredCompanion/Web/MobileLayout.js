@@ -1,4 +1,4 @@
-// Presentation only. Session storage and origin enforcement belong to WebSession.
+// Native presentation of server actions. Session storage and origin enforcement belong to WebSession.
 (() => {
   const html = document.documentElement;
   if (!window.__KINDRED_MOBILE || html.dataset.kindredIos) return;
@@ -21,6 +21,61 @@
   const menu = document.querySelector('#mobile-menu');
   const sidebar = shell.querySelector('.sidebar');
   const conversation = shell.querySelector('.conversation');
+  // UIKit owns conversation context menus. Preserve the server's action
+  // closures so permissions, current pin state and mute choices stay authoritative.
+  const rowSelector = '.sidebar .nav-entry, .sidebar .pinned-entry';
+  const nativeActions = new Map();
+  let menuGeneration = 0;
+  const rowKey = row => {
+    const control = row?.querySelector('[data-sidebar-id]');
+    return control ? `${control.dataset.sidebarKind}:${control.dataset.sidebarId}` : null;
+  };
+  document.addEventListener('pointerdown', event => {
+    const row = event.target.closest?.(rowSelector);
+    if (!row || sidebar?.inert || event.button !== 0) return;
+    const rect = row.getBoundingClientRect();
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'conversation-target',
+      key:rowKey(row),rect:[rect.x,rect.y,rect.width,rect.height]});
+    // Desktop pin drag captures the pointer and disables horizontal scrolling.
+    // On iOS the same press belongs to the native menu, including pinned cards.
+    if (row.matches('.pinned-entry')) event.stopImmediatePropagation();
+  },true);
+  document.addEventListener('contextmenu', event => {
+    if (!event.target.closest?.(rowSelector)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+  },true);
+  document.addEventListener('scroll', () => {
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'conversation-target-clear'});
+  },true);
+  window.__kindredConversationMenu = {
+    describe(key) {
+      nativeActions.clear();
+      const row = [...document.querySelectorAll(rowSelector)].find(row => rowKey(row) === key);
+      if (!row || sidebar?.inert || !row.getClientRects().length) return null;
+      row.querySelector('.nav-more')?.click();
+      const menu = document.querySelector('body > .chat-context-menu');
+      if (!menu) return null;
+      const generation = ++menuGeneration;
+      const leaf = button => {
+        const id = `${generation}-${nativeActions.size}`;
+        nativeActions.set(id, {key,button});
+        return {title:button.textContent.trim(),id};
+      };
+      const items = [...menu.children].filter(child => child.matches('button')).map(button => {
+        if (button.getAttribute('aria-haspopup') !== 'menu') return leaf(button);
+        button.click(); // Creates the submenu; never invokes a conversation action.
+        const submenu = [...menu.querySelectorAll('.conversation-submenu')].find(sub => sub._trigger === button);
+        return {title:button.textContent.trim(),children:[...submenu?.querySelectorAll('button') || []].map(leaf)};
+      });
+      menu.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+      return {items};
+    },
+    perform(id) {
+      const action = nativeActions.get(id);
+      nativeActions.clear();
+      if (action && [...document.querySelectorAll(rowSelector)].some(row => rowKey(row) === action.key)) action.button.click();
+    },
+  };
   const icon = path => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
   if (menu) {
     menu.innerHTML = icon('<path d="m14 5-7 7 7 7"/>');

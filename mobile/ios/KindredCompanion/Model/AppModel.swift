@@ -604,6 +604,15 @@ final class AppModel {
         retryAttempts[id] = nil
     }
 
+    /// Ignore stale pushes after alerts are turned off, sign-out, or account
+    /// removal. APNs may still have an alert in flight during unregistering.
+    func shouldPresentNotification(_ route: PushRoute?) -> Bool {
+        guard let route,
+              let account = AccountGrouping.account(forServerAccountID: route.serverAccountID,
+                  installationID: route.installationID, in: accounts) else { return false }
+        return account.push.wanted && isSignedIn(account.id)
+    }
+
     /// A tapped alert: choose the saved account the server account ID maps to,
     /// then let the shared UI open the conversation from the URL fragment.
     func routeNotification(_ route: PushRoute) {

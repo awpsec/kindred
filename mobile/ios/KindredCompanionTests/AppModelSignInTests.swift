@@ -1,5 +1,6 @@
 import KindredCore
 import XCTest
+import UIKit
 import WebKit
 @testable import Kindred
 
@@ -195,4 +196,86 @@ final class AppModelSignInTests: XCTestCase {
             return XCTFail("state must say removal is unconfirmed")
         }
     }
+    func testNotificationPresentationRequiresSignedInOptedInExactAccount() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let id = try XCTUnwrap(model.accounts.first?.id)
+        let installation = try XCTUnwrap(model.account(id)?.push.installationID)
+        let route = PushRoute(serverAccountID: serverAccount, chatID: "dm-piper", eventID: "123", installationID: installation)
+        XCTAssertFalse(model.shouldPresentNotification(route), "Alerts start off until explicitly enabled")
+        model.markRegisteredForTesting(id)
+        XCTAssertTrue(model.shouldPresentNotification(route))
+        XCTAssertFalse(model.shouldPresentNotification(nil))
+        XCTAssertFalse(model.shouldPresentNotification(PushRoute(serverAccountID: serverAccount, chatID: nil, eventID: nil, installationID: UUID())))
+        XCTAssertFalse(model.shouldPresentNotification(PushRoute(serverAccountID: UUID().uuidString, chatID: nil, eventID: nil)))
+        let originalHandler = StubProtocol.handler
+        StubProtocol.handler = { request in
+            if request.url?.path.contains("/mobile/devices/") == true { return (200, Data(#"{"removed":true}"#.utf8)) }
+            return originalHandler?(request) ?? (404, Data())
+        }
+        try await model.disableAlerts(id)
+        XCTAssertFalse(model.shouldPresentNotification(route), "An in-flight alert must not appear after alerts are disabled")
+        model.markRegisteredForTesting(id)
+        try await model.signOut(id, ignoringNotificationFailure: false)
+        XCTAssertFalse(model.shouldPresentNotification(route), "An in-flight alert must not appear after sign-out")
+    }
+
+    func testUnsupportedServerCannotEnableAlertsOrRegisterDevice() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let id = try XCTUnwrap(model.accounts.first?.id)
+        do {
+            try await model.enableAlerts(id)
+            XCTFail("An older server must not offer working alerts")
+        } catch PushSetupError.server(let status) {
+            XCTAssertEqual(status, .unsupported)
+        }
+        XCTAssertFalse(try XCTUnwrap(model.account(id)).push.wanted)
+        XCTAssertFalse(StubProtocol.paths.contains { $0.contains("/mobile/devices/") })
+    }
+
+    func testNotificationTapChoosesExactInstallationAcrossClonedServers() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("first.example"), login: "ada", password: "pw")
+        let first = try XCTUnwrap(model.accounts.first)
+        try await model.signIn(origin: ServerAddress.normalize("second.example"), login: "ada", password: "pw")
+        XCTAssertNotEqual(model.activeAccountID, first.id)
+        model.sheet = .accounts
+        model.routeNotification(PushRoute(serverAccountID: serverAccount, chatID: nil, eventID: "1", installationID: first.push.installationID))
+        for _ in 0..<30 where model.activeAccountID != first.id { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(model.activeAccountID, first.id)
+        XCTAssertNil(model.sheet)
+        model.session(for: first).webView.stopLoading()
+    }
+
+    func testNotificationTapForSignedOutAccountOpensSignIn() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("kindred.example.com")
+        try await model.signIn(origin: origin, login: "ada", password: "pw")
+        let account = try XCTUnwrap(model.accounts.first)
+        try await model.signOut(account.id, ignoringNotificationFailure: false)
+        model.routeNotification(PushRoute(serverAccountID: serverAccount, chatID: "dm-piper", eventID: "1", installationID: account.push.installationID))
+        for _ in 0..<30 where model.sheet == nil { try await Task.sleep(for: .milliseconds(10)) }
+        guard case .addAccount(let prefill) = model.sheet else { return XCTFail("Expected native sign-in") }
+        XCTAssertEqual(prefill.origin, origin)
+        XCTAssertEqual(prefill.login, "ada")
+    }
+
+    func testNativeConversationMenuKeepsNestedActionsAndRejectsUnboundedData() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let session = model.session(for: try XCTUnwrap(model.accounts.first))
+        let items = session.conversationMenuElements([
+            ["title":"Pin", "id":"1-0"],
+            ["title":"Mute conversation", "children":[["title":"For 1 hour", "id":"1-1"], ["title":"Indefinitely", "id":"1-2"]]],
+            ["title":"Archive bot", "id":"1-3"]
+        ])
+        XCTAssertEqual(items.map(\.title), ["Pin", "Mute conversation", "Archive bot"])
+        XCTAssertEqual((items[1] as? UIMenu)?.children.map(\.title), ["For 1 hour", "Indefinitely"])
+        XCTAssertTrue(session.conversationMenuElements([["title":String(repeating:"x",count:101), "id":"1"]]).isEmpty)
+        XCTAssertNil(ConversationMenuTarget(body:["key":"bots:piper", "rect":[0.0,0.0,Double.infinity,44.0]]))
+        XCTAssertNotNil(ConversationMenuTarget(body:["key":"bots:piper", "rect":[0.0,0.0,200.0,44.0]]))
+        session.webView.stopLoading()
+    }
+
 }

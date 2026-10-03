@@ -118,3 +118,10 @@ html[data-kindred-ios][data-motion=off] #settings-dialog[open] { animation:none;
   html[data-kindred-ios] .ios-settings-header { display:grid; grid-template-columns:44px minmax(0,1fr); align-items:center; gap:12px; padding:8px 16px; }
   html[data-kindred-ios] #ios-settings-account { min-height:64px; padding:10px 14px; }
 }
+
+/* Conversation actions are UIKit press menus, including pinned conversations. */
+html[data-kindred-ios] .sidebar :is(.nav-pin,.nav-more) { display:none !important; }
+html[data-kindred-ios] .sidebar .nav-entry .bot-link { padding-right:14px; }
+html[data-kindred-ios] .sidebar :is(.nav-entry,.pinned-entry) { -webkit-touch-callout:none; user-select:none; }
+html[data-kindred-ios] .sidebar .pinned-bot { touch-action:pan-x !important; }
+html[data-kindred-ios] body>.chat-context-menu { display:none !important; }

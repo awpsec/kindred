@@ -26,6 +26,11 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const page = await context.newPage();
     await page.route('**/api/composio', route => route.fulfill({json:{configured:false,apps:[]}}));
     await page.route('**/api/workspace-artifacts', route => route.fulfill({json:[]}));
+    await page.route('**/api/chats', async route => {
+      const response=await route.fetch();
+      const chats=await response.json();
+      return route.fulfill({json:[...chats,{id:'group-fixture',name:'Test group',members:['piper'],archived:false}]});
+    });
     const errors=[]; page.on('pageerror',error => errors.push(error.message));
     await page.goto('http://127.0.0.1:'+server.address().port+'/#kindred-chat=dm-piper');
     const prompt=page.locator('#prompt'); await prompt.waitFor({state:'visible'});
@@ -35,6 +40,47 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const sidebarBox = await page.locator('.sidebar').boundingBox();
     assert.equal(sidebarBox.width,402,'conversations must be a separate full-width screen');
     assert(await page.locator('.conversation').evaluate(node=>node.inert));
+    // UIKit asks for the current server menu, then invokes only the chosen
+    // opaque action. Describing it must not pin, mute or archive anything.
+    const conversationRequests=[];
+    await page.route('**/api/bots/piper/pin', route => {
+      conversationRequests.push({path:'pin',body:route.request().postDataJSON()});
+      return route.fulfill({json:{}});
+    });
+    await page.route('**/api/notification-mutes/bot/piper', route => {
+      conversationRequests.push({path:'mute',body:route.request().postDataJSON()});
+      return route.fulfill({json:{}});
+    });
+    assert(await page.locator('.nav-pin').first().isHidden());
+    assert(await page.locator('.nav-more').first().isHidden());
+    await page.locator('.bot-link').first().dispatchEvent('pointerdown',{button:0});
+    assert((await page.evaluate(()=>window.accountRequests)).some(value=>value.action==='conversation-target' && value.rect.length===4));
+    const describe=()=>page.evaluate(()=>window.__kindredConversationMenu.describe('bots:piper'));
+    const botMenu=await describe();
+    assert.deepEqual(botMenu.items.map(item=>item.title),['Edit bot','Pin','Mute conversation','Instructions','Memory','Archive bot']);
+    assert.deepEqual(botMenu.items[2].children.map(item=>item.title),['For 1 hour','For 24 hours','Indefinitely']);
+    assert.equal(conversationRequests.length,0,'menu construction must never invoke server actions');
+    assert.equal(await page.locator('body>.chat-context-menu').count(),0,'no duplicate desktop menu may remain');
+    await describe();
+    await page.evaluate(id=>window.__kindredConversationMenu.perform(id),botMenu.items[1].id);
+    assert.equal(conversationRequests.length,0,'an expired menu must not invoke an action');
+    const pinMenu=await describe();
+    await Promise.all([
+      page.waitForResponse(response=>response.url().includes('/bots/piper/pin')),
+      page.evaluate(id=>window.__kindredConversationMenu.perform(id),pinMenu.items[1].id)
+    ]);
+    await page.waitForTimeout(150);
+    assert.deepEqual(conversationRequests[0],{path:'pin',body:{pinned:true}});
+    const muteMenu=await describe();
+    await Promise.all([
+      page.waitForResponse(response=>response.url().includes('/notification-mutes/bot/piper')),
+      page.evaluate(id=>window.__kindredConversationMenu.perform(id),muteMenu.items[2].children[0].id)
+    ]);
+    await page.waitForTimeout(150);
+    assert.deepEqual(conversationRequests[1],{path:'mute',body:{seconds:3600}});
+    const chatKey=await page.locator('.nav-entry [data-sidebar-kind="chats"]').first().getAttribute('data-sidebar-id');
+    const chatMenu=await page.evaluate(key=>window.__kindredConversationMenu.describe(key),'chats:'+chatKey);
+    assert(chatMenu.items.some(item=>item.title==='Chat settings'),'group conversations must keep their own actions');
     const profileBox=await page.locator('#ios-accounts').boundingBox(),moreBox=await page.locator('#ios-library-more').boundingBox(),searchBox=await page.locator('#ios-search').boundingBox();
     assert(moreBox.x>=profileBox.x+profileBox.width && moreBox.x+moreBox.width<=searchBox.x,'More belongs immediately to the right of the profile, before search');
     assert(await page.locator('.sidebar-bottom #artifacts-button').isHidden());
@@ -147,6 +193,6 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.evaluate(()=>{const old=document.querySelector('#prompt');const textarea=document.createElement('textarea');textarea.id='prompt';old.replaceWith(textarea);});
     assert(await page.locator('#prompt').evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=16));
     assert.deepEqual(errors.filter(error=>!error.startsWith('ResizeObserver loop')),[]);
-    console.log('iOS layout: library menu destinations/dismissal, separate views, avatar, compact composer, native pickers/theme, slab/foldable controls and rotation/keyboard bounds passed.');
+    console.log('iOS layout: native conversation menus/pin/mute, library menu destinations/dismissal, separate views, avatar, compact composer, native pickers/theme, slab/foldable controls and rotation/keyboard bounds passed.');
   } finally { await browser.close(); server.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;server.close();});

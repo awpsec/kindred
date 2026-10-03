@@ -168,13 +168,23 @@ with an existing persistent web data store.
   survives size changes. Multiple windows are disabled because one web view
   can't appear in two scenes.
 
+### Conversation press menus
+
+Conversation rows and pinned cards use UIKit context menus (Haptic Touch),
+without visible pin or overflow buttons. UIKit renders the existing server
+menu actions, including nested mute durations. The trusted page supplies
+bounded labels and opaque action IDs; selecting one invokes its existing
+page action. Opening a menu never changes a conversation. Scrolling cancels
+the target, and desktop drag-reordering is suppressed on pinned cards so
+horizontal scrolling and the iOS press gesture remain available.
+
 ### Notifications
 
 Server support is the `mobile_push` work in the server repository (routes
 `PUT/DELETE /api/mobile/devices/{installation_uuid}` and
-`GET /api/mobile/push-status`). At the time of writing that code is
-**uncommitted work in progress** in `kindred-server`; servers without it
-answer 404 and the app says notifications aren't offered.
+`GET /api/mobile/push-status`). That support is committed in the server
+source. Older running servers answer 404 and the app says notifications
+aren't offered; installing this companion doesn't upgrade the server.
 
 - Permission is requested only when the person taps **Enable Alerts** on an
   account, and only after `GET /api/mobile/push-status` reports
@@ -205,6 +215,10 @@ answer 404 and the app says notifications aren't offered.
   the session locally at once, then tries `DELETE` with the old token and
   otherwise records that it couldn't confirm removal (the server drops
   registrations bound to an ended session).
+- Foreground alerts are presented only for a saved, signed-in account that
+  opted into alerts. Invalid, ambiguous or stale installation identifiers,
+  and alerts arriving after opt-out or sign-out, are suppressed. Background
+  delivery remains controlled by iOS and the server registration.
 - Account metadata is excluded from device backups, so a restored phone
   never reuses another device's installation UUIDs.
 - Payloads are opaque: `{"aps":{"alert":{generic}},"account_id","profile_id","installation_uuid","chat_id","event_id"}`.
@@ -220,8 +234,12 @@ answer 404 and the app says notifications aren't offered.
 
 ## Known limitations
 
-- Live server workflows, iPhone Duo transitions and UI on physical hardware
-  have not yet been verified.
+- Live sign-in, a chat roundtrip, settings/accounts appearance, computer views
+  and library navigation have been checked in the simulator. iPhone Duo
+  transitions and UI on physical hardware still await verification.
+- Conversation menu data/actions and row-control removal pass checks. The
+  native press gesture still awaits live verification; the Mac locked during
+  the simulator check.
 - HTTPS origins only; plain HTTP and self-signed certificates (without a
   trusted profile installed on the device) won't connect. Servers under a
   path prefix aren't supported.
@@ -253,3 +271,12 @@ answer 404 and the app says notifications aren't offered.
    the registration with `GET /api/mobile/push-status?installation_uuid=…`,
    trigger a message, tap the alert, then Turn Off Alerts and confirm
    `registered:false`.
+
+### Notification verification on the simulator
+
+The account details screen on the currently running server reports that mobile
+notifications are unavailable (push-status returns 404). Core request/payload
+checks, native opt-out/sign-out and account-routing tests, and the server's
+mobile-push tests pass. These checks do not establish APNs delivery: enabling
+alerts, receiving a background banner and tapping it into a live conversation
+still require a server offering iOS push plus matching APNs signing/configuration.

@@ -32,7 +32,10 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .list, .sound])
+        let route = PushPayload.route(from: notification.request.content.userInfo)
+        Task { @MainActor [weak model] in
+            completionHandler(model?.shouldPresentNotification(route) == true ? [.banner, .list, .sound] : [])
+        }
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,

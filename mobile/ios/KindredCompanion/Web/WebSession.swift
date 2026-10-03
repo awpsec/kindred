@@ -29,8 +29,8 @@ protocol WebSessionHost: AnyObject {
 /// One account's web view: the server's own web UI, isolated in that account's
 /// persistent data store, and allowed to show only that server's origin.
 ///
-/// The page gets exactly two message handlers (session rotation and "open
-/// accounts"), accepted only from the main frame of the exact origin. There is
+/// The page gets exactly two message handlers (session rotation and native
+/// presentation), accepted only from the main frame of the exact origin. There is
 /// no file, HTTP or native-execution bridge.
 @MainActor
 final class WebSession: NSObject {
@@ -44,6 +44,7 @@ final class WebSession: NSObject {
     let origin: ServerOrigin
     let webView: WKWebView
     let presentation = WebPresentationState()
+    private var conversationTarget: ConversationMenuTarget?
     private var layoutBottom: CGFloat = 0
     private var layoutIsSlab = false
     private var profileID: String?
@@ -78,6 +79,8 @@ final class WebSession: NSObject {
         controller.add(proxy, contentWorld: .page, name: WebSession.accountsHandler)
         installBootstrap(token: token)
 
+        let interaction = UIContextMenuInteraction(delegate: self)
+        webView.addInteraction(interaction)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
@@ -203,6 +206,14 @@ final class WebSession: NSObject {
         case WebSession.sessionHandler:
             if let parsed = SessionMessage(body: message.body) { host?.webSession(self, didReceive: parsed) }
         case WebSession.accountsHandler:
+            if let body = message.body as? [String: Any], body["action"] as? String == "conversation-target" {
+                conversationTarget = ConversationMenuTarget(body: body)
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "conversation-target-clear" {
+                conversationTarget = nil
+                return
+            }
             if let body = message.body as? [String: Any], body["action"] as? String == "interface-ready" {
                 presentation.hasChatInterface = true
                 publishLayout()
@@ -214,6 +225,7 @@ final class WebSession: NSObject {
                 let color = UIColor(red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255, alpha: 1)
                 presentation.canvas = color
                 presentation.isDark = body["followsSystem"] as? Bool == true ? nil : (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722) < 128
+                webView.overrideUserInterfaceStyle = presentation.isDark.map { $0 ? .dark : .light } ?? .unspecified
                 webView.backgroundColor = color
                 webView.underPageBackgroundColor = color
                 webView.superview?.backgroundColor = color
@@ -446,5 +458,89 @@ extension WebSession: WKDownloadDelegate {
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         downloadDestinations.removeValue(forKey: ObjectIdentifier(download))
         notify("The download didn't finish: \(KindredAPIClient.describe(error))")
+    }
+}
+
+/// Bounded presentation data from the trusted main frame; never URLs or code.
+struct ConversationMenuTarget {
+    let key: String
+    let rect: CGRect
+    let receivedAt = ProcessInfo.processInfo.systemUptime
+
+    init?(body: [String: Any]) {
+        guard let key = body["key"] as? String, !key.isEmpty, key.utf8.count <= 200,
+              let values = body["rect"] as? [Double], values.count == 4,
+              values.allSatisfy({ $0.isFinite && abs($0) <= 10000 }), values[2] > 0, values[3] > 0 else { return nil }
+        self.key = key
+        rect = CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+    }
+}
+
+extension WebSession: UIContextMenuInteractionDelegate {
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+        guard origin.matches(webView.url), let target = conversationTarget,
+              ProcessInfo.processInfo.systemUptime - target.receivedAt < 2,
+              target.rect.contains(location) else { return nil }
+        return UIContextMenuConfiguration(identifier: target.key as NSString, previewProvider: nil) { [weak self] _ in
+            let deferred = UIDeferredMenuElement.uncached { completion in
+                guard let self, self.origin.matches(self.webView.url) else { completion([]); return }
+                self.webView.callAsyncJavaScript("return window.__kindredConversationMenu?.describe(key);",
+                    arguments: ["key": target.key], in: nil, in: .page) { [weak self] result in
+                    guard let self, self.origin.matches(self.webView.url), case .success(let value) = result,
+                          let object = value as? [String: Any], let items = object["items"] as? [[String: Any]] else { completion([]); return }
+                    completion(self.conversationMenuElements(items))
+                }
+            }
+            return UIMenu(children: [deferred])
+        }
+    }
+
+    /// Render fixed menu data with UIKit. Selecting an opaque action ID invokes
+    /// its existing page button, with no general native-execution bridge.
+    func conversationMenuElements(_ items: [[String: Any]], depth: Int = 0) -> [UIMenuElement] {
+        guard depth <= 1, items.count <= 20 else { return [] }
+        return items.compactMap { item in
+            guard let title = item["title"] as? String, !title.isEmpty, title.count <= 100 else { return nil }
+            if let children = item["children"] as? [[String: Any]], depth == 0 {
+                return UIMenu(title: title, image: UIImage(systemName: "bell.slash"), children: conversationMenuElements(children, depth: 1))
+            }
+            guard let id = item["id"] as? String, id.utf8.count <= 64, !id.isEmpty else { return nil }
+            let symbol: String?
+            switch title {
+            case "Pin": symbol = "pin"
+            case "Unpin": symbol = "pin.slash"
+            case "Edit bot", "Rename": symbol = "pencil"
+            case "Instructions": symbol = "doc.text"
+            case "Memory": symbol = "brain"
+            case "Chat settings": symbol = "gearshape"
+            case "Unmute": symbol = "bell"
+            case "Archive bot", "Archive chat": symbol = "archivebox"
+            default: symbol = nil
+            }
+            return UIAction(title: title, image: symbol.flatMap(UIImage.init(systemName:))) { [weak self] _ in
+                guard let self, self.origin.matches(self.webView.url) else { return }
+                self.webView.callAsyncJavaScript("window.__kindredConversationMenu?.perform(id);",
+                    arguments: ["id": id], in: nil, in: .page) { _ in }
+            }
+        }
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        guard let target = conversationTarget,
+              let snapshot = webView.resizableSnapshotView(from: target.rect, afterScreenUpdates: false, withCapInsets: .zero) else { return nil }
+        let parameters = UIPreviewParameters()
+        parameters.backgroundColor = presentation.canvas
+        parameters.visiblePath = UIBezierPath(roundedRect: CGRect(origin: .zero, size: target.rect.size), cornerRadius: 12)
+        return UITargetedPreview(view: snapshot, parameters: parameters,
+            target: UIPreviewTarget(container: webView, center: CGPoint(x: target.rect.midX, y: target.rect.midY)))
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                willEndFor configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionAnimating?) {
+        // UIKit may end its animation before the selected page action runs.
+        // Its next describe() replaces old closures; do not clear a pending action.
+        conversationTarget = nil
     }
 }

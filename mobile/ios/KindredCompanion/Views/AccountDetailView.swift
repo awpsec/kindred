@@ -147,6 +147,7 @@ struct AccountDetailView: View {
     }
 
     private func statusSymbol(_ account: Account) -> String {
+        if model.notificationAuthorization == .denied { return "bell.slash" }
         switch account.push.state {
         case .registered: return "bell.badge.fill"
         case .failed, .removalUnconfirmed: return "exclamationmark.bubble"
@@ -157,7 +158,11 @@ struct AccountDetailView: View {
     private func statusText(_ account: Account, signedIn: Bool) -> String {
         switch account.push.state {
         case .registered:
-            return "On. This device is registered with the server."
+            if model.notificationAuthorization == .denied {
+                return "Notifications are turned off in iOS. Enable them in Settings."
+            }
+            if case .success(let status)? = serverStatus, status != .configured { return status.message }
+            return "This device is registered with the server."
         case .failed(let message, _):
             return account.push.wanted ? "Registration failed: \(message) Kindred will try again." : "Last registration failed: \(message)"
         case .removalUnconfirmed(let message, _):
