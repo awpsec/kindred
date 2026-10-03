@@ -446,6 +446,106 @@
   }
   new MutationObserver(updateAppearance).observe(html, {attributes:true, attributeFilter:['data-theme', 'class', 'style']});
   updateAppearance();
+  // Adapt action menus at their presentation boundary. Keep the server's
+  // closures, but never render its hover menus/flyouts in the native app.
+  const actionMenuSelector = '[role="menu"],#new-menu,.deliverable-menu,.avatar-popover';
+  const menuActions = new Map();
+  let actionMenuSerial = 0, lastMenuSource = null;
+  const menuContext = () => `${location.pathname}:${document.querySelector('#heading')?.textContent || ''}`;
+  for (const type of ['pointerdown', 'click', 'contextmenu', 'keydown']) {
+    document.addEventListener(type, event => {
+      if (event.isTrusted || type === 'contextmenu') lastMenuSource = event.target.closest?.('button,[data-artifact-id]') || event.target;
+    }, true);
+  }
+  const openActionMenu = element => {
+    if (element.closest('.conversation-submenu') || element.closest('[hidden],[inert]')) return false;
+    if (element.hasAttribute('popover')) return element.matches(':popover-open');
+    if (element.matches('.avatar-popover')) return element.parentElement.classList.contains('menu-open');
+    return getComputedStyle(element).display !== 'none';
+  };
+  const closeActionMenu = (element, source) => {
+    if (element.matches('.avatar-popover')) element.parentElement?.classList.remove('menu-open');
+    else if (element.hasAttribute('popover')) { if (element.matches(':popover-open')) element.hidePopover(); }
+    else element.hidden = true;
+    source?.setAttribute('aria-expanded', 'false');
+    // Reset the server's transient menu state without running any action.
+    if (element.isConnected && element.matches('.chat-context-menu,.artifact-context-menu,.message-action-menu')) {
+      element.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}));
+    }
+  };
+  const presentActionMenu = (element, present = true) => {
+    const source = element.matches('.avatar-popover') ? element.parentElement.querySelector('button') : lastMenuSource;
+    if (!source?.isConnected || source.closest('[hidden],[inert]')) { closeActionMenu(element, source); return; }
+    menuActions.clear();
+    const generation = String(++actionMenuSerial), context = menuContext();
+    const remember = button => {
+      const title = (button.getAttribute('aria-label') || button.textContent || button.title).trim().slice(0,100);
+      if (!title) return null;
+      const id = `${generation}-${menuActions.size}`;
+      menuActions.set(id, {button,source,element,context});
+      return {id,title,disabled:button.disabled || button.getAttribute('aria-disabled') === 'true',
+        selected:button.getAttribute('aria-checked') === 'true' || button.getAttribute('aria-pressed') === 'true',
+        destructive:button.classList.contains('danger') || /^(Delete|Remove|Archive)\b/.test(title)};
+    };
+    const choices = parent => [...parent.querySelectorAll('button,a[href]')]
+      .filter(button => !button.closest('[hidden]') && button.closest('[role=menu],.avatar-popover,.deliverable-menu,#new-menu') === parent)
+      .map(button => {
+        if (button.matches('.has-submenu')) {
+          button.click(); // Builds choices without invoking a leaf action.
+          const child = [...parent.querySelectorAll('.conversation-submenu')].find(menu => menu._trigger === button);
+          if (child) return {title:button.textContent.trim().slice(0,100),children:choices(child)};
+        }
+        return remember(button);
+      }).filter(Boolean);
+    const items = element.matches('.avatar-popover')
+      ? [...element.querySelectorAll('[role=group]')].map(group => ({title:group.getAttribute('aria-label'),children:[...group.querySelectorAll('button')].map(remember).filter(Boolean)}))
+      : choices(element);
+    // Library pinning belongs to desktop's drawer, which iOS replaces with pages.
+    const allowed = items.filter(item => !/^(Close|Unpin|Pin) (artifact )?library$/.test(item.title));
+    const rect = source.getBoundingClientRect();
+    closeActionMenu(element, source);
+    if (!allowed.length) { menuActions.clear(); return; }
+    const model = {action:'native-menu',key:generation,
+      title:element.getAttribute('aria-label') || '',rect:[rect.x,rect.y,rect.width,rect.height],items:allowed};
+    if (present) window.webkit?.messageHandlers?.kindredAccounts?.postMessage(model);
+    return model;
+  };
+  document.addEventListener('pointerdown', event => {
+    const row = event.target.closest?.('.artifact-studio-library-item[data-artifact-id]');
+    if (!row || row.closest('[hidden],[inert]') || event.button !== 0) return;
+    const rect = row.getBoundingClientRect();
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'artifact-target',key:row.dataset.artifactId,
+      rect:[rect.x,rect.y,rect.width,rect.height]});
+  }, true);
+  window.__kindredNativeMenus = {
+    describeArtifact(key) {
+      const row = document.querySelector(`.artifact-studio-library-item[data-artifact-id="${CSS.escape(key)}"]`);
+      if (!row || row.closest('[hidden],[inert]') || !row.getClientRects().length) return null;
+      lastMenuSource = row;
+      const rect = row.getBoundingClientRect();
+      row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:rect.x,clientY:rect.y}));
+      const menu = document.querySelector('.artifact-context-menu');
+      return menu ? presentActionMenu(menu, false) : null;
+    },
+    perform(id) {
+      const action = menuActions.get(id); menuActions.clear();
+      if (!action || action.context !== menuContext() || !action.source.isConnected ||
+          action.source.closest('[hidden],[inert]') || !action.source.getClientRects().length || action.button.disabled || action.button.getAttribute('aria-disabled') === 'true') return;
+      action.button.click();
+      // Avatar choice closures reopen the desktop flyout while saving.
+      closeActionMenu(action.element, action.source);
+    },
+    cancel(key) { if (key === String(actionMenuSerial)) menuActions.clear(); },
+  };
+  const scanActionMenus = () => {
+    for (const element of document.querySelectorAll(actionMenuSelector)) {
+      if (openActionMenu(element)) { presentActionMenu(element); break; }
+    }
+  };
+  new MutationObserver(scanActionMenus).observe(document.body, {childList:true,subtree:true,attributes:true,
+    attributeFilter:['hidden','class','aria-expanded']});
+  document.addEventListener('toggle', scanActionMenus, true);
+  scanActionMenus();
   // Hand navigation to the page before slow fonts/images finish loading.
   window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'interface-ready'});
 })();

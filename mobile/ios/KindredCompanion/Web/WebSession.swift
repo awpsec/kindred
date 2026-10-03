@@ -46,6 +46,7 @@ final class WebSession: NSObject {
     let webView: WKWebView
     let presentation = WebPresentationState()
     private var conversationTarget: ConversationMenuTarget?
+    private weak var nativeMenuAlert: UIAlertController?
     private var layoutBottom: CGFloat = 0
     private var layoutIsSlab = false
     private var profileID: String?
@@ -233,12 +234,20 @@ final class WebSession: NSObject {
         case WebSession.sessionHandler:
             if let parsed = SessionMessage(body: message.body) { host?.webSession(self, didReceive: parsed) }
         case WebSession.accountsHandler:
+            if let body = message.body as? [String: Any], body["action"] as? String == "native-menu" {
+                if let menu = NativeActionMenu(body: body) { presentNativeMenu(menu) }
+                return
+            }
             if let body = message.body as? [String: Any], body["action"] as? String == "conversation-target" {
                 conversationTarget = ConversationMenuTarget(body: body)
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "message-target" {
                 conversationTarget = ConversationMenuTarget(body: body, kind: .message)
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "artifact-target" {
+                conversationTarget = ConversationMenuTarget(body: body, kind: .artifact)
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "message-target-clear" {
@@ -504,9 +513,102 @@ extension WebSession: WKDownloadDelegate {
     }
 }
 
+/// Presentation-only data from the trusted main frame. Action IDs are opaque;
+/// the page retains the existing closures and validates their current context.
+struct NativeActionMenu {
+    struct Item {
+        let title: String
+        let id: String?
+        let children: [Item]
+        let disabled: Bool
+        let selected: Bool
+        let destructive: Bool
+
+        init?(body: [String: Any], depth: Int = 0) {
+            guard depth <= 2, let title = body["title"] as? String,
+                  !title.isEmpty, title.count <= 100 else { return nil }
+            self.title = title
+            disabled = body["disabled"] as? Bool == true
+            selected = body["selected"] as? Bool == true
+            destructive = body["destructive"] as? Bool == true
+            if let values = body["children"] as? [[String: Any]] {
+                guard !values.isEmpty, values.count <= 40 else { return nil }
+                let parsed = values.compactMap { Item(body: $0, depth: depth + 1) }
+                guard parsed.count == values.count else { return nil }
+                children = parsed; id = nil
+            } else {
+                guard let value = body["id"] as? String, !value.isEmpty, value.utf8.count <= 64 else { return nil }
+                id = value; children = []
+            }
+        }
+    }
+    let key: String
+    let title: String
+    let rect: CGRect
+    let items: [Item]
+
+    init?(body: [String: Any]) {
+        guard let target = ConversationMenuTarget(body: body),
+              let values = body["items"] as? [[String: Any]], !values.isEmpty, values.count <= 40 else { return nil }
+        let parsed = values.compactMap { Item(body: $0) }
+        guard parsed.count == values.count else { return nil }
+        key = target.key; rect = target.rect; items = parsed
+        title = String((body["title"] as? String ?? "").prefix(100))
+    }
+}
+
+extension WebSession {
+    func nativeMenuSheet(_ menu: NativeActionMenu, items: [NativeActionMenu.Item]? = nil,
+                         title: String? = nil) -> UIAlertController {
+        let heading = title ?? menu.title
+        let alert = UIAlertController(title: heading.isEmpty ? nil : heading, message: nil, preferredStyle: .actionSheet)
+        alert.overrideUserInterfaceStyle = webView.overrideUserInterfaceStyle
+        for item in items ?? menu.items {
+            let label = (item.selected ? "✓ " : "") + item.title
+            let action = UIAlertAction(title: label, style: item.destructive ? .destructive : .default) { [weak self, weak alert] _ in
+                guard let self, self.origin.matches(self.webView.url) else { return }
+                // Finish native dismissal before a file picker, submenu, or
+                // server dialog opens. Never leave two presentations stacked.
+                alert?.dismiss(animated: true) {
+                    if !item.children.isEmpty {
+                        self.presentNativeMenu(menu, items: item.children, title: item.title)
+                    } else if let id = item.id {
+                        self.webView.callAsyncJavaScript("window.__kindredNativeMenus?.perform(id);",
+                            arguments:["id":id], in:nil, in:.page) { _ in }
+                    }
+                }
+            }
+            action.isEnabled = !item.disabled
+            alert.addAction(action)
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.webView.callAsyncJavaScript("window.__kindredNativeMenus?.cancel(key);",
+                arguments:["key":menu.key], in:nil, in:.page) { _ in }
+        })
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = webView
+            let anchor = menu.rect.intersection(webView.bounds)
+            popover.sourceRect = anchor.isNull ? CGRect(x:webView.bounds.midX, y:webView.bounds.midY, width:1, height:1) : anchor
+        }
+        return alert
+    }
+
+    private func presentNativeMenu(_ menu: NativeActionMenu, items: [NativeActionMenu.Item]? = nil, title: String? = nil) {
+        guard origin.matches(webView.url), webView.window != nil else { return }
+        if let current = nativeMenuAlert, current.presentingViewController != nil {
+            current.dismiss(animated:true) { [weak self] in self?.presentNativeMenu(menu, items:items, title:title) }
+            return
+        }
+        guard let presenter = presenter(), !(presenter is UIAlertController) else { return }
+        let alert = nativeMenuSheet(menu, items:items, title:title)
+        nativeMenuAlert = alert
+        presenter.present(alert, animated:true)
+    }
+}
+
 /// Bounded presentation data from the trusted main frame; never URLs or code.
 struct ConversationMenuTarget {
-    enum Kind: String { case conversation, message }
+    enum Kind: String { case conversation, message, artifact }
     let kind: Kind
     let key: String
     let rect: CGRect
@@ -531,7 +633,7 @@ extension WebSession: UIContextMenuInteractionDelegate {
         return UIContextMenuConfiguration(identifier: target.key as NSString, previewProvider: nil) { [weak self] _ in
             let deferred = UIDeferredMenuElement.uncached { completion in
                 guard let self, self.origin.matches(self.webView.url) else { completion([]); return }
-                self.webView.callAsyncJavaScript("return kind === 'message' ? window.__kindredMobileMessages?.describe(key) : window.__kindredConversationMenu?.describe(key);",
+                self.webView.callAsyncJavaScript("return kind === 'message' ? window.__kindredMobileMessages?.describe(key) : kind === 'artifact' ? window.__kindredNativeMenus?.describeArtifact(key) : window.__kindredConversationMenu?.describe(key);",
                     arguments: ["key": target.key, "kind":target.kind.rawValue], in: nil, in: .page) { [weak self] result in
                     guard let self, self.origin.matches(self.webView.url), case .success(let value) = result,
                           let object = value as? [String: Any], let items = object["items"] as? [[String: Any]] else { completion([]); return }
@@ -557,8 +659,10 @@ extension WebSession: UIContextMenuInteractionDelegate {
             case "Reply": symbol = "arrowshape.turn.up.left"
             case "Copy message": symbol = "doc.on.doc"
             case "Edit queued message": symbol = "pencil"
-            case "Pin": symbol = "pin"
-            case "Unpin": symbol = "pin.slash"
+            case "Pin", "Pin artifact": symbol = "pin"
+            case "Unpin", "Unpin artifact": symbol = "pin.slash"
+            case "Move to folder": symbol = "folder"
+            case "Details": symbol = "info.circle"
             case "Edit bot", "Rename": symbol = "pencil"
             case "Instructions": symbol = "doc.text"
             case "Memory": symbol = "brain"
@@ -567,9 +671,12 @@ extension WebSession: UIContextMenuInteractionDelegate {
             case "Archive bot", "Archive chat": symbol = "archivebox"
             default: symbol = nil
             }
-            return UIAction(title: title, image: symbol.flatMap(UIImage.init(systemName:)), state: item["selected"] as? Bool == true ? .on : .off) { [weak self] _ in
+            var attributes: UIMenuElement.Attributes = []
+            if item["disabled"] as? Bool == true { attributes.insert(.disabled) }
+            if item["destructive"] as? Bool == true { attributes.insert(.destructive) }
+            return UIAction(title: title, image: symbol.flatMap(UIImage.init(systemName:)), attributes:attributes, state: item["selected"] as? Bool == true ? .on : .off) { [weak self] _ in
                 guard let self, self.origin.matches(self.webView.url) else { return }
-                self.webView.callAsyncJavaScript("if (kind === 'message') window.__kindredMobileMessages?.perform(id); else window.__kindredConversationMenu?.perform(id);",
+                self.webView.callAsyncJavaScript("if (kind === 'message') window.__kindredMobileMessages?.perform(id); else if (kind === 'artifact') window.__kindredNativeMenus?.perform(id); else window.__kindredConversationMenu?.perform(id);",
                     arguments: ["id": id, "kind":kind.rawValue], in: nil, in: .page) { _ in }
             }
         }

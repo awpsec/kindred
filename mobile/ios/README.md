@@ -195,6 +195,12 @@ page action. Opening a menu never changes a conversation. Scrolling cancels
 the target, and desktop drag-reordering is suppressed on pinned cards so
 horizontal scrolling and the iOS press gesture remain available.
 
+Tap menus also use UIKit action sheets: composer attachments/teaching, new
+bot/chat, screen selection, avatar choices, library More, and artifact/file
+actions. Desktop menu panels are suppressed before painting; action callbacks
+stay with the server UI. See [the menu audit](design/menus.md) for the inventory
+and regression coverage.
+
 ### Message gestures
 
 On touch/mobile layouts, message action and timestamp rows are hidden. A

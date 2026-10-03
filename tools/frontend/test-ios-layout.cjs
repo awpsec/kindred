@@ -25,6 +25,17 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       },{once:true});
     },{token,css:fs.readFileSync(path.join(resources,'MobileLayout.css'),'utf8'),js:fs.readFileSync(path.join(resources,'MobileLayout.js'),'utf8')});
     const page = await context.newPage();
+    const openNativeMenu = async trigger => {
+      const count = await page.evaluate(()=>window.accountRequests.length);
+      await trigger.click();
+      await page.waitForFunction(count=>window.accountRequests.slice(count).some(value=>value.action==='native-menu'),count);
+      return page.evaluate(()=>window.accountRequests.filter(value=>value.action==='native-menu').at(-1));
+    };
+    const chooseNative = async (menu,title) => {
+      const item=menu.items.find(item=>item.title===title);
+      assert(item?.id,`native action ${title} must exist`);
+      await page.evaluate(id=>window.__kindredNativeMenus.perform(id),item.id);
+    };
     await page.route('**/api/composio', route => route.fulfill({json:{configured:false,apps:[]}}));
     const artifact = {id:'mobile-document',title:'Mobile notes',kind:'document',language:'markdown',source:'# Mobile notes\n\nA document for the iOS navigation check.',state:{},revision:1,updated:Math.floor(Date.now()/1000),created:Math.floor(Date.now()/1000),path:'/artifacts/mobile-document',chat_id:'dm-piper',created_by:'user'};
     const artifacts = [artifact];
@@ -79,6 +90,10 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const sidebarBox = await page.locator('.sidebar').boundingBox();
     assert.equal(sidebarBox.width,402,'conversations must be a separate full-width screen');
     assert(await page.locator('.conversation').evaluate(node=>node.inert));
+    const newConversationMenu=await openNativeMenu(page.locator('#new-bot'));
+    assert.deepEqual(newConversationMenu.items.map(item=>item.title),['New bot','New chat']);
+    assert(await page.locator('#new-menu').isHidden());
+    await page.evaluate(key=>window.__kindredNativeMenus.cancel(key),newConversationMenu.key);
     // UIKit asks for the current server menu, then invokes only the chosen
     // opaque action. Describing it must not pin, mute or archive anything.
     const conversationRequests=[];
@@ -124,20 +139,33 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert(moreBox.x>=profileBox.x+profileBox.width && moreBox.x+moreBox.width<=searchBox.x,'More belongs immediately to the right of the profile, before search');
     assert(await page.locator('.sidebar-bottom #artifacts-button').isHidden());
     assert(await page.locator('.sidebar-bottom #marketplace-button').isHidden());
-    await page.getByRole('button',{name:'More',exact:true}).click();
-    await page.getByRole('menu',{name:'More',exact:true}).waitFor({state:'visible'});
-    assert.equal(await page.getByRole('menuitem').count(),2);
-    await page.getByRole('menuitem',{name:'Marketplace',exact:true}).click();
+    const libraryMenu=await openNativeMenu(page.getByRole('button',{name:'More',exact:true}));
+    assert.equal(libraryMenu.items.length,2);
+    assert(await page.getByRole('menu',{name:'More',exact:true}).isHidden(),'desktop More popover is suppressed');
+    await chooseNative(libraryMenu,'Marketplace');
     await page.locator('#marketplace-dialog').waitFor({state:'visible'});
     assert(await page.locator('#ios-library-menu').isHidden(),'selecting a destination dismisses the menu');
     await page.locator('#marketplace-dialog').getByRole('button',{name:'Close',exact:true}).click();
-    await page.getByRole('button',{name:'More',exact:true}).click();
-    await page.getByRole('menuitem',{name:'Artifacts',exact:true}).click();
+    await chooseNative(await openNativeMenu(page.getByRole('button',{name:'More',exact:true})),'Artifacts');
     await page.waitForURL('**/artifacts');
     await page.locator('.artifact-studio').waitFor({state:'visible'});
     assert(await page.locator('#ios-library-menu').isHidden());
     const library=page.locator('.artifact-studio-library'),workbench=page.locator('.artifact-workbench');
     await page.locator('[data-artifact-id="mobile-document"]').waitFor({state:'visible'});
+    const menuCount=await page.evaluate(()=>window.accountRequests.length);
+    await page.locator('[data-artifact-id="mobile-document"]').dispatchEvent('contextmenu',{bubbles:true,clientX:50,clientY:160});
+    await page.waitForFunction(count=>window.accountRequests.slice(count).some(value=>value.action==='native-menu'),menuCount);
+    const artifactActions=await page.evaluate(()=>window.accountRequests.filter(value=>value.action==='native-menu').at(-1));
+    assert(artifactActions.items.some(item=>item.title==='Rename'));
+    assert(!artifactActions.items.some(item=>/library$/.test(item.title)),'mobile menus omit desktop pane pinning');
+    assert(await page.locator('.artifact-context-menu').isHidden());
+    await page.evaluate(key=>window.__kindredNativeMenus.cancel(key),artifactActions.key);
+    const beforeArtifactPress=await page.evaluate(()=>window.accountRequests.length);
+    const artifactPress=await page.evaluate(()=>window.__kindredNativeMenus.describeArtifact('mobile-document'));
+    assert(artifactPress.items.some(item=>item.title==='Pin artifact'));
+    assert.equal(await page.evaluate(count=>window.accountRequests.slice(count).filter(value=>value.action==='native-menu').length,beforeArtifactPress),0,'native press menu must not also open a tap action sheet');
+    await chooseNative(artifactPress,'Pin artifact');
+    assert(await page.locator('[data-artifact-id="mobile-document"] .artifact-item-pin').isVisible(),'native artifact action preserves the server callback');
     assert.equal((await library.boundingBox()).width,402,'artifact list occupies a complete page');
     assert(await workbench.isHidden());
     assert(await workbench.evaluate(node=>node.inert));
@@ -175,8 +203,9 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert.equal(await sourceEditor.inputValue(),'Unsaved mobile draft','returning through the list preserves the editor and unsaved text');
     await page.getByRole('button',{name:'Save changes',exact:true}).click();
     await page.getByRole('button',{name:'Back to artifacts',exact:true}).click();
-    await artifactAdd.click();
-    await page.getByRole('menuitem',{name:'New doc',exact:true}).click();
+    const createMenu=await openNativeMenu(artifactAdd);
+    assert.deepEqual(createMenu.items.map(item=>item.title),['New doc','New sheet','New slides','New app','New folder']);
+    await chooseNative(createMenu,'New doc');
     await page.getByRole('textbox',{name:'Artifact title',exact:true}).fill('Created on mobile');
     await page.locator('.artifact-new-dialog').getByRole('button',{name:'Create',exact:true}).click();
     await page.waitForURL('**/artifacts/created-mobile-document');
@@ -218,6 +247,30 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.getByRole('button',{name:'Close settings sheet',exact:true}).click();
     await page.locator('.bot-link').first().click();
     assert(await page.locator('#ios-accounts').isHidden());
+    const composerMenu=await openNativeMenu(page.locator('#composer-actions'));
+    assert.deepEqual(composerMenu.items.map(item=>item.title),['Attach files','Teach a task']);
+    assert(await page.locator('#composer-menu').isHidden(),'desktop attachment/teaching menu is suppressed');
+    const chooser=page.waitForEvent('filechooser');
+    await chooseNative(composerMenu,'Attach files');
+    assert((await chooser).isMultiple(),'native action must still invoke the existing file chooser');
+    await page.evaluate(id=>window.__kindredNativeMenus.perform(id),composerMenu.items[1].id);
+    assert(await page.locator('#computer-panel').isHidden(),'an expired composer action must not start teaching');
+    await page.evaluate(async()=>{
+      const {fileCard}=await import('/artifacts.js');
+      window.fileMenuReads=0;
+      const card=fileCard({id:'ios-file-menu',name:'mobile-menu.txt',source_url:'https://drive.google.com/file/d/fixture'},
+        {getBlob:async()=>{window.fileMenuReads++;return new Blob(['Mobile file preview'],{type:'text/plain'});},notice:()=>{},renderMarkdown:text=>text});
+      card.id='ios-file-menu-probe';
+      card.style.cssText='position:fixed;top:100px;left:12px;right:12px;z-index:20';
+      document.body.append(card);
+    });
+    const fileMenu=await openNativeMenu(page.locator('#ios-file-menu-probe .deliverable-more'));
+    assert.deepEqual(fileMenu.items.map(item=>item.title),['Preview','Open in Google Drive']);
+    assert(await page.locator('#ios-file-menu-probe .deliverable-menu').isHidden());
+    await chooseNative(fileMenu,'Preview');
+    await page.waitForFunction(()=>window.fileMenuReads===1);
+    await page.locator('.document-dialog').getByRole('button',{name:'Close',exact:true}).click();
+    await page.evaluate(()=>document.querySelector('#ios-file-menu-probe').remove());
     const avatarBox=await page.locator('#header-avatar').boundingBox();
     const headingBox=await page.locator('.bot-heading').boundingBox(),backBox=await page.locator('#mobile-menu').boundingBox();
     assert(Math.abs(headingBox.x+headingBox.width/2-201)<2,'avatar/name tag must be centered independently of side controls');
@@ -295,6 +348,11 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.setViewportSize({width:402,height:780});
     await page.locator('#bot-details').click();
     await page.locator('#details-panel').waitFor({state:'visible'});
+    const avatarMenu=await openNativeMenu(page.locator('#details-panel .avatar-customize'));
+    assert.deepEqual(avatarMenu.items.map(item=>item.title),['Shape','Color']);
+    assert(avatarMenu.items.every(item=>item.children.some(child=>child.selected)),'avatar choices retain the selected shape/color');
+    assert(await page.locator('#details-panel .avatar-popover').isHidden(),'desktop avatar flyout is suppressed');
+    await page.evaluate(key=>window.__kindredNativeMenus.cancel(key),avatarMenu.key);
     assert.equal(await page.locator('#details-panel').evaluate(node=>getComputedStyle(node).borderLeftWidth),'0px','bot details has no desktop divider');
     assert(Math.abs((await page.locator('#details-panel').boundingBox()).width-402)<1);
     await page.locator('#details-close').click();
@@ -305,9 +363,10 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert((await page.locator('#desktop').boundingBox()).height>390,'portrait computer should use available vertical space');
     assert(await page.locator('#computer-expand').isHidden(),'slab computer already occupies its own screen');
     assert.equal(await page.locator('#screen-picker span').first().evaluate(node=>getComputedStyle(node).webkitUserSelect),'none','screen picker label must not select text');
-    await page.locator('#screen-picker').click();
-    assert(await page.locator('#screen-picker-menu').isVisible(),'screen picker still opens after selection is disabled');
-    await page.locator('#screen-picker').click();
+    const screens=await openNativeMenu(page.locator('#screen-picker'));
+    assert(screens.items.some(item=>item.selected),'native screen menu retains the selected bot');
+    assert(await page.locator('#screen-picker-menu').isHidden(),'desktop screen menu is suppressed');
+    await page.evaluate(key=>window.__kindredNativeMenus.cancel(key),screens.key);
     await page.setViewportSize({width:874,height:350});
     await page.waitForTimeout(350);
     const desktop=await page.locator('#desktop').boundingBox(),footer=await page.locator('.desktop-footer').boundingBox();
@@ -319,6 +378,6 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.evaluate(()=>{const old=document.querySelector('#prompt');const textarea=document.createElement('textarea');textarea.id='prompt';old.replaceWith(textarea);});
     assert(await page.locator('#prompt').evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=16));
     assert.deepEqual(errors.filter(error=>!error.startsWith('ResizeObserver loop')),[]);
-    console.log('iOS layout: artifact pages/search/create/draft preservation/delayed loads, pane dividers, native conversation menus/pin/mute, library destinations, avatar/composer, native pickers/theme and rotation/keyboard bounds passed.');
+    console.log('iOS layout: native composer/file/avatar/screen/new/library/artifact menus and actions, conversation pin/mute, artifact navigation/drafts, native selects/theme and rotation/keyboard bounds passed.');
   } finally { await browser.close(); server.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;server.close();});

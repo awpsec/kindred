@@ -24,6 +24,9 @@ html[data-kindred-ios] #composer :is(#composer-actions,#send)::before { content:
 html[data-kindred-ios] #composer #send::before { background:var(--button); }
 html[data-kindred-ios] #composer :is(#composer-actions,#send) svg { position:relative; width:20px; height:20px; }
 html[data-kindred-ios] :is(#screen-picker,#screen-picker *) { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+/* Menu data stays available to the native adapter, without a desktop flash. */
+html[data-kindred-ios] :is([role=menu],#new-menu,.deliverable-menu,.avatar-popover,.themed-select-menu),
+html[data-kindred-ios] :is([role=menu],#new-menu,.deliverable-menu,.avatar-popover,.themed-select-menu) * { visibility:hidden !important; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 html[data-kindred-ios] #ios-computer-back { display:none; }
 html[data-kindred-ios] .ios-computer-controls { display:contents; }
 html[data-kindred-ios] .computer-panel.expanded .ios-computer-controls>.resource-stats { display:none; }

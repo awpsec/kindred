@@ -301,7 +301,43 @@ final class AppModelSignInTests: XCTestCase {
         ], kind:.message)
         XCTAssertEqual(messageItems.map(\.title), ["React", "Reply", "Copy message"])
         XCTAssertEqual(((messageItems[0] as? UIMenu)?.children.first as? UIAction)?.state, .on)
+        let artifactTarget = try XCTUnwrap(ConversationMenuTarget(body:["key":"artifact-1", "rect":[0.0,0.0,200.0,44.0]], kind:.artifact))
+        XCTAssertEqual(artifactTarget.kind, .artifact)
+        let artifactItems = session.conversationMenuElements([["title":"Pin artifact", "id":"3-0"], ["title":"Rename", "id":"3-1", "disabled":true]], kind:.artifact)
+        XCTAssertEqual(artifactItems.map(\.title), ["Pin artifact", "Rename"])
+        XCTAssertTrue(artifactItems[1].attributes.contains(.disabled))
         session.webView.stopLoading()
+    }
+
+    func testNativeActionSheetsPreserveChoicesAndRejectMalformedMenus() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let session = model.session(for: try XCTUnwrap(model.accounts.first))
+        session.webView.stopLoading()
+        session.webView.overrideUserInterfaceStyle = .dark
+        let body: [String: Any] = ["key":"1", "rect":[10.0,20.0,44.0,44.0], "items":[
+            ["title":"Attach files", "id":"1-0"],
+            ["title":"Teach a task", "id":"1-1", "disabled":true],
+            ["title":"Shape", "children":[["title":"Pebble", "id":"1-2", "selected":true]]],
+            ["title":"Remove", "id":"1-3", "destructive":true]
+        ]]
+        let menu = try XCTUnwrap(NativeActionMenu(body:body))
+        let sheet = session.nativeMenuSheet(menu)
+        XCTAssertEqual(sheet.preferredStyle, .actionSheet)
+        XCTAssertEqual(sheet.overrideUserInterfaceStyle, .dark)
+        XCTAssertEqual(sheet.actions.map(\.title), ["Attach files","Teach a task","Shape","Remove","Cancel"])
+        XCTAssertFalse(sheet.actions[1].isEnabled)
+        XCTAssertEqual(sheet.actions[3].style, .destructive)
+        XCTAssertEqual(session.nativeMenuSheet(menu, items:menu.items[2].children).actions.first?.title, "✓ Pebble")
+        var invalid = body
+        invalid["items"] = [["title":"Bad", "id":String(repeating:"x",count:65)]]
+        XCTAssertNil(NativeActionMenu(body:invalid))
+        invalid["items"] = Array(repeating:["title":"Bad", "id":"1"],count:41)
+        XCTAssertNil(NativeActionMenu(body:invalid))
+        invalid["items"] = [["title":"Branch", "children":[["title":"Invalid leaf"]]]]
+        XCTAssertNil(NativeActionMenu(body:invalid))
+        invalid["rect"] = [0.0,0.0,Double.infinity,44.0]
+        XCTAssertNil(NativeActionMenu(body:invalid))
     }
 
     func testColdLaunchRestoresExplicitAppearanceAndLeavesSystemAppearanceDynamic() async throws {
