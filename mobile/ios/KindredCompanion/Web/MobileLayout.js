@@ -352,6 +352,89 @@
       if (!child.matches('.panel-header, #desktop')) controls.append(child);
     }
     computer.append(controls);
+    const toolbar = controls.querySelector('.desktop-toolbar');
+    const paste = document.querySelector('#desktop-paste');
+    if (paste && toolbar) toolbar.prepend(paste);
+    // A remote canvas cannot advertise its text fields to iOS. Keep a real
+    // native text input focused while forwarding text to noVNC's keyboard.
+    const input = document.createElement('textarea');
+    input.id = 'ios-computer-input'; input.setAttribute('aria-label', 'Type on bot computer');
+    input.autocapitalize = 'off'; input.autocomplete = 'off'; input.spellcheck = false;
+    input.setAttribute('autocorrect', 'off'); input.tabIndex = -1;
+    computer.append(input);
+    const sentinel = '\u200b';
+    const resetInput = () => { input.value = sentinel; input.setSelectionRange(1,1); };
+    let composing = false;
+    const canvas = () => computer.classList.contains('is-controlling') && !computer.hidden
+      ? computer.querySelector('.desktop-canvas canvas') : null;
+    const sendKey = (type, key, code = 'Unidentified', modifiers = {}) => {
+      canvas()?.dispatchEvent(new KeyboardEvent(type, {key,code,bubbles:true,cancelable:true,...modifiers}));
+    };
+    const sendText = () => {
+      for (const character of input.value.replace(sentinel,'')) {
+        sendKey('keydown', character === '\n' ? 'Enter' : character);
+      }
+      resetInput();
+    };
+    input.addEventListener('compositionstart', () => { composing = true; });
+    input.addEventListener('compositionend', () => { composing = false; sendText(); });
+    input.addEventListener('input', () => { if (!composing) sendText(); });
+    input.addEventListener('beforeinput', event => {
+      if (!composing && event.inputType.startsWith('delete')) {
+        event.preventDefault(); sendKey('keydown','Backspace'); resetInput();
+      }
+    });
+    input.addEventListener('keydown', event => {
+      if (event.isComposing || event.key === 'Unidentified' || event.key === 'Process') return;
+      if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) return;
+      event.preventDefault(); event.stopPropagation();
+      sendKey('keydown',event.key,event.code,{ctrlKey:event.ctrlKey,altKey:event.altKey,metaKey:event.metaKey,shiftKey:event.shiftKey});
+    });
+    input.addEventListener('keyup', event => {
+      if (event.isComposing) return;
+      sendKey('keyup',event.key,event.code); event.stopPropagation();
+    });
+    const keyboardState = () => {
+      const active = document.activeElement === input;
+      computer.classList.toggle('ios-keyboard-active',active);
+    };
+    input.addEventListener('focus',keyboardState); input.addEventListener('blur',keyboardState);
+    let awaitingControl = false, controlTimeout, hadControl = false;
+    // Focus during the user's tap, before the asynchronous takeover request;
+    // iOS won't summon its keyboard from a later network callback alone.
+    document.querySelector('#take-control')?.addEventListener('click', event => {
+      if (event.currentTarget.disabled) return;
+      clearTimeout(controlTimeout);
+      if (canvas()) { awaitingControl = false; input.blur(); return; }
+      awaitingControl = true; resetInput(); input.focus({preventScroll:true});
+      controlTimeout = setTimeout(() => { awaitingControl = false; if (!canvas()) input.blur(); },35000);
+    },true);
+    // Remote clicks may focus the canvas; restore native entry after the click.
+    let restoreKeyboard = false;
+    computer.addEventListener('pointerdown', event => {
+      if (event.target.matches('.desktop-canvas canvas')) restoreKeyboard = computer.classList.contains('ios-keyboard-active');
+    },true);
+    computer.addEventListener('pointerup', event => {
+      if (event.target.matches('.desktop-canvas canvas') && restoreKeyboard && canvas()) input.focus({preventScroll:true});
+      restoreKeyboard = false;
+    });
+    const updateControl = () => {
+      const controlling = !!canvas();
+      if (controlling) {
+        awaitingControl = false; clearTimeout(controlTimeout);
+        if (!hadControl) {
+          resetInput(); input.focus({preventScroll:true});
+          window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'computer-keyboard'});
+        }
+      } else if ((!awaitingControl || computer.hidden) && document.activeElement === input) {
+        awaitingControl = false; clearTimeout(controlTimeout); input.blur();
+      }
+      hadControl = controlling;
+      const screen = computer.querySelector('.desktop-canvas canvas');
+      if (screen?.width > 0 && screen?.height > 0) computer.style.setProperty('--ios-screen-ratio',screen.width / screen.height);
+    };
+    new MutationObserver(updateControl).observe(computer,{attributes:true,attributeFilter:['class','hidden','width','height'],childList:true,subtree:true});
+    updateControl();
   }
   function updateNavigation() {
     const railClasses = ['sidebar-rail', 'sidebar-fading', 'sidebar-peek'];

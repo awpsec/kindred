@@ -234,6 +234,19 @@ final class WebSession: NSObject {
         case WebSession.sessionHandler:
             if let parsed = SessionMessage(body: message.body) { host?.webSession(self, didReceive: parsed) }
         case WebSession.accountsHandler:
+            if let body = message.body as? [String: Any], body["action"] as? String == "computer-keyboard" {
+                // Client-initiated focus through this public API can summon the
+                // iOS keyboard after an asynchronous remote takeover completes.
+                webView.evaluateJavaScript("""
+                (() => {
+                  const panel = document.getElementById('computer-panel');
+                  const input = document.getElementById('ios-computer-input');
+                  if (!panel || panel.hidden || !panel.classList.contains('is-controlling') || !input) return;
+                  input.blur(); input.focus({preventScroll:true});
+                })();
+                """, completionHandler:nil)
+                return
+            }
             if let body = message.body as? [String: Any], body["action"] as? String == "native-menu" {
                 if let menu = NativeActionMenu(body: body) { presentNativeMenu(menu) }
                 return

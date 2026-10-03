@@ -372,7 +372,32 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.locator('#computer-panel').waitFor({state:'visible'});
     assert.equal(await page.locator('#computer-panel').evaluate(node=>getComputedStyle(node).borderLeftWidth),'0px','computer has no desktop divider');
     assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-402)<1);
-    assert((await page.locator('#desktop').boundingBox()).height>390,'portrait computer should use available vertical space');
+    assert(await page.locator('#desktop-reconnect').isHidden());
+    assert(await page.locator('#computer-settings-link').isHidden());
+    assert(await page.locator('#desktop-paste').evaluate(node=>node.parentElement.matches('.desktop-toolbar')),'Paste belongs alongside control/teach below the screen');
+    assert(await page.locator('#ios-computer-input').evaluate(node=>node!==document.activeElement),'view-only screens do not raise the keyboard');
+    await page.evaluate(()=>{
+      const panel=document.querySelector('#computer-panel'),host=document.createElement('div');host.className='desktop-canvas';
+      const canvas=document.createElement('canvas');canvas.width=1600;canvas.height=1000;host.append(canvas);document.querySelector('#desktop').replaceChildren(host);
+      window.iosRemoteKeys=[];canvas.addEventListener('keydown',event=>window.iosRemoteKeys.push(event.key));
+      panel.classList.add('is-controlling');
+    });
+    assert(await page.locator('#ios-computer-input').evaluate(node=>node===document.activeElement));
+    await page.evaluate(()=>{
+      const input=document.querySelector('#ios-computer-input');input.value+='Hi é';input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));
+      input.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'deleteContentBackward'}));
+      input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true,cancelable:true}));
+      input.dispatchEvent(new CompositionEvent('compositionstart'));input.value+='中';input.dispatchEvent(new InputEvent('input',{inputType:'insertCompositionText'}));input.dispatchEvent(new CompositionEvent('compositionend'));
+    });
+    assert.deepEqual(await page.evaluate(()=>window.iosRemoteKeys),['H','i',' ','é','Backspace','Enter','中'],'native text, delete, return and composed characters reach the remote keyboard');
+    await page.setViewportSize({width:402,height:490});
+    const portraitScreen=await page.locator('#desktop').boundingBox(),portraitActions=await page.locator('.desktop-toolbar').boundingBox();
+    assert(portraitActions.y>=portraitScreen.y+portraitScreen.height-1,'actions remain below the top-aligned screen');
+    assert(portraitActions.y+portraitActions.height<=490,'computer actions remain above the software keyboard');
+    for (const id of ['desktop-paste','teach-task','take-control']) assert((await page.locator('#'+id).boundingBox()).height>=44,'computer actions retain native touch targets');
+    await page.evaluate(()=>document.querySelector('#computer-panel').classList.remove('is-controlling'));
+    assert(await page.locator('#ios-computer-input').evaluate(node=>node!==document.activeElement),'returning control dismisses native entry');
+    await page.setViewportSize({width:402,height:780});
     assert(await page.locator('#computer-expand').isHidden(),'slab computer already occupies its own screen');
     assert.equal(await page.locator('#screen-picker span').first().evaluate(node=>getComputedStyle(node).webkitUserSelect),'none','screen picker label must not select text');
     const screens=await openNativeMenu(page.locator('#screen-picker'));
@@ -381,8 +406,8 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.evaluate(key=>window.__kindredNativeMenus.cancel(key),screens.key);
     await page.setViewportSize({width:874,height:350});
     await page.waitForTimeout(350);
-    const desktop=await page.locator('#desktop').boundingBox(),footer=await page.locator('.desktop-footer').boundingBox();
-    assert(desktop.x+desktop.width<=footer.x+1,'landscape resources and actions belong to the right of the computer');
+    const desktop=await page.locator('#desktop').boundingBox(),computerActions=await page.locator('.desktop-toolbar').boundingBox();
+    assert(desktop.x+desktop.width<=computerActions.x+1,'landscape resources and actions belong to the right of the computer');
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{bottomInset:0,isSlab:false}})));
     assert(await page.locator('#computer-expand').isVisible(),'foldable/tablet computer retains expansion');
     await page.locator('#ios-computer-back').click();

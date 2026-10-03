@@ -227,6 +227,24 @@ web navigation stays in charge during route changes/reloads so opening an
 artifact cannot briefly restore the native account toolbar; a page failure
 still exposes native recovery controls.
 
+### Bot computer keyboard
+
+Taking control opens the native iPhone keyboard; returning control or closing
+the computer dismisses it. Native text entry forwards to the live noVNC canvas,
+including Delete, Return, and composed text. Input is gated by the active control
+session. The host uses public WKWebView focus to show the keyboard after the
+asynchronous takeover finishes.
+
+Portrait places the screen at the top and Paste, Teach a task, and control
+actions immediately below it. Resources and routines collapse during keyboard
+entry. The iOS app omits the decorative screen backdrop, reconnect button,
+server address, and Computer settings shortcut. Landscape keeps controls beside
+the screen.
+
+In Xcode 27 Device Hub, disable **Device → Keyboard → Simulate Hardware
+Keyboard** when checking software keyboard behavior. **Toggle Software
+Keyboard** can also show it manually.
+
 ### Notifications
 
 Server support is the `mobile_push` work in the server repository (routes
