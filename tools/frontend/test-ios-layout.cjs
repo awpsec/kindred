@@ -26,7 +26,24 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     },{token,css:fs.readFileSync(path.join(resources,'MobileLayout.css'),'utf8'),js:fs.readFileSync(path.join(resources,'MobileLayout.js'),'utf8')});
     const page = await context.newPage();
     await page.route('**/api/composio', route => route.fulfill({json:{configured:false,apps:[]}}));
-    await page.route('**/api/workspace-artifacts', route => route.fulfill({json:[]}));
+    const artifact = {id:'mobile-document',title:'Mobile notes',kind:'document',language:'markdown',source:'# Mobile notes\n\nA document for the iOS navigation check.',state:{},revision:1,updated:Math.floor(Date.now()/1000),created:Math.floor(Date.now()/1000),path:'/artifacts/mobile-document',chat_id:'dm-piper',created_by:'user'};
+    const artifacts = [artifact];
+    let artifactLoadGate = null;
+    await page.route('**/api/workspace-artifact-folders', route => route.fulfill({json:[]}));
+    await page.route('**/api/workspace-artifacts', route => {
+      if (route.request().method()==='POST') {
+        const next={...artifact,...route.request().postDataJSON(),id:'created-mobile-document',path:'/artifacts/created-mobile-document'};
+        artifacts.unshift(next); return route.fulfill({json:next});
+      }
+      return route.fulfill({json:artifacts});
+    });
+    await page.route('**/api/workspace-artifacts/*', async route => {
+      const item=artifacts.find(item=>route.request().url().endsWith('/'+item.id));
+      if (!item) return route.fulfill({status:404,json:{error:'Missing fixture'}});
+      if (artifactLoadGate && route.request().method()==='GET') await artifactLoadGate;
+      if (route.request().method()==='PATCH') Object.assign(item,route.request().postDataJSON(),{revision:item.revision+1});
+      return route.fulfill({json:item});
+    });
     await page.route('**/api/chats', async route => {
       const response=await route.fetch();
       const chats=await response.json();
@@ -117,8 +134,66 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.waitForURL('**/artifacts');
     await page.locator('.artifact-studio').waitFor({state:'visible'});
     assert(await page.locator('#ios-library-menu').isHidden());
-    await page.getByRole('button',{name:'Show artifact library',exact:true}).click();
-    await page.locator('.artifact-studio #artifacts-button').getByText('Chats',{exact:true}).click();
+    const library=page.locator('.artifact-studio-library'),workbench=page.locator('.artifact-workbench');
+    await page.locator('[data-artifact-id="mobile-document"]').waitFor({state:'visible'});
+    assert.equal((await library.boundingBox()).width,402,'artifact list occupies a complete page');
+    assert(await workbench.isHidden());
+    assert(await workbench.evaluate(node=>node.inert));
+    assert(await page.locator('.artifact-studio-library-brand').isHidden());
+    assert.equal(await library.evaluate(node=>getComputedStyle(node).borderLeftWidth),'0px');
+    const artifactChats=page.getByRole('button',{name:'Back to chats',exact:true});
+    const artifactSearch=page.getByRole('button',{name:'Search artifacts',exact:true});
+    const artifactAdd=page.getByRole('button',{name:'Add artifact',exact:true});
+    const a=await artifactChats.boundingBox(),s=await artifactSearch.boundingBox(),c=await artifactAdd.boundingBox();
+    assert(a.x<s.x && s.x<c.x && c.width===44,'artifact navigation: chats left, search then add right');
+    await artifactSearch.click();
+    await page.getByRole('searchbox',{name:'Search artifacts',exact:true}).fill('no matching item');
+    await page.getByText('No matching artifacts.',{exact:true}).waitFor({state:'visible'});
+    await artifactSearch.click();
+    await page.locator('[data-artifact-id="mobile-document"]').click();
+    await page.waitForURL('**/artifacts/mobile-document');
+    await page.getByRole('textbox',{name:'Document title',exact:true}).waitFor({state:'visible'});
+    assert(await library.isHidden());
+    assert(await library.evaluate(node=>node.inert));
+    assert.equal((await workbench.boundingBox()).width,402,'document uses the entire page without a drawer gutter');
+    assert(await page.locator('.artifact-workbench-actions [aria-label="Download"]').isHidden(),'iOS artifacts do not offer Download');
+    for (const label of ['Refresh document','Edit document']) {
+      const button=page.getByRole('button',{name:label,exact:true});
+      const style=await button.evaluate(node=>({radius:getComputedStyle(node).borderRadius,blur:getComputedStyle(node).backdropFilter,border:getComputedStyle(node).borderTopWidth}));
+      assert.equal(style.radius,'50%'); assert.equal(style.border,'1px'); assert(style.blur.includes('blur'),'document actions share the glass circle styling');
+      const box=await button.boundingBox(); assert(box.width===44 && box.height===44);
+    }
+    await page.getByRole('button',{name:'Edit document',exact:true}).click();
+    const sourceEditor=page.getByRole('textbox',{name:'Document',exact:true});
+    await sourceEditor.fill('Unsaved mobile draft');
+    await page.getByRole('button',{name:'Back to artifacts',exact:true}).click();
+    await page.waitForURL('**/artifacts');
+    assert(await workbench.isHidden());
+    await page.locator('[data-artifact-id="mobile-document"]').click();
+    assert.equal(await sourceEditor.inputValue(),'Unsaved mobile draft','returning through the list preserves the editor and unsaved text');
+    await page.getByRole('button',{name:'Save changes',exact:true}).click();
+    await page.getByRole('button',{name:'Back to artifacts',exact:true}).click();
+    await artifactAdd.click();
+    await page.getByRole('menuitem',{name:'New doc',exact:true}).click();
+    await page.getByRole('textbox',{name:'Artifact title',exact:true}).fill('Created on mobile');
+    await page.locator('.artifact-new-dialog').getByRole('button',{name:'Create',exact:true}).click();
+    await page.waitForURL('**/artifacts/created-mobile-document');
+    await page.waitForFunction(()=>document.querySelector('.artifact-title-input')?.value==='Created on mobile');
+    await page.setViewportSize({width:874,height:350});
+    assert.equal((await workbench.boundingBox()).width,874);
+    assert(await library.isHidden());
+    await page.getByRole('button',{name:'Back to artifacts',exact:true}).click();
+    assert.equal((await library.boundingBox()).width,874,'rotation keeps the list as a separate page');
+    await page.setViewportSize({width:402,height:780});
+    let releaseArtifact;
+    artifactLoadGate = new Promise(resolve=>releaseArtifact=resolve);
+    await page.locator('[data-artifact-id="mobile-document"]').click();
+    await page.waitForURL('**/artifacts/mobile-document');
+    await page.getByRole('button',{name:'Back to artifacts',exact:true}).click();
+    artifactLoadGate = null; releaseArtifact();
+    await page.waitForFunction(()=>document.querySelector('.artifact-title-input')?.value==='Mobile notes');
+    assert(new URL(page.url()).pathname==='/artifacts' && await workbench.isHidden(),'a delayed document load must not reopen a page after Back');
+    await artifactChats.click();
     await page.locator('.artifact-studio').waitFor({state:'detached'});
     await page.getByRole('button',{name:'More',exact:true}).click();
     await page.keyboard.press('Escape');
@@ -214,8 +289,15 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert(await page.getByRole('button',{name:'Manage accounts',exact:true}).isVisible(),'Accounts entry must remain reachable on wider mobile screens');
     await page.getByRole('button',{name:'Close settings sheet',exact:true}).click();
     await page.setViewportSize({width:402,height:780});
+    await page.locator('#bot-details').click();
+    await page.locator('#details-panel').waitFor({state:'visible'});
+    assert.equal(await page.locator('#details-panel').evaluate(node=>getComputedStyle(node).borderLeftWidth),'0px','bot details has no desktop divider');
+    assert(Math.abs((await page.locator('#details-panel').boundingBox()).width-402)<1);
+    await page.locator('#details-close').click();
     await page.locator('#show-computer').click();
     await page.locator('#computer-panel').waitFor({state:'visible'});
+    assert.equal(await page.locator('#computer-panel').evaluate(node=>getComputedStyle(node).borderLeftWidth),'0px','computer has no desktop divider');
+    assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-402)<1);
     assert((await page.locator('#desktop').boundingBox()).height>390,'portrait computer should use available vertical space');
     assert(await page.locator('#computer-expand').isHidden(),'slab computer already occupies its own screen');
     await page.setViewportSize({width:874,height:350});
@@ -229,6 +311,6 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.evaluate(()=>{const old=document.querySelector('#prompt');const textarea=document.createElement('textarea');textarea.id='prompt';old.replaceWith(textarea);});
     assert(await page.locator('#prompt').evaluate(node=>parseFloat(getComputedStyle(node).fontSize)>=16));
     assert.deepEqual(errors.filter(error=>!error.startsWith('ResizeObserver loop')),[]);
-    console.log('iOS layout: native conversation menus/pin/mute, library menu destinations/dismissal, separate views, avatar, compact composer, native pickers/theme, slab/foldable controls and rotation/keyboard bounds passed.');
+    console.log('iOS layout: artifact pages/search/create/draft preservation/delayed loads, pane dividers, native conversation menus/pin/mute, library destinations, avatar/composer, native pickers/theme and rotation/keyboard bounds passed.');
   } finally { await browser.close(); server.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;server.close();});

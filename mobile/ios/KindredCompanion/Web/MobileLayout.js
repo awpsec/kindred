@@ -77,6 +77,101 @@
     },
   };
   const icon = path => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+  // Artifacts retain the server's editor/save closures, but navigate as two
+  // pages on iOS. Returning to the list never destroys an in-progress editor.
+  const artifactPages = new Map();
+  const artifactRouteEvent = 'kindred-ios-artifact-route';
+  for (const method of ['pushState', 'replaceState']) {
+    const original = history[method];
+    history[method] = function (...args) {
+      // open() reports the route both before and after fetching. A late fetch
+      // must not pull someone back into a document they just left for the list.
+      const path = args[2] == null ? null : new URL(String(args[2]), location.href).pathname;
+      if (path && location.pathname === '/artifacts' && [...artifactPages.values()].some(page => page.ignoredRoute === path)) return;
+      const result = Reflect.apply(original, this, args);
+      window.dispatchEvent(new Event(artifactRouteEvent));
+      return result;
+    };
+  }
+  const artifactDocumentRoute = () => /^\/artifacts\/[^/]+\/?$/.test(location.pathname) || new URLSearchParams(location.hash.slice(1)).has('artifact');
+  const artifactButton = (label, path) => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'icon-button ios-artifact-button';
+    button.setAttribute('aria-label', label); button.title = label;
+    button.innerHTML = icon(path);
+    return button;
+  };
+  const mountArtifacts = root => {
+    if (artifactPages.has(root)) return;
+    const library = root.querySelector('.artifact-studio-library');
+    const workbench = root.querySelector('.artifact-workbench');
+    const toolbar = root.querySelector('.artifact-workbench-header');
+    const input = root.querySelector('.artifact-studio-library-search');
+    const create = root.querySelector('.artifact-add');
+    const brand = root.querySelector('.artifact-studio-library-brand');
+    if (!library || !workbench || !toolbar || !input || !create || !brand) return;
+    const nav = document.createElement('header'); nav.className = 'ios-artifact-navigation';
+    const chats = artifactButton('Back to chats', '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9 9 0 0 1-4-.9L3 21l1.9-5a9 9 0 0 1-.9-4 8.4 8.4 0 0 1 8.5-9H13a8.4 8.4 0 0 1 8 8z"/>');
+    chats.onclick = () => brand.click(); // Includes the server's unsaved-edit guard.
+    const find = artifactButton('Search artifacts', '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>');
+    find.setAttribute('aria-expanded', 'false');
+    find.onclick = () => {
+      const searching = library.classList.toggle('ios-artifact-searching');
+      find.setAttribute('aria-expanded', String(searching));
+      if (searching) input.focus();
+      else { input.value = ''; input.dispatchEvent(new Event('input', {bubbles:true})); }
+    };
+    create.classList.add('ios-artifact-button');
+    create.innerHTML = icon('<path d="M12 5v14M5 12h14"/>');
+    nav.append(chats, find, create);
+    // Keep the existing type chooser and its action closures next to +.
+    const addMenu = root.querySelector('.artifact-add-menu');
+    if (addMenu) nav.append(addMenu);
+    library.prepend(nav);
+    const back = artifactButton('Back to artifacts', '<path d="m14 5-7 7 7 7"/>');
+    const page = {ignoredRoute:null, show:null, dispose:null};
+    const show = documentView => {
+      root.dataset.iosArtifactView = documentView ? 'document' : 'list';
+      library.inert = documentView; workbench.inert = !documentView;
+    };
+    back.onclick = () => {
+      page.ignoredRoute = location.pathname;
+      history.pushState({}, '', '/artifacts');
+      show(false);
+      library.querySelector('.artifact-studio-library-item.selected')?.focus({preventScroll:true});
+    };
+    // The server rebuilds the document toolbar when changing edit/preview mode.
+    const placeBack = () => { if (back.parentElement !== toolbar) toolbar.prepend(back); };
+    const toolbarObserver = new MutationObserver(placeBack);
+    toolbarObserver.observe(toolbar, {childList:true}); placeBack();
+    library.addEventListener('click', event => {
+      const row = event.target.closest('.artifact-studio-library-item');
+      if (!row || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      page.ignoredRoute = null;
+      if (row.getAttribute('aria-current') !== 'page') return;
+      // Reopening the selected document keeps its current source editor/draft.
+      event.preventDefault(); event.stopImmediatePropagation();
+      history.pushState({}, '', '/artifacts/' + encodeURIComponent(row.dataset.artifactId));
+      show(true);
+    }, true);
+    page.show = show; page.dispose = () => toolbarObserver.disconnect();
+    artifactPages.set(root, page);
+    show(artifactDocumentRoute());
+  };
+  const syncArtifacts = () => {
+    for (const [root, page] of artifactPages) {
+      if (!root.isConnected) { page.dispose(); artifactPages.delete(root); }
+    }
+    shell.querySelectorAll('.artifact-studio').forEach(mountArtifacts);
+  };
+  new MutationObserver(syncArtifacts).observe(shell, {childList:true});
+  const syncArtifactPage = () => {
+    for (const page of artifactPages.values()) page.show(artifactDocumentRoute());
+  };
+  window.addEventListener(artifactRouteEvent, syncArtifactPage);
+  window.addEventListener('popstate', syncArtifactPage);
+  window.addEventListener('hashchange', syncArtifactPage);
+  syncArtifacts();
   if (menu) {
     menu.innerHTML = icon('<path d="m14 5-7 7 7 7"/>');
     menu.setAttribute('aria-label', 'Back to conversations');

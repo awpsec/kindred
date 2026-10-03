@@ -107,8 +107,14 @@ with an existing persistent web data store.
   glass tag with the avatar beside the name, compact glass composer, and native account navigation. The
   profile circle opens a bottom settings sheet with horizontal section tabs;
   tapping the name card opens Accounts. Artifacts and Marketplace share the
-  three-dot menu beside the profile circle. Native accounts and sign-in sheets
-  follow the selected app appearance. Native
+  three-dot menu beside the profile circle.
+  Artifacts uses separate list/document pages, with Chats, search and create
+  circles in the list and a back circle in documents. Returning to the list
+  preserves the current editor and draft. Refresh and Edit use glass circles;
+  Download is hidden on iOS. Bot Details and Computer have no
+  desktop pane divider. These bundled overrides apply only to the iOS app;
+  desktop and ordinary mobile browsers retain their shared UI.
+  Native accounts and sign-in sheets follow the selected app appearance. Native
   safe-area colors follow the page theme and select dropdowns use the iOS picker. These run only in the account's main-frame origin.
   The chat uses one header; native accounts/reload controls return if the web
   page fails to load. A very short landscape keyboard layout hides the chat

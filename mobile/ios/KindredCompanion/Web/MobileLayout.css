@@ -4,6 +4,7 @@ html[data-kindred-ios] { -webkit-text-size-adjust:100%; text-size-adjust:100%; -
 html[data-kindred-ios],html[data-kindred-ios] body { height:var(--ios-viewport-height,100%); overflow:hidden; }
 html[data-kindred-ios] body { position:fixed; inset:0; overscroll-behavior:none; }
 html[data-kindred-ios] .shell { height:100%; position:relative; }
+html[data-kindred-ios] #app.shell>:is(.details-panel,.computer-panel) { border:0; box-shadow:none; }
 html[data-kindred-ios] :is(input,textarea,select,#prompt) { font-size:max(16px,1em); }
 html[data-kindred-ios] .message-bubble { overflow-wrap:anywhere; }
 html[data-kindred-ios] .conversation-history { overflow:hidden; }
@@ -60,7 +61,7 @@ html[data-kindred-ios] #ios-library-menu svg { flex:none; }
   html[data-kindred-ios] .message-row { max-width:100%; }
   html[data-kindred-ios] .message-bubble { font-size:16px; line-height:1.5; }
   html[data-kindred-ios] .composer-area { padding-inline:10px; padding-top:6px; }
-  html[data-kindred-ios] .shell>:is(.details-panel,.computer-panel) { position:absolute; inset:0; width:100%; max-width:100%; min-width:0; z-index:7; padding-bottom:var(--ios-safe-bottom); }
+  html[data-kindred-ios] #app.shell>:is(.details-panel,.computer-panel) { position:absolute; inset:0; width:100%; max-width:100%; min-width:0; z-index:7; padding-bottom:var(--ios-safe-bottom); }
   html[data-kindred-ios] .panel-header { min-height:64px; padding:10px 16px; border:0; gap:8px; }
   html[data-kindred-ios] #ios-computer-back { display:inline-flex; }
   html[data-kindred-ios] #computer-close { display:none; }
@@ -128,7 +129,7 @@ html[data-kindred-ios] body>.chat-context-menu { display:none !important; }
 
 /* Glass styling for web controls. UIKit sheets and press menus use system
    materials; WebKit controls keep their existing editing and server actions. */
-html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-heading,.sidebar-top .icon-button) {
+html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-heading,.sidebar-top .icon-button,.ios-artifact-button,.artifact-workbench-actions button) {
   background:color-mix(in srgb,var(--surface) 48%,transparent);
   -webkit-backdrop-filter:blur(24px) saturate(180%); backdrop-filter:blur(24px) saturate(180%);
   border:1px solid color-mix(in srgb,var(--fg) 12%,transparent);
@@ -148,6 +149,41 @@ html[data-kindred-ios] .conversation>.composer-area::before { top:-28px; -webkit
 html[data-kindred-ios] .jump-latest { bottom:calc(var(--ios-chat-bottom,62px) + 8px); }
 html[data-kindred-ios] :is(.dictation-settings,.version-actions,[data-client-update-status],.dictation-button,.dictation-status,.dictation-cancel) { display:none !important; }
 @media (prefers-reduced-transparency:reduce) {
-  html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-heading,.sidebar-top .icon-button) { background:var(--surface); -webkit-backdrop-filter:none; backdrop-filter:none; }
+  html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-heading,.sidebar-top .icon-button,.ios-artifact-button,.artifact-workbench-actions button) { background:var(--surface); -webkit-backdrop-filter:none; backdrop-filter:none; }
   html[data-kindred-ios] .conversation-header::before,html[data-kindred-ios] .conversation>.composer-area::before { -webkit-backdrop-filter:none; backdrop-filter:none; }
 }
+
+/* The iOS artifact library and document are separate full-width pages. */
+html[data-kindred-ios] #app .artifact-studio { inset:0; padding:0; grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); }
+html[data-kindred-ios] #app .artifact-studio-library { position:absolute; inset:0; width:100%; max-width:100%; height:100%; max-height:none; display:flex; flex-direction:column; padding:0 0 calc(12px + var(--ios-safe-bottom)); gap:0; background:var(--bg); border:0; box-shadow:none; transform:none; transition:none; }
+html[data-kindred-ios] .artifact-studio :is(.artifact-library-brand-row,.artifact-library-pin,.artifact-library-reveal,.artifact-library-backdrop,.pane-resizer,.sidebar-bottom) { display:none !important; }
+html[data-kindred-ios] .artifact-studio[data-ios-artifact-view=list]>.artifact-workbench,
+html[data-kindred-ios] #app .artifact-studio[data-ios-artifact-view=document]>.artifact-studio-library { display:none; }
+html[data-kindred-ios] .ios-artifact-navigation { position:relative; display:flex; align-items:center; flex:none; gap:8px; height:72px; padding:12px 16px; }
+html[data-kindred-ios] .ios-artifact-navigation>button:nth-child(2) { margin-left:auto; }
+html[data-kindred-ios] .artifact-studio .ios-artifact-button { display:inline-flex; flex:none; align-items:center; justify-content:center; width:44px; height:44px; min-width:44px; min-height:44px; border-radius:50%; padding:11px; color:var(--fg); }
+html[data-kindred-ios] .ios-artifact-navigation>.artifact-add-menu { top:64px; right:16px; left:auto; min-width:220px; border-radius:18px; padding:6px; }
+html[data-kindred-ios] .artifact-add-menu button { min-height:44px; font-size:16px; border-radius:12px; }
+html[data-kindred-ios] .artifact-studio-library-heading { padding:12px 24px 16px; }
+html[data-kindred-ios] .artifact-studio-library-heading h1 { color:var(--fg); font-size:26px; font-weight:650; }
+html[data-kindred-ios] .artifact-studio-library-search { display:none; flex:none; width:calc(100% - 32px); height:44px; padding:10px 16px; margin:0 16px 12px; border-radius:22px; font-size:16px; background:var(--surface); }
+html[data-kindred-ios] .ios-artifact-searching>.artifact-studio-library-search { display:block; }
+html[data-kindred-ios] .artifact-studio .artifact-studio-library-list { flex-direction:column; padding:0 8px; min-height:0; overscroll-behavior:contain; }
+html[data-kindred-ios] .artifact-studio .artifact-studio-library-item { width:100%; min-height:76px; height:auto; gap:14px; padding:16px; border-radius:18px; }
+html[data-kindred-ios] .artifact-studio-library-item>.artifact-kind-icon { width:32px; height:32px; }
+html[data-kindred-ios] .artifact-studio-library-title { font-size:16px; line-height:24px; }
+html[data-kindred-ios] .artifact-studio-library-item time { font-size:12px; }
+html[data-kindred-ios] .artifact-folder-heading { min-height:44px; padding:10px 16px; font-size:14px; }
+html[data-kindred-ios] .artifact-folder-more { min-height:44px; font-size:14px; }
+html[data-kindred-ios] :is(.artifact-studio-library-item,.artifact-folder-heading) * { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+html[data-kindred-ios] .artifact-studio-library-status { padding:12px 24px 0; font-size:12px; }
+html[data-kindred-ios] .artifact-studio-library-empty { padding:24px 16px; font-size:16px; }
+html[data-kindred-ios] .artifact-workbench { padding-bottom:var(--ios-safe-bottom); }
+html[data-kindred-ios] .artifact-workbench-header { flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; min-height:72px; padding:12px 16px; border:0; }
+html[data-kindred-ios] .artifact-workbench-title { flex:1; min-width:80px; }
+html[data-kindred-ios] .artifact-workbench-actions { margin-left:auto; }
+html[data-kindred-ios] .artifact-workbench-actions button { width:44px; height:44px; min-width:44px; min-height:44px; padding:11px; border-radius:50%; color:var(--fg); }
+html[data-kindred-ios] .artifact-workbench-actions button[aria-label=Download] { display:none; }
+html[data-kindred-ios] .artifact-workbench-body { padding:16px; }
+html[data-kindred-ios] .artifact-workbench-body:has(>.artifact-studio-preview) { padding:0; }
+html[data-kindred-ios] .artifact-studio :is(.artifact-new-dialog,.artifact-metadata-dialog) { max-width:calc(100% - 24px); max-height:calc(100% - 24px); overflow:auto; border-radius:24px; }
