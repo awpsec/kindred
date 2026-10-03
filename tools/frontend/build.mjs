@@ -22,3 +22,5 @@ for(const [folder,pkg] of Object.entries(lock.packages)){
  }
 }
 await writeFile(join(root,'../../third-party/document-preview-LICENSES.txt'),notices);
+
+await import("./build-editor.mjs");
