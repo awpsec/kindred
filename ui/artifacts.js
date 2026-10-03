@@ -29,7 +29,7 @@ function bundledFontStyles(){
  return fontStyles;
 }
 export function inferArtifactLanguage(source,fallback='markdown'){
- const text=source.trim();
+ const text=source.trim().replace(/^(?:<!--[\s\S]*?-->\s*)+/, '').trimStart();
  if(/^(?:#{1,6}\s|```)/.test(text))return 'markdown';
  if(/^(?:<!doctype\s+html|<html\b|<head\b|<body\b)/i.test(text))return 'html';
  if(/\b(?:import\s+[\s\S]+?\s+from\s*['"]|export\s+default\b|ReactDOM\.|React\.createElement\b)/.test(text)||/\b(?:function|const|let)\s+[A-Z]\w*[\s\S]*?(?:return\s*\(?\s*<|=>\s*\(?\s*<)/.test(text))return 'jsx';
