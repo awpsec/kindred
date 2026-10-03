@@ -1,5 +1,6 @@
 // Mobile bridges expose scoped sessions, account navigation and bounded exports
 // through a user-selected save destination, never arbitrary paths or execution.
+import './mobile-messages.js';
 export function mobileSession(token, profileId = '') {
   if (!window.__KINDRED_MOBILE) return;
   if(profileId)window.__KINDRED_MOBILE_PROFILE=profileId;

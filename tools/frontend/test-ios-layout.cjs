@@ -52,6 +52,8 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const errors=[]; page.on('pageerror',error => errors.push(error.message));
     await page.goto('http://127.0.0.1:'+server.address().port+'/#kindred-chat=dm-piper');
     const prompt=page.locator('#prompt'); await prompt.waitFor({state:'visible'});
+    const viewport=await page.locator('meta[name=viewport]').getAttribute('content');
+    assert(viewport.includes('minimum-scale=1, maximum-scale=1, user-scalable=no'),'the iOS app prevents double-tap and pinch page zoom');
     assert.equal(await page.evaluate(()=>window.accountRequests.filter(value=>value.action==='launch-ready').length),1,'cold-launch readiness waits for loaded conversations and signals once');
     // Exercise actual WebKit selection on a card's nested name/preview text,
     // alongside ordinary message text that must still be selectable.

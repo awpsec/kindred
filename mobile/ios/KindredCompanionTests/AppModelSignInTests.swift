@@ -102,11 +102,13 @@ final class AppModelSignInTests: XCTestCase {
         let account = try XCTUnwrap(model.accounts.first)
         let session = model.session(for: account)
         XCTAssertTrue(session.webView is KindredWebView)
+        XCTAssertFalse(session.webView.configuration.ignoresViewportScaleLimits, "The app must honor its fixed page scale")
         XCTAssertNil(session.webView.inputAccessoryView, "Chat inputs should not show the browser's form-navigation toolbar")
         let layout = try XCTUnwrap(session.webView.configuration.userContentController.userScripts.first { $0.injectionTime == .atDocumentEnd })
         XCTAssertTrue(layout.isForMainFrameOnly)
         XCTAssertTrue(layout.source.contains("window.location.origin !== \"https://kindred.example.com\""))
         XCTAssertTrue(layout.source.contains("text-size-adjust:100%"))
+        XCTAssertTrue(layout.source.contains("maximum-scale=1, user-scalable=no"))
         XCTAssertTrue(layout.source.contains("ios-accounts"))
         session.webView.stopLoading()
         session.presentation.hasChatInterface = true
@@ -275,6 +277,14 @@ final class AppModelSignInTests: XCTestCase {
         XCTAssertTrue(session.conversationMenuElements([["title":String(repeating:"x",count:101), "id":"1"]]).isEmpty)
         XCTAssertNil(ConversationMenuTarget(body:["key":"bots:piper", "rect":[0.0,0.0,Double.infinity,44.0]]))
         XCTAssertNotNil(ConversationMenuTarget(body:["key":"bots:piper", "rect":[0.0,0.0,200.0,44.0]]))
+        let messageTarget = try XCTUnwrap(ConversationMenuTarget(body:["key":"message-1", "rect":[0.0,0.0,200.0,44.0]], kind:.message))
+        XCTAssertEqual(messageTarget.kind, .message)
+        let messageItems = session.conversationMenuElements([
+            ["title":"React", "children":[["title":"❤️ Heart", "id":"1", "selected":true]]],
+            ["title":"Reply", "id":"2"], ["title":"Copy message", "id":"3"]
+        ], kind:.message)
+        XCTAssertEqual(messageItems.map(\.title), ["React", "Reply", "Copy message"])
+        XCTAssertEqual(((messageItems[0] as? UIMenu)?.children.first as? UIAction)?.state, .on)
         session.webView.stopLoading()
     }
 

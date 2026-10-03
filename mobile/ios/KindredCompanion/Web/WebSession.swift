@@ -69,6 +69,7 @@ final class WebSession: NSObject {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.preferences.isFraudulentWebsiteWarningEnabled = true
         configuration.defaultWebpagePreferences.preferredContentMode = .mobile
+        configuration.ignoresViewportScaleLimits = false
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         configuration.applicationNameForUserAgent = "KindredMobile/" + version
         webView = KindredWebView(frame: .zero, configuration: configuration)
@@ -144,12 +145,15 @@ final class WebSession: NSObject {
            let jsURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "js"),
            let css = try? String(contentsOf: cssURL, encoding: .utf8),
            let js = try? String(contentsOf: jsURL, encoding: .utf8) {
+            let messageGestures = Bundle.main.url(forResource: "mobile-messages", withExtension: "js")
+                .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
             let layout = """
             (function () {
               if (window.top !== window.self || window.location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
               const style = document.createElement('style');
               style.textContent = \(WebBootstrap.javaScriptString(css));
               document.head.append(style);
+              \(messageGestures)
               \(js)
             })();
             """
@@ -231,6 +235,14 @@ final class WebSession: NSObject {
         case WebSession.accountsHandler:
             if let body = message.body as? [String: Any], body["action"] as? String == "conversation-target" {
                 conversationTarget = ConversationMenuTarget(body: body)
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "message-target" {
+                conversationTarget = ConversationMenuTarget(body: body, kind: .message)
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "message-target-clear" {
+                if conversationTarget?.kind == .message { conversationTarget = nil }
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "conversation-target-clear" {
@@ -494,15 +506,18 @@ extension WebSession: WKDownloadDelegate {
 
 /// Bounded presentation data from the trusted main frame; never URLs or code.
 struct ConversationMenuTarget {
+    enum Kind: String { case conversation, message }
+    let kind: Kind
     let key: String
     let rect: CGRect
     let receivedAt = ProcessInfo.processInfo.systemUptime
 
-    init?(body: [String: Any]) {
+    init?(body: [String: Any], kind: Kind = .conversation) {
         guard let key = body["key"] as? String, !key.isEmpty, key.utf8.count <= 200,
               let values = body["rect"] as? [Double], values.count == 4,
               values.allSatisfy({ $0.isFinite && abs($0) <= 10000 }), values[2] > 0, values[3] > 0 else { return nil }
         self.key = key
+        self.kind = kind
         rect = CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
     }
 }
@@ -516,11 +531,11 @@ extension WebSession: UIContextMenuInteractionDelegate {
         return UIContextMenuConfiguration(identifier: target.key as NSString, previewProvider: nil) { [weak self] _ in
             let deferred = UIDeferredMenuElement.uncached { completion in
                 guard let self, self.origin.matches(self.webView.url) else { completion([]); return }
-                self.webView.callAsyncJavaScript("return window.__kindredConversationMenu?.describe(key);",
-                    arguments: ["key": target.key], in: nil, in: .page) { [weak self] result in
+                self.webView.callAsyncJavaScript("return kind === 'message' ? window.__kindredMobileMessages?.describe(key) : window.__kindredConversationMenu?.describe(key);",
+                    arguments: ["key": target.key, "kind":target.kind.rawValue], in: nil, in: .page) { [weak self] result in
                     guard let self, self.origin.matches(self.webView.url), case .success(let value) = result,
                           let object = value as? [String: Any], let items = object["items"] as? [[String: Any]] else { completion([]); return }
-                    completion(self.conversationMenuElements(items))
+                    completion(self.conversationMenuElements(items, kind: target.kind))
                 }
             }
             return UIMenu(children: [deferred])
@@ -529,16 +544,19 @@ extension WebSession: UIContextMenuInteractionDelegate {
 
     /// Render fixed menu data with UIKit. Selecting an opaque action ID invokes
     /// its existing page button, with no general native-execution bridge.
-    func conversationMenuElements(_ items: [[String: Any]], depth: Int = 0) -> [UIMenuElement] {
+    func conversationMenuElements(_ items: [[String: Any]], kind: ConversationMenuTarget.Kind = .conversation, depth: Int = 0) -> [UIMenuElement] {
         guard depth <= 1, items.count <= 20 else { return [] }
         return items.compactMap { item in
             guard let title = item["title"] as? String, !title.isEmpty, title.count <= 100 else { return nil }
             if let children = item["children"] as? [[String: Any]], depth == 0 {
-                return UIMenu(title: title, image: UIImage(systemName: "bell.slash"), children: conversationMenuElements(children, depth: 1))
+                return UIMenu(title: title, image: UIImage(systemName: kind == .message ? "face.smiling" : "bell.slash"), children: conversationMenuElements(children, kind: kind, depth: 1))
             }
             guard let id = item["id"] as? String, id.utf8.count <= 64, !id.isEmpty else { return nil }
             let symbol: String?
             switch title {
+            case "Reply": symbol = "arrowshape.turn.up.left"
+            case "Copy message": symbol = "doc.on.doc"
+            case "Edit queued message": symbol = "pencil"
             case "Pin": symbol = "pin"
             case "Unpin": symbol = "pin.slash"
             case "Edit bot", "Rename": symbol = "pencil"
@@ -549,10 +567,10 @@ extension WebSession: UIContextMenuInteractionDelegate {
             case "Archive bot", "Archive chat": symbol = "archivebox"
             default: symbol = nil
             }
-            return UIAction(title: title, image: symbol.flatMap(UIImage.init(systemName:))) { [weak self] _ in
+            return UIAction(title: title, image: symbol.flatMap(UIImage.init(systemName:)), state: item["selected"] as? Bool == true ? .on : .off) { [weak self] _ in
                 guard let self, self.origin.matches(self.webView.url) else { return }
-                self.webView.callAsyncJavaScript("window.__kindredConversationMenu?.perform(id);",
-                    arguments: ["id": id], in: nil, in: .page) { _ in }
+                self.webView.callAsyncJavaScript("if (kind === 'message') window.__kindredMobileMessages?.perform(id); else window.__kindredConversationMenu?.perform(id);",
+                    arguments: ["id": id, "kind":kind.rawValue], in: nil, in: .page) { _ in }
             }
         }
     }

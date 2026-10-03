@@ -133,10 +133,10 @@ public enum PushServerStatus: Equatable, Sendable {
 
     public var message: String {
         switch self {
-        case .configured: return "This server can send iOS notifications."
-        case .notConfigured: return "This server hasn't been set up to send iOS notifications."
-        case .unsupported: return "This server doesn't offer mobile notifications yet."
-        case .unrecognized: return "This server's notification status couldn't be read."
+        case .configured: return "This server can send background notifications."
+        case .notConfigured: return "Background notifications need Apple Push Notification service (APNs) setup on this server."
+        case .unsupported: return "Background notifications require mobile push support on this server."
+        case .unrecognized: return "This server's background notification status couldn't be read."
         }
     }
 }

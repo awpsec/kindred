@@ -4,6 +4,13 @@
   if (!window.__KINDRED_MOBILE || html.dataset.kindredIos) return;
   html.dataset.kindredIos = 'true';
   html.dataset.mobile = 'true';
+  // This is an app interface with its own text-size setting. Respect fixed
+  // page scale in WKWebView so double taps and pinches cannot zoom the shell.
+  // Leave Safari and embedded computer/document content's own gestures alone.
+  const viewport = document.querySelector('meta[name=viewport]') || document.createElement('meta');
+  viewport.name = 'viewport';
+  viewport.content = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content';
+  if (!viewport.isConnected) document.head.append(viewport);
   const shell = document.querySelector('#app');
   const header = document.querySelector('.conversation-header');
   if (!shell || !header) return;

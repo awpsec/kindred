@@ -180,6 +180,10 @@ with an existing persistent web data store.
   resizing and account switches (up to three live accounts), so page state
   survives size changes. Multiple windows are disabled because one web view
   can't appear in two scenes.
+- **Page scale:** the native web view honors a viewport fixed at 1×. Double
+  taps and pinches cannot zoom the app shell. This does not change Safari,
+  the app's reading-size setting, iOS accessibility Zoom, or gestures handled
+  by computer/document content itself.
 
 ### Conversation press menus
 
@@ -191,13 +195,39 @@ page action. Opening a menu never changes a conversation. Scrolling cancels
 the target, and desktop drag-reordering is suppressed on pinned cards so
 horizontal scrolling and the iOS press gesture remain available.
 
+### Message gestures
+
+On touch/mobile layouts, message action and timestamp rows are hidden. A
+leftward hold/swipe reveals timestamps beside the bubbles; releasing returns
+them to their hidden state. Vertical scrolling stays native. Pressing a
+message opens UIKit's context menu on iOS with React, Reply and Copy message,
+using the existing server actions. Queued messages retain their Edit action.
+Text selection is suppressed on message bubbles; use Copy message instead.
+Links and existing reaction badges retain their normal actions.
+
+The shared `ui/mobile-messages.js` module provides a touch press menu for
+mobile browsers and Android. Desktop controls remain unchanged. iOS bundles
+this module, so its gestures also work with older server UI. Other mobile
+clients receive it with a future server release; source changes alone do not
+update the running server.
+
+WebKit fixture checks cover menu actions, stale action rejection, timestamps,
+vertical scrolling and the portable press menu. Native tests cover UIKit menu
+construction. A physical press/swipe on an iPhone still needs hands-on checking.
+
 ### Notifications
 
 Server support is the `mobile_push` work in the server repository (routes
 `PUT/DELETE /api/mobile/devices/{installation_uuid}` and
 `GET /api/mobile/push-status`). That support is committed in the server
-source. Older running servers answer 404 and the app says notifications
-aren't offered; installing this companion doesn't upgrade the server.
+source. Older running servers answer 404 and the app explains that background
+notifications require mobile push support; installing this companion doesn't
+upgrade the server. The account screen distinguishes missing server support
+from missing APNs configuration and missing Apple push signing in the build.
+An app can alert when it is actively receiving messages, but iOS can suspend
+it in the background. Keeping a web connection open is not a substitute for
+APNs. The companion's native notification delivery currently uses APNs;
+these wording changes do not add local notification delivery.
 
 - Permission is requested only when the person taps **Enable Alerts** on an
   account, and only after `GET /api/mobile/push-status` reports

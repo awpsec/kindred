@@ -38,6 +38,8 @@ targets:
         buildPhase: resources
       - path: KindredCompanion/Web/MobileLayout.css
         buildPhase: resources
+      - path: ../../ui/mobile-messages.js
+        buildPhase: resources
     dependencies:
       - package: KindredCore
     settings:

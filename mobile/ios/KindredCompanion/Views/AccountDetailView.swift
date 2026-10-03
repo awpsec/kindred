@@ -136,7 +136,7 @@ struct AccountDetailView: View {
         } header: {
             Text("Notifications")
         } footer: {
-            Text("Alerts show only a generic message. Tapping one opens the conversation in Kindred.")
+            Text("iOS can suspend Kindred when it is backgrounded. Background alerts require the server to send a push through Apple's APNs service. Alerts contain only a generic message; tapping one opens the conversation.")
         }
     }
 
@@ -174,7 +174,7 @@ struct AccountDetailView: View {
             break
         }
         if !signedIn { return "Sign in to manage notifications." }
-        if model.apnsEnvironment == nil { return "This build of Kindred isn't configured for notifications." }
+        if model.apnsEnvironment == nil { return "This build needs Apple push signing to receive background notifications." }
         if account.serverAccountID == nil { return "Notifications need a Kindred account sign-in, not a legacy access token." }
         if account.push.wanted { return waitingText() }
         switch serverStatus {
