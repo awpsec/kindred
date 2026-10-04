@@ -561,6 +561,7 @@ async function refresh(force = false) {
     }
     state.bot =
       bots.find((b) => b.id === state.bot?.id && !profile(b).archived) ||
+      bots.find((b) => b.id===primaryBotId()) ||
       bots.find((b) => !profile(b).archived) ||
       null;
     if (
@@ -985,11 +986,34 @@ function glideSidebar(places){
     trackMotion(entry.animate(frames,{duration:240,easing:'cubic-bezier(.2,.8,.2,1)'}),240);
   }
 }
+function primaryBotId(){
+  const id=Object.hasOwn(state.status,'primary_bot_id')?state.status.primary_bot_id:state.general.primary_bot_id;
+  return state.bots.some(b=>b.id===id&&!profile(b).archived)?id:null;
+}
+function primaryBotControl(bot){
+  const primary=switchField('Use as primary bot',primaryBotId()===bot.id);
+  primary.input.disabled=!!profile(bot).archived;
+  primary.input.onchange=async()=>{
+    const selected=primary.input.checked;primary.input.disabled=true;
+    try{
+      const value=await api('/primary-bot','PUT',{bot_id:selected?bot.id:null});
+      state.statusEpoch=(state.statusEpoch||0)+1;state.status.primary_bot_id=value.bot_id;state.general.primary_bot_id=value.bot_id;
+      state.navKey='';state.headerKey='';renderSidebar();renderHeader();
+    }catch(error){primary.input.checked=primaryBotId()===bot.id;notice(error.message,true);}
+    finally{primary.input.disabled=!!profile(bot).archived;}
+  };
+  return primary;
+}
+function primaryBotBadge(){
+  const badge=node('span','primary-bot-badge');badge.title='Primary bot';badge.setAttribute('aria-label','Primary bot');badge.setAttribute('role','img');
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+  const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d','m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z');path.setAttribute('fill','none');path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','1.8');path.setAttribute('stroke-linejoin','round');svg.append(path);badge.append(svg);return badge;
+}
 function renderSidebar() {
   if(archivingBots.size||pinDrag)return;
   const key = JSON.stringify([
     state.bots,
-    state.general.name,state.general.separate_bot_chats,
+    state.general.name,state.general.separate_bot_chats,primaryBotId(),
     Object.entries(state.attention.mutes||{}).map(([key,until])=>[key,until===-1||until>Date.now()/1000]),
     state.chats,
     Object.entries(state.attention.chats).map(([id,value])=>[id,value.unread]),
@@ -1118,10 +1142,11 @@ function renderHeader() {
     busy = state.allRuns.some((r) => r.bot_id === b?.id && active(r));
   const group=state.chat&&!state.chat.id.startsWith('dm-');
   $('bot-details').disabled=!(b||group);
-  const key = JSON.stringify([b, busy, state.chat,channelTitle(state.chat),state.general.name,state.bots.map(b=>[b.id,b.name,b.profile])]);
+  const key = JSON.stringify([b, busy, state.chat,channelTitle(state.chat),state.general.name,primaryBotId(),state.bots.map(b=>[b.id,b.name,b.profile])]);
   if (key !== state.headerKey) {
     state.headerKey = key;
     $("heading").textContent = channelTitle(state.chat) || b?.name || "Kindred";
+    if(!group&&b?.id===primaryBotId())$("heading").append(primaryBotBadge());
     $("header-avatar").replaceChildren(
       group?participantStack(state.chat,'header','stack-header'):buddy(b, 34, busy, `header-${b?.id || "empty"}`),
     );
@@ -1494,7 +1519,8 @@ function botIdentityForm(bot){
     label=field('Label (optional)',profile(bot).label,'input',{maxLength:80}),
     description=field('Description',profile(bot).description,'textarea',{rows:4,maxLength:2000}),
     notifications=switchField('Notifications',profile(bot).notifications!==false),progress=botProgressControl(bot);
-  form.append(name.label,label.label,description.label,notifications.label,progress.label);
+  const primary=primaryBotControl(bot);
+  form.append(name.label,label.label,description.label,primary.label,notifications.label,progress.label);
   notifications.input.addEventListener('change',()=>{if(notifications.input.checked)void enableNotifications();});
   const saver=livePreferences(form,()=>({name:name.input.value,label:label.input.value,description:description.input.value,notifications:notifications.input.checked,progress_updates:progress.input.value}),value=>queueAvatarWrite(bot.id,async()=>{
     state.botWriteEpoch=(state.botWriteEpoch||0)+1;
@@ -1513,6 +1539,7 @@ function botIdentityForm(bot){
   });
   form.updateIdentity=value=>{
     if(saver.dirty || form.contains(document.activeElement))return;
+    primary.input.checked=primaryBotId()===bot.id;
     name.input.value=value.name;label.input.value=profile(value).label||'';description.input.value=profile(value).description||'';notifications.input.checked=profile(value).notifications!==false;progress.input.value=profile(value).progress_updates||'inherit';
   };
   return form;
@@ -1591,6 +1618,7 @@ function renderBotSettings() {
   const connectors=botConnectorPreferences(draft);
   provider.onchange = () => {models.changeProvider(provider.value);connectors.setProvider(provider.value,false);};
   const automatic = approvalSelect(b.approval_mode || "inherit", true),
+    primary = primaryBotControl(b),
     pinned = switchField("Pin in sidebar", profile(b).pinned),
     notifications = switchField("Notifications", profile(b).notifications !== false),
     progress = botProgressControl(b);
@@ -1601,6 +1629,7 @@ function renderBotSettings() {
     name.label,
     label.label,
     description.label,
+    primary.label,
     notifications.label,
     progress.label,
     local.root,
@@ -4694,6 +4723,8 @@ function acceptAttention(attention){
 }
 function addUnreadDot(control,id,bot){
   const avatar=control.querySelector('.character,.participant-stack');
+  avatar?.querySelector(':scope > .primary-bot-badge')?.remove();
+  if(bot?.id===primaryBotId()&&avatar){avatar.append(primaryBotBadge());control.setAttribute('aria-label',(control.getAttribute('aria-label')||bot.name)+', primary bot');}
   avatar?.querySelector(':scope > .conversation-muted')?.remove();
   const mutedUntil=key=>{const until=state.attention.mutes?.[key]||0;return until===-1||until>Date.now()/1000;};
   const muted=mutedUntil('chat:'+id)||(bot&&(mutedUntil('bot:'+bot.id)||profile(bot).notifications===false));

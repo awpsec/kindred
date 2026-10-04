@@ -5266,3 +5266,9 @@ html[data-mobile] .conversation-header { -webkit-app-region:no-drag; }
 
 .artifact-format-toolbar select[aria-label="Font size"]{width:64px;min-width:64px;max-width:64px}.artifact-format-more summary::before,.artifact-format-more summary::after{display:none}.artifact-format-more summary{margin:0}
 .artifact-workbench-body:has(>.artifact-editor-mount){display:flex;flex-direction:column;padding:0;overflow:hidden}
+
+/* Primary is a profile role, separate from unread, muted and online status. */
+.primary-bot-badge{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex:none;color:var(--muted);vertical-align:middle}
+.primary-bot-badge svg{width:13px;height:13px;display:block}
+#heading>.primary-bot-badge{margin-left:7px}
+.sidebar .character>.primary-bot-badge{position:absolute;top:-3px;right:-3px;border-radius:50%;background:var(--bg);z-index:2;pointer-events:none}
