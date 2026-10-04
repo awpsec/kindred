@@ -10,11 +10,15 @@ const {server,token}=require('./fixtures/desktop.cjs');const assert=require('nod
  const toggle=p.getByRole('switch',{name:'Use as primary bot'});await toggle.check();
  await p.waitForFunction(()=>!!document.querySelector('#heading .primary-bot-badge'));
  assert.equal(primary,'piper');assert.equal(await p.locator('#bots .character>.primary-bot-badge').count(),1);
+ assert(await p.locator('#bots .bot-title-row>.primary-bot-mark').isVisible());assert(!await p.locator('#bots .character>.primary-bot-badge').isVisible());
+ assert.equal(await p.getByRole('button',{name:'Piper, primary bot'}).count(),1);
  fs.mkdirSync('/opt/kindred/testing/primary-bot',{recursive:true});await p.screenshot({path:'/opt/kindred/testing/primary-bot/expanded.png'});
  await p.evaluate(()=>(()=>{const shell=document.querySelector('.shell');shell.classList.add('sidebar-rail','sidebar-sized');shell.style.setProperty('--sidebar-width','76px');})());
- assert(await p.locator('#bots .character>.primary-bot-badge').isVisible());
- await p.screenshot({path:'/opt/kindred/testing/primary-bot/compact.png'});
+ assert(await p.locator('#bots .character>.primary-bot-badge').isVisible());assert(!await p.locator('#bots .primary-bot-mark').isVisible());
+ await p.waitForTimeout(400);await p.screenshot({path:'/opt/kindred/testing/primary-bot/compact.png'});
+ await p.evaluate(()=>document.documentElement.dataset.theme='light');await p.screenshot({path:'/opt/kindred/testing/primary-bot/compact-light.png'});
  await p.evaluate(()=>(()=>{const shell=document.querySelector('.shell');shell.classList.remove('sidebar-rail','sidebar-sized');shell.style.removeProperty('--sidebar-width');})());
+ await p.waitForTimeout(400);await p.screenshot({path:'/opt/kindred/testing/primary-bot/expanded-light.png'});
  await toggle.uncheck();await p.waitForFunction(()=>!document.querySelector('#heading .primary-bot-badge'));assert.equal(primary,null);
  fail=true;await toggle.click();await p.waitForTimeout(600);assert(!await toggle.isChecked());assert.equal(primary,null);assert.deepEqual(errors,[]);
  console.log('Primary bot: save, clear, failure recovery, header and compact sidebar passed');

@@ -1004,10 +1004,11 @@ function primaryBotControl(bot){
   };
   return primary;
 }
-function primaryBotBadge(){
-  const badge=node('span','primary-bot-badge');badge.title='Primary bot';badge.setAttribute('aria-label','Primary bot');badge.setAttribute('role','img');
+function primaryBotBadge(className='primary-bot-badge',decorative=false){
+  const badge=node('span',className);badge.title='Primary bot';
+  if(decorative)badge.setAttribute('aria-hidden','true');else{badge.setAttribute('aria-label','Primary bot');badge.setAttribute('role','img');}
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
-  const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d','m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z');path.setAttribute('fill','none');path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','1.8');path.setAttribute('stroke-linejoin','round');svg.append(path);badge.append(svg);return badge;
+  const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d','m12 3.5 2.6 5.3 5.9.8-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.8Z');path.setAttribute('fill','currentColor');path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','2');path.setAttribute('stroke-linejoin','round');svg.append(path);badge.append(svg);return badge;
 }
 function renderSidebar() {
   if(archivingBots.size||pinDrag)return;
@@ -4723,8 +4724,11 @@ function acceptAttention(attention){
 }
 function addUnreadDot(control,id,bot){
   const avatar=control.querySelector('.character,.participant-stack');
-  avatar?.querySelector(':scope > .primary-bot-badge')?.remove();
-  if(bot?.id===primaryBotId()&&avatar){avatar.append(primaryBotBadge());control.setAttribute('aria-label',(control.getAttribute('aria-label')||bot.name)+', primary bot');}
+  avatar?.querySelector(':scope > .primary-bot-badge')?.remove();control.querySelector('.bot-title-row>.primary-bot-mark')?.remove();
+  if(bot?.id===primaryBotId()&&avatar){
+    avatar.append(primaryBotBadge('primary-bot-badge',true));control.querySelector('.bot-title-row>strong')?.after(primaryBotBadge('primary-bot-mark',true));
+    control.setAttribute('aria-label',(control.getAttribute('aria-label')||bot.name)+', primary bot');
+  }
   avatar?.querySelector(':scope > .conversation-muted')?.remove();
   const mutedUntil=key=>{const until=state.attention.mutes?.[key]||0;return until===-1||until>Date.now()/1000;};
   const muted=mutedUntil('chat:'+id)||(bot&&(mutedUntil('bot:'+bot.id)||profile(bot).notifications===false));

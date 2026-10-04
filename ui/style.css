@@ -5268,7 +5268,18 @@ html[data-mobile] .conversation-header { -webkit-app-region:no-drag; }
 .artifact-workbench-body:has(>.artifact-editor-mount){display:flex;flex-direction:column;padding:0;overflow:hidden}
 
 /* Primary is a profile role, separate from unread, muted and online status. */
-.primary-bot-badge{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex:none;color:var(--muted);vertical-align:middle}
-.primary-bot-badge svg{width:13px;height:13px;display:block}
-#heading>.primary-bot-badge{margin-left:7px}
-.sidebar .character>.primary-bot-badge{position:absolute;top:-3px;right:-3px;border-radius:50%;background:var(--bg);z-index:2;pointer-events:none}
+.primary-bot-badge,.primary-bot-mark{display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--muted);vertical-align:middle;pointer-events:none}
+.primary-bot-badge svg,.primary-bot-mark svg{width:10px;height:10px;display:block}
+#heading>.primary-bot-badge{width:12px;height:12px;margin:-2px 0 0 6px;pointer-events:auto}
+/* Expanded rows carry the mark beside the name; the avatar corner is reserved for pinned tiles and the rail. */
+.bot-title-row:has(>.primary-bot-mark){grid-template-columns:minmax(0,max-content) auto minmax(0,1fr) auto}
+.bot-title-row>.primary-bot-mark{grid-column:2;grid-row:1;margin-left:-1px;pointer-events:auto}
+.bot-title-row:has(>.primary-bot-mark)>.bot-label{grid-column:3}
+.bot-title-row:has(>.primary-bot-mark)>.bot-time{grid-column:4}
+.sidebar .character>.primary-bot-badge{--badge-ring:var(--sidebar);position:absolute;top:-2px;left:-2px;z-index:4;width:15px;height:15px;border-radius:50%;background:var(--badge-ring);box-shadow:0 0 0 2px var(--badge-ring)}
+.sidebar .character>.primary-bot-badge svg{width:10px;height:10px}
+.sidebar .active>.character>.primary-bot-badge{--badge-ring:var(--selected)}
+.sidebar :is(.bot-link,.pinned-bot):hover:not(.active)>.character>.primary-bot-badge{--badge-ring:var(--hover)}
+.sidebar .bot-link>.character>.primary-bot-badge{display:none}
+.sidebar-rail:not(.sidebar-peek)>.sidebar .bot-link>.character>.primary-bot-badge{display:inline-flex}
+@media(forced-colors:active){.primary-bot-badge,.primary-bot-mark{color:CanvasText}.sidebar .character>.primary-bot-badge{--badge-ring:Canvas}}
