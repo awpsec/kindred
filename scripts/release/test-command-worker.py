@@ -19,8 +19,10 @@ with tempfile.TemporaryDirectory(prefix='kindred worker test ') as folder:
     root = Path(folder)
 
     def launch(directory):
+        log = (directory / ('worker-' + str(len(children)) + '.log')).open('wb')
         child = subprocess.Popen([str(binary), '--kindred-command-worker', str(directory)],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                 stdout=log, stderr=log)
+        log.close()
         children.append(child)
         return child
 
@@ -42,7 +44,10 @@ with tempfile.TemporaryDirectory(prefix='kindred worker test ') as folder:
             except (OSError, ValueError):
                 pass
             time.sleep(.1)
-        raise AssertionError(f'Missing {name} for {directory.name}')
+        details = {p.name: p.read_text(errors='replace')[-8000:]
+                   for p in directory.iterdir() if p.suffix in ('.json', '.log')}
+        exits = [child.poll() for child in children]
+        raise AssertionError(f'Missing {name}; worker exit codes={exits}; receipts/logs={details}')
 
     try:
         command = ("Add-Content launches launch; Write-Output phase-one; Start-Sleep -Seconds 3; Write-Output phase-two"
