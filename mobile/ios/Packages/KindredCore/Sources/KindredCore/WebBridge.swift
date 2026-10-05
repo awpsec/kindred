@@ -87,6 +87,7 @@ public enum WebBootstrap {
           if (window.top !== window.self) { return; }
           if (window.location.origin !== \(javaScriptString(origin.serialized))) { return; }
           window.__KINDRED_MOBILE = true;
+          window.__KINDRED_MOBILE_PLATFORM = "ios";
           window.__KINDRED_MOBILE_PROFILE = \(javaScriptString(profileID ?? ""));
           window.__KINDRED_NATIVE_SESSION_BOOTSTRAP = true;
           try {

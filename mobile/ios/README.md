@@ -146,6 +146,36 @@ the account metadata store. App tests cover the Keychain store (round trip,
   survives size changes. Multiple windows are disabled because one web view
   can't appear in two scenes.
 
+### System text size
+
+The shared UI follows the iPhone/iPad Settings text size, including accessibility
+sizes. The native host measures UIKit's preferred body font against the Large
+body font, then supplies `window.__KINDRED_SYSTEM_TEXT_SCALE` before page startup.
+It writes the global before dispatching `kindred-system-text-size` with
+`detail.scale` on changes. `__KINDRED_MOBILE_PLATFORM` is `ios`; the shared
+reading-size module applies this signal once, instead of a saved app percentage.
+Desktop and Android reading-size preferences retain their existing behavior.
+
+The script is confined to the selected origin's main frame. Content-size
+notifications, return to the foreground, cached-account attachment and completed
+loads keep the current page and its next bootstrap in sync. Updating the signal
+does not reload the page, alter its session, or set `WKWebView.pageZoom`; the
+remote computer canvas keeps its coordinate system. Native SwiftUI text retains
+its semantic Dynamic Type fonts. These behaviors still need Mac/device acceptance.
+
+To check the generated JavaScript without UIKit, from `mobile/ios`:
+
+```sh
+swiftc Packages/KindredCore/Sources/KindredCore/*.swift tools/text-size-fixtures.swift -o /tmp/kindred-text-size-fixtures
+/tmp/kindred-text-size-fixtures > /tmp/kindred-text-size-fixtures.json
+node tools/test-text-size-bridge.cjs /tmp/kindred-text-size-fixtures.json
+```
+
+This executes scripts emitted by the actual core implementation and checks
+initial/live scale, frame/origin/platform boundaries and unchanged sessions.
+It does not test UIKit's category mapping; `SystemTextSizeTests` belongs to the
+Mac app test target.
+
 ### Notifications
 
 Server support is the `mobile_push` work in the server repository (routes
@@ -222,6 +252,8 @@ that is asleep (Help), a dark-mode QR, denied camera permission (paste
 fallback) and opening the link from the Camera app.
 
 1. `swift test` in `Packages/KindredCore`, then the app test scheme above.
+   `SystemTextSizeTests` checks Large as baseline and all normal/accessibility
+   categories in increasing order.
 2. Run on a simulator against an HTTPS Kindred server: add two accounts on
    one server and one on another; confirm grouping, switching keeps each
    page's state, and each account stays signed in after relaunch.
@@ -235,6 +267,34 @@ fallback) and opening the link from the Camera app.
    the registration with `GET /api/mobile/push-status?installation_uuid=…`,
    trigger a message, tap the alert, then Turn Off Alerts and confirm
    `registered:false`.
+
+### Text-size and return-control acceptance on iPhone
+
+Use an isolated test account/backend; do not use a payment/provider login for
+this check. A Linux/WebKit fixture cannot establish these native results.
+
+- With an old `kindred-text-size` value saved in the account's web store, change
+  Settings → Display & Brightness → Text Size, then the Accessibility → Display
+  & Text Size → Larger Text slider. Check xS, Large, XXXL, AX3 and AX5. The shared
+  Settings screen must explain that iOS text size follows the system. The saved
+  percentage must not block changes or be deleted as a side effect.
+- Leave a long chat open with a draft, table and code block. Change the system
+  category via Accessibility Inspector while foregrounded, then via Settings
+  while backgrounded. Confirm size updates without page reload, losing the
+  draft, replaying motion, or jumping away from the visible conversation.
+- Reload, switch to another saved account and back, and load a notification
+  route. Each page must start at the current size and retain its own session.
+  Change size while a page is loading to exercise the completed-load refresh.
+- At the same categories check light/dark chat, sidebar, shared Settings and
+  computer toolbar. Verify reachable composer above the keyboard, safe areas,
+  wrapping/ellipsis, usable controls and at least 44pt touch targets. AX4/AX5
+  failures need review with captures; do not silently cap the system setting.
+- Take manual control in computer view, focus a browser text field, dismiss the
+  keyboard, and tap Return control, both with and without the keyboard visible.
+  Check the toolbar action reaches the intended bot and returns control without
+  the reported white full-width bar; compare the working chat action. Rotate
+  during input and check the host's resize/keyboard avoidance does not swallow
+  the tap. Repeat once with a failed release to confirm a visible retry path.
 
 ### Approved launch animation
 
