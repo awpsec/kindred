@@ -3138,6 +3138,8 @@ dialog[open] {animation:dialog-enter .2s cubic-bezier(.2,.8,.2,1);}
 @container computer (max-width:580px) {
   .desktop-action-label {display:none;}
   .desktop-toolbar .desktop-action {width:calc(32px * var(--text-scale,1));padding:7px;}
+  .desktop-toolbar #take-control {width:auto;max-width:70%;min-width:0;}
+  #take-control .desktop-action-label {display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;}
 }
 .teaching-bar {display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 14px 10px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);}
 .teaching-status {font-size:calc(12px * var(--text-scale, 1));margin-right:auto;}
@@ -3704,6 +3706,7 @@ html[data-motion="off"] #composer,html[data-motion="off"] .composer-reply .icon-
 .control-notice-copy p {margin:4px 0 0;color:var(--muted);line-height:1.5;}
 .control-notice-row button {flex:none;}
 .control-notice-error {flex-basis:100%;margin:0;color:var(--danger);}
+#computer-control-error {margin:0 14px 8px;font-size:calc(12px * var(--text-scale,1));}
 #queue-status .small-button {margin-left:8px;}
 @media(max-width:600px){.control-notice{right:16px;top:44px;max-height:55dvh;} .control-notice-row button {min-height:36px;} }
 
@@ -5286,6 +5289,19 @@ html[data-mobile] .conversation-header { -webkit-app-region:no-drag; }
 
 /* Keep wide mobile content inside its own scrollport, not the chat viewport. */
 html[data-mobile]{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* Native iOS text size also needs room in the fixed desktop-derived chrome. */
+.setting-row.system-text-size {flex-direction:column;align-items:flex-start;gap:4px;}
+.setting-row.system-text-size p {max-width:none;margin:0;}
+html[data-system-text-size] .conversation-header {height:auto;min-height:57px;}
+html[data-system-text-size] .bot-heading strong {line-height:1.3;}
+html[data-system-text-size] .sidebar-top {height:auto;min-height:57px;flex-shrink:0;}
+html[data-system-text-size] .search {height:auto;min-height:33px;flex-shrink:0;padding-top:6px;padding-bottom:6px;}
+html[data-system-text-size] .search input {line-height:1.4;}
+html[data-system-text-size] .computer-panel.expanded .computer-routines:has(> .section-toolbar:only-child) {max-height:none;flex-shrink:0;}
+html[data-system-text-size] .message-action-time {font-size:calc(10px * var(--text-scale,1));line-height:1.4;}
+html[data-large-text] .nav-entry .bot-link {padding-right:38px;}
+html[data-large-text] .nav-entry .bot-title-row {display:block;}
+html[data-large-text] .nav-entry :is(.bot-time,.bot-label) {display:none;}
 html[data-mobile] .message-row,html[data-mobile] .message-bubble{min-width:0}
 html[data-mobile] .message-bubble .markdown-table{width:100%;min-width:0;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
 html[data-mobile] .message-bubble pre{max-width:100%;overflow-x:auto}
