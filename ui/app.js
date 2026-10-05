@@ -216,12 +216,14 @@ async function perform(action, control) {
     if (control) {control.disabled = false;delete control.dataset.pending;control.removeAttribute("aria-busy");control.classList.remove("is-busy");}
   }
 }
-const pendingApiRequests=new Set();
-let pageSuspended=false;
+const pendingApiRequests=new Map();
+let pageSuspended=false,pageHidden=false,navigationGeneration=0,navigationRecovery=null;
 async function api(path, method = "GET", body, options = {}) {
-  if(pageSuspended)throw 'pagehide';
+  const requestToken=state.token,bot_id=screenBotId();
+  if(pageSuspended&&navigationRecovery&&!pageHidden)await navigationRecovery.promise;
+  if(pageSuspended){if(method==='GET')throw 'pagehide';const error=new Error('This page is leaving. The change was not sent. Try again after returning.');error.notSent=true;error.uncertain=false;throw error;}
+  if(state.token!==requestToken){if(method==='GET')throw 'pagehide';const error=new Error('The workspace changed before this request was sent. Try again in the current workspace.');error.notSent=true;error.uncertain=false;throw error;}
   path=path.replace(/^\/chats\/(server-[^/?]+)/,'/server-chats/$1');
-  const bot_id = screenBotId();
   if (method === "GET" && ["/status", "/computer"].includes(path))
     path += "?bot_id=" + encodeURIComponent(bot_id);
   if (
@@ -230,7 +232,7 @@ async function api(path, method = "GET", body, options = {}) {
   )
     body = { ...body, bot_id: body?.bot_id ?? bot_id };
   const timeout=new AbortController();
-  pendingApiRequests.add(timeout);
+  pendingApiRequests.set(timeout,method);
   const startingComputer=method==="POST"&&(path==="/codex/login"||/^\/provider-cli\/[^/]+\/login$/.test(path));
   const abort=()=>timeout.abort(options.signal.reason);
   if(options.signal?.aborted)abort();else options.signal?.addEventListener('abort',abort,{once:true});
@@ -240,7 +242,7 @@ async function api(path, method = "GET", body, options = {}) {
     signal:timeout.signal,
     method,
     headers: {
-      Authorization: "Bearer " + state.token,
+      Authorization: "Bearer " + requestToken,
       "Content-Type": "application/json",
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -254,7 +256,7 @@ async function api(path, method = "GET", body, options = {}) {
   if (!res.ok) {const error=new Error(data.error || `Request failed (${res.status})`);error.status=res.status;throw error;}
   return data;
   } catch(e) {
-    if(timeout.signal.reason==='pagehide')throw 'pagehide';
+    if(timeout.signal.reason==='pagehide'){if(method==='GET')throw 'pagehide';const error=new Error('The page closed before the server confirmed the change. Check whether it completed before trying again.');error.uncertain=true;throw error;}
     if(timeout.signal.aborted && timeout.signal.reason!=='pagehide')throw new Error(method==='GET'?'The server took too long to respond. Try again.':'The response timed out. Check whether the change completed before retrying.');
     throw e;
   } finally {clearTimeout(timer);options.signal?.removeEventListener('abort',abort);pendingApiRequests.delete(timeout);}
@@ -6479,12 +6481,39 @@ if(window.__KINDRED_MOBILE){
   window.addEventListener('kindred-mobile-suspend',persistConversation);
   window.addEventListener('kindred-mobile-error',event=>notice(String(event.detail||'Could not save this file.'),true));
 }
-addEventListener('pagehide',()=>{
-  pageSuspended=true;
-  persistConversation();
-  for(const request of pendingApiRequests)request.abort('pagehide');
+function invalidateNavigationRecovery(){
+  navigationGeneration++;
+  if(navigationRecovery){cancelAnimationFrame(navigationRecovery.frame);navigationRecovery.resolve(false);navigationRecovery=null;}
+}
+function beginNavigationRecovery(){
+  if(pageHidden||!pageSuspended||navigationRecovery)return;
+  const generation=navigationGeneration,recovery={};
+  recovery.promise=new Promise(resolve=>{recovery.resolve=resolve;});
+  navigationRecovery=recovery;
+  // A trusted action alone can still reach WebKit's leaving document. Wait
+  // until that document renders again; never synthesize/replay the action.
+  recovery.frame=requestAnimationFrame(()=>{
+    if(generation!==navigationGeneration||pageHidden){recovery.resolve(false);return;}
+    navigationRecovery=null;pageSuspended=false;recovery.resolve(true);
+    if(state.token)void perform(()=>refresh(true));
+  });
+}
+addEventListener('beforeunload',()=>{
+  // WebKit can run timers after navigation starts, before pagehide. Prevent
+  // new requests there; keep dispatched writes intact if the user stays.
+  pageSuspended=true;invalidateNavigationRecovery();persistConversation();
+  for(const [request,method] of pendingApiRequests)if(method==='GET')request.abort('pagehide');
+  // Stay has no portable event. A later trusted action plus rendering resumes
+  // this document; no timer or RAF alone guesses the navigation outcome.
 });
-addEventListener('pageshow',e=>{pageSuspended=false;if(e.persisted&&state.token)void perform(()=>refresh(true));});
+for(const type of ['pointerdown','keydown'])addEventListener(type,event=>{if(event.isTrusted)beginNavigationRecovery();},{capture:true});
+addEventListener('pagehide',()=>{
+  pageHidden=true;pageSuspended=true;invalidateNavigationRecovery();
+  persistConversation();
+  for(const request of pendingApiRequests.keys())request.abort('pagehide');
+});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&pageSuspended)invalidateNavigationRecovery();});
+addEventListener('pageshow',e=>{invalidateNavigationRecovery();pageHidden=false;pageSuspended=false;if(e.persisted&&state.token)void perform(()=>refresh(true));});
 
 // Every finite UI effect must settle even if a webview drops its finish event.
 // Cancellation for a new interaction discards the old destination; cancellation
