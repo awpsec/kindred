@@ -5,7 +5,6 @@ import {workspaceArtifactCard,artifactStudio,artifactUpdateRow,artifactUpdateBat
 import {groupActivity,transitionGroupActivity,visibleGroupWorkers,sharedConversationWorkers} from './group-activity.js';
 import { decisionReceipt } from './decision-receipts.js';
 import {installThemedSelects} from "./select-menu.js";
-import "./reading-size.js";
 import {enhanceMarkdown,fileCard,artifactPreview,inlineShard} from "./artifacts.js";
 import {connectorCatalog} from "./connector-catalog.js";
 import {connectorCard} from "./connector-cards.js";
@@ -209,6 +208,7 @@ async function perform(action, control) {
     return await action();
   } catch (e) {
     if(e==='pagehide')return;
+    if(e?.controlFeedbackShown)return;
     notice(e.message || "Something went wrong.", true);
   } finally {
     if (control) {control.disabled = false;delete control.dataset.pending;control.removeAttribute("aria-busy");control.classList.remove("is-busy");}
@@ -2244,9 +2244,11 @@ async function settingsGeneral(revision) {
   const separateBots=settingSwitch('Separate bot conversations',state.general.separate_bot_chats!==false);
   appearance.body.append(settingRow('Theme',theme),motion.label);
   const conversations=settingsPane('Conversations');conversations.body.append(activity.label,separateBots.label);
-  const textSize=select([['100','100%'],['115','115%'],['125','125%'],['150','150%']],String(window.KindredReadingSize.get()));
-  textSize.setAttribute('aria-label','Text size');textSize.onchange=()=>window.KindredReadingSize.set(textSize.value);
-  const textRow=settingRow('Text size',textSize);textRow.dataset.devicePreference='true';appearance.body.append(textRow);
+  const textSize=window.KindredReadingSize.systemManaged
+    ? node('p','muted','Text size follows your iPhone setting (Settings › Display & Brightness › Text Size).')
+    : select([['100','100%'],['115','115%'],['125','125%'],['150','150%']],String(window.KindredReadingSize.get()));
+  if(!window.KindredReadingSize.systemManaged){textSize.setAttribute('aria-label','Text size');textSize.onchange=()=>window.KindredReadingSize.set(textSize.value);}
+  const textRow=settingRow('Text size',textSize);textRow.classList.toggle('system-text-size',window.KindredReadingSize.systemManaged);textRow.dataset.devicePreference='true';appearance.body.append(textRow);
   const versions=settingsPane('Versions');versions.root.dataset.devicePreference='true';
   const clientVersion=node('span'),serverVersion=node('span'),updateStatus=node('p','muted small');
   clientVersion.dataset.clientVersion='';serverVersion.dataset.serverVersion='';updateStatus.dataset.clientUpdateStatus='';
@@ -3521,12 +3523,13 @@ function renderComputerMaintenance(){
 }
 function updateDesktopState() {
   renderComputerMaintenance();
+  if($('computer-control-error').dataset.botId!==screenBotId())$('computer-control-error').hidden=true;
   const takeover = !!state.status.takeover && !!state.desktopControlRequested,
     updating = ["starting","updating","checking","rebooting"].includes(state.status.maintenance?.phase),
     recovering = state.status.computer_recovering_seconds || 0,
     busy = state.allRuns.some((r) => r.bot_id === screenBotId() && active(r) && r.status !== "awaiting_user"),
     human = pendingHumanTask();
-  const controlLabel = state.takingControl ? "Switching control…" : updating ? "Updating computer…" : takeover
+  const controlLabel = state.takingControl ? (state.returningControl ? "Returning control…" : "Switching control…") : updating ? "Updating computer…" : takeover
     ? "Return control"
     : state.status.takeover
       ? "Use screen"
@@ -3561,7 +3564,10 @@ function screenAction(control,label,symbol) {
   control.dataset.label=label;control.replaceChildren(icon(symbol,16),node('span','desktop-action-label',label));
 }
 async function toggleControl() {
+  if(state.takingControl)return;
   const targetBotId=screenBotId();
+  state.returningControl=!!state.status.takeover&&!!state.desktopControlRequested;
+  $('computer-control-error').hidden=true;
   state.statusEpoch=(state.statusEpoch||0)+1;
   state.takingControl = true;
   updateDesktopState();
@@ -3569,8 +3575,22 @@ async function toggleControl() {
     if (state.status.takeover && state.desktopControlRequested) {
       const task = pendingHumanTask();
       if(task) { await finishHumanTask(task); return; }
-      const pause=pausedScreens().find(p=>p.bot_id===screenBotId());
-      if(pause)await returnScreenControl(pause);
+      let pause=pausedScreens().find(p=>p.bot_id===targetBotId);
+      if(!pause){
+        // The toolbar's takeover flag can outlive its pause projection. Read
+        // this screen explicitly rather than silently dropping the user's tap.
+        const status=await api('/status?bot_id='+encodeURIComponent(targetBotId));
+        if(screenBotId()!==targetBotId)return;
+        state.status=status;state.statusEpoch++;
+        if(!status.takeover){
+          state.desktopControlRequested=false;
+          if(!$('computer-panel').hidden)await connectDesktop();
+          return;
+        }
+        pause=pausedScreens().find(p=>p.bot_id===targetBotId);
+      }
+      if(!pause)throw new Error('Could not find this bot’s pause. Use Return control in chat.');
+      await returnScreenControl(pause);
       return;
     }
     if(state.status.takeover){
@@ -3601,8 +3621,22 @@ async function toggleControl() {
     state.desktopControlRequested=true;
     await refresh();
     await connectDesktop();
+  } catch(error) {
+    // An interrupted response can still be a confirmed release after the
+    // shared helper reconciles status. Keep the successful watching state.
+    if(state.returningControl&&!state.status.takeover&&screenBotId()===targetBotId)return;
+    if(screenBotId()===targetBotId&&!$('computer-panel').hidden){
+      $('computer-control-error').textContent=error instanceof TypeError
+        ? (state.returningControl ? 'Could not reach the server. Control may not have been returned. Try again.' : 'Could not reach the server. Try again.')
+        : error.message||'Could not return control. Try again.';
+      $('computer-control-error').dataset.botId=targetBotId;
+      $('computer-control-error').hidden=false;
+      error.controlFeedbackShown=true;
+    }
+    throw error;
   } finally {
     state.takingControl = false;
+    state.returningControl = false;
     updateDesktopState();
   }
 }
