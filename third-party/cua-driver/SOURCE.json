@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "name": "cua-driver",
+  "version": "0.33.4",
+  "license": "MIT",
+  "source": "https://github.com/trycua/cua",
+  "source_commit": "ba0033a661101669c60ce05f1fe5753bf8bad748",
+  "tag": "cua-driver-rs-v0.33.4",
+  "target": "x86_64-unknown-linux-gnu",
+  "archive_sha256": "15f6f1450a8ace5ec352db9da3d957d07b8ebf92d60115c1ff0048dd7d8ea744",
+  "archive_member": "cua-driver",
+  "binary_sha256": "cb53ed8514b22eef82926ae4fbe2fa781571d4c326e807650d35846b5c6546a2",
+  "binary_bytes": 42023000,
+  "packaged_path": "deploy/vendor/cua-driver",
+  "installed_path": "/usr/local/lib/kindred/cua-driver",
+  "minimum_glibc": "2.39",
+  "signature_verification": "Upstream baseline SHA256 checked; modified candidate is a locally built payload, not an upstream-signed executable",
+  "optional_extensions": [],
+  "upstream_archive_url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.33.4/cua-driver-rs-0.33.4-linux-x86_64-binary.tar.gz",
+  "upstream_archive_sha256": "7d2f1a288b9d1c62efbdc8ddf4209804f9c0347b4a012fa0bac269ee7249cd90",
+  "upstream_binary_sha256": "e8939a8051989cac9a09ed5298921b0a5263303295c5e3ea0af28a4e3f619e8d",
+  "kindred_policy": "no_automatic_browser_input_v1",
+  "patch_path": "third-party/cua-driver/kindred-no-automatic-browser-input.patch",
+  "patch_sha256": "e02620e21ac3ba104113052e6e6af6c491b791b572b5f0958694b452ea444957",
+  "build": {
+    "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "cargo_lock_sha256": "07bf6342a0fdf56424c455d1cb8e5ca4b952dec5b71b967672f5b697185d59c4",
+    "command": "cargo build --locked --release -p cua-driver",
+    "strip": "strip --strip-unneeded",
+    "policy_tests": {
+      "unpatched_failed": 2,
+      "patched_passed": 2
+    },
+    "required_libraries": [
+      "libX11.so.6",
+      "libXi.so.6",
+      "libgcc_s.so.1",
+      "libm.so.6",
+      "libc.so.6",
+      "libxcb.so.1",
+      "libXext.so.6",
+      "libXau.so.6",
+      "libXdmcp.so.6"
+    ]
+  }
+}
