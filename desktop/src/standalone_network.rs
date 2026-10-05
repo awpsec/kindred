@@ -118,12 +118,44 @@ fn active(info: &Value) -> Result<String> {
         .map(str::to_owned)
         .ok_or_else(|| "The local server has no supported port binding.".into())
 }
+fn tailscale_json(root: &Path, args: &[&str]) -> Result<Value> {
+    let output=root.join("tailnet-check.json");
+    let mut command=Command::new(tailscale_executable());command.args(args);crate::profiles::hidden(&mut command);
+    let result=crate::setup_progress::run(&mut command,&output,Duration::from_secs(10),|_|{});
+    let bytes=std::fs::read(&output).unwrap_or_default();let _=std::fs::remove_file(output);
+    result.map_err(|_|"Open Tailscale on this computer and sign in. Check that its command-line tools are installed, then check again.".to_string())?;
+    serde_json::from_slice(&bytes).map_err(|_|"Tailscale returned an unreadable status. Update Tailscale and check again.".into())
+}
+fn tailscale_executable() -> String {
+    #[cfg(target_os="macos")]
+    {let path="/Applications/Tailscale.app/Contents/MacOS/Tailscale";if Path::new(path).is_file(){return path.into();}}
+    #[cfg(target_os="windows")]
+    {if let Ok(program)=std::env::var("ProgramFiles"){let path=Path::new(&program).join("Tailscale").join("tailscale.exe");if path.is_file(){return path.to_string_lossy().into_owned();}}}
+    "tailscale".into()
+}
+fn tailnet(root: &Path) -> Value {
+    match (||{let status=tailscale_json(root,&["status","--json"])?;let serve=tailscale_json(root,&["serve","status","--json"])?;Ok::<_,String>(crate::tailnet_access::state(&status,&serve))})(){
+        Ok(value)=>value,Err(message)=>json!({"state":"unavailable","message":message})
+    }
+}
+fn saved_access(root: &Path, bind: &str) -> Result<String> {
+    let value:Value=match std::fs::read(root.join("network.json")){Ok(bytes)=>serde_json::from_slice(&bytes).map_err(|e|e.to_string())?,Err(e) if e.kind()==std::io::ErrorKind::NotFound=>json!({}),Err(e)=>return Err(e.to_string())};
+    Ok(value["access"].as_str().unwrap_or(if bind=="0.0.0.0"{"lan"}else{"local"}).into())
+}
+fn response(root:&Path,desired:&str,addresses:&[String],current:&str,pending:bool,tailnet:Value)->Result<Value>{
+    let access=saved_access(root,desired)?;
+    let ready=access=="tailnet" && desired=="127.0.0.1" && current==desired && !pending && tailnet["state"]=="shared" && tailnet["address"].as_str().is_some_and(|a|addresses.iter().any(|v|v==a));
+    Ok(json!({"bind":desired,"access":access,"addresses":addresses,"active":current,"pending":pending,"tailnet":tailnet,"ready_to_pair":ready}))
+}
 #[tauri::command]
 pub async fn standalone_network(
     window: crate::surface::Surface,
     bind: Option<String>,
     addresses: Option<Vec<String>>,
     restart: Option<bool>,
+    access: Option<String>,
+    enable_tailnet: Option<bool>,
+    disable_tailnet: Option<bool>,
 ) -> Result<Value> {
     crate::profiles::local_admin(&window)?;
     let app = window.app_handle().clone();
@@ -140,12 +172,38 @@ pub async fn standalone_network(
             let root=crate::local_files::install_root()?.join("standalone");
             let info=inspect(&root)?;
             let current=active(&info)?;
+            if enable_tailnet.unwrap_or(false)&&disable_tailnet.unwrap_or(false){return Err("Choose one phone access action at a time.".into());}
+            let mut tailnet=tailnet(&root);
+            let mut addresses=addresses;
+            let mut bind=bind;
+            if let Some(mode)=access.as_deref(){
+                bind=Some(match mode {"local"|"tailnet"=>"127.0.0.1","lan"=>"0.0.0.0",_=>return Err("Choose who can reach this Kindred.".into())}.into());
+            }
+            if disable_tailnet.unwrap_or(false){
+                if tailnet["state"]!="shared"{return Err("Only the confirmed Kindred phone share can be turned off here. Check Tailscale before trying again.".into());}
+                let mut command=Command::new(tailscale_executable());command.args(["serve","--https=443","--set-path=/","off"]);crate::profiles::hidden(&mut command);
+                crate::setup_progress::run(&mut command,&root.join("tailnet-disable.log"),Duration::from_secs(30),|_|{}).map_err(|_|"Could not turn off private phone sharing. Check Tailscale and try again.".to_string())?;
+                tailnet=self::tailnet(&root);
+                if tailnet["state"]!="not_set_up"{return Err("Phone sharing could not be confirmed off. Check Tailscale before retrying.".into());}
+            }
+            if enable_tailnet.unwrap_or(false){
+                if access.as_deref()!=Some("tailnet"){return Err("Choose My devices with Tailscale first.".into());}
+                if !matches!(tailnet["state"].as_str(),Some("shared"|"not_set_up")){return Err(tailnet["message"].as_str().unwrap_or("Set up Tailscale first, then check again.").into());}
+                let address=tailnet["address"].as_str().ok_or("Tailscale has no phone address.")?.to_owned();
+                let mut values=addresses.take().unwrap_or(origins(&root)?);if !values.contains(&address){values.push(address);}addresses=Some(normalize_origins(values)?);
+                if tailnet["state"]!="shared"{
+                    let mut command=Command::new(tailscale_executable());command.args(["serve","--bg","--https=443","http://127.0.0.1:9444"]);crate::profiles::hidden(&mut command);
+                    crate::setup_progress::run(&mut command,&root.join("tailnet-enable.log"),Duration::from_secs(30),|_|{}).map_err(|_|"Tailscale needs attention. Open a terminal and run tailscale serve --bg http://127.0.0.1:9444, follow its HTTPS consent instructions, then check again.".to_string())?;
+                    tailnet=self::tailnet(&root);
+                    if tailnet["state"]!="shared"{return Err("Private phone sharing could not be confirmed. Check Tailscale and try again.".into());}
+                }
+            }
             if let Some(bind)=bind {
                 validate(&bind)?;
                 // Small atomic setting outside versioned bundles survives app upgrades.
                 let addresses=normalize_origins(addresses.unwrap_or(origins(&root)?))?;
                 if bind=="0.0.0.0" && addresses.is_empty(){return Err("Add the address you will use to connect from your phone.".into());}
-                crate::local_files::atomic(&root.join("network.json"),&json!({"bind":bind,"origins":addresses}))?;
+                crate::local_files::atomic(&root.join("network.json"),&json!({"bind":bind,"origins":addresses,"access":access.clone().unwrap_or(if bind=="0.0.0.0"{"lan".into()}else{"local".into()})}))?;
             }
             let desired=saved(&root)?;
             let addresses=origins(&root)?;
@@ -180,9 +238,9 @@ pub async fn standalone_network(
                 let actual=active(&after)?;
                 let actual_origins:Vec<String>=serde_json::from_str(after["origins"].as_str().unwrap_or("[]")).unwrap_or_default();
                 if actual!=desired || actual_origins!=addresses{return Err("The server restarted but its network binding did not change.".into());}
-                return Ok(json!({"bind":desired,"addresses":addresses,"active":actual,"pending":false}));
+                return response(&root,&desired,&addresses,&actual,false,tailnet);
             }
-            Ok(json!({"bind":desired,"addresses":addresses,"active":current,"pending":pending}))
+            response(&root,&desired,&addresses,&current,pending,tailnet)
         })();
         *host.setup.lock().unwrap()=previous;
         result
@@ -191,6 +249,19 @@ pub async fn standalone_network(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn readiness_requires_matching_share_and_applied_loopback_settings() {
+        let root=std::env::temp_dir().join(format!("kindred-ready-{}",uuid::Uuid::new_v4()));std::fs::create_dir(&root).unwrap();
+        let address="https://computer.tailnet.ts.net".to_string();let addresses=vec![address.clone()];
+        crate::local_files::atomic(&root.join("network.json"),&json!({"bind":"127.0.0.1","access":"tailnet","origins":addresses})).unwrap();
+        let shared=json!({"state":"shared","address":address});
+        assert_eq!(response(&root,"127.0.0.1",&addresses,"127.0.0.1",false,shared.clone()).unwrap()["ready_to_pair"],true);
+        for (current,pending,origins,share) in [("0.0.0.0",false,addresses.clone(),shared.clone()),("127.0.0.1",true,addresses.clone(),shared.clone()),("127.0.0.1",false,vec![],shared.clone()),("127.0.0.1",false,addresses.clone(),json!({"state":"not_set_up","address":address}))] {
+            assert_eq!(response(&root,"127.0.0.1",&origins,current,pending,share).unwrap()["ready_to_pair"],false);
+        }
+        crate::local_files::atomic(&root.join("network.json"),&json!({"bind":"127.0.0.1","access":"local","origins":addresses})).unwrap();assert_eq!(response(&root,"127.0.0.1",&addresses,"127.0.0.1",false,shared).unwrap()["ready_to_pair"],false);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn saved_network_survives_reload_and_replacement() {
         let root=std::env::temp_dir().join(format!("kindred-network-{}",uuid::Uuid::new_v4()));

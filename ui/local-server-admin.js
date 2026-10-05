@@ -7,6 +7,9 @@
   const install=()=>{
     for(const dialog of document.querySelectorAll('dialog.profile-dialog')){
       if(!dialog.classList.contains('server-admin-dialog')&&dialog.querySelector('.profile-dialog-heading h2')?.textContent!=='Server administration')continue;
+      // Updated shared UI owns the inline operation controls. Keep this bundled
+      // fallback for older/offline server interfaces without replacing them.
+      if(dialog.querySelector('[data-shared-local-admin]'))continue;
       const modern=dialog.classList.contains('server-admin-dialog');
       const updates=dialog.querySelector('.server-admin-page[data-page="Updates"]');
       // The native observer can run while the async admin dialog is being built.

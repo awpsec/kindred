@@ -34,7 +34,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   await p.locator('#switch-profiles').click();const menu=p.locator('#profile-menu');await menu.waitFor();assert.equal(await menu.getByRole('button',{name:'Create a profile',exact:true}).count(),0);
   assert.equal(await menu.locator('.profile-account-row').count(),1,'One account, even with two legacy workspaces');
   await menu.getByRole('menuitem',{name:'Account settings',exact:true}).click();
-  await p.getByRole('dialog').getByText('Existing workspaces',{exact:true}).click();
+  await p.getByRole('dialog').getByText('Profiles',{exact:true}).waitFor();
   await p.getByRole('dialog').getByRole('button',{name:'owner',exact:true}).click();
   await p.waitForFunction(()=>document.querySelector('#identity-name')?.textContent==='owner');await workspaceReady();
   assert(writes.some(w=>w.path==='/identity/switch'&&w.body.profile_id==='work'));

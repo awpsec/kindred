@@ -18,7 +18,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    // Native DOM shapes previously introduced trailing lines or joined lines.
    const cases=[['Hello<div>world</div>','Hello\nworld'],['<div>Hello</div><div>world</div>','Hello\nworld'],['<p>Hello</p><p>world</p>','Hello\nworld'],['Hello<br>','Hello'],['Hello<br><br>','Hello\n'],['<div>Hello</div><div><br></div><div>world</div>','Hello\n\nworld'],['<br>',''],['<ul><li>One</li><li>Two<ul><li>Nested</li></ul></li></ul>','- One\n- Two\n  - Nested']];
    for(const [html,expected] of cases)assert.equal(await editor.evaluate((n,html)=>{n.innerHTML=html;return n.value;},html),expected,html);
-   await editor.evaluate(n=>{n.value='';});await editor.fill('One line');await editor.press('Enter');await p.waitForFunction(()=>document.querySelector('.message-row.user .message-bubble')?.textContent.trim()==='One line');
+   await editor.evaluate(n=>{n.value='';});await editor.fill('One line');await editor.press('Enter');try{await p.waitForFunction(()=>document.querySelector('.message-row.user .message-bubble')?.querySelector('p')?.textContent.trim()==='One line');}catch(e){console.error(JSON.stringify({sent,errors,content:await p.locator('#content').innerText(),prompt:await editor.evaluate(n=>n.value)}));throw e;}
    const geometry=await p.locator('.message-row.user .message-bubble').last().evaluate(n=>{const s=getComputedStyle(n);return {height:n.getBoundingClientRect().height,line:parseFloat(s.lineHeight),padding:parseFloat(s.paddingTop)+parseFloat(s.paddingBottom)};});
    assert(Math.abs(geometry.height-geometry.line-geometry.padding)<2,JSON.stringify({platform,geometry}));
    assert.equal(sent.at(-1).prompt,'One line');
@@ -34,7 +34,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    assert.equal(await editor.evaluate(n=>n.value),'- First item\n- Second item\n- Third item\n\nAfter the list');
    await editor.press('Enter');await p.waitForFunction(()=>document.querySelectorAll('.message-row.user').length===3);assert.equal(sent.at(-1).prompt,'- First item\n- Second item\n- Third item\n\nAfter the list');
    assert.equal(await p.locator('.message-row.user .message-bubble').last().locator('li').count(),3);
-   assert.equal(await p.locator('.message-row.user .message-bubble').last().locator(':scope > p').innerText(),'After the list');
+   assert.equal(await p.locator('.message-row.user .message-bubble').last().locator('p').last().innerText(),'After the list');
    // Typed markers start a real list; Enter continues it, Tab nests, Shift+Tab outdents.
    await editor.fill('');await editor.press('-');await editor.press('Space');assert.equal(await editor.locator('li').count(),1);
    await p.keyboard.insertText('Parent');await editor.press('Enter');await p.keyboard.insertText('Child');await editor.press('Tab');

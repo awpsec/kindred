@@ -915,10 +915,7 @@ pub fn start_standalone(
 // Only the managed loopback workspace may operate its local installation.
 pub(crate) fn local_admin(window: &crate::surface::Surface) -> Result<()> {
     let url = window.url().map_err(error)?;
-    if window.label() == "main"
-        && url.origin().ascii_serialization() == crate::local_server::ORIGIN
-        && url.path() == "/"
-        && root()?.join("standalone").is_dir()
+    if crate::local_server::local_admin_allowed(window.label(),&url,root()?.join("standalone").is_dir())
     {
         Ok(())
     } else {
