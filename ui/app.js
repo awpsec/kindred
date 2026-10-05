@@ -220,7 +220,10 @@ const pendingApiRequests=new Map();
 let pageSuspended=false,pageHidden=false,navigationGeneration=0,navigationRecovery=null;
 async function api(path, method = "GET", body, options = {}) {
   const requestToken=state.token,bot_id=screenBotId();
-  if(pageSuspended&&navigationRecovery&&!pageHidden)await navigationRecovery.promise;
+  if(pageSuspended&&navigationRecovery&&!pageHidden){
+    const recovery=navigationRecovery,recovered=await recovery.promise;
+    if(!recovered||recovery.generation!==navigationGeneration){if(method==='GET')throw 'pagehide';const error=new Error('The page left before this change was sent. Try again.');error.notSent=true;error.uncertain=false;throw error;}
+  }
   if(pageSuspended){if(method==='GET')throw 'pagehide';const error=new Error('This page is leaving. The change was not sent. Try again after returning.');error.notSent=true;error.uncertain=false;throw error;}
   if(state.token!==requestToken){if(method==='GET')throw 'pagehide';const error=new Error('The workspace changed before this request was sent. Try again in the current workspace.');error.notSent=true;error.uncertain=false;throw error;}
   path=path.replace(/^\/chats\/(server-[^/?]+)/,'/server-chats/$1');
@@ -6487,7 +6490,7 @@ function invalidateNavigationRecovery(){
 }
 function beginNavigationRecovery(){
   if(pageHidden||!pageSuspended||navigationRecovery)return;
-  const generation=navigationGeneration,recovery={};
+  const generation=navigationGeneration,recovery={generation};
   recovery.promise=new Promise(resolve=>{recovery.resolve=resolve;});
   navigationRecovery=recovery;
   // A trusted action alone can still reach WebKit's leaving document. Wait
