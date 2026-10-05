@@ -1,0 +1,284 @@
+--- a/libs/cua-driver/rust/crates/platform-linux/src/browser_platform.rs
++++ b/libs/cua-driver/rust/crates/platform-linux/src/browser_platform.rs
+@@ -978,226 +978,15 @@
+ 
+     async fn setup_existing_profile_endpoint(
+         &self,
+-        request: ExistingProfileSetupRequest,
++        _request: ExistingProfileSetupRequest,
+     ) -> Result<ExistingProfileSetupOutcome, BrowserRefusal> {
+-        let descriptor = existing_profile_setup_descriptor(request.browser).ok_or_else(|| {
+-            refusal(
+-                BrowserRefusalCode::BrowserRouteUnavailable,
+-                format!(
+-                    "approved existing-profile setup is not implemented for {:?}",
+-                    request.browser
+-                ),
+-            )
+-        })?;
+-        let pid_u32 = u32::try_from(request.pid).map_err(|_| {
+-            refusal(
+-                BrowserRefusalCode::BrowserWrongTargetRefused,
+-                "the approved browser pid is outside the Linux process-id range",
+-            )
+-        })?;
+-        // Window cardinality is deliberately NOT a precondition here. Setup acts
+-        // inside one named window, and `browser_setup_ui` proves that window's
+-        // identity directly by resolving the native window to exactly one
+-        // accessibility top-level before it matches or actuates any control. A
+-        // process owning several windows is the ordinary case for a browser and
+-        // says nothing about whether the driver can act precisely; refusing on
+-        // it made the whole existing-profile route unreachable for most real
+-        // sessions. Where identity genuinely cannot be established — a generic
+-        // Wayland session with no compositor window list — that same proof fails
+-        // and setup refuses with a reason that names the cause.
+-        let window_id = request.window_id;
+-        let listeners_before =
+-            tokio::task::spawn_blocking(move || loopback_ports_for_pid(request.pid))
+-                .await
+-                .map_err(|error| {
+-                    refusal(
+-                        BrowserRefusalCode::BrowserRouteUnavailable,
+-                        format!("listener inspection task failed: {error}"),
+-                    )
+-                })??;
+-        let handle = tokio::task::spawn_blocking(move || {
+-            crate::browser_setup_ui::enable(pid_u32, window_id, descriptor)
+-        })
+-        .await
+-        .map_err(|error| {
+-            refusal(
+-                BrowserRefusalCode::BrowserRouteUnavailable,
+-                format!(
+-                    "could not inspect {}'s remote-debugging setup UI: {error}",
+-                    descriptor.product_name
+-                ),
+-            )
+-        })??;
+-        let opened_setup_page = handle.opened_setup_page;
+-        let enabled_remote_debugging = handle.enabled_remote_debugging;
+-        let focused_setup_address_field = handle.focused_setup_address_field;
+-        let foregrounded_window = handle.foregrounded_window;
+-        let injected_global_input = handle.injected_global_input;
+-
+-        let deadline = std::time::Instant::now() + Duration::from_secs(6);
+-        let endpoint_result = loop {
+-            match active_port_endpoint(request.pid) {
+-                Ok(Some(endpoint)) => break Ok(endpoint),
+-                Ok(None) => {}
+-                Err(error) => break Err(error),
+-            }
+-            let ports = match tokio::task::spawn_blocking(move || {
+-                loopback_ports_for_pid(request.pid)
+-            })
+-            .await
+-            {
+-                Ok(Ok(ports)) => ports,
+-                Ok(Err(error)) => break Err(error),
+-                Err(error) => {
+-                    break Err(refusal(
+-                        BrowserRefusalCode::BrowserRouteUnavailable,
+-                        format!("listener inspection task failed: {error}"),
+-                    ))
+-                }
+-            };
+-            let mut endpoints = Vec::new();
+-            for port in &ports {
+-                if let Some(ws_url) = browser_websocket_url(*port).await {
+-                    endpoints.push((*port, ws_url, "/proc owner plus /json/version"));
+-                }
+-            }
+-            if endpoints.is_empty() {
+-                let correlated = ports
+-                    .iter()
+-                    .copied()
+-                    .filter(|port| !listeners_before.contains(port))
+-                    .collect::<Vec<_>>();
+-                if let [port] = correlated.as_slice() {
+-                    // Chromium's consent-gated server intentionally disables
+-                    // `/json/*` discovery and accepts the stable browser route
+-                    // without a UUID. The exact setup action plus the newly
+-                    // PID-owned listener proves which approval server this is.
+-                    endpoints.push((
+-                        *port,
+-                        format!("ws://127.0.0.1:{port}/devtools/browser"),
+-                        "new PID-owned approval listener correlated with exact setup",
+-                    ));
+-                } else if correlated.len() > 1 {
+-                    break Err(refusal(
+-                        BrowserRefusalCode::BrowserBindingAmbiguous,
+-                        format!(
+-                            "{} exposed multiple newly correlated PID-owned listeners",
+-                            descriptor.product_name
+-                        ),
+-                    ));
+-                }
+-            }
+-            match endpoints.as_slice() {
+-                [(port, ws_url, detail)] => {
+-                    break Ok(OwnedEndpoint {
+-                        ws_url: ws_url.clone(),
+-                        http_port: Some(*port),
+-                        transport: EndpointTransport::LegacyJsonVersion,
+-                        ownership: EndpointOwnershipProof {
+-                            method: EndpointOwnershipMethod::ListeningSocketPid,
+-                            owner_pid: request.pid,
+-                            listener_pid: None,
+-                            detail: Some((*detail).to_owned()),
+-                        },
+-                    })
+-                }
+-                [] if std::time::Instant::now() < deadline => {
+-                    tokio::time::sleep(Duration::from_millis(100)).await;
+-                }
+-                [] => {
+-                    break Err(refusal(
+-                        BrowserRefusalCode::BrowserRequiresSetup,
+-                        format!(
+-                            "{} did not expose a uniquely PID-owned loopback endpoint after the exact setup action",
+-                            descriptor.product_name
+-                        ),
+-                    ))
+-                }
+-                _ => {
+-                    break Err(refusal(
+-                        BrowserRefusalCode::BrowserBindingAmbiguous,
+-                        format!(
+-                            "{} exposed multiple PID-owned endpoint candidates after the exact setup action",
+-                            descriptor.product_name
+-                        ),
+-                    ))
+-                }
+-            }
+-        };
+-        let endpoint = match endpoint_result {
+-            Ok(endpoint) => endpoint,
+-            // The toggle took, but no endpoint appeared. That is Chromium's
+-            // documented-by-behaviour semantics rather than a failure: "Allow
+-            // remote debugging for this browser instance" persists a preference
+-            // that the browser acts on at its NEXT launch — verified on Chrome
+-            // 151 by enabling it and observing no listener for 25s, then a
+-            // listener on 127.0.0.1 plus a DevToolsActivePort file immediately
+-            // after a restart with no --remote-debugging-port flag.
+-            //
+-            // Rolling back here erased the setting moments before the restart
+-            // that would activate it, so this path could never succeed. Keep the
+-            // preference, close the temporary tab, and tell the caller the one
+-            // thing it needs to do. The profile is armed, not broken.
+-            Err(error)
+-                if enabled_remote_debugging
+-                    && error.code == BrowserRefusalCode::BrowserRequiresSetup =>
+-            {
+-                let closed = tokio::task::spawn_blocking(move || handle.close_for_success())
+-                    .await
+-                    .map_err(|join_error| {
+-                        refusal(
+-                            BrowserRefusalCode::BrowserRouteUnavailable,
+-                            format!("could not finish browser setup cleanup: {join_error}"),
+-                        )
+-                    })??;
+-                return Err(refusal(
+-                    BrowserRefusalCode::BrowserRequiresSetup,
+-                    format!(
+-                        "remote debugging is now enabled for this {} profile, but {} only opens \
+-                         its debugging endpoint at startup. Restart the browser, then call \
+-                         browser_prepare again — the setting persists and does not need to be \
+-                         applied twice.",
+-                        descriptor.product_name, descriptor.product_name
+-                    ),
+-                )
+-                .with_detail(serde_json::json!({
+-                    "restart_required": true,
+-                    "remote_debugging_enabled": true,
+-                    "setup_side_effects": {
+-                        "opened_setup_page": opened_setup_page,
+-                        "closed_setup_page": closed.unwrap_or(false),
+-                        "enabled_remote_debugging": true,
+-                        "restored_remote_debugging": false,
+-                        "focused_setup_address_field": focused_setup_address_field,
+-                        "foregrounded_window": foregrounded_window,
+-                        "injected_global_input": injected_global_input,
+-                    },
+-                })));
+-            }
+-            Err(error) => {
+-                let error = tokio::task::spawn_blocking(move || handle.abort(error))
+-                    .await
+-                    .map_err(|join_error| {
+-                        refusal(
+-                            BrowserRefusalCode::BrowserRouteUnavailable,
+-                            format!("could not roll back browser setup: {join_error}"),
+-                        )
+-                    })?;
+-                return Err(error);
+-            }
+-        };
+-        crate::browser_setup_ui::retain_pending(pid_u32, window_id, handle)?;
+-
+-        Ok(ExistingProfileSetupOutcome {
+-            opened_setup_page,
+-            closed_setup_page: false,
+-            enabled_remote_debugging,
+-            used_bounded_pixel_fallback: false,
+-            focused_setup_address_field,
+-            foregrounded_window,
+-            injected_global_input,
+-            endpoint: Some(endpoint),
+-        })
++        // Kindred supplies its own loopback endpoint on the existing per-display
++        // profile. Never open settings, alter profile preferences or inject input
++        // to create an endpoint, including when discovery races browser shutdown.
++        Err(refusal(
++            BrowserRefusalCode::BrowserRequiresSetup,
++            "automatic browser setup is disabled; use an existing managed endpoint",
++        ).with_detail(serde_json::json!({"automatic_input_disabled": true})))
+     }
+ 
+     async fn commit_existing_profile_setup(
+@@ -1272,9 +1061,16 @@
+ 
+     async fn handle_existing_profile_consent(
+         &self,
+-        request: BrowserConsentRequest,
++        _request: BrowserConsentRequest,
+     ) -> Result<BrowserConsentOutcome, BrowserRefusal> {
+-        crate::browser_consent_ui::handle(request).await
++        // Bind/snapshot can enter this callback during reconnect. Observation
++        // must never press Allow through AT-SPI or foreground XTest input.
++        // Refuse before inspecting or acting on native UI; the guest keeps its
++        // native screenshot/input path and never retries an uncertain write.
++        Err(refusal(
++            BrowserRefusalCode::BrowserConsentRequired,
++            "automatic browser consent is disabled",
++        ).with_detail(serde_json::json!({"automatic_input_disabled": true})))
+     }
+ 
+     async fn process_fingerprint(&self, pid: i64) -> Result<ProcessFingerprint, BrowserRefusal> {
+@@ -1324,6 +1120,27 @@
+ mod tests {
+     use super::*;
+ 
++    #[tokio::test]
++    async fn kindred_automatic_consent_is_denied_before_native_inspection() {
++        let platform = LinuxBrowserPlatform::default();
++        let error = platform.handle_existing_profile_consent(BrowserConsentRequest {
++            action: Default::default(), pid: -1, window_id: 1, attempt: 1,
++        }).await.unwrap_err();
++        assert_eq!(error.code, BrowserRefusalCode::BrowserConsentRequired);
++        assert_eq!(error.detail.as_ref().unwrap()["automatic_input_disabled"], true);
++    }
++
++    #[tokio::test]
++    async fn kindred_automatic_setup_is_denied_before_native_inspection() {
++        let platform = LinuxBrowserPlatform::default();
++        let error = platform.setup_existing_profile_endpoint(ExistingProfileSetupRequest {
++            pid: -1, window_id: 1, browser: BrowserProduct::GoogleChrome,
++        }).await.unwrap_err();
++        assert_eq!(error.code, BrowserRefusalCode::BrowserRequiresSetup);
++        assert_eq!(error.detail.as_ref().unwrap()["automatic_input_disabled"], true);
++    }
++
++
+     #[test]
+     fn hyprland_browser_identity_requires_exact_pid_and_full_native_address() {
+         let address = 0x1234_0000_0042;

@@ -1,0 +1,17 @@
+# Computer page targeting in Linux guests
+
+The existing `computer_screenshot`, `computer_click` and `computer_type` tools can use a bounded page observation and one-use element targets. Native screenshots, image coordinates, typing, keys and scrolling remain available. There is no user setting or new tool name.
+
+The optional pinned Linux driver lives inside each guest. Its private bridge binds the existing managed browser profile to an exact process and native window on that bot's X11 display. Browser attachment happens only after an approved page open. A screenshot never prepares or changes browser settings; the selected driver patch also refuses automatic consent and endpoint setup before native inspection or input.
+
+Existing logged-in profiles are reused. An already-running browser without the managed loopback endpoint retains native methods; it is not restarted or migrated automatically. Cold observations, a new run and browser/driver restarts begin with native screenshots until an approved attachment. Duplicate tab titles can prevent a unique active-tab proof; those observations remain native-only rather than guessing. Navigation and post-input capture are observations, not proof that a delayed page has settled.
+
+Targets expire after every action, new capture, capture failure or scope change. Human control prevents guest dispatch through the existing runtime gates, and returning control still requires a fresh image. Foreground browser clicks use one route once. The adapter never retries a normalized refusal, an uncertain result or a lost input receipt. An applied action followed by failed capture remains applied and requires a new observation; it is not replayed. Diagnostic receipts are retained in scoped activity details.
+
+## Offline payload and compatibility
+
+`deploy/cua-driver-manifest.json` pins both the published baseline and selected derivative hashes. `third-party/cua-driver/` contains the exact policy patch, upstream notices, build provenance, compiled dependency notices and applicable source archives. The installer validates selected archive member bytes, ELF identity, size and hash before atomic replacement; it retains a previous payload. The packaging helper requires the local archive and binary and validates patch/notices provenance. No runtime driver download or moving release is used.
+
+The selected payload requires glibc 2.39 and X11/Xi libraries. Current guest/container sources use Debian Trixie. Author checks execute the payload offline in a Trixie container with glibc 2.41; that is not a booted guest or final release-image test. Missing or failed optional driver startup preserves native methods in a compatible running Kindred guest. This does not establish that a newly built Kindred executable works on every older guest distribution; the author Rust test executable also requires glibc 2.39. No guest distribution migration is performed here.
+
+This source candidate does not establish model accuracy or live task latency, AT-SPI consent-dialog behavior, native macOS/Windows/iOS acceptance, packaging, publication or deployment. Scripted task comparisons report actual guest requests, PNG bytes and wall time separately from unavailable provider/token data.

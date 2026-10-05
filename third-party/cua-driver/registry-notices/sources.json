@@ -1,0 +1,8 @@
+{
+  "jsonschema-regex@0.46.10": {
+    "file": "jsonschema-regex-0.46.10-LICENSE",
+    "source_url": "https://raw.githubusercontent.com/Stranger6667/jsonschema/ecaeceac2340908a8fbf71404442296bd1536520/LICENSE",
+    "source_commit": "ecaeceac2340908a8fbf71404442296bd1536520",
+    "sha256": "117829c3ca21efb132d81a44b55363d395ab8eea18526873bc828da4c0e5f038"
+  }
+}
