@@ -83,7 +83,7 @@ const serverChatsUI=createServerChatsUI({api,state,node,button,field,select,moda
 const workspaceUI = createWorkspaceImportUI({api,node,button,field,select,modal,notice,getBots:()=>state.bots,refresh:()=>{commandsUI?.invalidate();return refresh(true);},openBot:async id=>{const bot=state.bots.find(b=>b.id===id);if(bot){$("settings-dialog").close();await chooseBot(bot);}}});
 const profilesUI = createProfileUI({
   getServerVersion:()=>state.status.version,
-  workingBots:()=>new Set(state.allRuns.filter(active).map(r=>r.bot_id)).size,
+  workingBots:()=>new Set(state.allRuns.filter(r=>active(r)||delegationContext(r)?.waiting||(r.status==='queued'&&r.delegation?.resuming)).map(r=>r.bot_id)).size,
   getServerAddress:()=>state.status?.public_url||location.origin, getToken:()=>state.token, setToken:token=>{state.token=token;}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
   restoreAfterSwitch:async()=>{
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:state.token});
@@ -615,9 +615,14 @@ async function refresh(force = false) {
 const avatarCache = new Map(),
   botArrivals = new Map();
 function delegationContext(run) {
-  if(!run?.delegation||!['queued','running','awaiting_user','awaiting_approval'].includes(run.status))return null;
-  const target=state.chats.find(c=>c.id===run.delegation.source_chat_id&&!c.archived),requester=target&&state.bots.find(b=>b.id===run.delegation.requester_bot_id);
-  return {run,target:requester?target:null,name:requester?.name||'',caption:requester?(run.status==='queued'?'Queued for ':'Working for ')+requester.name:(run.status==='queued'?'Queued for another bot':'Working on a task for another bot')};
+  if(!run?.delegation||!['queued','running','awaiting_user','awaiting_approval','completed'].includes(run.status))return null;
+  const requesterBot=state.bots.find(b=>b.id===run.delegation.requester_bot_id);
+  const target=state.chats.find(c=>c.id===run.delegation.source_chat_id&&!c.archived&&!c.bot_only)||state.chats.find(c=>c.id==='dm-'+requesterBot?.id&&!c.archived&&!c.bot_only);
+  const requester=target&&requesterBot,waiting=run.status==='completed';
+  let caption=requester?(run.status==='queued'&&!run.delegation.resuming?'Queued for ':'Working for ')+requester.name:(run.status==='queued'&&!run.delegation.resuming?'Queued for another bot':'Working on a task for another bot');
+  const children=waiting?(run.delegation.waiting_on_bot_ids||[]):[];
+  if(children.length){const names=children.map(id=>state.bots.find(b=>b.id===id)?.name||'another bot');caption+=' · waiting on '+(names.length>2?names.length+' bots':names.join(' and '));}
+  return {run,target:requester?target:null,name:requester?.name||'',waiting,caption};
 }
 function helperWork(botId){return state.allRuns.filter(r=>r.bot_id===botId&&delegationContext(r)).sort((a,b)=>(a.status==='queued')-(b.status==='queued')||a.created-b.created).map(delegationContext)[0];}
 function visibleActivityRun(run) {
@@ -720,7 +725,7 @@ function queuedWork(botId,chatId) {
   const queued=runs.filter(r=>r.status==='queued').sort((a,b)=>a.created-b.created);
   const pause=pausedScreens().find(p=>p.bot_id===botId);
   // Dispatch is bot-wide; filter by conversation only after identifying the starting run.
-  const starting=!pause&&!runs.some(active)?queued[0]:null;
+  const helping=helperWork(botId),starting=!pause&&!runs.some(active)&&!helping?.waiting&&!helping?.run.delegation.resuming?queued[0]:null;
   return {pause,starting,waiting:queued.filter(r=>r.id!==starting?.id&&(!chatId||r.chat_id===chatId)).length};
 }
 function updateWorkLabel(label) {
@@ -748,7 +753,7 @@ function updateWorkLabel(label) {
   const delegation=delegationContext(run),helping=helperWork(label.dataset.activityLabel);
   let caption=pending?(queue.pause?'Waiting for control':starting?'Waiting to start':helping?.name?'Waiting for '+(state.bots.find(b=>b.id===run.bot_id)?.name||'this bot')+' to finish work for '+helping.name:'Waiting for the current task'):current?r.label:'Waiting for the current task';
   if(run?.status==='awaiting_user'&&pendingHumanTask(run.bot_id)&&!pending)caption='Needs you';
-  if(delegation)caption=delegation.caption+(caption&&caption!=='Working'?' · '+caption:'');
+  if(delegation)caption=delegation.caption+(!delegation.waiting&&!run.delegation.resuming&&caption&&!['Working','Idle','Resting'].includes(caption)?' · '+caption:'');
   const text=node('span','',stale?'Connection lost · last known: '+(caption||'Waiting to start'):caption);
   const timer=node('time','work-timer',elapsedTime(now-(current?(a.started_at||now):now)));
   timer.title='Elapsed time in this step';
@@ -963,12 +968,12 @@ function sidebarEntry(control, item, kind, pinned) {
   return wrap;
 }
 function updateSidebarActivity(preview){
-  const id=preview.dataset.sidebarActivity,runs=state.allRuns.filter(r=>r.bot_id===id&&visibleActivityRun(r)),run=runs.find(r=>r.status==='running')||runs.find(active)||runs.find(r=>r.status==='queued');
+  const id=preview.dataset.sidebarActivity,runs=state.allRuns.filter(r=>r.bot_id===id&&visibleActivityRun(r)),run=runs.find(r=>r.status==='running')||runs.find(active)||runs.find(r=>delegationContext(r)?.waiting)||runs.find(r=>r.status==='queued');
   const activity=state.activities[id]||{},stale=state.activityReadAt&&Date.now()-state.activityReadAt>15000;
   const labels={queued:'queued',awaiting_user:pendingHumanTask(id)?'Needs you':'waiting for you',awaiting_approval:'awaiting approval',cancelling:'stopping'};
   const steps={investigate:'searching',search:'searching',read:'reading',terminal:'running a command',hammer:'building',saw:'building',drill:'building',write:'writing'};
   const delegation=delegationContext(run);
-  const label=run?(stale?'Connection lost · last known: '+(delegation?.caption||'working'):labels[run.status]?(labels[run.status]+(delegation?' · '+delegation.caption:'')):delegation?.caption||steps[activity.shape]||'working'):(activity.commands?(stale?'reconnecting':`${activity.commands} command${activity.commands===1?'':'s'} running`):'');
+  const label=run?(stale?'Connection lost · last known: '+(delegation?.caption||'working'):labels[run.status]&&!(run.status==='queued'&&run.delegation?.resuming)?(labels[run.status]+(delegation?' · '+delegation.caption:'')):delegation?.caption||steps[activity.shape]||'working'):(activity.commands?(stale?'reconnecting':`${activity.commands} command${activity.commands===1?'':'s'} running`):'');
   const key=label||preview.dataset.idlePreview;
   if(preview.dataset.activityText===key)return;
   preview.dataset.activityText=key;preview.classList.toggle('is-working',!!label);preview.classList.toggle('needs-you',!!pendingHumanTask(id)&&!stale);
@@ -1195,7 +1200,7 @@ function renderHeader() {
   const queueChatId = state.chat?.id || (b ? `dm-${b.id}` : '');
   const queued = queueChatId ? [...new Set(state.allRuns.filter(r=>r.chat_id===queueChatId).map(r=>r.bot_id))].reduce((count,id)=>count+queuedWork(id,queueChatId).waiting,0) : 0;
   $('queue-status').hidden = !queued && !pause;
-  const helping=helperWork(b?.id),queueReason=helping?.name&&helping.run.status==='running'?` · ${b.name} is working for ${helping.name} and will reply after that.`:'';
+  const helping=helperWork(b?.id),queueReason=helping?.name&&(helping.run.status==='running'||helping.waiting||helping.run.delegation.resuming)?` · ${b.name} is working for ${helping.name} and will reply after that.`:'';
   $('queue-status').replaceChildren(node('span','',queued ? `${queued} message${queued===1?'':'s'} queued${pause?' · waiting for control to be returned':queueReason}` : 'Computer paused for manual control'));
   if(pause)$('queue-status').append(button('Return control',()=>returnScreenControl(pause),'subtle-button small-button'));
   $('queue-status').title = pause ? 'Return control to let this bot continue. Dismissing the notice does not resume work.' : 'Ordinary follow-ups join the current task after its next action. Slash commands and scheduled work keep their place in the queue.';
@@ -7825,7 +7830,10 @@ async function openNotificationChat(item){
     if(target.chat_id?.startsWith('dm-')&&bot)await chooseBot(bot);else if(chat&&!chat.bot_only)await chooseChat(chat);else if(bot)await chooseBot(bot);else {notice('This conversation is no longer available in this profile.',true);return;}
     if(token!==state.token)return;
     if(target.request_id){
-      if(target.status!=='pending'){notice('This request is no longer needed ('+(target.status||'unavailable')+').');return;}
+      if(target.status!=='pending'){
+        const message=target.status==='resumed'&&target.outcome==='done'?'This request was already completed.':target.status==='resumed'&&target.outcome==='skipped'?'This step was skipped.':target.status==='ready'?'Already done · '+(bot?.name||'Your bot')+' is continuing.':target.status==='cancelled'?'This request was cancelled.':target.status==='expired'?'This request expired.':'This request is no longer waiting for you.';
+        notice(message);return;
+      }
       followChatLatest();await renderChat(true);if(token!==state.token)return;
       if(!focusRequest(target.request_kind,target.request_id))notice('This request is no longer available. Check the latest messages in this chat.',true);
     }
