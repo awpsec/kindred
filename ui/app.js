@@ -182,7 +182,19 @@ async function returnScreenControl(pause) {
   state.statusEpoch=(state.statusEpoch||0)+1;
   if(selected){state.desktopControlRequested=false;disconnectDesktop();}
   // An explicit bot ID prevents chat navigation from redirecting this action.
-  await api('/takeover','POST',{enabled:false,bot_id:pause.bot_id,...(Array.isArray(state.status.control_pauses)?{control_id:pause.control_id}:{})});
+  try {
+    await api('/takeover','POST',{enabled:false,bot_id:pause.bot_id,...(Array.isArray(state.status.control_pauses)?{control_id:pause.control_id}:{})});
+  } catch(error) {
+    // A failed release must remain retryable. Reconcile ambiguous timeouts
+    // before restoring input: the server may already have returned control.
+    try { await refresh(true); } catch {}
+    if(selected&&pause.bot_id===screenBotId()){
+      state.desktopControlRequested=!!state.status.takeover;
+      updateDesktopState();
+      if(!$('computer-panel').hidden)void connectDesktop();
+    }
+    throw error;
+  }
   state.statusEpoch++;
   if(Array.isArray(state.status.control_pauses))state.status.control_pauses=state.status.control_pauses.filter(p=>p.bot_id!==pause.bot_id);
   if(state.status.screen_bot_id===pause.bot_id)state.status.takeover=false;
