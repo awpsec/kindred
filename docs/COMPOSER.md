@@ -1,19 +1,24 @@
 # Writing messages
 
 Type `- `, `* ` or `+ ` at the start of a line to begin a bulleted list.
-**Enter** adds the next bullet; Enter on an empty bullet exits the list.
+For a numbered list, type one to three digits followed by `. `, such as `1. `
+or `100. `. The starting number is preserved when sent or restored. Four-digit
+prefixes such as `2024. ` stay plain text.
+**Enter** adds the next bullet or number; Enter on an empty item exits the list.
 **Tab** indents and **Shift+Tab** outdents. Outside a list, Enter sends the
 message and Shift+Enter inserts a line break. Ctrl/Cmd+Enter can send while
 editing a list; the Send button remains available.
 
-**Ctrl+Shift+8** (**Cmd+Shift+8** on macOS) remains an optional shortcut to
-convert selected lines or remove list formatting. The composer + menu contains
+**Ctrl+Shift+7** (**Cmd+Shift+7** on macOS) toggles numbered lists.
+**Ctrl+Shift+8** (**Cmd+Shift+8** on macOS) toggles bulleted lists. These
+optional shortcuts convert selected lines or remove that list formatting. The composer + menu contains
 Attach files and Teach a task. List formatting is part of typing.
 
 Pasted Markdown and restored drafts support continuation and indentation too.
 Lists are sent and saved as ordinary Markdown, including nested lists produced
 by Chromium's and WebKit's different DOM structures. Mention chips and native
-undo remain intact.
+undo remain intact. Undo after autoformat restores the literal prefix; typing a
+space next keeps that line as plain text.
 
 The shared UI serializes browser line wrappers without adding a trailing line or
 joining adjacent lines. It preserves intentional internal blank lines. Sent user
@@ -50,7 +55,10 @@ turn off the loading animation.
 Windows, and macOS platform fixtures. It checks typed line breaks, intentional
 blank lines, sent payloads and bubble height, typed markers, Enter continuation, Tab indentation, selected-line lists, continuation
 and exit, undo, mention preservation, IME Enter, paste, draft reload, and reading
-preferences. `test-feedback-library.cjs` checks the refresh icon at 1280, 800 and
+preferences. `test-numbered-lists.cjs` checks start values, numbered autoformat,
+Enter/exit, native undo, four-digit plain text, multi-digit parent indentation
+through actual sending and rendering, and marker containment under text scaling,
+CSS zoom and different viewport widths. `test-feedback-library.cjs` checks the refresh icon at 1280, 800 and
 390 pixel widths, manual refresh, and explicit size persistence.
 
 `test-chat-opening.cjs` holds history and historical task-detail responses

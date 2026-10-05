@@ -19,7 +19,7 @@ const server=http.createServer(async(req,res)=>{
  securityHeaders(req,res);
  const url=new URL(req.url,'http://localhost');const route=url.pathname;
  if(route==='/fixture/site'){res.writeHead(200,{'Content-Type':'text/html'});return res.end('<html><style>body{margin:0;background:#f7f5ef;font:18px system-ui;color:#162e30;padding:40px}h1{font-size:38px}.block{height:110px;border-radius:20px;background:#16867c;margin-top:32px;color:white;padding:26px}</style><h1>A website screenshot</h1><p>A visible page captured for the chat attachment test.</p><div class=block>Example content<br>Local fixture only.</div></html>');}
- let input='';for await(const c of req)input+=c;let body={};try{body=JSON.parse(input||'{}');}catch{}
+ let input='';try{for await(const c of req)input+=c;}catch(error){if(req.aborted||error.code==='ECONNRESET')return;throw error;}let body={};try{body=JSON.parse(input||'{}');}catch{}
  const send=(data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
  if(route==='/fixture/finish'&&req.method==='POST'){cursor++;notifications.push({id:cursor,run_id:run.id,bot_id:bot.id,chat_id:chat.id,title:'Kindred native test completed',body:'Minimized-window notification check.'});return send({cursor});}
  if(route==='/fixture/polls')return send(polls);

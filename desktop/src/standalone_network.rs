@@ -118,6 +118,14 @@ fn active(info: &Value) -> Result<String> {
         .map(str::to_owned)
         .ok_or_else(|| "The local server has no supported port binding.".into())
 }
+fn tailnet_command(disable: bool) -> Command {
+    let mut command=Command::new(tailscale_executable());
+    // Off retains the original flags; explicit root scope preserves siblings.
+    command.args(["serve","--bg","--https=443","--set-path=/"]);
+    command.arg(if disable {"off"} else {"http://127.0.0.1:9444"});
+    crate::profiles::hidden(&mut command);
+    command
+}
 fn tailscale_json(root: &Path, args: &[&str]) -> Result<Value> {
     let output=root.join("tailnet-check.json");
     let mut command=Command::new(tailscale_executable());command.args(args);crate::profiles::hidden(&mut command);
@@ -181,7 +189,7 @@ pub async fn standalone_network(
             }
             if disable_tailnet.unwrap_or(false){
                 if tailnet["state"]!="shared"{return Err("Only the confirmed Kindred phone share can be turned off here. Check Tailscale before trying again.".into());}
-                let mut command=Command::new(tailscale_executable());command.args(["serve","--https=443","--set-path=/","off"]);crate::profiles::hidden(&mut command);
+                let mut command=tailnet_command(true);
                 crate::setup_progress::run(&mut command,&root.join("tailnet-disable.log"),Duration::from_secs(30),|_|{}).map_err(|_|"Could not turn off private phone sharing. Check Tailscale and try again.".to_string())?;
                 tailnet=self::tailnet(&root);
                 if tailnet["state"]!="not_set_up"{return Err("Phone sharing could not be confirmed off. Check Tailscale before retrying.".into());}
@@ -192,7 +200,7 @@ pub async fn standalone_network(
                 let address=tailnet["address"].as_str().ok_or("Tailscale has no phone address.")?.to_owned();
                 let mut values=addresses.take().unwrap_or(origins(&root)?);if !values.contains(&address){values.push(address);}addresses=Some(normalize_origins(values)?);
                 if tailnet["state"]!="shared"{
-                    let mut command=Command::new(tailscale_executable());command.args(["serve","--bg","--https=443","http://127.0.0.1:9444"]);crate::profiles::hidden(&mut command);
+                    let mut command=tailnet_command(false);
                     crate::setup_progress::run(&mut command,&root.join("tailnet-enable.log"),Duration::from_secs(30),|_|{}).map_err(|_|"Tailscale needs attention. Open a terminal and run tailscale serve --bg http://127.0.0.1:9444, follow its HTTPS consent instructions, then check again.".to_string())?;
                     tailnet=self::tailnet(&root);
                     if tailnet["state"]!="shared"{return Err("Private phone sharing could not be confirmed. Check Tailscale and try again.".into());}
@@ -249,6 +257,28 @@ pub async fn standalone_network(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn serve_commands_keep_background_https_and_explicit_root_identity() {
+        // Check the actual production Command, without executing host Serve.
+        // The documented off contract requires every original flag; explicitly
+        // scoped root removal also prevents deleting unrelated path handlers.
+        let enable=tailnet_command(false);
+        let disable=tailnet_command(true);
+        let enable:Vec<_>=enable.get_args().map(|v|v.to_str().unwrap()).collect();
+        let disable:Vec<_>=disable.get_args().map(|v|v.to_str().unwrap()).collect();
+        for args in [&enable,&disable] {
+            assert_eq!(args.first(),Some(&"serve"));
+            assert!(args.contains(&"--bg"),"persistent sharing must retain --bg: {args:?}");
+            assert!(args.contains(&"--https=443"));
+            assert!(args.contains(&"--set-path=/"),"operate only on Kindred's root handler");
+            assert!(!args.contains(&"reset"));
+        }
+        let enable_flags:Vec<_>=enable.iter().filter(|a|a.starts_with("--")).collect();
+        let disable_flags:Vec<_>=disable.iter().filter(|a|a.starts_with("--")).collect();
+        assert_eq!(enable_flags,disable_flags,"off retains the original flags");
+        assert_eq!(enable.last(),Some(&"http://127.0.0.1:9444"));
+        assert_eq!(disable.last(),Some(&"off"));
+    }
     #[test]
     fn readiness_requires_matching_share_and_applied_loopback_settings() {
         let root=std::env::temp_dir().join(format!("kindred-ready-{}",uuid::Uuid::new_v4()));std::fs::create_dir(&root).unwrap();
