@@ -11,11 +11,13 @@ struct WebContainerView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WebHostView {
         let host = WebHostView()
+        session.refreshSystemTextSize()
         host.attach(session.webView)
         return host
     }
 
     func updateUIView(_ host: WebHostView, context: Context) {
+        session.refreshSystemTextSize()
         host.attach(session.webView)
     }
 }

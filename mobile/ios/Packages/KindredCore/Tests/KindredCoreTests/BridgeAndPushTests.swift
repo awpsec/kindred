@@ -41,6 +41,12 @@ final class BridgeAndPushTests: XCTestCase {
         XCTAssertTrue(invalid.contains("var token = null"))
     }
 
+    func testBootstrapIdentifiesIOSForSystemTextSize() {
+        let script = WebBootstrap.documentStartScript(origin: origin, token: token)
+        XCTAssertTrue(script.contains("window.__KINDRED_MOBILE_PLATFORM = \"ios\""),
+                      "The shared reading-size module must distinguish iOS from Android and desktop.")
+    }
+
     func testJavaScriptStringEscaping() {
         XCTAssertEqual(WebBootstrap.javaScriptString("a\"b\\c"), "\"a\\\"b\\\\c\"")
         XCTAssertEqual(WebBootstrap.javaScriptString("</script>\n\u{2028}"), "\"\\u003C/script\\u003E\\n\\u2028\"")

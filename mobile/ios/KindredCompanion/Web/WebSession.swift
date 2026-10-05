@@ -29,6 +29,7 @@ final class WebSession: NSObject {
     let webView: WKWebView
     private var profileID: String?
     private var latestToken: String?
+    private var systemTextScale: Double
     private let policy: NavigationPolicy
     private weak var host: WebSessionHost?
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
@@ -37,6 +38,7 @@ final class WebSession: NSObject {
         accountID = account.id
         profileID = account.profileID
         latestToken = token
+        systemTextScale = SystemTextSize.currentScale
         origin = account.origin
         policy = NavigationPolicy(origin: account.origin)
         self.host = host
@@ -58,6 +60,11 @@ final class WebSession: NSObject {
         controller.add(proxy, contentWorld: .page, name: WebSession.sessionHandler)
         controller.add(proxy, contentWorld: .page, name: WebSession.accountsHandler)
         installBootstrap(token: token)
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshSystemTextSize),
+            name: UIContentSizeCategory.didChangeNotification, object: nil)
+        // Settings can change while the app is suspended; reconcile on return.
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshSystemTextSize),
+            name: UIApplication.didBecomeActiveNotification, object: nil)
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -92,7 +99,26 @@ final class WebSession: NSObject {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
         let source = WebBootstrap.documentStartScript(origin: origin, token: token, profileID: profileID)
+            + "\n" + WebTextSize.script(origin: origin, scale: systemTextScale)
         controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+    }
+
+    /// Update an already open page without a reload, and the bootstrap for its
+    /// next document. This also catches a cached account becoming visible.
+    @objc func refreshSystemTextSize() {
+        let scale = SystemTextSize.currentScale
+        guard scale != systemTextScale else { return }
+        systemTextScale = scale
+        installBootstrap(token: latestToken)
+        applySystemTextSize()
+    }
+
+    private func applySystemTextSize() {
+        guard origin.matches(webView.url) else { return }
+        let script = WebTextSize.script(origin: origin, scale: systemTextScale)
+        // The JavaScript guard checks the origin again at execution time; a
+        // navigation between this call and execution cannot cross the boundary.
+        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { _ in }
     }
 
     func open(_ url: URL) {
@@ -126,6 +152,7 @@ final class WebSession: NSObject {
     }
 
     func tearDown() {
+        NotificationCenter.default.removeObserver(self)
         webView.stopLoading()
         let controller = webView.configuration.userContentController
         controller.removeAllScriptMessageHandlers()
@@ -195,6 +222,13 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
 }
 
 extension WebSession: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        refreshSystemTextSize()
+        // A setting can change after document-start injection but before this
+        // load finishes. Reapply the latest value to that document as well.
+        applySystemTextSize()
+    }
+
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let url = navigationAction.request.url
