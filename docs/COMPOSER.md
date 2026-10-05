@@ -49,6 +49,20 @@ readable messages and scroll anchor. Failed opening requests show Retry; late
 responses cannot replace another selected conversation. Reduced-motion settings
 turn off the loading animation.
 
+## Leaving and returning to the page
+
+Navigation pauses new API requests before the old document leaves. If you choose
+Stay in the teaching confirmation, the first click or keystroke resumes updates
+once that document can render again. Automatic polling waits for that interaction;
+there is no portable event identifying a cancelled leave-page dialog. The original
+action waits for recovery rather than being dropped or replayed. Returning through
+page history also resumes updates.
+
+A change already sent is kept intact if navigation is cancelled. If the page leaves
+before its response is confirmed, the result is uncertain: check whether it completed
+before retrying. A change waiting for page recovery is reported as not sent if the
+page leaves first. Neither state automatically repeats a write.
+
 ## Verification scope
 
 `tools/frontend/test-composer-lists.cjs` runs in Chromium and WebKit with Linux,
