@@ -711,7 +711,7 @@ final class AppModel {
                     guard self.pendingPushRoute == nil, revision == self.activationRevision, let current = self.account(account.id) else { continue }
                     self.activate(current.id)
                     self.sheet = nil
-                    if let chatID = next.chatID, let url = KindredRoutes.chatURL(origin: current.origin, chatID: chatID) {
+                    if let chatID = next.chatID, let url = KindredRoutes.chatURL(origin: current.origin, chatID: chatID, eventID: next.eventID) {
                         self.session(for: current).open(url)
                     }
                 } catch { self.show(error.localizedDescription, error: true) }
