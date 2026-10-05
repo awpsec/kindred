@@ -22,6 +22,11 @@ export function mobileRequestedChat() {
   const id=new URLSearchParams(location.hash.slice(1)).get('kindred-chat');
   return id && /^[a-zA-Z0-9-]{1,160}$/.test(id)?id:null;
 }
+export function mobileRequestedEvent() {
+  if(!window.__KINDRED_MOBILE)return null;
+  const id=new URLSearchParams(location.hash.slice(1)).get('kindred-event');
+  return id && /^[0-9]{1,32}$/.test(id)?id:null;
+}
 if(window.__KINDRED_MOBILE)document.documentElement.dataset.mobile='true';
 
 // Android WebView does not implement blob downloads. Transfer bounded chunks to

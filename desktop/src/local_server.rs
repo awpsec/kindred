@@ -10,6 +10,10 @@ pub fn is_origin(address: &str) -> bool {
     })
 }
 
+pub fn local_admin_allowed(label:&str,url:&tauri::Url,installed:bool)->bool {
+    label=="main" && installed && is_origin(url.as_str()) && url.path()=="/" && url.username().is_empty() && url.password().is_none()
+}
+
 fn numbers(version: &str) -> Option<[u32; 3]> {
     let mut result = [0; 3];
     let parts: Vec<_> = version.split('.').collect();
@@ -84,6 +88,11 @@ pub fn version() -> Option<String> {
 mod tests {
     use super::*;
     use std::{io::Write, net::TcpListener};
+    #[test]
+    fn local_management_requires_the_installed_main_loopback_workspace() {
+        for address in ["http://127.0.0.1:9444/","http://localhost:9444/","http://[::1]:9444/"]{let url=tauri::Url::parse(address).unwrap();assert!(local_admin_allowed("main",&url,true));assert!(!local_admin_allowed("profile-home",&url,true));assert!(!local_admin_allowed("main",&url,false));}
+        for address in ["https://computer.tailnet.ts.net/","http://127.0.0.1:9445/","http://localhost:9444/admin","http://user@localhost:9444/"]{assert!(!local_admin_allowed("main",&tauri::Url::parse(address).unwrap(),true));}
+    }
     #[test]
     fn only_the_managed_loopback_origin_is_blocked_during_setup() {
         for origin in [ORIGIN, "http://localhost:9444", "http://[::1]:9444"] {

@@ -1,4 +1,4 @@
-import {mobileSession,mobileConversationKey,mobileRequestedChat} from './mobile.js';
+import {mobileSession,mobileConversationKey,mobileRequestedChat,mobileRequestedEvent} from './mobile.js';
 import {createServerUpdater} from './server-update.js';
 import {settingsHeaderArt} from './settings-header-art.js';
 import {workspaceArtifactCard,artifactStudio,artifactUpdateRow,artifactUpdateBatches} from './workspace-artifacts.js';
@@ -82,6 +82,8 @@ const state = {
 const serverChatsUI=createServerChatsUI({api,state,node,button,field,select,modal,icon,buddy,notice,refresh:()=>refresh(true),chooseChat,chooseBot});
 const workspaceUI = createWorkspaceImportUI({api,node,button,field,select,modal,notice,getBots:()=>state.bots,refresh:()=>{commandsUI?.invalidate();return refresh(true);},openBot:async id=>{const bot=state.bots.find(b=>b.id===id);if(bot){$("settings-dialog").close();await chooseBot(bot);}}});
 const profilesUI = createProfileUI({
+  getServerVersion:()=>state.status.version,
+  workingBots:()=>new Set(state.allRuns.filter(active).map(r=>r.bot_id)).size,
   getServerAddress:()=>state.status?.public_url||location.origin, getToken:()=>state.token, setToken:token=>{state.token=token;}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
   restoreAfterSwitch:async()=>{
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:state.token});
@@ -372,6 +374,11 @@ function markdown(text, mentions=false, preserveBreaks=false) {
     }
   }
   for(const el of n.querySelectorAll('[class]')){if(el.tagName==='CODE'){el.className=(el.className.match(/(?:^|\s)(language-[\w-]+)/)||[])[1]||'';}else el.removeAttribute('class');}
+  // Outside markers must fit inside the folded message viewport at every font size.
+  for(const list of n.querySelectorAll('ol')){
+    const start=Number(list.getAttribute('start')||1),last=start+list.querySelectorAll(':scope > li').length-1;
+    list.style.setProperty('--list-marker-digits',Math.max(String(start).length,String(last).length));
+  }
   enhanceMarkdown(n,{sourceText:text||''});
   if(mentions){const walker=document.createTreeWalker(n,NodeFilter.SHOW_TEXT),texts=[];let text;while(text=walker.nextNode())if(!text.parentElement.closest('pre,code,a,button,.artifact-preview'))texts.push(text);for(const text of texts){const replacement=renderMentions(text.textContent,true);if(replacement.querySelector('[data-mention]'))text.replaceWith(...replacement.childNodes);}}
   return n;
@@ -607,8 +614,14 @@ async function refresh(force = false) {
 }
 const avatarCache = new Map(),
   botArrivals = new Map();
+function delegationContext(run) {
+  if(!run?.delegation||!['queued','running','awaiting_user','awaiting_approval'].includes(run.status))return null;
+  const target=state.chats.find(c=>c.id===run.delegation.source_chat_id&&!c.archived),requester=target&&state.bots.find(b=>b.id===run.delegation.requester_bot_id);
+  return {run,target:requester?target:null,name:requester?.name||'',caption:requester?(run.status==='queued'?'Queued for ':'Working for ')+requester.name:(run.status==='queued'?'Queued for another bot':'Working on a task for another bot')};
+}
+function helperWork(botId){return state.allRuns.filter(r=>r.bot_id===botId&&delegationContext(r)).sort((a,b)=>(a.status==='queued')-(b.status==='queued')||a.created-b.created).map(delegationContext)[0];}
 function visibleActivityRun(run) {
-  return !run.chat_id || run.chat_id.startsWith('dm-') || visibleGroupWorkers([run]).length>0;
+  return !!delegationContext(run) || !run.chat_id || run.chat_id.startsWith('dm-') || visibleGroupWorkers([run]).length>0;
 }
 function botActivity(id) {
   const activity=state.activities[id];
@@ -720,7 +733,7 @@ function updateWorkLabel(label) {
   const queue=queuedWork(label.dataset.activityLabel);
   const starting=pending&&queue.starting?.id===run.id;
   // The first scheduler hop is part of sending, not a queue behind other work.
-  label.hidden=!!(starting&&!stale&&now-run.created<10);
+  label.hidden=!!(starting&&!run?.delegation&&!stale&&now-run.created<10);
   const retry=current&&run?.status==='running'&&a.provider_retry?.phase==='retrying'?a.provider_retry:null;
   label.classList.toggle('provider-retrying',!!retry&&!stale);
   if(retry&&!stale){
@@ -732,7 +745,10 @@ function updateWorkLabel(label) {
     label.title='Retrying the same provider. Completed work is preserved.';return;
   }
   delete label.dataset.providerRetry;
-  const caption=pending?(queue.pause?'Waiting for control':starting?'Waiting to start':'Waiting for the current task'):current?r.label:'Waiting for the current task';
+  const delegation=delegationContext(run),helping=helperWork(label.dataset.activityLabel);
+  let caption=pending?(queue.pause?'Waiting for control':starting?'Waiting to start':helping?.name?'Waiting for '+(state.bots.find(b=>b.id===run.bot_id)?.name||'this bot')+' to finish work for '+helping.name:'Waiting for the current task'):current?r.label:'Waiting for the current task';
+  if(run?.status==='awaiting_user'&&pendingHumanTask(run.bot_id)&&!pending)caption='Needs you';
+  if(delegation)caption=delegation.caption+(caption&&caption!=='Working'?' · '+caption:'');
   const text=node('span','',stale?'Connection lost · last known: '+(caption||'Waiting to start'):caption);
   const timer=node('time','work-timer',elapsedTime(now-(current?(a.started_at||now):now)));
   timer.title='Elapsed time in this step';
@@ -949,12 +965,13 @@ function sidebarEntry(control, item, kind, pinned) {
 function updateSidebarActivity(preview){
   const id=preview.dataset.sidebarActivity,runs=state.allRuns.filter(r=>r.bot_id===id&&visibleActivityRun(r)),run=runs.find(r=>r.status==='running')||runs.find(active)||runs.find(r=>r.status==='queued');
   const activity=state.activities[id]||{},stale=state.activityReadAt&&Date.now()-state.activityReadAt>15000;
-  const labels={queued:'queued',awaiting_user:'waiting for you',awaiting_approval:'awaiting approval',cancelling:'stopping'};
+  const labels={queued:'queued',awaiting_user:pendingHumanTask(id)?'Needs you':'waiting for you',awaiting_approval:'awaiting approval',cancelling:'stopping'};
   const steps={investigate:'searching',search:'searching',read:'reading',terminal:'running a command',hammer:'building',saw:'building',drill:'building',write:'writing'};
-  const label=run?(stale?'reconnecting':labels[run.status]||steps[activity.shape]||'working'):(activity.commands?(stale?'reconnecting':`${activity.commands} command${activity.commands===1?'':'s'} running`):'');
+  const delegation=delegationContext(run);
+  const label=run?(stale?'Connection lost · last known: '+(delegation?.caption||'working'):labels[run.status]?(labels[run.status]+(delegation?' · '+delegation.caption:'')):delegation?.caption||steps[activity.shape]||'working'):(activity.commands?(stale?'reconnecting':`${activity.commands} command${activity.commands===1?'':'s'} running`):'');
   const key=label||preview.dataset.idlePreview;
   if(preview.dataset.activityText===key)return;
-  preview.dataset.activityText=key;preview.classList.toggle('is-working',!!label);
+  preview.dataset.activityText=key;preview.classList.toggle('is-working',!!label);preview.classList.toggle('needs-you',!!pendingHumanTask(id)&&!stale);
   if(!label){preview.textContent=preview.dataset.idlePreview;return;}
   const dots=node('span','sidebar-activity-dots');dots.setAttribute('aria-hidden','true');
   for(let i=0;i<3;i++)dots.append(node('span','','.'));
@@ -1031,7 +1048,7 @@ function renderSidebar() {
     state.chats,
     Object.entries(state.attention.chats).map(([id,value])=>[id,value.unread]),
     state.chat?.id,
-    state.allRuns.map((r) => [r.id, r.status, r.output.slice(-400),r.error,r.activity_started]),
+    state.allRuns.map((r) => [r.id, r.status, r.output.slice(-400),r.error,r.activity_started,r.delegation]),
     state.bot?.id,
     $("search").value,
   ]);
@@ -1178,7 +1195,8 @@ function renderHeader() {
   const queueChatId = state.chat?.id || (b ? `dm-${b.id}` : '');
   const queued = queueChatId ? [...new Set(state.allRuns.filter(r=>r.chat_id===queueChatId).map(r=>r.bot_id))].reduce((count,id)=>count+queuedWork(id,queueChatId).waiting,0) : 0;
   $('queue-status').hidden = !queued && !pause;
-  $('queue-status').replaceChildren(node('span','',queued ? `${queued} message${queued===1?'':'s'} queued${pause?' · waiting for control to be returned':''}` : 'Computer paused for manual control'));
+  const helping=helperWork(b?.id),queueReason=helping?.name&&helping.run.status==='running'?` · ${b.name} is working for ${helping.name} and will reply after that.`:'';
+  $('queue-status').replaceChildren(node('span','',queued ? `${queued} message${queued===1?'':'s'} queued${pause?' · waiting for control to be returned':queueReason}` : 'Computer paused for manual control'));
   if(pause)$('queue-status').append(button('Return control',()=>returnScreenControl(pause),'subtle-button small-button'));
   $('queue-status').title = pause ? 'Return control to let this bot continue. Dismissing the notice does not resume work.' : 'Ordinary follow-ups join the current task after its next action. Slash commands and scheduled work keep their place in the queue.';
   renderControlNotice();
@@ -5114,7 +5132,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   const key = JSON.stringify([
     id,
     data.messages,
-    entry.pendingWaits,entry.commands,groupWorkers,unreadBoundaries.get(id)?.through,
+    helperWork(chat.id.startsWith('dm-')?chat.id.slice(3):null),entry.pendingWaits,entry.commands,groupWorkers,unreadBoundaries.get(id)?.through,
     chat.shared?state.allRuns.filter(r=>r.chat_id===id&&active(r)).map(r=>[r.id,r.bot_id,r.status,stoppingTasks.has(r.id)]):null,
     entry.hasBefore,entry.hasAfter,entry.error,state.general.show_activity === true,state.general.name,
     state.bots.map(b=>[b.id,b.name,b.profile]),
@@ -5130,7 +5148,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   beginChatRender(id);
   unreadObserver.disconnect();
   if(entry.hasBefore)area.append(historyEdge(entry,'older'));
-  if (!data.messages.length && !runs.length && !entry.pendingWaits?.length && !entry.commands?.length) {
+  if (!data.messages.length && !runs.length && !entry.pendingWaits?.length && !entry.commands?.length && !helperWork(chat.id.startsWith('dm-')?chat.id.slice(3):null) && !pendingHumanRequests().some(t=>humanRequestChat(t)===id||'dm-'+t.bot_id===id||delegationContext(state.allRuns.find(r=>r.id===t.run_id))?.target?.id===id) && !state.approvals.some(a=>(a.status||'pending')==='pending'&&state.allRuns.some(r=>r.id===a.run_id&&r.status==='awaiting_approval'&&'dm-'+r.bot_id===id))) {
     const empty = node("div", "empty"),
       avatars = chat.id.startsWith('dm-')?buddy(state.bot,55):participantStack(chat,'tile');
     empty.append(
@@ -5394,6 +5412,36 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     if(wait.chat_id!==id){const open=iconButton('arrow','Open chat with '+helper.name,async()=>{const target=state.chats.find(c=>c.id===wait.chat_id);if(target)await chooseChat(target);});open.classList.add('collaboration-open');line.append(open);}
     const stop=iconButton('close','Stop task for '+(requester?.name||'requester'),async()=>{await api('/runs/'+wait.parent_run_id+'/cancel','POST',{});await refresh();});stop.classList.add('collaboration-stop');line.append(stop);
     group.append(line);area.append(group);
+  }
+  // Delegated work executes in its own collaboration chat, but the helper's
+  // private chat must show why that bot is occupied and user messages are queued.
+  const helping=!chat.shared&&chat.id.startsWith('dm-')?helperWork(chat.id.slice(3)):null;
+  if(helping&&helping.run.chat_id!==id){
+    const bot=state.bots.find(b=>b.id===helping.run.bot_id);
+    if(bot){const group=node('article','message-group helper-work');group.dataset.message='helper-work-'+helping.run.id;group.append(workLine(bot,helping.run));
+      if(helping.target)group.append(button("Open "+helping.name+"'s chat",()=>chooseChat(helping.target),'outline-button'));const queuedRun=runs.find(r=>r.status==='queued'),queued=queuedRun&&area.querySelector('article[data-run="'+CSS.escape(queuedRun.id)+'"]');if(queued)queued.before(group);else area.append(group);}
+  }
+  // A pending card must remain reachable even when its run is in a bot-only
+  // collaboration chat or outside the loaded message page. Never copy history.
+  const requestStrips=node('div','human-request-signposts');requestStrips.dataset.message='human-request-signposts-'+id;
+  for(const task of pendingHumanRequests()) {
+    const run=state.allRuns.find(r=>r.id===task.run_id),delegation=delegationContext(run),bot=state.bots.find(b=>b.id===task.bot_id);
+    const canonical=humanRequestChat(task),helperDM='dm-'+task.bot_id;
+    if(canonical===id&&!area.querySelector('[data-user-task="'+CSS.escape(task.id)+'"]')) {
+      const cards=taskCards(run),card=[...cards.querySelectorAll('[data-user-task]')].find(n=>n.dataset.userTask===task.id);
+      if(card){if(run.chat_id!==id)card.prepend(node('p','muted small',delegation?.name?'Request from a task for '+delegation.name:'Request from a task for another bot'));area.append(card);}
+    }
+    if(id===helperDM||delegation?.target?.id===id) {
+      const strip=node('div','human-request-signpost');
+      strip.append(node('span','',(bot?.name||'Your bot')+' needs you'+(id!==helperDM&&delegation?.name?' for '+delegation.name+"'s task":'')+' · '+(task.title||'Computer request')),
+        button('Open request',()=>openHumanRequest(task),'outline-button'));requestStrips.append(strip);
+    }
+  }
+  if(requestStrips.children.length)area.prepend(requestStrips);
+  for(const approval of state.approvals.filter(a=>(a.status||'pending')==='pending')){
+    const run=state.allRuns.find(r=>r.id===approval.run_id);if(!run||run.status!=='awaiting_approval')continue;
+    const source=state.chats.find(c=>c.id===run.chat_id),target=source&&!source.bot_only&&!source.archived?source.id:'dm-'+run.bot_id;
+    if(target===id&&!area.querySelector('[data-approval="'+CSS.escape(approval.id)+'"]')){const card=approvalCard({...approval,status:approval.status||'pending'},run);card.dataset.approval=approval.id;area.append(card);}
   }
   // Human handoffs belong where they were requested, not beneath the live
   // worker or the final answer. Keep one stable card as its status changes.
@@ -6023,7 +6071,9 @@ window.addEventListener('hashchange',syncArtifactRoute);
 window.addEventListener('hashchange',()=>void openMobileNotification());
 async function openMobileNotification(){
   const id=mobileRequestedChat();if(!id||!state.token||!state.restoredReload)return;
+  const event=mobileRequestedEvent();
   history.replaceState({},'',location.pathname+location.search);
+  if(event){await openNotificationChat({chat_id:id,id:event});return;}
   try {
     if(id.startsWith('dm-')){const bot=state.bots.find(b=>'dm-'+b.id===id);if(bot){await chooseBot(bot);return;}}
     const chat=state.chats.find(c=>c.id===id);
@@ -7265,6 +7315,24 @@ function fileLinks(files){
 function pendingHumanTask(botId=screenBotId()) {
   return state.userTasks.find(t=>t.bot_id===botId && t.status==='pending' && state.allRuns.some(r=>r.id===t.run_id&&r.status==='awaiting_user'));
 }
+function humanRequestChat(task) {
+  const run=state.allRuns.find(r=>r.id===task.run_id),chat=state.chats.find(c=>c.id===run?.chat_id);
+  return chat&&!chat.bot_only&&!chat.archived?chat.id:'dm-'+task.bot_id;
+}
+function pendingHumanRequests() {
+  return state.userTasks.filter(t=>t.status==='pending'&&state.allRuns.some(r=>r.id===t.run_id&&r.status==='awaiting_user'));
+}
+async function openHumanRequest(task) {
+  const id=humanRequestChat(task),chat=state.chats.find(c=>c.id===id),bot=state.bots.find(b=>b.id===task.bot_id);
+  if(id.startsWith('dm-')&&bot)await chooseBot(bot);else if(chat)await chooseChat(chat);else throw new Error('This request is no longer available in this profile.');
+  followChatLatest();await renderChat(true);focusRequest('user_action',task.id);
+}
+function focusRequest(kind,id) {
+  const key=kind==='user_action'?'userTask':kind==='approval'?'approval':kind==='question'?'questionId':null;
+  const card=key&&[...$('content').querySelectorAll('[data-'+(key==='userTask'?'user-task':key==='questionId'?'question-id':key)+']')].find(n=>n.dataset[key]===id);
+  if(!card)return false;
+  card.classList.add('notification-target');card.tabIndex=-1;card.scrollIntoView({block:'center',behavior:'auto'});(card.querySelector('input:not(:disabled),button:not(:disabled),a[href]')||card).focus({preventScroll:true});return true;
+}
 async function finishHumanTask(task, outcome='done') {
   if(state.teaching)throw new Error('Finish or discard the lesson before returning control.');
   if(task.bot_id!==screenBotId())throw new Error('Open this bot’s computer before returning its subtask.');
@@ -7289,7 +7357,7 @@ function taskCards(run) {
   const block=node('div','task-cards');
   const receipts=state.details.get(run.id)?.approvals;
   const approvals=receipts || state.approvals.filter(a=>a.run_id===run.id);
-  for(const a of approvals)if(!a.args?.artifact_id)block.append(approvalCard(a,run));
+  for(const a of approvals)if(!a.args?.artifact_id){const card=approvalCard(a,run);card.dataset.approval=a.id;block.append(card);}
   for(const t of state.userTasks.filter(t=>t.run_id===run.id).reverse()) {
     const box=node('div','task-card human-task');box.dataset.userTask=t.id;
     const title=node('div','task-card-title');title.append(icon('computer',15),node('strong','',t.title||'Computer'));
@@ -7748,7 +7816,20 @@ async function pollBrowserNotifications() {
 setInterval(()=>void pollBrowserNotifications(),4000);
 async function openNotificationChat(item){
   const token=state.token;
-  return perform(async()=>{await refresh();if(token!==state.token)return;const chat=state.chats.find(c=>c.id===item.chat_id);if(chat)await chooseChat(chat);else{const bot=state.bots.find(b=>b.id===item.bot_id);if(bot)await chooseBot(bot);}});
+  return perform(async()=>{
+    const event=String(item.id??item.event_id??''),target=/^[0-9]{1,32}$/.test(event)?await api('/notification-target/'+event):item;
+    if(token!==state.token)return;
+    await refresh();if(token!==state.token)return;
+    if(target.unavailable){notice('This notification is no longer available in this profile.',true);return;}
+    const chat=state.chats.find(c=>c.id===target.chat_id),bot=state.bots.find(b=>b.id===target.bot_id);
+    if(target.chat_id?.startsWith('dm-')&&bot)await chooseBot(bot);else if(chat&&!chat.bot_only)await chooseChat(chat);else if(bot)await chooseBot(bot);else {notice('This conversation is no longer available in this profile.',true);return;}
+    if(token!==state.token)return;
+    if(target.request_id){
+      if(target.status!=='pending'){notice('This request is no longer needed ('+(target.status||'unavailable')+').');return;}
+      followChatLatest();await renderChat(true);if(token!==state.token)return;
+      if(!focusRequest(target.request_kind,target.request_id))notice('This request is no longer available. Check the latest messages in this chat.',true);
+    }
+  });
 }
 if(window.__KINDRED_DESKTOP&&window.__TAURI__?.event?.listen){
   void window.__TAURI__.event.listen('kindred-notification-open',event=>void openNotificationChat(event.payload));

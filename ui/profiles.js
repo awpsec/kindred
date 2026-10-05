@@ -1,3 +1,4 @@
+import {isLocalStandalone,mountPhoneAccess,mountLocalServer} from './standalone-access.js';
 import {mobileSession,mobileAccounts} from './mobile.js';
 // Older installations may retain several workspaces under one sign-in.
 // Group only by a verified native account key or an exact server + username.
@@ -11,7 +12,7 @@ export function savedAccounts(entries,last) {
 }
 // Profile switching reloads the application after rotating its scoped session.
 // That releases every chat, provider, image, VNC and native-operation cache.
-export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreAfterSwitch,nativeInvoke,notice,getServerAddress=()=>location.origin}) {
+export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreAfterSwitch,nativeInvoke,notice,getServerAddress=()=>location.origin,getServerVersion=()=>'',workingBots=()=>0}) {
   let enabled=false, projection=null, polling=false, meta=null, invitation='', nativeProfiles=[], nativeCounts={},nativeLast=null;
   const $=id=>document.getElementById(id);
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
@@ -193,7 +194,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     else form.append(el('p','muted','Use the Kindred desktop app to move this workspace to another server.'));
   }
   async function createProfile(){
-    const d=dialog('Add profile'),form=el('form','profile-auth');d.append(form);
+    const d=dialog('Add profile'),form=el('form','profile-auth');d.append(el('p','muted',`Creates a workspace for ${projection?.username||'this account'} on ${location.host}.`),form);
     const name=fieldSet(form,'Profile name','text','','off');name.maxLength=80;
     const save=el('button','primary','Create profile');save.type='submit';form.append(save);
     const request_id=crypto.randomUUID();form.onsubmit=e=>{e.preventDefault();run(async()=>{const profile=await api('profiles',{name:name.value,request_id});d.close();await switchProfile(profile);},save);};
@@ -216,35 +217,17 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const submit=el('button','primary','Request password reset'),error=el('output','profile-form-error');submit.type='submit';error.setAttribute('role','alert');form.append(submit,error);content.append(form);
     form.onsubmit=async e=>{e.preventDefault();submit.disabled=true;error.textContent='';try{pending=await api('password-reset/request',{login:login.value});sessionStorage.setItem('kindred-password-reset',JSON.stringify(pending));if(!closed)await wait();}catch(e){error.textContent=e.message;submit.disabled=false;}};login.focus();
   }
-  async function admin() {
+  async function admin(selectedPage='Users') {
     const d=dialog('Server administration');d.classList.add('settings-dialog','server-admin-dialog');
     const head=d.firstElementChild,nav=el('aside','settings-nav'),tabs=el('nav'),main=el('section','settings-main'),content=el('div','server-admin-content');
     nav.append(el('h2','','Server admin'),tabs);main.append(head,content);d.append(nav,main);
-    const localNetwork=window.__KINDRED_PROFILE_HOST&&location.origin==='http://127.0.0.1:9444';
+    const localNetwork=isLocalStandalone();
     const identity=el('p','server-admin-identity',localNetwork?'Standalone (this machine)':(meta?.deployment==='standalone'?'Standalone':'Hosted')+' ('+location.host+')');identity.title=location.origin;nav.append(identity);
-    const pages={};for(const name of ['Users','Password resets','Computers',...(localNetwork?['Network']:[]),'Updates']){const page=el('div','server-admin-page');page.dataset.page=name;page.hidden=name!=='Users';pages[name]=page;content.append(page);const tab=button(name,()=>{for(const [key,value] of Object.entries(pages))value.hidden=key!==name;for(const b of tabs.children)b.classList.toggle('active',b===tab);head.querySelector('h2').textContent=name;},'');tab.prepend(menuIcon({'Users':'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M20 8v6 M17 11h6','Password resets':'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2','Computers':'M3 4h18v13H3z M8 21h8 M12 17v4','Network':'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M3 12h18 M12 3v18','Updates':'M12 3v12 M7 10l5 5 5-5 M4 17v4h16v-4'}[name]));tab.classList.toggle('active',name==='Users');tabs.append(tab);}head.querySelector('h2').textContent='Users';
+    const pages={};for(const name of ['Users','Password resets','Computers',...((localNetwork||meta?.deployment==='standalone')?['Phone & remote access']:[]),'Updates']){const page=el('div','server-admin-page');page.dataset.page=name;page.hidden=name!==selectedPage;pages[name]=page;content.append(page);const tab=button(name,()=>{for(const [key,value] of Object.entries(pages))value.hidden=key!==name;for(const b of tabs.children)b.classList.toggle('active',b===tab);head.querySelector('h2').textContent=name;},'');tab.prepend(menuIcon({'Users':'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M20 8v6 M17 11h6','Password resets':'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2','Computers':'M3 4h18v13H3z M8 21h8 M12 17v4','Phone & remote access':'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M3 12h18 M12 3v18','Updates':'M12 3v12 M7 10l5 5 5-5 M4 17v4h16v-4'}[name]));tab.classList.toggle('active',name===selectedPage);tabs.append(tab);}head.querySelector('h2').textContent=selectedPage;
     const data=await api('admin');
-    if(localNetwork){
-      const page=pages.Network,form=el('form','profile-auth'),label=el('label','','Listen on'),select=el('select'),status=el('p','muted'),actions=el('div','row-actions');
-      for(const [value,text] of [['127.0.0.1','This computer only'],['0.0.0.0','All interfaces']]){const option=el('option','',text);option.value=value;select.append(option);}
-      label.append(select);status.setAttribute('role','status');
-      const address=el('code'),hint=el('p','muted','Use this computer’s LAN or Tailscale address on port 9444. Your phone must be on that network.'),
-        disruption=el('p','muted','Restarting interrupts active bot work and computer sessions.');
-      const addressLabel=el('label','','Connection addresses'),addresses=el('textarea');addresses.rows=2;addresses.placeholder='http://100.64.1.2:9444';addressLabel.append(addresses);
-      const save=button('Save',async()=>{await update({bind:select.value,addresses:addresses.value.split(/\n/).map(v=>v.trim()).filter(Boolean)});},'outline-button'),
-        restart=button('Restart now',async()=>{status.textContent='Restarting server…';await update({restart:true});},'outline-button');
-      actions.append(save,restart);form.append(label,address,addressLabel,hint,status,actions,disruption);page.append(form);form.onsubmit=e=>e.preventDefault();
-      let current=null,busy=false;
-      function draw(){save.disabled=busy||!current||select.value===current.bind&&addresses.value===(current.addresses||[]).join('\n');restart.hidden=!current?.pending;restart.disabled=busy||!current||select.value!==current.bind||addresses.value!==(current.addresses||[]).join('\n');select.disabled=busy;addresses.disabled=busy;disruption.hidden=!current?.pending;hint.hidden=select.value!=='0.0.0.0';address.textContent=select.value+':9444';}
-      async function update(args={}){
-        busy=true;draw();
-        try{current=await nativeInvoke('standalone_network',args);select.value=current.bind;addresses.value=(current.addresses||[]).join('\n');status.textContent=current.pending?'Saved. Applies at the next server restart.':'Active: '+current.active+':9444';}
-        catch(e){status.textContent=e.message||String(e);}
-        finally{busy=false;draw();}
-      }
-      addresses.oninput=()=>{status.textContent='Unsaved change';draw();};
-      select.onchange=()=>{status.textContent=select.value===current?.bind?(current.pending?'Saved. Restart required.':'Active: '+current.active+':9444'):'Unsaved change';draw();};
-      void update();
+    if(pages['Phone & remote access']){
+      if(localNetwork)mountPhoneAccess(pages['Phone & remote access'],{nativeInvoke,workingBots,dialog:d,onPair:()=>{d.close();return connectMobile();}});
+      else pages['Phone & remote access'].append(el('p','muted','Manage phone access from Kindred on the computer running this server.'));
     }
 
     const requests=pages['Password resets'],resetBadge=el('span','reset-request-count');resetBadge.setAttribute('aria-hidden','true');resetBadge.hidden=true;[...tabs.children].find(b=>b.textContent==='Password resets').append(resetBadge);let resetTimer,resetClosed=false,lastRequests='';
@@ -260,14 +243,12 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       }}catch(e){if(!lastRequests)requests.textContent=e.message;}finally{if(!resetClosed){clearTimeout(resetTimer);resetTimer=setTimeout(loadResets,5000);}}
     }void loadResets();
 
-    const updates=el('section','server-update-settings'),updateRow=el('div','row-actions');updates.append(el('h3','','Server updates'));updateRow.append(button('Check for updates',()=>{d.close();window.dispatchEvent(new Event('kindred-server-update'));},'outline-button'));updates.append(updateRow);pages.Updates.append(updates);
-    if(window.__KINDRED_PROFILE_HOST&&location.origin==='http://127.0.0.1:9444'){
-      const local=el('section','local-server-admin');local.append(el('h3','','Local server'),button('Manage local server',()=>nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark',section:'standalone'}),'outline-button'));pages.Updates.append(local);
-    }
+    const updates=el('section','server-update-settings'),updateRow=el('div','row-actions');updates.append(el('h3','','Server updates'),el('p','muted','Current server '+(getServerVersion()||'version unavailable')));updateRow.append(button('Check for updates',()=>{d.close();window.dispatchEvent(new Event('kindred-server-update'));},'outline-button'));updates.append(updateRow);pages.Updates.append(updates);
+    if(localNetwork){for(const old of d.querySelectorAll('.local-server-admin'))old.remove();const local=el('section','local-server-admin');local.dataset.nativeLocalAdmin='true';local.dataset.sharedLocalAdmin='true';local.append(el('h3','','Local server'));pages.Updates.append(local);mountLocalServer(local,{nativeInvoke,workingBots,dialog:d});}
 
     const hardware=el('section','vm-resource-settings'),heading=el('h3','','Bot computer resources');
     const status=el('p','muted','Loading computer settings…');status.setAttribute('role','status');
-    hardware.append(heading,status,el('p','muted small','Compose controls server limits and default VM resources. These settings apply to this profile’s computer.'));pages.Computers.append(hardware);
+    hardware.append(heading,status);pages.Computers.append(hardware);
     const form=el('form','vm-resource-form'),fields={},readouts={};
     for(const [key,title,min,max,step] of [['cpus','CPUs',1,32,1],['memory_mb','RAM (GB)',1,256,0.5],['disk_gb','Disk (GB)',8,2048,1]]){
       const f=label(title,'number','');f.input.min=min;f.input.max=max;f.input.step=step;f.input.required=true;fields[key]=f.input;const readout=el('div','vm-resource-readout');readout.append(el('span','',title),el('span','vm-resource-value'));readouts[key]=readout;form.append(f.root,readout);
@@ -318,7 +299,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   function positionMenu(){
     const root=$('profile-menu');if(!root)return;
     const box=$('switch-profiles').getBoundingClientRect(),above=box.top-14,below=innerHeight-box.bottom-14;
-    root.style.maxHeight=Math.max(80,Math.min(540,Math.max(above,below)))+'px';
+    root.style.maxHeight=Math.max(80,Math.min(700,Math.max(above,below)))+'px';
     root.style.left=Math.max(8,Math.min(box.right-root.offsetWidth,innerWidth-root.offsetWidth-8))+'px';
     root.style.top=(above>=below?Math.max(8,box.top-root.offsetHeight-6):box.bottom+6)+'px';
   }
@@ -328,21 +309,24 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const root=el('div','profile-menu');root.id='profile-menu';root.setAttribute('role','menu');root.setAttribute('aria-label','Kindred accounts');
     root.append(el('div','profile-menu-label','Accounts'));
     const current=projection?.profiles?.find(p=>p.active);
-    const accountRow=(name,server,action)=>{const row=button('',action,'profile-menu-row profile-account-row'),avatar=el('span','profile-menu-avatar',name.trim().split(/\s+/).slice(0,2).map(n=>n[0]||'').join('').toUpperCase()),copy=el('span','profile-menu-copy');let host=server;try{host=new URL(server).host;}catch{}copy.append(el('span','profile-menu-name',name),el('span','profile-menu-server',host));copy.title=name+' · '+server;row.append(avatar,copy);row.setAttribute('role','menuitem');return row;};
+    const accountRow=(name,server,action)=>{const row=button('',action,'profile-menu-row profile-account-row'),avatar=el('span','profile-menu-avatar',name.trim().split(/\s+/).filter(n=>/[a-zA-Z0-9\p{L}]/u.test(n)).slice(0,2).map(n=>n[0]||'').join('').toUpperCase()),copy=el('span','profile-menu-copy');let host=server;try{host=new URL(server).host;}catch{}copy.append(el('span','profile-menu-name',name),el('span','profile-menu-server',host));copy.title=name+' · '+server;row.append(avatar,copy);row.setAttribute('role','menuitem');return row;};
     if(current){const row=accountRow(projection.username?projection.username+' · '+current.name:current.name,location.origin,()=>{});row.setAttribute('aria-current','true');row.setAttribute('aria-disabled','true');row.tabIndex=-1;row.append(el('span','profile-current','Current'));root.append(row);}
+    for(const profile of projection?.profiles||[])if(!profile.active&&!projection?.legacy){const row=accountRow(profile.name,location.origin,()=>{closeMenu();return switchProfile(profile);});row.classList.remove('profile-account-row');row.classList.add('profile-workspace-row');if(profile.unread)row.append(el('span','profile-notification',profile.unread>9?'9+':String(profile.unread)));root.append(row);}
     for(const account of savedAccounts(nativeProfiles,nativeLast).filter(a=>!a.workspaces.some(p=>p.server===location.origin&&p.profile_id===projection?.active))){
       const row=accountRow(account.name||account.username,account.server,()=>openSavedAccount(account,row));
       const n=account.workspaces.reduce((sum,p)=>sum+(nativeCounts[p.key]||0),0);if(n>0){const count=el('span','profile-notification',n>9?'9+':String(n));count.setAttribute('aria-label',n+' unread notifications');row.append(count);}root.append(row);
     }
     const actions=el('div','profile-menu-actions');
-    const action=(name,fn,path)=>{const row=button('',()=>{closeMenu();return fn();},'profile-menu-row');row.setAttribute('role','menuitem');row.append(menuIcon(path),el('span','',name));actions.append(row);};
-    action('Add account',addAccount,'M12 5v14 M5 12h14');
-    if(window.__KINDRED_PROFILE_HOST)action('Manage accounts',serverPicker,'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M13 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8');
-    if(!projection?.legacy&&projection?.profiles?.length>1){for(const profile of projection.profiles)if(!profile.active)action('Switch to '+profile.name,()=>switchProfile(profile),'M4 12h16 M14 6l6 6-6 6');}
-    if(!projection?.legacy)action('Add profile',createProfile,'M12 5v14 M5 12h14');
+    const action=(name,fn,path,help='')=>{const row=button('',()=>{closeMenu();return fn();},'profile-menu-row');row.setAttribute('role','menuitem');row.append(menuIcon(path),el('span','',name));if(help){row.title=help;row.setAttribute('aria-label',name);const copy=row.lastChild;copy.append(el('small','muted',help));}actions.append(row);};
+    actions.append(el('div','profile-menu-label','Add'));
+    if(!projection?.legacy)action('Add profile',createProfile,'M12 5v14 M5 12h14','New workspace for '+(projection?.username||'this account'));
+    action('Add account',addAccount,'M12 5v14 M5 12h14','Sign in on this or another server');
+    actions.append(el('div','profile-menu-label','This account'));
     action('Connect mobile app',connectMobile,'M7 2h10v20H7z M11 18h2');
     if(!projection?.legacy)action('Account settings',profileSettings,'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2');
     if(!projection?.legacy)action('Change password',changePassword,'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2');
+    actions.append(el('div','profile-menu-label','Manage'));
+    if(window.__KINDRED_PROFILE_HOST)action('Manage saved accounts',serverPicker,'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M20 8v6 M17 11h6');
     if(projection?.admin)action('Server administration',admin,'M4 3h16v7H4z M4 14h16v7H4z M8 6h.01 M8 17h.01');
     if(projection?.legacy)action(projection.claim_available?'Set up your account':'Sign in to your account',()=>authentication(projection.claim_available?'register':'login'),'M10 17l5-5-5-5 M3 12h12 M15 3h6v18h-6');
     root.append(actions);document.body.append(root);$('switch-profiles').setAttribute('aria-expanded','true');positionMenu();menuObserver=new ResizeObserver(positionMenu);menuObserver.observe(root);
@@ -374,15 +358,17 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   }
   async function connectMobile() {
     await refresh();
+    let localAccess=null;if(isLocalStandalone())try{localAccess=await nativeInvoke('standalone_network',{});}catch{}
     const d=dialog('Connect mobile app');d.classList.add('mobile-pairing-dialog');
     const body=el('div','mobile-pairing-body');d.append(body);
     if(!meta?.mobile_pairing){body.append(el('p','','Update this server to connect the mobile app with a QR code.'));return;}
     if(projection?.legacy){body.append(el('p','','Set up your Kindred account to connect the mobile app.'),button('Set up account',()=>{d.close();return authentication(projection.claim_available?'register':'login');},'outline-button'));return;}
     const account=el('div','mobile-pairing-account');account.append(el('strong','',projection?.username||'Your account'),el('span','muted',projection?.profiles?.find(p=>p.active)?.name||''));body.append(account);
-    const address=label('Server address','url',location.protocol==='https:'?location.origin:getServerAddress());address.input.placeholder='https://kindred.example.com';address.input.autocomplete='off';address.input.spellcheck=false;
+    const address=label('Server address','url',localAccess?.ready_to_pair?localAccess.tailnet.address:location.protocol==='https:'?location.origin:getServerAddress());address.input.placeholder='https://kindred.example.com';address.input.autocomplete='off';address.input.spellcheck=false;
     const qr=el('div','mobile-pairing-qr'),status=el('p','mobile-pairing-status');status.setAttribute('role','status');
     const actions=el('div','mobile-pairing-actions'),help=el('details','mobile-pairing-help');help.append(el('summary','','Connection help'));
-    const tips=el('ul');for(const text of ['Keep the server computer on and awake.','For direct network access to Standalone, open Server admin → Network, select All interfaces, save, then restart when no bots are working.','Use a trusted HTTPS proxy or Tailscale Serve. Add its HTTPS address under Network → Connection addresses; All interfaces alone does not enable HTTPS.','Use the same LAN or turn on your VPN (such as Tailscale) on the phone. Check firewall access and the server address.'])tips.append(el('li','',text));help.append(tips);
+    const tips=el('ul');for(const text of ['Keep the server computer on and awake.','Turn on Tailscale on your phone to open this same workspace from anywhere.','The phone app needs the full HTTPS address; localhost and 127.0.0.1 refer to the phone itself.'])tips.append(el('li','',text));help.append(tips);
+    if(meta?.deployment==='standalone'||isLocalStandalone()){if(isLocalStandalone()&&projection?.admin)body.append(button(localAccess?.ready_to_pair?'Phone access is on · Manage':'Set up phone access',()=>{d.close();return admin('Phone & remote access');},'outline-button'));else body.append(el('p','muted','Manage phone access from Kindred on the computer running this server.'));}
     const regenerate=button('Create QR code',generate,'outline-button'),copy=button('Copy pairing link',async()=>{if(!issued||Date.now()/1000>=issued.expires_at)return;await navigator.clipboard.writeText(issued.url);notice('Pairing link copied.');},'subtle-button');copy.hidden=true;
     actions.append(regenerate,copy);body.append(address.root,qr,status,actions,help);
     body.append(el('p','muted small mobile-pairing-note','In Kindred on your phone, choose Add account → Scan pairing code. This code works once.'));

@@ -25,18 +25,18 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
    if(name==='/bots')return send([a,b]);if(name==='/chats')return send([dm,team]);if(name==='/runs')return send([parent]);if(name==='/runs/'+parent.id)return send({run:parent,events:[],attachments:[],approvals:[]});if(name==='/activity')return send({});
    if(name==='/chats/'+dm.id)return send({chat:dm,messages:[message],pending_waits:waits()});
    if(name==='/chats/'+team.id)return send({chat:team,messages:[{...message,text:'Helper conversation'}],pending_waits:waits()});
-   if(name==='/notifications')return send({cursor:notify?1:0,items:notify&&url.searchParams.has('after')&&Number(url.searchParams.get('after'))<1?[{id:1,bot_id:b.id,chat_id:team.id,title:'Mara',body:'The review found two items to address.',avatar_key:'a'.repeat(64)}]:[]});
+   if(name==='/notification-target/1')return send({chat_id:team.id,bot_id:b.id,request_id:''});if(name==='/notifications')return send({cursor:notify?1:0,items:notify&&url.searchParams.has('after')&&Number(url.searchParams.get('after'))<1?[{id:1,bot_id:b.id,chat_id:team.id,title:'Mara',body:'The review found two items to address.',avatar_key:'a'.repeat(64)}]:[]});
    if(name==='/bots/mara/avatar.png'){portraits.push(req.headers().authorization);return route.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=','base64')});}
    if(name==='/runs/parent/cancel'){stops.push(req.method());waiting=false;return send({ok:true});}
    return route.continue();
   });
-  await p.goto(origin);await p.getByText('Piper is waiting for answer from Mara',{exact:true}).waitFor();
-  assert.equal(await p.locator('.collaboration-wait .character').count(),0);
-  await p.reload();await p.getByText('Piper is waiting for answer from Mara',{exact:true}).waitFor();
+  await p.goto(origin);await p.getByText('Piper is waiting on Mara',{exact:true}).waitFor();
+  assert.equal(await p.locator('.collaboration-wait .character').count(),2);
+  await p.reload();await p.getByText('Piper is waiting on Mara',{exact:true}).waitFor();
   await p.setViewportSize({width:390,height:844});await p.waitForTimeout(300);
   assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   await p.screenshot({path:path.join(artifacts,engine+'-waiting-mobile.png')});
-  await p.locator('.collaboration-wait .work-line').hover();await p.locator('.collaboration-wait').getByRole('button',{name:'Stop task for Piper',exact:true}).click();await p.locator('.collaboration-wait').waitFor({state:'hidden'});assert.deepEqual(stops,['POST']);
+  await p.locator('.collaboration-wait').hover();await p.locator('.collaboration-wait').getByRole('button',{name:'Stop task for Piper',exact:true}).click();await p.locator('.collaboration-wait').waitFor({state:'hidden'});assert.deepEqual(stops,['POST']);
   notify=true;await p.waitForFunction(()=>window.fixtureNotifications.length===1);const n=await p.evaluate(()=>({title:window.fixtureNotifications[0].title,options:window.fixtureNotifications[0].options}));assert.equal(n.options.silent,true);await p.waitForFunction(()=>window.fixtureSounds===1);assert.equal(await p.evaluate(()=>window.fixtureDecoded),1);assert.equal(n.title,'Mara');assert.equal(n.options.body,'The review found two items to address.');assert(n.options.icon.startsWith('blob:'));assert.deepEqual(portraits,['Bearer '+token]);
   await p.evaluate(()=>window.fixtureNotifications[0].onclick());await p.getByText('Helper conversation',{exact:true}).waitFor();
   assert.deepEqual(errors,[]);
