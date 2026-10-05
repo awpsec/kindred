@@ -1,6 +1,6 @@
 import XCTest
 import UIKit
-@testable import KindredCompanion
+@testable import Kindred
 
 @MainActor
 final class SystemTextSizeTests: XCTestCase {

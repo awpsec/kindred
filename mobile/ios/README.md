@@ -278,6 +278,8 @@ this check. A Linux/WebKit fixture cannot establish these native results.
   & Text Size → Larger Text slider. Check xS, Large, XXXL, AX3 and AX5. The shared
   Settings screen must explain that iOS text size follows the system. The saved
   percentage must not block changes or be deleted as a side effect.
+  Repeat using Control Center → Text Size with Kindred Only selected; verify
+  the per-app override is reflected by UIKit and the shared web text.
 - Leave a long chat open with a draft, table and code block. Change the system
   category via Accessibility Inspector while foregrounded, then via Settings
   while backgrounded. Confirm size updates without page reload, losing the
