@@ -219,9 +219,12 @@ answer 404 and the app says notifications aren't offered.
   Tapping one picks the saved account by installation UUID (falling back to
   the server account UUID only when that is unambiguous), switches to the
   event's workspace if needed (`POST /identity/switch`), then loads
-  `https://server/#kindred-chat=<chat id>`; the shared UI opens the
-  conversation and clears the fragment. Unknown or ambiguous payloads are
-  ignored with a notice; invalid IDs are dropped.
+  `https://server/#kindred-chat=<chat id>&kindred-event=<event id>` when a
+  valid event ID is present. With the matching updated server and shared UI,
+  that event is resolved within the authenticated workspace to open the
+  request or explain its stale status,
+  then clears the fragment. Older payloads without an event ID open the chat.
+  Unknown or ambiguous payloads are ignored with a notice; invalid IDs are dropped.
 - The server needs `KINDRED_APNS_KEY_FILE`, `KINDRED_APNS_KEY_ID`,
   `KINDRED_APNS_TEAM_ID` and `KINDRED_APNS_TOPIC` (the bundle ID). No APNs key
   or team has been supplied, so **push has not been delivered end to end**.
