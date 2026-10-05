@@ -88,11 +88,15 @@ public enum KindredRoutes {
         }
     }
 
-    /// `https://server/#kindred-chat=<id>`; the shared UI opens the chat on load
-    /// or `hashchange` and then clears the fragment.
-    public static func chatURL(origin: ServerOrigin, chatID: String) -> URL? {
+    /// The shared UI opens the chat and resolves an optional notification event
+    /// in the authenticated workspace before clearing the fragment.
+    public static func chatURL(origin: ServerOrigin, chatID: String, eventID: String? = nil) -> URL? {
         guard isValidChatID(chatID) else { return nil }
-        return URL(string: origin.serialized + "/#kindred-chat=" + percentEncode(chatID))
+        var fragment = "kindred-chat=" + percentEncode(chatID)
+        if let eventID, PushPayload.isValidEventID(eventID) {
+            fragment += "&kindred-event=" + eventID
+        }
+        return URL(string: origin.serialized + "/#" + fragment)
     }
 
     /// RFC 3986 unreserved characters pass through; everything else is %XX.
