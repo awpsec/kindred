@@ -5283,3 +5283,9 @@ html[data-mobile] .conversation-header { -webkit-app-region:no-drag; }
 .sidebar .bot-link>.character>.primary-bot-badge{display:none}
 .sidebar-rail:not(.sidebar-peek)>.sidebar .bot-link>.character>.primary-bot-badge{display:inline-flex}
 @media(forced-colors:active){.primary-bot-badge,.primary-bot-mark{color:CanvasText}.sidebar .character>.primary-bot-badge{--badge-ring:Canvas}}
+
+/* Keep wide mobile content inside its own scrollport, not the chat viewport. */
+html[data-mobile]{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html[data-mobile] .message-row,html[data-mobile] .message-bubble{min-width:0}
+html[data-mobile] .message-bubble .markdown-table{width:100%;min-width:0;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+html[data-mobile] .message-bubble pre{max-width:100%;overflow-x:auto}

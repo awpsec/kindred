@@ -43,8 +43,9 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   await p.locator('#show-computer').click();await p.getByRole('button',{name:'Use screen',exact:true}).click();
   for(let i=0;i<100&&!sessions.some(s=>s.control);i++)await p.waitForTimeout(20);assert(sessions.some(s=>s.bot_id==='viv'&&s.control));assert.deepEqual(writes,[],'Rejoining manual control must not cancel queued work');
   await p.locator('#computer-close').click();await notice.waitFor();
-  await p.locator('#bots').getByRole('button',{name:'Piper',exact:true}).click();fail=true;
+  fail=true;
   await notice.getByRole('button',{name:'Return control to Vivienne',exact:true}).click();await notice.getByRole('alert').filter({hasText:'Fixture could not return control'}).waitFor();assert(await notice.isVisible());
+  await p.locator('#bots').getByRole('button',{name:'Piper',exact:true}).click();
   await notice.getByRole('button',{name:'Return control to Vivienne',exact:true}).click();await notice.getByRole('button',{name:'Return control to Vivienne',exact:true}).waitFor({state:'hidden'});assert.equal(writes.length,2);assert(writes.every(w=>w.path==='/takeover'&&w.body.bot_id==='viv'&&w.body.enabled===false));assert.equal(runs[0].status,'queued');assert.deepEqual(pauses.map(p=>p.bot_id),['iz']);
   await p.reload();await p.locator('#content .empty').waitFor();assert(await notice.isHidden(),'Reload waits for a new leave-pane gesture');
   await p.locator('#bots').getByRole('button',{name:'Izabella',exact:true}).click();await p.locator('#queue-status').getByRole('button',{name:'Return control',exact:true}).click();await notice.waitFor({state:'hidden'});assert.equal(pauses.length,0);
