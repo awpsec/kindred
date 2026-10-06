@@ -5342,4 +5342,4 @@ html[data-mobile] .message-bubble pre{max-width:100%;overflow-x:auto}
 
 .browser-task-goal { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 
-.browser-task-action { white-space: pre-wrap; overflow-wrap: anywhere; color:var(--fg); font-size:calc(15px * var(--text-scale,1)); }
+.approval .browser-task-action { white-space: pre-wrap; overflow-wrap: anywhere; color:var(--fg); font-size:calc(15px * var(--text-scale,1)); }

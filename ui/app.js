@@ -7504,14 +7504,24 @@ function approvalCard(a,run) {
   let browserWhere='',detailsArgs=a.args;
   box.append(title,node('p','task-description',action));
   if(a.tool==='computer_browser_task') {
-    const selected=a.args.action||{},field=String(selected.label||'').replace(/\s+\[control \d+\]$/,'');
-    const sensitive=/password|secret|token|api[ _-]?key|one.time.code/i.test(field+' '+(selected.value_key||''));
+    const selected=a.args.action||{};
+    const secretField=/password|secret|token|api[ _-]?key|one.time.code|\bpin\b|passcode|cvv|cvc|security.?code|card.?number|\bssn\b|social.?security/i;
+    const sensitive=secretField.test(String(selected.label||'')+' '+(selected.value_key||''));
+    const rawValue=String(a.args.value??'');
+    const redact=(entry,key='')=>{
+      if(secretField.test(key)||(sensitive&&/^(value|text|input)$/i.test(key)))return '••••';
+      if(typeof entry==='string')return sensitive&&rawValue?entry.split(rawValue).join('••••'):entry;
+      if(Array.isArray(entry))return entry.map(item=>redact(item));
+      if(entry&&typeof entry==='object')return Object.fromEntries(Object.entries(entry).map(([name,item])=>[name,redact(item,name)]));
+      return entry;
+    };
+    detailsArgs=redact(a.args);
+    const field=String(redact(selected.label||'')).replace(/\s+\[control \d+\]$/,'');
     const value=sensitive?'••••':String(a.args.value??'');
     const description=selected.kind==='fill'?`Enter “${value}” in ${field.match(/^Fill “(.+?)”/)?.[1]||'the selected field'}`:field||'Use the selected browser action';
     box.append(node('p','task-description browser-task-action',description));
-    if(sensitive)detailsArgs={...a.args,value:'••••'};
     try {browserWhere=`On ${new URL(a.args.origin).host} · `;}catch {browserWhere='On the requested site · ';}
-    if(a.args.goal)box.append(node('p','task-description browser-task-goal',`Part of: ${String(a.args.goal)}`));
+    if(a.args.goal)box.append(node('p','task-description browser-task-goal',`Part of: ${String(redact(a.args.goal))}`));
   }
   box.append(node('p','muted small',browserWhere+caption));
   const details=node('details','task-details');details.append(node('summary','','Show the details'),node('pre','',JSON.stringify(detailsArgs,null,2)));box.append(details);
@@ -8067,7 +8077,7 @@ async function decisionsConnection() {
   const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'Paste your OpenAI API key'}),actions=node('div','row-actions');
   key.input.spellcheck=false;key.input.autocapitalize='off';
   const scope=node('p','muted small');
-  const paint=result=>{scope.textContent=result.scope==='workspace'?'Saved for this workspace.':'Saved for your account · used in all its workspaces.';status.textContent=result.last_error?('Last browser task could not use Decisions. '+result.last_error):result.configured?(result.source==='environment'?'Provided by this server':'Key saved · checked when a browser task runs'):'Not set up · Codex bots use their normal computer controls.';key.input.placeholder=result.configured?'Saved · paste a replacement key':'Paste your OpenAI API key';remove.hidden=!result.configured||result.source==='environment';};
+  const paint=result=>{scope.textContent=result.scope==='workspace'?'Saved for this workspace.':'Your key is saved for your account and used in all its workspaces.';status.textContent=result.last_error?('Last browser task could not use Decisions. '+result.last_error):result.configured?(result.source==='environment'?'Provided by this server':'Key saved · checked when a browser task runs'):'Not set up · Codex bots use their normal computer controls.';key.input.placeholder=result.source==='environment'?'Paste your own key to use it instead':result.configured?'Saved · paste a replacement key':'Paste your OpenAI API key';remove.hidden=!result.configured||result.source==='environment';};
   const save=button('Save key',async()=>{
     if(!key.input.value.trim()){status.textContent='Paste your API key first.';return;}
     const value=key.input.value;key.input.value='';save.disabled=true;remove.disabled=true;
