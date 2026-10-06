@@ -5339,3 +5339,7 @@ html[data-mobile] .message-bubble pre{max-width:100%;overflow-x:auto}
 .profile-menu {scrollbar-gutter:stable;}
 .access-choice:has(input:checked) {background:var(--selected);border-radius:8px;outline:1px solid var(--fg);outline-offset:4px;}
 .access-choice input {accent-color:var(--fg);}
+
+.browser-task-goal { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+
+.browser-task-action { white-space: pre-wrap; overflow-wrap: anywhere; color:var(--fg); font-size:calc(15px * var(--text-scale,1)); }

@@ -2561,6 +2561,7 @@ async function settingsConnections(revision) {
         if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Each connector call requires review.'));
         else{const manage=node('a','outline-button','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';inherited.append(manage);}
         row.body.append(inherited);
+        if(codex)row.body.append(await decisionsConnection());
       }
       void check(false);
     } else if(provider.id==='openrouter') {
@@ -7496,12 +7497,24 @@ function approvalCard(a,run) {
   const status=a.status||'pending',pending=status==='pending';
   const title=node('div','task-card-title');
   title.append(node('strong','',pending?'Permission needed':'Task permission'),node('span','task-badge '+(status==='approved'?'done':''),status==='approved'?'Allowed once':status==='denied'?'Declined':status==='expired'?'Expired':'Needs your okay'));
-  const labels={inbox_monitor_save:'Save an inbox routine',guest_exec:'Run a command',computer_open_url:'Open a page',computer_click:'Click on the computer',computer_type:'Enter text',computer_key:'Press a key',computer_scroll:'Scroll',routine_create:'Create a routine',routine_update:'Update a routine',routine_control:'Manage a routine',share_file:'Share a file in chat'};
+  const labels={inbox_monitor_save:'Save an inbox routine',guest_exec:'Run a command',computer_open_url:'Open a page',computer_browser_task:'Use the browser',computer_click:'Click on the computer',computer_type:'Enter text',computer_key:'Press a key',computer_scroll:'Scroll',routine_create:'Create a routine',routine_update:'Update a routine',routine_control:'Manage a routine',share_file:'Share a file in chat'};
   const action=(a.tool==='claude_connector'||a.tool==='codex_connector')?(a.args.tool_name||'Connected app action').split('__').pop():a.tool==='connector_execute'?(a.args.tool_slug||'Connected app action').toLowerCase().replaceAll('_',' '):labels[a.tool]||a.tool.replaceAll('_',' ');
   const connectorTool=a.tool==='claude_connector'||a.tool==='codex_connector',connectorSource=connectorSourceLabel(a.args.source||(a.tool==='claude_connector'?'claude':a.tool==='codex_connector'?'codex':''));
   const caption=connectorTool?`Uses ${a.args.connection?.replace(/^claude.ai /,'')||'a connector'} · via this workspace’s ${connectorSource} account. ${a.args.approval_reason||''}`:a.tool==='connector_execute'?`Uses ${a.args.toolkit} · ${a.args.account_name||a.args.account_id||'connected account'} · via Kindred`:a.tool==='routine_create'?(a.args.trigger==='activity'?'Creates a Constant inbox routine':'Creates a scheduled task'):a.tool==='inbox_monitor_save'?'Saves a Constant inbox routine':`Runs on ${state.bots.find(b=>b.id===run.bot_id)?.name||'your bot'}’s computer`;
-  box.append(title,node('p','task-description',action),node('p','muted small',caption));
-  const details=node('details','task-details');details.append(node('summary','','Show the details'),node('pre','',JSON.stringify(a.args,null,2)));box.append(details);
+  let browserWhere='',detailsArgs=a.args;
+  box.append(title,node('p','task-description',action));
+  if(a.tool==='computer_browser_task') {
+    const selected=a.args.action||{},field=String(selected.label||'').replace(/\s+\[control \d+\]$/,'');
+    const sensitive=/password|secret|token|api[ _-]?key|one.time.code/i.test(field+' '+(selected.value_key||''));
+    const value=sensitive?'••••':String(a.args.value??'');
+    const description=selected.kind==='fill'?`Enter “${value}” in ${field.match(/^Fill “(.+?)”/)?.[1]||'the selected field'}`:field||'Use the selected browser action';
+    box.append(node('p','task-description browser-task-action',description));
+    if(sensitive)detailsArgs={...a.args,value:'••••'};
+    try {browserWhere=`On ${new URL(a.args.origin).host} · `;}catch {browserWhere='On the requested site · ';}
+    if(a.args.goal)box.append(node('p','task-description browser-task-goal',`Part of: ${String(a.args.goal)}`));
+  }
+  box.append(node('p','muted small',browserWhere+caption));
+  const details=node('details','task-details');details.append(node('summary','','Show the details'),node('pre','',JSON.stringify(detailsArgs,null,2)));box.append(details);
   if(pending){const actions=node('div','task-card-actions');for(const [label,approved]of [['Allow once',true],['Decline',false]])actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved});await refresh(true);},approved?'primary small-button':'outline-button'));box.append(actions);}
   return decisionReceipt(box,{key:'approval:'+a.id,title:action,outcome:status==='approved'?'Allowed':status==='denied'?'Declined':'Expired',terminal:!pending});
 }
@@ -8046,3 +8059,29 @@ function workflowOptions(chatId,panel){return {
 };}
 
 function animateWorkflowDetails(root){for(const details of root.querySelectorAll('.workflow-details')){const body=node('div','chat-disclosure-body');for(const child of [...details.children])if(child.tagName!=='SUMMARY')body.append(child);details.append(body);animateChatDisclosure(details,body);}}
+
+async function decisionsConnection() {
+  const root=node('div','provider-catalog decisions-connection');root.append(node('h3','','Browser helper'));
+  root.append(node('p','muted small',"Optional. Lets Codex bots hand routine browser steps to OpenAI Decisions. Decisions uses a separate OpenAI API key; your Codex sign-in powers the normal bot. Usage is billed to the API key’s account."));
+  const status=node('p','muted small');status.setAttribute('role','status');
+  const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'Paste your OpenAI API key'}),actions=node('div','row-actions');
+  key.input.spellcheck=false;key.input.autocapitalize='off';
+  const scope=node('p','muted small');
+  const paint=result=>{scope.textContent=result.scope==='workspace'?'Saved for this workspace.':'Saved for your account · used in all its workspaces.';status.textContent=result.last_error?('Last browser task could not use Decisions. '+result.last_error):result.configured?(result.source==='environment'?'Provided by this server':'Key saved · checked when a browser task runs'):'Not set up · Codex bots use their normal computer controls.';key.input.placeholder=result.configured?'Saved · paste a replacement key':'Paste your OpenAI API key';remove.hidden=!result.configured||result.source==='environment';};
+  const save=button('Save key',async()=>{
+    if(!key.input.value.trim()){status.textContent='Paste your API key first.';return;}
+    const value=key.input.value;key.input.value='';save.disabled=true;remove.disabled=true;
+    try{paint(await api('/connections/decisions','POST',{key:value}));}
+    catch(e){status.textContent=e.message;}
+    finally{save.disabled=false;remove.disabled=false;}
+  });
+  const remove=button('Disconnect',async()=>{
+    if(!confirm('Remove the Decisions API key? Codex will keep using its normal computer tools.'))return;
+    save.disabled=true;remove.disabled=true;
+    try{paint(await api('/connections/decisions','DELETE'));}catch(e){status.textContent=e.message;}
+    finally{save.disabled=false;remove.disabled=false;}
+  },'outline-button');remove.hidden=true;
+  actions.append(save,remove);root.append(status,key.label,actions,scope);
+  try{paint(await api('/connections/decisions'));}catch(e){status.textContent=e.message;}
+  return root;
+}
