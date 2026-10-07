@@ -27,7 +27,14 @@ for window in windows {
     let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
     proof.append(["window_id": id, "title": window[kCGWindowName as String] as? String ?? "", "bounds": bounds, "image": screenshot.lastPathComponent, "text": text])
 }
-guard !proof.isEmpty else { throw NSError(domain: "No visible test-app window", code: 2) }
+if proof.isEmpty {
+    // A window may not have appeared yet. Keep this distinct from capture/OCR
+    // errors so the caller can observe again within its existing render budget.
+    let observation: [String: Any] = ["observation": "no_visible_test_app_window", "pid": pid]
+    let data = try JSONSerialization.data(withJSONObject: observation, options: [.sortedKeys])
+    print(String(data: data, encoding: .utf8)!)
+    exit(2)
+}
 let data = try JSONSerialization.data(withJSONObject: proof, options: [.prettyPrinted, .sortedKeys])
 try data.write(to: folder.appendingPathComponent("windows.json"))
 print(String(data: data, encoding: .utf8)!)
