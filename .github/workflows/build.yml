@@ -221,6 +221,7 @@ jobs:
         with:
           name: unverified-kindred-${{ inputs.version }}-${{ matrix.target }}
           path: |
+            desktop/target/${{ matrix.target }}/release/kindred-desktop.exe
             unverified-macos-app/*.zip
             desktop/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
             desktop/target/${{ matrix.target }}/release/bundle/deb/*.deb
