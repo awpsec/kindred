@@ -53,15 +53,25 @@ def wait_report(folder,phase,child):
  raise AssertionError('Native UI did not report '+phase)
 def capture(child,name,required_words,render_wait=0,window_title=None):
  deadline=time.monotonic()+render_wait
+ observations=[]
  while True:
   assert child.poll() is None,'Native app exited'
-  command([out/'window-proof',child.pid,out/name]+([window_title] if window_title else []),name+'.log')
-  rows=json.loads((out/name/'windows.json').read_text())
+  r=command([out/'window-proof',child.pid,out/name]+([window_title] if window_title else []),name+'.log',required=False)
+  if r.returncode==2:
+   try:observation=json.loads(r.stdout)
+   except json.JSONDecodeError:raise AssertionError(f'{name}: Invalid absent-window observation')
+   assert observation=={'observation':'no_visible_test_app_window','pid':child.pid} and not r.stderr.strip(),f'{name}: Invalid absent-window observation'
+   rows=[]
+  else:
+   assert r.returncode==0,f'{name}: command failed ({r.returncode})'
+   rows=json.loads((out/name/'windows.json').read_text())
+  observations.append({'returncode':r.returncode,'visible_windows':len(rows),'remaining_render_seconds':max(0,deadline-time.monotonic())})
+  (out/(name+'-observations.json')).write_text(json.dumps(observations,indent=2))
   text=' '.join(s for row in rows if window_title is None or row['title']==window_title for s in row['text']).lower()
   rendered=all(word.lower() in text for word in required_words)
   if rendered or time.monotonic()>=deadline:break
-  time.sleep(.5)
- assert rendered,f'{name}: expected UI text missing from captured windows'
+  time.sleep(min(.5,max(0,deadline-time.monotonic())))
+ assert rendered,f'{name}: No visible test-app window by render deadline' if r.returncode==2 else f'{name}: expected UI text missing from captured windows'
  return rows
 child=server=None;mounted=False
 try:
