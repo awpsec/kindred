@@ -61,8 +61,23 @@ struct RootView: View {
     private var content: some View {
         if let account = model.activeAccount {
             if model.isSignedIn(account.id) {
-                WebContainerView(session: model.session(for: account))
-                    .id(account.id)
+                let session = model.session(for: account)
+                ZStack {
+                    WebContainerView(session: session, navigationBlocked: model.sheet != nil || model.download != nil)
+                    if let failure = session.loadState.failure {
+                        VStack(spacing: 16) {
+                            Text("Couldn't open Kindred").font(.headline)
+                            Text(failure).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            Button("Try again") { session.reload() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        .padding(24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Theme.canvas)
+                    }
+                }
+                .id(account.id)
             } else {
                 SignedOutView(account: account)
             }
@@ -87,16 +102,6 @@ struct RootView: View {
                 .accessibilityElement(children: .combine)
             } else {
                 Text("Kindred").font(.headline)
-            }
-        }
-        ToolbarItem(placement: .topBarLeading) {
-            if let account = model.activeAccount, model.isSignedIn(account.id) {
-                Button {
-                    model.reloadActive()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .accessibilityLabel("Reload")
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
