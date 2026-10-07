@@ -5346,3 +5346,20 @@ html[data-mobile] .message-bubble pre{max-width:100%;overflow-x:auto}
 
 #startup-status > p { max-width:32em; padding:0 24px; margin:0; text-align:center; line-height:1.5; }
 #startup-status > strong { padding:0 24px; text-align:center; color:var(--fg); }
+
+/* Explicit host networks and connection addresses. */
+.network-selection { display:grid; gap:12px; margin:20px 0; }
+.network-selection input[type=search] { width:100%; min-height:2.6em; }
+.network-list { display:grid; gap:8px; }
+.network-row { display:flex; align-items:flex-start; gap:12px; padding:12px; border:1px solid var(--line); border-radius:8px; cursor:pointer; }
+.network-row input { flex:none; margin-top:4px; }
+.network-row-body { display:grid; gap:4px; min-width:0; overflow-wrap:anywhere; }
+.network-row-body strong { color:var(--fg); }
+.network-addresses { font-family:monospace; font-size:.9em; }
+.network-badge { font-size:.85em; color:var(--muted); }
+.connection-addresses { display:grid; gap:12px; margin:20px 0; }
+.connection-address { display:grid; gap:6px; padding:12px; border:1px solid var(--line); border-radius:8px; }
+.connection-address code { overflow-wrap:anywhere; white-space:normal; }
+.connection-address button { justify-self:start; }
+
+.tailnet-sharing { overflow-wrap: anywhere; }

@@ -17,6 +17,8 @@ mod local_access;
 mod local_files;
 mod local_server;
 mod standalone_network;
+mod network_interfaces;
+mod network_plan;
 mod tailnet_access;
 mod mac_update;
 mod managed_process;

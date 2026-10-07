@@ -50,6 +50,12 @@ pub fn install_root() -> Result<PathBuf> {
     }
 }
 pub fn atomic(path: &Path, v: &Value) -> Result<()> {
+    atomic_bytes(path, v.to_string().as_bytes())
+}
+pub fn atomic_text(path: &Path, text: &str) -> Result<()> {
+    atomic_bytes(path, text.as_bytes())
+}
+fn atomic_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     let temp = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -59,7 +65,7 @@ pub fn atomic(path: &Path, v: &Value) -> Result<()> {
         options.mode(0o600);
     }
     let mut f = options.open(&temp).map_err(err)?;
-    f.write_all(v.to_string().as_bytes()).map_err(err)?;
+    f.write_all(bytes).map_err(err)?;
     f.sync_all().map_err(err)?;
     drop(f);
     #[cfg(windows)]
