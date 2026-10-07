@@ -1,11 +1,10 @@
-import {mobileSession,mobileConversationKey,mobileRequestedChat} from './mobile.js';
+import {mobileSession,mobileConversationKey,mobileRequestedChat,mobileRequestedEvent,installMobileNavigation} from './mobile.js';
 import {createServerUpdater} from './server-update.js';
 import {settingsHeaderArt} from './settings-header-art.js';
 import {workspaceArtifactCard,artifactStudio,artifactUpdateRow,artifactUpdateBatches} from './workspace-artifacts.js';
 import {groupActivity,transitionGroupActivity,visibleGroupWorkers,sharedConversationWorkers} from './group-activity.js';
 import { decisionReceipt } from './decision-receipts.js';
 import {installThemedSelects} from "./select-menu.js";
-import "./reading-size.js";
 import {enhanceMarkdown,fileCard,artifactPreview,inlineShard} from "./artifacts.js";
 import {connectorCatalog} from "./connector-catalog.js";
 import {connectorCard} from "./connector-cards.js";
@@ -83,7 +82,9 @@ const state = {
 const serverChatsUI=createServerChatsUI({api,state,node,button,field,select,modal,icon,buddy,notice,refresh:()=>refresh(true),chooseChat,chooseBot});
 const workspaceUI = createWorkspaceImportUI({api,node,button,field,select,modal,notice,getBots:()=>state.bots,refresh:()=>{commandsUI?.invalidate();return refresh(true);},openBot:async id=>{const bot=state.bots.find(b=>b.id===id);if(bot){$("settings-dialog").close();await chooseBot(bot);}}});
 const profilesUI = createProfileUI({
-  getToken:()=>state.token, setToken:token=>{state.token=token;}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
+  getServerVersion:()=>state.status.version,
+  workingBots:()=>new Set(state.allRuns.filter(r=>active(r)||delegationContext(r)?.waiting||(r.status==='queued'&&r.delegation?.resuming)).map(r=>r.bot_id)).size,
+  getServerAddress:()=>state.status?.public_url||location.origin, getToken:()=>state.token, setToken:token=>{state.token=token;}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
   restoreAfterSwitch:async()=>{
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:state.token});
     if(!$('computer-panel').hidden)await connectDesktop();
@@ -170,7 +171,7 @@ function renderControlNotice(force=false) {
   for(const pause of pauses){
     const row=node('div','control-notice-row'),copy=node('div','control-notice-copy');
     const reason=pause.reason==='open_app'?'Opening an app paused this computer.':pause.reason==='teaching'?'Teaching paused this computer.':pause.reason==='manual'?'Manual control paused this computer.':'This computer is still marked as under manual control. The earlier action was not recorded.';
-    copy.append(node('strong','',pause.name),node('p','',reason+' '+(pendingHumanTask(pause.bot_id)?'Its requested subtask still needs your response.':'Return control to let this bot continue.')));
+    copy.append(node('strong','',pause.name),node('span','control-notice-context',' is waiting for control'),node('p','',reason+' '+(pendingHumanTask(pause.bot_id)?'Its requested subtask still needs your response.':'Return control to let this bot continue.')));
     const error=node('p','control-notice-error');error.hidden=true;error.setAttribute('role','alert');
     const action=button('Return control',async()=>{try{await returnScreenControl(pause);}catch(e){error.textContent=e.message||'Could not return control. Try again.';error.hidden=false;}},'primary small-button');
     action.setAttribute('aria-label','Return control to '+pause.name);row.append(copy,action,error);box.append(row);
@@ -182,7 +183,19 @@ async function returnScreenControl(pause) {
   state.statusEpoch=(state.statusEpoch||0)+1;
   if(selected){state.desktopControlRequested=false;disconnectDesktop();}
   // An explicit bot ID prevents chat navigation from redirecting this action.
-  await api('/takeover','POST',{enabled:false,bot_id:pause.bot_id,...(Array.isArray(state.status.control_pauses)?{control_id:pause.control_id}:{})});
+  try {
+    await api('/takeover','POST',{enabled:false,bot_id:pause.bot_id,...(Array.isArray(state.status.control_pauses)?{control_id:pause.control_id}:{})});
+  } catch(error) {
+    // A failed release must remain retryable. Reconcile ambiguous timeouts
+    // before restoring input: the server may already have returned control.
+    try { await refresh(true); } catch {}
+    if(selected&&pause.bot_id===screenBotId()){
+      state.desktopControlRequested=!!state.status.takeover;
+      updateDesktopState();
+      if(!$('computer-panel').hidden)void connectDesktop();
+    }
+    throw error;
+  }
   state.statusEpoch++;
   if(Array.isArray(state.status.control_pauses))state.status.control_pauses=state.status.control_pauses.filter(p=>p.bot_id!==pause.bot_id);
   if(state.status.screen_bot_id===pause.bot_id)state.status.takeover=false;
@@ -197,17 +210,23 @@ async function perform(action, control) {
     return await action();
   } catch (e) {
     if(e==='pagehide')return;
+    if(e?.controlFeedbackShown)return;
     notice(e.message || "Something went wrong.", true);
   } finally {
     if (control) {control.disabled = false;delete control.dataset.pending;control.removeAttribute("aria-busy");control.classList.remove("is-busy");}
   }
 }
-const pendingApiRequests=new Set();
-let pageSuspended=false;
+const pendingApiRequests=new Map();
+let pageSuspended=false,pageHidden=false,navigationGeneration=0,navigationRecovery=null;
 async function api(path, method = "GET", body, options = {}) {
-  if(pageSuspended)throw 'pagehide';
+  const requestToken=state.token,bot_id=screenBotId();
+  if(pageSuspended&&navigationRecovery&&!pageHidden){
+    const recovery=navigationRecovery,recovered=await recovery.promise;
+    if(!recovered||recovery.generation!==navigationGeneration){if(method==='GET')throw 'pagehide';const error=new Error('The page left before this change was sent. Try again.');error.notSent=true;error.uncertain=false;throw error;}
+  }
+  if(pageSuspended){if(method==='GET')throw 'pagehide';const error=new Error('This page is leaving. The change was not sent. Try again after returning.');error.notSent=true;error.uncertain=false;throw error;}
+  if(state.token!==requestToken){if(method==='GET')throw 'pagehide';const error=new Error('The workspace changed before this request was sent. Try again in the current workspace.');error.notSent=true;error.uncertain=false;throw error;}
   path=path.replace(/^\/chats\/(server-[^/?]+)/,'/server-chats/$1');
-  const bot_id = screenBotId();
   if (method === "GET" && ["/status", "/computer"].includes(path))
     path += "?bot_id=" + encodeURIComponent(bot_id);
   if (
@@ -216,7 +235,7 @@ async function api(path, method = "GET", body, options = {}) {
   )
     body = { ...body, bot_id: body?.bot_id ?? bot_id };
   const timeout=new AbortController();
-  pendingApiRequests.add(timeout);
+  pendingApiRequests.set(timeout,method);
   const startingComputer=method==="POST"&&(path==="/codex/login"||/^\/provider-cli\/[^/]+\/login$/.test(path));
   const abort=()=>timeout.abort(options.signal.reason);
   if(options.signal?.aborted)abort();else options.signal?.addEventListener('abort',abort,{once:true});
@@ -226,7 +245,7 @@ async function api(path, method = "GET", body, options = {}) {
     signal:timeout.signal,
     method,
     headers: {
-      Authorization: "Bearer " + state.token,
+      Authorization: "Bearer " + requestToken,
       "Content-Type": "application/json",
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -240,7 +259,7 @@ async function api(path, method = "GET", body, options = {}) {
   if (!res.ok) {const error=new Error(data.error || `Request failed (${res.status})`);error.status=res.status;throw error;}
   return data;
   } catch(e) {
-    if(timeout.signal.reason==='pagehide')throw 'pagehide';
+    if(timeout.signal.reason==='pagehide'){if(method==='GET')throw 'pagehide';const error=new Error('The page closed before the server confirmed the change. Check whether it completed before trying again.');error.uncertain=true;throw error;}
     if(timeout.signal.aborted && timeout.signal.reason!=='pagehide')throw new Error(method==='GET'?'The server took too long to respond. Try again.':'The response timed out. Check whether the change completed before retrying.');
     throw e;
   } finally {clearTimeout(timer);options.signal?.removeEventListener('abort',abort);pendingApiRequests.delete(timeout);}
@@ -360,6 +379,11 @@ function markdown(text, mentions=false, preserveBreaks=false) {
     }
   }
   for(const el of n.querySelectorAll('[class]')){if(el.tagName==='CODE'){el.className=(el.className.match(/(?:^|\s)(language-[\w-]+)/)||[])[1]||'';}else el.removeAttribute('class');}
+  // Outside markers must fit inside the folded message viewport at every font size.
+  for(const list of n.querySelectorAll('ol')){
+    const start=Number(list.getAttribute('start')||1),last=start+list.querySelectorAll(':scope > li').length-1;
+    list.style.setProperty('--list-marker-digits',Math.max(String(start).length,String(last).length));
+  }
   enhanceMarkdown(n,{sourceText:text||''});
   if(mentions){const walker=document.createTreeWalker(n,NodeFilter.SHOW_TEXT),texts=[];let text;while(text=walker.nextNode())if(!text.parentElement.closest('pre,code,a,button,.artifact-preview'))texts.push(text);for(const text of texts){const replacement=renderMentions(text.textContent,true);if(replacement.querySelector('[data-mention]'))text.replaceWith(...replacement.childNodes);}}
   return n;
@@ -561,6 +585,7 @@ async function refresh(force = false) {
     }
     state.bot =
       bots.find((b) => b.id === state.bot?.id && !profile(b).archived) ||
+      bots.find((b) => b.id===primaryBotId()) ||
       bots.find((b) => !profile(b).archived) ||
       null;
     if (
@@ -594,8 +619,19 @@ async function refresh(force = false) {
 }
 const avatarCache = new Map(),
   botArrivals = new Map();
+function delegationContext(run) {
+  if(!run?.delegation||!['queued','running','awaiting_user','awaiting_approval','completed'].includes(run.status))return null;
+  const requesterBot=state.bots.find(b=>b.id===run.delegation.requester_bot_id);
+  const target=state.chats.find(c=>c.id===run.delegation.source_chat_id&&!c.archived&&!c.bot_only)||state.chats.find(c=>c.id==='dm-'+requesterBot?.id&&!c.archived&&!c.bot_only);
+  const requester=target&&requesterBot,waiting=run.status==='completed';
+  let caption=requester?(run.status==='queued'&&!run.delegation.resuming?'Queued for ':'Working for ')+requester.name:(run.status==='queued'&&!run.delegation.resuming?'Queued for another bot':'Working on a task for another bot');
+  const children=waiting?(run.delegation.waiting_on_bot_ids||[]):[];
+  if(children.length){const names=children.map(id=>state.bots.find(b=>b.id===id)?.name||'another bot');caption+=' · waiting on '+(names.length>2?names.length+' bots':names.join(' and '));}
+  return {run,target:requester?target:null,name:requester?.name||'',waiting,caption};
+}
+function helperWork(botId){return state.allRuns.filter(r=>r.bot_id===botId&&delegationContext(r)).sort((a,b)=>(a.status==='queued')-(b.status==='queued')||a.created-b.created).map(delegationContext)[0];}
 function visibleActivityRun(run) {
-  return !run.chat_id || run.chat_id.startsWith('dm-') || visibleGroupWorkers([run]).length>0;
+  return !!delegationContext(run) || !run.chat_id || run.chat_id.startsWith('dm-') || visibleGroupWorkers([run]).length>0;
 }
 function botActivity(id) {
   const activity=state.activities[id];
@@ -694,7 +730,7 @@ function queuedWork(botId,chatId) {
   const queued=runs.filter(r=>r.status==='queued').sort((a,b)=>a.created-b.created);
   const pause=pausedScreens().find(p=>p.bot_id===botId);
   // Dispatch is bot-wide; filter by conversation only after identifying the starting run.
-  const starting=!pause&&!runs.some(active)?queued[0]:null;
+  const helping=helperWork(botId),starting=!pause&&!runs.some(active)&&!helping?.waiting&&!helping?.run.delegation.resuming?queued[0]:null;
   return {pause,starting,waiting:queued.filter(r=>r.id!==starting?.id&&(!chatId||r.chat_id===chatId)).length};
 }
 function updateWorkLabel(label) {
@@ -707,7 +743,7 @@ function updateWorkLabel(label) {
   const queue=queuedWork(label.dataset.activityLabel);
   const starting=pending&&queue.starting?.id===run.id;
   // The first scheduler hop is part of sending, not a queue behind other work.
-  label.hidden=!!(starting&&!stale&&now-run.created<10);
+  label.hidden=!!(starting&&!run?.delegation&&!stale&&now-run.created<10);
   const retry=current&&run?.status==='running'&&a.provider_retry?.phase==='retrying'?a.provider_retry:null;
   label.classList.toggle('provider-retrying',!!retry&&!stale);
   if(retry&&!stale){
@@ -719,7 +755,10 @@ function updateWorkLabel(label) {
     label.title='Retrying the same provider. Completed work is preserved.';return;
   }
   delete label.dataset.providerRetry;
-  const caption=pending?(queue.pause?'Waiting for control':starting?'Waiting to start':'Waiting for the current task'):current?r.label:'Waiting for the current task';
+  const delegation=delegationContext(run),helping=helperWork(label.dataset.activityLabel);
+  let caption=pending?(queue.pause?'Waiting for control':starting?'Waiting to start':helping?.name?'Waiting for '+(state.bots.find(b=>b.id===run.bot_id)?.name||'this bot')+' to finish work for '+helping.name:'Waiting for the current task'):current?r.label:'Waiting for the current task';
+  if(run?.status==='awaiting_user'&&pendingHumanTask(run.bot_id)&&!pending)caption='Needs you';
+  if(delegation)caption=delegation.caption+(!delegation.waiting&&!run.delegation.resuming&&caption&&!['Working','Idle','Resting'].includes(caption)?' · '+caption:'');
   const text=node('span','',stale?'Connection lost · last known: '+(caption||'Waiting to start'):caption);
   const timer=node('time','work-timer',elapsedTime(now-(current?(a.started_at||now):now)));
   timer.title='Elapsed time in this step';
@@ -934,14 +973,15 @@ function sidebarEntry(control, item, kind, pinned) {
   return wrap;
 }
 function updateSidebarActivity(preview){
-  const id=preview.dataset.sidebarActivity,runs=state.allRuns.filter(r=>r.bot_id===id&&visibleActivityRun(r)),run=runs.find(r=>r.status==='running')||runs.find(active)||runs.find(r=>r.status==='queued');
+  const id=preview.dataset.sidebarActivity,runs=state.allRuns.filter(r=>r.bot_id===id&&visibleActivityRun(r)),run=runs.find(r=>r.status==='running')||runs.find(active)||runs.find(r=>delegationContext(r)?.waiting)||runs.find(r=>r.status==='queued');
   const activity=state.activities[id]||{},stale=state.activityReadAt&&Date.now()-state.activityReadAt>15000;
-  const labels={queued:'queued',awaiting_user:'waiting for you',awaiting_approval:'awaiting approval',cancelling:'stopping'};
+  const labels={queued:'queued',awaiting_user:pendingHumanTask(id)?'Needs you':'waiting for you',awaiting_approval:'awaiting approval',cancelling:'stopping'};
   const steps={investigate:'searching',search:'searching',read:'reading',terminal:'running a command',hammer:'building',saw:'building',drill:'building',write:'writing'};
-  const label=run?(stale?'reconnecting':labels[run.status]||steps[activity.shape]||'working'):(activity.commands?(stale?'reconnecting':`${activity.commands} command${activity.commands===1?'':'s'} running`):'');
+  const delegation=delegationContext(run);
+  const label=run?(stale?'Connection lost · last known: '+(delegation?.caption||'working'):labels[run.status]&&!(run.status==='queued'&&run.delegation?.resuming)?(labels[run.status]+(delegation?' · '+delegation.caption:'')):delegation?.caption||steps[activity.shape]||'working'):(activity.commands?(stale?'reconnecting':`${activity.commands} command${activity.commands===1?'':'s'} running`):'');
   const key=label||preview.dataset.idlePreview;
   if(preview.dataset.activityText===key)return;
-  preview.dataset.activityText=key;preview.classList.toggle('is-working',!!label);
+  preview.dataset.activityText=key;preview.classList.toggle('is-working',!!label);preview.classList.toggle('needs-you',!!pendingHumanTask(id)&&!stale);
   if(!label){preview.textContent=preview.dataset.idlePreview;return;}
   const dots=node('span','sidebar-activity-dots');dots.setAttribute('aria-hidden','true');
   for(let i=0;i<3;i++)dots.append(node('span','','.'));
@@ -985,16 +1025,40 @@ function glideSidebar(places){
     trackMotion(entry.animate(frames,{duration:240,easing:'cubic-bezier(.2,.8,.2,1)'}),240);
   }
 }
+function primaryBotId(){
+  const id=Object.hasOwn(state.status,'primary_bot_id')?state.status.primary_bot_id:state.general.primary_bot_id;
+  return state.bots.some(b=>b.id===id&&!profile(b).archived)?id:null;
+}
+function primaryBotControl(bot){
+  const primary=switchField('Use as primary bot',primaryBotId()===bot.id);
+  primary.input.disabled=!!profile(bot).archived;
+  primary.input.onchange=async()=>{
+    const selected=primary.input.checked;primary.input.disabled=true;
+    try{
+      const value=await api('/primary-bot','PUT',{bot_id:selected?bot.id:null});
+      state.statusEpoch=(state.statusEpoch||0)+1;state.status.primary_bot_id=value.bot_id;state.general.primary_bot_id=value.bot_id;
+      state.navKey='';state.headerKey='';renderSidebar();renderHeader();
+    }catch(error){primary.input.checked=primaryBotId()===bot.id;notice(error.message,true);}
+    finally{primary.input.disabled=!!profile(bot).archived;}
+  };
+  return primary;
+}
+function primaryBotBadge(className='primary-bot-badge',decorative=false){
+  const badge=node('span',className);badge.title='Primary bot';
+  if(decorative)badge.setAttribute('aria-hidden','true');else{badge.setAttribute('aria-label','Primary bot');badge.setAttribute('role','img');}
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');
+  const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d','m12 3.5 2.6 5.3 5.9.8-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.8Z');path.setAttribute('fill','currentColor');path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','2');path.setAttribute('stroke-linejoin','round');svg.append(path);badge.append(svg);return badge;
+}
 function renderSidebar() {
   if(archivingBots.size||pinDrag)return;
   const key = JSON.stringify([
     state.bots,
-    state.general.name,state.general.separate_bot_chats,
+    state.general.name,state.general.separate_bot_chats,primaryBotId(),
     Object.entries(state.attention.mutes||{}).map(([key,until])=>[key,until===-1||until>Date.now()/1000]),
     state.chats,
     Object.entries(state.attention.chats).map(([id,value])=>[id,value.unread]),
     state.chat?.id,
-    state.allRuns.map((r) => [r.id, r.status, r.output.slice(-400),r.error,r.activity_started]),
+    state.allRuns.map((r) => [r.id, r.status, r.output.slice(-400),r.error,r.activity_started,r.delegation]),
     state.bot?.id,
     $("search").value,
   ]);
@@ -1118,10 +1182,11 @@ function renderHeader() {
     busy = state.allRuns.some((r) => r.bot_id === b?.id && active(r));
   const group=state.chat&&!state.chat.id.startsWith('dm-');
   $('bot-details').disabled=!(b||group);
-  const key = JSON.stringify([b, busy, state.chat,channelTitle(state.chat),state.general.name,state.bots.map(b=>[b.id,b.name,b.profile])]);
+  const key = JSON.stringify([b, busy, state.chat,channelTitle(state.chat),state.general.name,primaryBotId(),state.bots.map(b=>[b.id,b.name,b.profile])]);
   if (key !== state.headerKey) {
     state.headerKey = key;
     $("heading").textContent = channelTitle(state.chat) || b?.name || "Kindred";
+    if(!group&&b?.id===primaryBotId())$("heading").append(primaryBotBadge());
     $("header-avatar").replaceChildren(
       group?participantStack(state.chat,'header','stack-header'):buddy(b, 34, busy, `header-${b?.id || "empty"}`),
     );
@@ -1140,7 +1205,8 @@ function renderHeader() {
   const queueChatId = state.chat?.id || (b ? `dm-${b.id}` : '');
   const queued = queueChatId ? [...new Set(state.allRuns.filter(r=>r.chat_id===queueChatId).map(r=>r.bot_id))].reduce((count,id)=>count+queuedWork(id,queueChatId).waiting,0) : 0;
   $('queue-status').hidden = !queued && !pause;
-  $('queue-status').replaceChildren(node('span','',queued ? `${queued} message${queued===1?'':'s'} queued${pause?' · waiting for control to be returned':''}` : 'Computer paused for manual control'));
+  const helping=helperWork(b?.id),queueReason=helping?.name&&(helping.run.status==='running'||helping.waiting||helping.run.delegation.resuming)?` · ${b.name} is working for ${helping.name} and will reply after that.`:'';
+  $('queue-status').replaceChildren(node('span','',queued ? `${queued} message${queued===1?'':'s'} queued${pause?' · waiting for control to be returned':queueReason}` : 'Computer paused for manual control'));
   if(pause)$('queue-status').append(button('Return control',()=>returnScreenControl(pause),'subtle-button small-button'));
   $('queue-status').title = pause ? 'Return control to let this bot continue. Dismissing the notice does not resume work.' : 'Ordinary follow-ups join the current task after its next action. Slash commands and scheduled work keep their place in the queue.';
   renderControlNotice();
@@ -1494,7 +1560,8 @@ function botIdentityForm(bot){
     label=field('Label (optional)',profile(bot).label,'input',{maxLength:80}),
     description=field('Description',profile(bot).description,'textarea',{rows:4,maxLength:2000}),
     notifications=switchField('Notifications',profile(bot).notifications!==false),progress=botProgressControl(bot);
-  form.append(name.label,label.label,description.label,notifications.label,progress.label);
+  const primary=primaryBotControl(bot);
+  form.append(name.label,label.label,description.label,primary.label,notifications.label,progress.label);
   notifications.input.addEventListener('change',()=>{if(notifications.input.checked)void enableNotifications();});
   const saver=livePreferences(form,()=>({name:name.input.value,label:label.input.value,description:description.input.value,notifications:notifications.input.checked,progress_updates:progress.input.value}),value=>queueAvatarWrite(bot.id,async()=>{
     state.botWriteEpoch=(state.botWriteEpoch||0)+1;
@@ -1513,6 +1580,7 @@ function botIdentityForm(bot){
   });
   form.updateIdentity=value=>{
     if(saver.dirty || form.contains(document.activeElement))return;
+    primary.input.checked=primaryBotId()===bot.id;
     name.input.value=value.name;label.input.value=profile(value).label||'';description.input.value=profile(value).description||'';notifications.input.checked=profile(value).notifications!==false;progress.input.value=profile(value).progress_updates||'inherit';
   };
   return form;
@@ -1591,6 +1659,7 @@ function renderBotSettings() {
   const connectors=botConnectorPreferences(draft);
   provider.onchange = () => {models.changeProvider(provider.value);connectors.setProvider(provider.value,false);};
   const automatic = approvalSelect(b.approval_mode || "inherit", true),
+    primary = primaryBotControl(b),
     pinned = switchField("Pin in sidebar", profile(b).pinned),
     notifications = switchField("Notifications", profile(b).notifications !== false),
     progress = botProgressControl(b);
@@ -1601,6 +1670,7 @@ function renderBotSettings() {
     name.label,
     label.label,
     description.label,
+    primary.label,
     notifications.label,
     progress.label,
     local.root,
@@ -2196,14 +2266,17 @@ async function settingsGeneral(revision) {
   const identity=settingsPane('Account'),name=field('Name',state.general.name,'input',{required:true,maxLength:80});
   const account=node('div','settings-account');account.append(node('span','user-avatar',personInitials(state.general.name)),name.label);identity.body.append(account);
   const about=node('details','settings-about'),prefs=field('What should your bots know about you?',state.general.identity,'textarea',{rows:3,maxLength:16000,placeholder:'How you work, what you care about, how you like replies…'});about.append(node('summary','','About you'),prefs.label);identity.body.append(about);
+  if(profilesUI.enabled())identity.body.append(settingRow('Mobile app',button('Connect mobile app',()=>profilesUI.connectMobile(),'outline-button')));
   const appearance=settingsPane('Appearance'),theme=select([['system','Follow System'],['dark','Dark'],['light','Light']],state.general.theme||'system');
   const motion=settingSwitch('Reduce motion',state.general.reduced_motion),activity=settingSwitch('Show activity in chats',state.general.show_activity===true);
   const separateBots=settingSwitch('Separate bot conversations',state.general.separate_bot_chats!==false);
   appearance.body.append(settingRow('Theme',theme),motion.label);
   const conversations=settingsPane('Conversations');conversations.body.append(activity.label,separateBots.label);
-  const textSize=select([['100','100%'],['115','115%'],['125','125%'],['150','150%']],String(window.KindredReadingSize.get()));
-  textSize.setAttribute('aria-label','Text size');textSize.onchange=()=>window.KindredReadingSize.set(textSize.value);
-  const textRow=settingRow('Text size',textSize);textRow.dataset.devicePreference='true';appearance.body.append(textRow);
+  const textSize=window.KindredReadingSize.systemManaged
+    ? node('p','muted','Text size follows your iPhone setting (Settings › Display & Brightness › Text Size).')
+    : select([['100','100%'],['115','115%'],['125','125%'],['150','150%']],String(window.KindredReadingSize.get()));
+  if(!window.KindredReadingSize.systemManaged){textSize.setAttribute('aria-label','Text size');textSize.onchange=()=>window.KindredReadingSize.set(textSize.value);}
+  const textRow=settingRow('Text size',textSize);textRow.classList.toggle('system-text-size',window.KindredReadingSize.systemManaged);textRow.dataset.devicePreference='true';appearance.body.append(textRow);
   const versions=settingsPane('Versions');versions.root.dataset.devicePreference='true';
   const clientVersion=node('span'),serverVersion=node('span'),updateStatus=node('p','muted small');
   clientVersion.dataset.clientVersion='';serverVersion.dataset.serverVersion='';updateStatus.dataset.clientUpdateStatus='';
@@ -2469,15 +2542,15 @@ async function settingsConnections(revision) {
       }));
       if(['claude-code','codex'].includes(provider.id)) {
         const codex=provider.id==='codex',source=codex?'Codex':'Claude';
-        const inherited=node('div','provider-catalog'),status=node('p','muted small',source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
+        const inherited=node('div','provider-catalog'),status=node('p','muted small',codex?'Refresh to check connected apps.':source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
         status.setAttribute('role','status');
         const refreshConnectors=async()=>{
-          refresh.disabled=true;status.classList.remove('run-error');status.textContent='Checking '+source+' account connectors…';items.replaceChildren();
+          refresh.disabled=true;status.hidden=false;status.classList.remove('run-error');status.textContent='Checking '+source+' account connectors…';items.replaceChildren();
           try {
             const result=await api(codex?'/codex/connectors':'/provider-cli/claude-code/connectors','POST',{});
             if(!inherited.isConnected)return;
             const rows=(codex?result.connections:result.data)||[];
-            status.textContent=rows.length?'Available through this workspace’s '+source+' sign-in. Kindred-connected apps remain available to all providers.':'No connectors were returned by this '+source+' account. Connect an app in '+source+', then refresh.';
+            status.hidden=codex&&rows.length>0&&!result.warning;status.textContent=rows.length?(codex?'':'Available through this workspace’s '+source+' sign-in. Kindred-connected apps remain available to all providers.'):'No connectors were returned by this '+source+' account. Connect an app in '+source+', then refresh.';
             if(result.warning){status.textContent=connectorRefreshMessage(result.warning,source);status.classList.add('run-error');}
             for(const connection of rows){const item=node('div','connector-setting-row'),info=node('div');info.append(connectorHeading(connection.display_name,source),node('p','muted small',connection.status==='connected'?'Connected':connection.status==='needs-auth'?'Reconnect in '+source:'Unavailable'));if(codex&&connection.availability_message)info.append(node('p','muted small',connection.availability_message));item.append(info);items.append(item);}
           }catch(e){if(inherited.isConnected){status.textContent=connectorRefreshMessage(e,source);status.classList.add('run-error');}}
@@ -2488,6 +2561,7 @@ async function settingsConnections(revision) {
         if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Each connector call requires review.'));
         else{const manage=node('a','outline-button','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';inherited.append(manage);}
         row.body.append(inherited);
+        if(codex)row.body.append(await decisionsConnection());
       }
       void check(false);
     } else if(provider.id==='openrouter') {
@@ -3390,6 +3464,10 @@ function retryDesktop(generation, message) {
   state.desktopRetryTimer = setTimeout(() => perform(connectDesktop), delay);
 }
 async function openComputer(controlRequested = false, expanded = false) {
+  if(state.desktopNavigationHidden && state.rfb && state.desktopConnected && state.desktopNavigationBot===screenBotId() && (!controlRequested||state.desktopControlRequested)){
+    state.desktopNavigationHidden=false;state.controlPaneEngaged=true;showPane($('computer-panel'));setComputerExpanded(expanded||state.desktopNavigationExpanded);renderControlNotice();return;
+  }
+
   // Workspace settings may preview any bot; opening it enters that bot's chat.
   if(!chatScreenBots().some(b=>b.id===screenBotId())){
     const selected=state.bots.find(b=>b.id===screenBotId()&&!profile(b).archived);
@@ -3478,12 +3556,13 @@ function renderComputerMaintenance(){
 }
 function updateDesktopState() {
   renderComputerMaintenance();
+  if($('computer-control-error').dataset.botId!==screenBotId())$('computer-control-error').hidden=true;
   const takeover = !!state.status.takeover && !!state.desktopControlRequested,
     updating = ["starting","updating","checking","rebooting"].includes(state.status.maintenance?.phase),
     recovering = state.status.computer_recovering_seconds || 0,
     busy = state.allRuns.some((r) => r.bot_id === screenBotId() && active(r) && r.status !== "awaiting_user"),
     human = pendingHumanTask();
-  const controlLabel = state.takingControl ? "Switching control…" : updating ? "Updating computer…" : takeover
+  const controlLabel = state.takingControl ? (state.returningControl ? "Returning control…" : "Switching control…") : updating ? "Updating computer…" : takeover
     ? "Return control"
     : state.status.takeover
       ? "Use screen"
@@ -3508,7 +3587,7 @@ function updateDesktopState() {
     $("desktop-mode").textContent = takeover
       ? "You have control"
       : updating ? "Updating computer" : "Watching live";
-  $("desktop-paste").disabled = !takeover || !state.desktopConnected;
+  $("desktop-paste").disabled = !takeover || !state.desktopConnected || !computerInputReady() || $("desktop-paste").dataset.pending==='true';
   if(state.teaching && (!takeover || !state.desktopConnected) && !state.teaching.paused){state.teaching.paused=true;renderTeaching();}
   $("desktop-address").textContent = location.host;
 }
@@ -3518,7 +3597,10 @@ function screenAction(control,label,symbol) {
   control.dataset.label=label;control.replaceChildren(icon(symbol,16),node('span','desktop-action-label',label));
 }
 async function toggleControl() {
+  if(state.takingControl)return;
   const targetBotId=screenBotId();
+  state.returningControl=!!state.status.takeover&&!!state.desktopControlRequested;
+  $('computer-control-error').hidden=true;
   state.statusEpoch=(state.statusEpoch||0)+1;
   state.takingControl = true;
   updateDesktopState();
@@ -3526,8 +3608,22 @@ async function toggleControl() {
     if (state.status.takeover && state.desktopControlRequested) {
       const task = pendingHumanTask();
       if(task) { await finishHumanTask(task); return; }
-      const pause=pausedScreens().find(p=>p.bot_id===screenBotId());
-      if(pause)await returnScreenControl(pause);
+      let pause=pausedScreens().find(p=>p.bot_id===targetBotId);
+      if(!pause){
+        // The toolbar's takeover flag can outlive its pause projection. Read
+        // this screen explicitly rather than silently dropping the user's tap.
+        const status=await api('/status?bot_id='+encodeURIComponent(targetBotId));
+        if(screenBotId()!==targetBotId)return;
+        state.status=status;state.statusEpoch++;
+        if(!status.takeover){
+          state.desktopControlRequested=false;
+          if(!$('computer-panel').hidden)await connectDesktop();
+          return;
+        }
+        pause=pausedScreens().find(p=>p.bot_id===targetBotId);
+      }
+      if(!pause)throw new Error('Could not find this bot’s pause. Use Return control in chat.');
+      await returnScreenControl(pause);
       return;
     }
     if(state.status.takeover){
@@ -3558,8 +3654,22 @@ async function toggleControl() {
     state.desktopControlRequested=true;
     await refresh();
     await connectDesktop();
+  } catch(error) {
+    // An interrupted response can still be a confirmed release after the
+    // shared helper reconciles status. Keep the successful watching state.
+    if(state.returningControl&&!state.status.takeover&&screenBotId()===targetBotId)return;
+    if(screenBotId()===targetBotId&&!$('computer-panel').hidden){
+      $('computer-control-error').textContent=error instanceof TypeError
+        ? (state.returningControl ? 'Could not reach the server. Control may not have been returned. Try again.' : 'Could not reach the server. Try again.')
+        : error.message||'Could not return control. Try again.';
+      $('computer-control-error').dataset.botId=targetBotId;
+      $('computer-control-error').hidden=false;
+      error.controlFeedbackShown=true;
+    }
+    throw error;
   } finally {
     state.takingControl = false;
+    state.returningControl = false;
     updateDesktopState();
   }
 }
@@ -3674,9 +3784,11 @@ $("take-control").onclick = () => perform(()=>state.teaching && state.desktopCon
 $("teach-task").onclick = () => perform(()=>state.teaching ? reviewTeaching() : startTeaching());
 $("computer-settings-link").onclick = () =>
   perform(() => openSettings("bot-computer"));
+function computerInputReady(){return window.__KINDRED_MOBILE_PLATFORM!=='ios'||$('app').dataset.mobileResizing!=='true';}
 async function pasteIntoComputer(value) {
   if (!state.rfb || !state.status.takeover || !state.desktopControlRequested)
     throw new Error("Take control of the computer first.");
+  if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
   if (!value) throw new Error("Your clipboard has no text to paste.");
   if (value.length > 16000) throw new Error("Paste up to 16,000 characters at a time.");
   // Use the current control session: the HTTP input path must evict its VNC lease.
@@ -3685,25 +3797,31 @@ async function pasteIntoComputer(value) {
   for (const character of value.replace(/\r\n?/g, "\n")) {
     if (state.rfb !== rfb || !state.desktopConnected || !state.status.takeover || !state.desktopControlRequested)
       throw new Error("Computer control ended before the paste finished.");
+    if(!computerInputReady())throw new Error(sent?"The computer view changed before the paste finished. Check the text before trying again.":"The computer view is adjusting. Try Paste again when it settles.");
     const point = character.codePointAt(0);
     const key = character === "\n" ? 0xff0d : character === "\t" ? 0xff09 : point <= 0xff ? point : 0x01000000 | point;
     rfb.sendKey(key);
     if (++sent % 32 === 0) await new Promise(resolve => setTimeout(resolve, 10));
   }
 }
-$("desktop-paste").onclick = () => perform(async () => {
+$("desktop-paste").onclick = async () => {await perform(async () => {
+  if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
+  const expectedRFB=state.rfb;
   let value;
   try {
     value = await navigator.clipboard.readText();
   } catch {
+    if(state.rfb!==expectedRFB)throw new Error("The computer connection changed. Check the current computer before trying Paste again.");
+    if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
     // Some browsers deny clipboard reads. Keep a direct paste target outside chat.
     $("paste-text").value = "";
     $("text-dialog").showModal();
     $("paste-text").focus();
     return;
   }
+  if(state.rfb!==expectedRFB)throw new Error("The computer connection changed. Check the current computer before trying Paste again.");
   await pasteIntoComputer(value);
-}, $("desktop-paste"));
+}, $("desktop-paste"));updateDesktopState();};
 $("text-form").onsubmit = (e) => {
   e.preventDefault();
   perform(async () => {
@@ -3792,7 +3910,13 @@ function updateComposerLayout(){
   if(width===composerWidth&&font===composerFont&&mode===composerMode)return;
   composerWidth=width;composerFont=font;composerMode=mode;resizeComposer();
 }
-const composerLayout=new ResizeObserver(updateComposerLayout);
+let composerLayoutFrame=0;
+const composerLayout=new ResizeObserver(()=>{
+  if(window.__KINDRED_MOBILE_PLATFORM!=='ios'){updateComposerLayout();return;}
+  // Changing the composer height inside observer delivery can resize the
+  // earlier chat observations in WebKit. Refit in the next rendering phase.
+  cancelAnimationFrame(composerLayoutFrame);composerLayoutFrame=requestAnimationFrame(updateComposerLayout);
+});
 new MutationObserver(updateComposerLayout).observe($('composer'),{attributes:true,attributeFilter:['class']});
 composerLayout.observe($('composer'));document.fonts.ready.then(resizeComposer);
 // The composer remains a floating surface. Animate its reserved space instead
@@ -3957,19 +4081,24 @@ if (window.__KINDRED_TOKEN__) {
 }
 let startingWorkspace=false;
 async function openInitialWorkspace(){
-  if(startingWorkspace)return;startingWorkspace=true;
+  if(startingWorkspace||window.__KINDRED_STARTUP?.failed)return;startingWorkspace=true;
   const status=$('startup-status');status.replaceChildren(node('span','','Opening Kindred…'));
   document.documentElement.dataset.starting='';status.hidden=false;
   try{
     for(let attempt=0;;attempt++){
       try{
         await profilesUI.init(pairCode);
+        if(window.__KINDRED_STARTUP?.failed)return;
         if(state.token&&!pairCode)await connect();
+        if(window.__KINDRED_STARTUP?.failed)return;
+        window.__KINDRED_STARTUP?.finish();
         delete document.documentElement.dataset.starting;status.hidden=true;break;
       }catch(e){
+        if(window.__KINDRED_STARTUP?.failed)return;
         if(e.status===401){$('app').hidden=true;$('connect').hidden=false;state.token='';sessionStorage.removeItem('kindred-token');localStorage.removeItem('kindred-token');continue;}
         if(attempt<3){status.replaceChildren(node('span','','Reconnecting to your workspace…'));await new Promise(r=>setTimeout(r,1500));continue;}
-        status.replaceChildren(node('span','','Your server isn’t responding.'),button('Try again',()=>openInitialWorkspace(),'outline-button'));
+        if(window.__KINDRED_STARTUP){window.__KINDRED_STARTUP.fail();break;}
+        status.replaceChildren(node('span','','Your server isn’t responding.'),button('Try again',()=>location.reload(),'outline-button'));
         if(window.__KINDRED_PROFILE_HOST)status.append(button('Accounts',()=>nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark'}),'subtle-button'));
         notice(e.message||'Could not open your workspace.',true);break;
       }
@@ -4693,6 +4822,11 @@ function acceptAttention(attention){
 }
 function addUnreadDot(control,id,bot){
   const avatar=control.querySelector('.character,.participant-stack');
+  avatar?.querySelector(':scope > .primary-bot-badge')?.remove();control.querySelector('.bot-title-row>.primary-bot-mark')?.remove();
+  if(bot?.id===primaryBotId()&&avatar){
+    avatar.append(primaryBotBadge('primary-bot-badge',true));control.querySelector('.bot-title-row>strong')?.after(primaryBotBadge('primary-bot-mark',true));
+    control.setAttribute('aria-label',(control.getAttribute('aria-label')||bot.name)+', primary bot');
+  }
   avatar?.querySelector(':scope > .conversation-muted')?.remove();
   const mutedUntil=key=>{const until=state.attention.mutes?.[key]||0;return until===-1||until>Date.now()/1000;};
   const muted=mutedUntil('chat:'+id)||(bot&&(mutedUntil('bot:'+bot.id)||profile(bot).notifications===false));
@@ -5032,7 +5166,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   const key = JSON.stringify([
     id,
     data.messages,
-    entry.pendingWaits,entry.commands,groupWorkers,unreadBoundaries.get(id)?.through,
+    helperWork(chat.id.startsWith('dm-')?chat.id.slice(3):null),entry.pendingWaits,entry.commands,groupWorkers,unreadBoundaries.get(id)?.through,
     chat.shared?state.allRuns.filter(r=>r.chat_id===id&&active(r)).map(r=>[r.id,r.bot_id,r.status,stoppingTasks.has(r.id)]):null,
     entry.hasBefore,entry.hasAfter,entry.error,state.general.show_activity === true,state.general.name,
     state.bots.map(b=>[b.id,b.name,b.profile]),
@@ -5048,7 +5182,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   beginChatRender(id);
   unreadObserver.disconnect();
   if(entry.hasBefore)area.append(historyEdge(entry,'older'));
-  if (!data.messages.length && !runs.length && !entry.pendingWaits?.length && !entry.commands?.length) {
+  if (!data.messages.length && !runs.length && !entry.pendingWaits?.length && !entry.commands?.length && !helperWork(chat.id.startsWith('dm-')?chat.id.slice(3):null) && !pendingHumanRequests().some(t=>humanRequestChat(t)===id||'dm-'+t.bot_id===id||delegationContext(state.allRuns.find(r=>r.id===t.run_id))?.target?.id===id) && !state.approvals.some(a=>(a.status||'pending')==='pending'&&state.allRuns.some(r=>r.id===a.run_id&&r.status==='awaiting_approval'&&'dm-'+r.bot_id===id))) {
     const empty = node("div", "empty"),
       avatars = chat.id.startsWith('dm-')?buddy(state.bot,55):participantStack(chat,'tile');
     empty.append(
@@ -5312,6 +5446,36 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     if(wait.chat_id!==id){const open=iconButton('arrow','Open chat with '+helper.name,async()=>{const target=state.chats.find(c=>c.id===wait.chat_id);if(target)await chooseChat(target);});open.classList.add('collaboration-open');line.append(open);}
     const stop=iconButton('close','Stop task for '+(requester?.name||'requester'),async()=>{await api('/runs/'+wait.parent_run_id+'/cancel','POST',{});await refresh();});stop.classList.add('collaboration-stop');line.append(stop);
     group.append(line);area.append(group);
+  }
+  // Delegated work executes in its own collaboration chat, but the helper's
+  // private chat must show why that bot is occupied and user messages are queued.
+  const helping=!chat.shared&&chat.id.startsWith('dm-')?helperWork(chat.id.slice(3)):null;
+  if(helping&&helping.run.chat_id!==id){
+    const bot=state.bots.find(b=>b.id===helping.run.bot_id);
+    if(bot){const group=node('article','message-group helper-work');group.dataset.message='helper-work-'+helping.run.id;group.append(workLine(bot,helping.run));
+      if(helping.target)group.append(button("Open "+helping.name+"'s chat",()=>chooseChat(helping.target),'outline-button'));const queuedRun=runs.find(r=>r.status==='queued'),queued=queuedRun&&area.querySelector('article[data-run="'+CSS.escape(queuedRun.id)+'"]');if(queued)queued.before(group);else area.append(group);}
+  }
+  // A pending card must remain reachable even when its run is in a bot-only
+  // collaboration chat or outside the loaded message page. Never copy history.
+  const requestStrips=node('div','human-request-signposts');requestStrips.dataset.message='human-request-signposts-'+id;
+  for(const task of pendingHumanRequests()) {
+    const run=state.allRuns.find(r=>r.id===task.run_id),delegation=delegationContext(run),bot=state.bots.find(b=>b.id===task.bot_id);
+    const canonical=humanRequestChat(task),helperDM='dm-'+task.bot_id;
+    if(canonical===id&&!area.querySelector('[data-user-task="'+CSS.escape(task.id)+'"]')) {
+      const cards=taskCards(run),card=[...cards.querySelectorAll('[data-user-task]')].find(n=>n.dataset.userTask===task.id);
+      if(card){if(run.chat_id!==id)card.prepend(node('p','muted small',delegation?.name?'Request from a task for '+delegation.name:'Request from a task for another bot'));area.append(card);}
+    }
+    if(id===helperDM||delegation?.target?.id===id) {
+      const strip=node('div','human-request-signpost');
+      strip.append(node('span','',(bot?.name||'Your bot')+' needs you'+(id!==helperDM&&delegation?.name?' for '+delegation.name+"'s task":'')+' · '+(task.title||'Computer request')),
+        button('Open request',()=>openHumanRequest(task),'outline-button'));requestStrips.append(strip);
+    }
+  }
+  if(requestStrips.children.length)area.prepend(requestStrips);
+  for(const approval of state.approvals.filter(a=>(a.status||'pending')==='pending')){
+    const run=state.allRuns.find(r=>r.id===approval.run_id);if(!run||run.status!=='awaiting_approval')continue;
+    const source=state.chats.find(c=>c.id===run.chat_id),target=source&&!source.bot_only&&!source.archived?source.id:'dm-'+run.bot_id;
+    if(target===id&&!area.querySelector('[data-approval="'+CSS.escape(approval.id)+'"]')){const card=approvalCard({...approval,status:approval.status||'pending'},run);card.dataset.approval=approval.id;area.append(card);}
   }
   // Human handoffs belong where they were requested, not beneath the live
   // worker or the final answer. Keep one stable card as its status changes.
@@ -5812,6 +5976,7 @@ async function refreshResources() {
   state.resourcesLoading = true;
   try {
     const r = await api("/computer/resources");
+    if(!["cpu_percent","cpus","memory_used","memory_total","disk_used","disk_total","uptime_seconds","sampled_at"].every(key=>Number.isFinite(r?.[key]))||r.memory_total<=0||r.disk_total<=0)throw new Error("Resource usage unavailable");
     const size = (n) => (n / 1024 ** 3).toFixed(1) + " GB";
     for (const target of targets) {
       target.replaceChildren(node("h3", "", "Resources"));
@@ -5850,7 +6015,7 @@ async function refreshResources() {
   } catch (e) {
     for (const n of targets)
       n.replaceChildren(
-        node("p", "muted small", "Resources unavailable: " + e.message),
+        node("p", "muted small", "Resource usage unavailable"),
       );
   } finally {
     state.resourcesLoading = false;
@@ -5941,7 +6106,9 @@ window.addEventListener('hashchange',syncArtifactRoute);
 window.addEventListener('hashchange',()=>void openMobileNotification());
 async function openMobileNotification(){
   const id=mobileRequestedChat();if(!id||!state.token||!state.restoredReload)return;
+  const event=mobileRequestedEvent();
   history.replaceState({},'',location.pathname+location.search);
+  if(event){await openNotificationChat({chat_id:id,id:event});return;}
   try {
     if(id.startsWith('dm-')){const bot=state.bots.find(b=>'dm-'+b.id===id);if(bot){await chooseBot(bot);return;}}
     const chat=state.chats.find(c=>c.id===id);
@@ -6342,12 +6509,39 @@ if(window.__KINDRED_MOBILE){
   window.addEventListener('kindred-mobile-suspend',persistConversation);
   window.addEventListener('kindred-mobile-error',event=>notice(String(event.detail||'Could not save this file.'),true));
 }
-addEventListener('pagehide',()=>{
-  pageSuspended=true;
-  persistConversation();
-  for(const request of pendingApiRequests)request.abort('pagehide');
+function invalidateNavigationRecovery(){
+  navigationGeneration++;
+  if(navigationRecovery){cancelAnimationFrame(navigationRecovery.frame);navigationRecovery.resolve(false);navigationRecovery=null;}
+}
+function beginNavigationRecovery(){
+  if(pageHidden||!pageSuspended||navigationRecovery)return;
+  const generation=navigationGeneration,recovery={generation};
+  recovery.promise=new Promise(resolve=>{recovery.resolve=resolve;});
+  navigationRecovery=recovery;
+  // A trusted action alone can still reach WebKit's leaving document. Wait
+  // until that document renders again; never synthesize/replay the action.
+  recovery.frame=requestAnimationFrame(()=>{
+    if(generation!==navigationGeneration||pageHidden){recovery.resolve(false);return;}
+    navigationRecovery=null;pageSuspended=false;recovery.resolve(true);
+    if(state.token)void perform(()=>refresh(true));
+  });
+}
+addEventListener('beforeunload',()=>{
+  // WebKit can run timers after navigation starts, before pagehide. Prevent
+  // new requests there; keep dispatched writes intact if the user stays.
+  pageSuspended=true;invalidateNavigationRecovery();persistConversation();
+  for(const [request,method] of pendingApiRequests)if(method==='GET')request.abort('pagehide');
+  // Stay has no portable event. A later trusted action plus rendering resumes
+  // this document; no timer or RAF alone guesses the navigation outcome.
 });
-addEventListener('pageshow',e=>{pageSuspended=false;if(e.persisted&&state.token)void perform(()=>refresh(true));});
+for(const type of ['pointerdown','keydown'])addEventListener(type,event=>{if(event.isTrusted)beginNavigationRecovery();},{capture:true});
+addEventListener('pagehide',()=>{
+  pageHidden=true;pageSuspended=true;invalidateNavigationRecovery();
+  persistConversation();
+  for(const request of pendingApiRequests.keys())request.abort('pagehide');
+});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&pageSuspended)invalidateNavigationRecovery();});
+addEventListener('pageshow',e=>{invalidateNavigationRecovery();pageHidden=false;pageSuspended=false;if(e.persisted&&state.token)void perform(()=>refresh(true));});
 
 // Every finite UI effect must settle even if a webview drops its finish event.
 // Cancellation for a new interaction discards the old destination; cancellation
@@ -6454,7 +6648,7 @@ function setPaneWidth(panel,width,natural){
   else{panel.removeAttribute('data-pane-sized');panel.style.removeProperty('--pane-width');}
 }
 function layoutPanes(){
-  const shell=$('app');if(paneDrag||shell.hidden||!shell.clientWidth)return;
+  const shell=$('app');if(window.__KINDRED_MOBILE_PLATFORM==='ios'){setSidebarWidth(null);for(const id of ['details-panel','computer-panel'])setPaneWidth($(id),0,0);return;}if(paneDrag||shell.hidden||!shell.clientWidth)return;
   const panels=[$('details-panel'),$('computer-panel')];
   if(computerTransition)return;
   for(const panel of panels)panel.classList.remove('pane-overlay');
@@ -7183,6 +7377,24 @@ function fileLinks(files){
 function pendingHumanTask(botId=screenBotId()) {
   return state.userTasks.find(t=>t.bot_id===botId && t.status==='pending' && state.allRuns.some(r=>r.id===t.run_id&&r.status==='awaiting_user'));
 }
+function humanRequestChat(task) {
+  const run=state.allRuns.find(r=>r.id===task.run_id),chat=state.chats.find(c=>c.id===run?.chat_id);
+  return chat&&!chat.bot_only&&!chat.archived?chat.id:'dm-'+task.bot_id;
+}
+function pendingHumanRequests() {
+  return state.userTasks.filter(t=>t.status==='pending'&&state.allRuns.some(r=>r.id===t.run_id&&r.status==='awaiting_user'));
+}
+async function openHumanRequest(task) {
+  const id=humanRequestChat(task),chat=state.chats.find(c=>c.id===id),bot=state.bots.find(b=>b.id===task.bot_id);
+  if(id.startsWith('dm-')&&bot)await chooseBot(bot);else if(chat)await chooseChat(chat);else throw new Error('This request is no longer available in this profile.');
+  followChatLatest();await renderChat(true);focusRequest('user_action',task.id);
+}
+function focusRequest(kind,id) {
+  const key=kind==='user_action'?'userTask':kind==='approval'?'approval':kind==='question'?'questionId':null;
+  const card=key&&[...$('content').querySelectorAll('[data-'+(key==='userTask'?'user-task':key==='questionId'?'question-id':key)+']')].find(n=>n.dataset[key]===id);
+  if(!card)return false;
+  card.classList.add('notification-target');card.tabIndex=-1;card.scrollIntoView({block:'center',behavior:'auto'});(card.querySelector('input:not(:disabled),button:not(:disabled),a[href]')||card).focus({preventScroll:true});return true;
+}
 async function finishHumanTask(task, outcome='done') {
   if(state.teaching)throw new Error('Finish or discard the lesson before returning control.');
   if(task.bot_id!==screenBotId())throw new Error('Open this bot’s computer before returning its subtask.');
@@ -7207,7 +7419,7 @@ function taskCards(run) {
   const block=node('div','task-cards');
   const receipts=state.details.get(run.id)?.approvals;
   const approvals=receipts || state.approvals.filter(a=>a.run_id===run.id);
-  for(const a of approvals)if(!a.args?.artifact_id)block.append(approvalCard(a,run));
+  for(const a of approvals)if(!a.args?.artifact_id){const card=approvalCard(a,run);card.dataset.approval=a.id;block.append(card);}
   for(const t of state.userTasks.filter(t=>t.run_id===run.id).reverse()) {
     const box=node('div','task-card human-task');box.dataset.userTask=t.id;
     const title=node('div','task-card-title');title.append(icon('computer',15),node('strong','',t.title||'Computer'));
@@ -7309,12 +7521,34 @@ function approvalCard(a,run) {
   const status=a.status||'pending',pending=status==='pending';
   const title=node('div','task-card-title');
   title.append(node('strong','',pending?'Permission needed':'Task permission'),node('span','task-badge '+(status==='approved'?'done':''),status==='approved'?'Allowed once':status==='denied'?'Declined':status==='expired'?'Expired':'Needs your okay'));
-  const labels={inbox_monitor_save:'Save an inbox routine',guest_exec:'Run a command',computer_open_url:'Open a page',computer_click:'Click on the computer',computer_type:'Enter text',computer_key:'Press a key',computer_scroll:'Scroll',routine_create:'Create a routine',routine_update:'Update a routine',routine_control:'Manage a routine',share_file:'Share a file in chat'};
+  const labels={inbox_monitor_save:'Save an inbox routine',guest_exec:'Run a command',computer_open_url:'Open a page',computer_browser_task:'Use the browser',computer_click:'Click on the computer',computer_type:'Enter text',computer_key:'Press a key',computer_scroll:'Scroll',routine_create:'Create a routine',routine_update:'Update a routine',routine_control:'Manage a routine',share_file:'Share a file in chat'};
   const action=(a.tool==='claude_connector'||a.tool==='codex_connector')?(a.args.tool_name||'Connected app action').split('__').pop():a.tool==='connector_execute'?(a.args.tool_slug||'Connected app action').toLowerCase().replaceAll('_',' '):labels[a.tool]||a.tool.replaceAll('_',' ');
   const connectorTool=a.tool==='claude_connector'||a.tool==='codex_connector',connectorSource=connectorSourceLabel(a.args.source||(a.tool==='claude_connector'?'claude':a.tool==='codex_connector'?'codex':''));
   const caption=connectorTool?`Uses ${a.args.connection?.replace(/^claude.ai /,'')||'a connector'} · via this workspace’s ${connectorSource} account. ${a.args.approval_reason||''}`:a.tool==='connector_execute'?`Uses ${a.args.toolkit} · ${a.args.account_name||a.args.account_id||'connected account'} · via Kindred`:a.tool==='routine_create'?(a.args.trigger==='activity'?'Creates a Constant inbox routine':'Creates a scheduled task'):a.tool==='inbox_monitor_save'?'Saves a Constant inbox routine':`Runs on ${state.bots.find(b=>b.id===run.bot_id)?.name||'your bot'}’s computer`;
-  box.append(title,node('p','task-description',action),node('p','muted small',caption));
-  const details=node('details','task-details');details.append(node('summary','','Show the details'),node('pre','',JSON.stringify(a.args,null,2)));box.append(details);
+  let browserWhere='',detailsArgs=a.args;
+  box.append(title,node('p','task-description',action));
+  if(a.tool==='computer_browser_task') {
+    const selected=a.args.action||{};
+    const secretField=/password|secret|token|api[ _-]?key|one.time.code|\bpin\b|passcode|cvv|cvc|security.?code|card.?number|\bssn\b|social.?security/i;
+    const sensitive=secretField.test(String(selected.label||'')+' '+(selected.value_key||''));
+    const rawValue=String(a.args.value??'');
+    const redact=(entry,key='')=>{
+      if(secretField.test(key)||(sensitive&&/^(value|text|input)$/i.test(key)))return '••••';
+      if(typeof entry==='string')return sensitive&&rawValue?entry.split(rawValue).join('••••'):entry;
+      if(Array.isArray(entry))return entry.map(item=>redact(item));
+      if(entry&&typeof entry==='object')return Object.fromEntries(Object.entries(entry).map(([name,item])=>[name,redact(item,name)]));
+      return entry;
+    };
+    detailsArgs=redact(a.args);
+    const field=String(redact(selected.label||'')).replace(/\s+\[control \d+\]$/,'');
+    const value=sensitive?'••••':String(a.args.value??'');
+    const description=selected.kind==='fill'?`Enter “${value}” in ${field.match(/^Fill “(.+?)”/)?.[1]||'the selected field'}`:field||'Use the selected browser action';
+    box.append(node('p','task-description browser-task-action',description));
+    try {browserWhere=`On ${new URL(a.args.origin).host} · `;}catch {browserWhere='On the requested site · ';}
+    if(a.args.goal)box.append(node('p','task-description browser-task-goal',`Part of: ${String(redact(a.args.goal))}`));
+  }
+  box.append(node('p','muted small',browserWhere+caption));
+  const details=node('details','task-details');details.append(node('summary','','Show the details'),node('pre','',JSON.stringify(detailsArgs,null,2)));box.append(details);
   if(pending){const actions=node('div','task-card-actions');for(const [label,approved]of [['Allow once',true],['Decline',false]])actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved});await refresh(true);},approved?'primary small-button':'outline-button'));box.append(actions);}
   return decisionReceipt(box,{key:'approval:'+a.id,title:action,outcome:status==='approved'?'Allowed':status==='denied'?'Declined':'Expired',terminal:!pending});
 }
@@ -7666,7 +7900,23 @@ async function pollBrowserNotifications() {
 setInterval(()=>void pollBrowserNotifications(),4000);
 async function openNotificationChat(item){
   const token=state.token;
-  return perform(async()=>{await refresh();if(token!==state.token)return;const chat=state.chats.find(c=>c.id===item.chat_id);if(chat)await chooseChat(chat);else{const bot=state.bots.find(b=>b.id===item.bot_id);if(bot)await chooseBot(bot);}});
+  return perform(async()=>{
+    const event=String(item.id??item.event_id??''),target=/^[0-9]{1,32}$/.test(event)?await api('/notification-target/'+event):item;
+    if(token!==state.token)return;
+    await refresh();if(token!==state.token)return;
+    if(target.unavailable){notice('This notification is no longer available in this profile.',true);return;}
+    const chat=state.chats.find(c=>c.id===target.chat_id),bot=state.bots.find(b=>b.id===target.bot_id);
+    if(target.chat_id?.startsWith('dm-')&&bot)await chooseBot(bot);else if(chat&&!chat.bot_only)await chooseChat(chat);else if(bot)await chooseBot(bot);else {notice('This conversation is no longer available in this profile.',true);return;}
+    if(token!==state.token)return;
+    if(target.request_id){
+      if(target.status!=='pending'){
+        const message=target.status==='resumed'&&target.outcome==='done'?'This request was already completed.':target.status==='resumed'&&target.outcome==='skipped'?'This step was skipped.':target.status==='ready'?'Already done · '+(bot?.name||'Your bot')+' is continuing.':target.status==='cancelled'?'This request was cancelled.':target.status==='expired'?'This request expired.':'This request is no longer waiting for you.';
+        notice(message);return;
+      }
+      followChatLatest();await renderChat(true);if(token!==state.token)return;
+      if(!focusRequest(target.request_kind,target.request_id))notice('This request is no longer available. Check the latest messages in this chat.',true);
+    }
+  });
 }
 if(window.__KINDRED_DESKTOP&&window.__TAURI__?.event?.listen){
   void window.__TAURI__.event.listen('kindred-notification-open',event=>void openNotificationChat(event.payload));
@@ -7843,3 +8093,59 @@ function workflowOptions(chatId,panel){return {
 };}
 
 function animateWorkflowDetails(root){for(const details of root.querySelectorAll('.workflow-details')){const body=node('div','chat-disclosure-body');for(const child of [...details.children])if(child.tagName!=='SUMMARY')body.append(child);details.append(body);animateChatDisclosure(details,body);}}
+
+async function decisionsConnection() {
+  const root=node('div','provider-catalog decisions-connection');root.append(node('h3','','Decisions API (optional)'));
+  const status=node('p','muted small');status.setAttribute('role','status');
+  const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'Paste your OpenAI API key'}),actions=node('div','row-actions');
+  key.input.spellcheck=false;key.input.autocapitalize='off';
+  const paint=result=>{status.textContent=result.last_error?('Last browser task failed: '+result.last_error):result.configured?(result.source==='environment'?'Provided by this server':'Key saved · checked when a browser task runs'):'Not set up';key.input.placeholder=result.source==='environment'?'Paste your own key to use it instead':result.configured?'Saved · paste a replacement key':'Paste your OpenAI API key';remove.hidden=!result.configured||result.source==='environment';};
+  const save=button('Save key',async()=>{
+    if(!key.input.value.trim()){status.textContent='Paste your API key first.';return;}
+    const value=key.input.value;key.input.value='';save.disabled=true;remove.disabled=true;
+    try{paint(await api('/connections/decisions','POST',{key:value}));}
+    catch(e){status.textContent=e.message;}
+    finally{save.disabled=false;remove.disabled=false;}
+  },'outline-button');
+  const remove=button('Disconnect',async()=>{
+    if(!confirm('Remove the Decisions API key? Codex will keep using its normal computer tools.'))return;
+    save.disabled=true;remove.disabled=true;
+    try{paint(await api('/connections/decisions','DELETE'));}catch(e){status.textContent=e.message;}
+    finally{save.disabled=false;remove.disabled=false;}
+  },'subtle-button');remove.hidden=true;
+  actions.append(save,remove);root.append(status,key.label,actions);
+  try{paint(await api('/connections/decisions'));}catch(e){status.textContent=e.message;}
+  return root;
+}
+
+installMobileNavigation({
+ inputAvailabilityChanged:updateDesktopState,
+ route:()=>({key:currentConversationId()+'|'+screenBotId(),target:$('app').hidden||document.querySelector('.artifact-studio')||!$('details-panel').hidden?'none':!$('computer-panel').hidden?(document.documentElement.dataset.iosComputer==='overlay'||$('computer-panel').classList.contains('expanded')?'bot-chat':'none'):document.documentElement.dataset.iosLayout==='compact'&&!$('app').classList.contains('sidebar-open')&&state.bot?'chat-list':'none'}),
+ back:target=>{saveDraft();captureChatAnchor();if(target==='bot-chat'){leaveControlPane();state.desktopNavigationHidden=true;state.desktopNavigationBot=screenBotId();state.desktopNavigationExpanded=$('computer-panel').classList.contains('expanded');$('computer-panel').hidden=true;$('computer-panel').inert=true;renderControlNotice(true);}else $('app').classList.add('sidebar-open');},
+ resized:()=>{
+   // Keep the pre-resize message anchor; measuring after reflow loses its offset.
+   // End a held pointer at its last validated position before refitting. Do not
+   // send a new press or replay the interrupted click after the geometry changes.
+   const rfb=state.rfb,keyboard=rfb?._keyboard;
+   // Cancel a deferred AltGr modifier before releasing held keys; flushing that
+   // pending sequence would synthesize a new Control press during the resize.
+   if(keyboard?._altGrArmed){keyboard._altGrArmed=false;clearTimeout(keyboard._altGrTimeout);}
+   keyboard?._allKeysUp();if(rfb?._mouseMoveTimer!=null){clearTimeout(rfb._mouseMoveTimer);rfb._mouseMoveTimer=null;}
+   if(rfb?._mouseButtonMask&&rfb._mousePos){
+     const prior=state.desktopInputTransform,current=rfb._display,viewport=current?._viewportLoc;
+     let {x,y}=rfb._mousePos;
+     if(prior?.rfb===rfb&&viewport&&current.scale>0){x=(x/prior.scale+prior.x-(viewport.x||0))*current.scale;y=(y/prior.scale+prior.y-(viewport.y||0))*current.scale;}
+     rfb._handleMouseButton(x,y,0);
+   }
+   finishComputerTransition();refitComputer();restoreChatPosition();resizeComposer();
+ },
+ computerGeometryValid:()=>{
+   const canvas=$('desktop').querySelector('canvas:not(.desktop-glass)');if(!canvas||$('computer-panel').hidden||!state.desktopConnected)return true;
+   const display=state.rfb?._display,rect=canvas.getBoundingClientRect(),viewport=display?._viewportLoc;
+   // noVNC maps client offsets through this scale and viewport, rather than
+   // backing-store pixels (which can differ with device pixel ratio).
+   const valid=!!viewport&&Number.isFinite(display.scale)&&display.scale>0&&rect.width>0&&rect.height>0&&Math.abs(rect.width-display.scale*viewport.w)<1&&Math.abs(rect.height-display.scale*viewport.h)<1;
+   if(valid)state.desktopInputTransform={rfb:state.rfb,scale:display.scale,x:viewport.x||0,y:viewport.y||0};
+   return valid;
+ }
+});

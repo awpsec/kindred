@@ -7,6 +7,8 @@ enum Theme {
     static let accent = Color("AccentColor")
     static let canvas = Color("Canvas")
     static let chrome = Color("Chrome")
+    // The pairing checklist keeps dark text on its light accent badges.
+    static let avatarInk = Color(red: 0.16, green: 0.13, blue: 0.12)
     static let accentGradient = LinearGradient(
         colors: [Color(red: 1.0, green: 0.82, blue: 0.50), Color(red: 1.0, green: 0.69, blue: 0.36), Color(red: 0.95, green: 0.55, blue: 0.32)],
         startPoint: .topLeading, endPoint: .bottomTrailing)

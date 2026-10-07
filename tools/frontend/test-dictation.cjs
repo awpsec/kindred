@@ -20,7 +20,7 @@ let holding=false;await context.route(origin+'/api/status**',r=>r.fulfill({json:
 let cloudSpeechRequests=0;await context.route(origin+'/api/dictation/**',r=>{cloudSpeechRequests++;return r.abort();});
 await p.goto(origin);await p.locator('#app').waitFor();await p.waitForFunction(()=>document.querySelector('#heading').textContent==='Piper');await p.waitForTimeout(200);assert(await p.getByRole('button',{name:'Dictate',exact:true}).isHidden());await p.locator('#settings-button').click();const toggle=p.getByRole('switch',{name:'Enable dictation'});assert(!await toggle.isChecked());assert(await p.getByRole('button',{name:'Dictation model',exact:true}).isHidden());await toggle.check();
 const models=p.getByRole('button',{name:'Dictation model',exact:true});await models.click();
-assert.equal(await p.locator('.whisper-model-entry').count(),5);assert.equal(await p.locator('.whisper-load:disabled').count(),5);
+assert.equal(await p.locator('.whisper-model-entry:visible').count(),5);assert.equal(await p.locator('.whisper-load:disabled:visible').count(),5);
 assert.equal(await p.evaluate(()=>window.nativeCalls.filter(c=>c.command==='download_dictation_model').length),0);
 await p.getByRole('button',{name:'Download Base',exact:true}).click();
 assert(await p.getByRole('button',{name:'Load Base',exact:true}).isEnabled());assert.equal(await p.evaluate(()=>window.nativeDictation.phase),'idle');

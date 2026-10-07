@@ -1,6 +1,8 @@
 // Untrusted HTML and JSX never enter the authenticated chat DOM.
 import {hljs,marked} from './vendor.js';
-const LIMIT=256*1024;
+export const ARTIFACT_SOURCE_MAX_BYTES=4*1024*1024;
+export const ARTIFACT_STATE_MAX_BYTES=2*1024*1024;
+const HIGHLIGHT_MAX_CHARS=256*1024;
 const element=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
 function control(text,action){const b=element('button','artifact-action',text);b.type='button';b.onclick=async()=>{b.disabled=true;try{await action();}finally{b.disabled=false;}};return b;}
 function download(text,name,type='text/plain'){const url=URL.createObjectURL(new Blob([text],{type})),a=element('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}
@@ -29,7 +31,7 @@ function bundledFontStyles(){
  return fontStyles;
 }
 export function inferArtifactLanguage(source,fallback='markdown'){
- const text=source.trim();
+ const text=source.trim().replace(/^(?:<!--[\s\S]*?-->\s*)+/, '').trimStart();
  if(/^(?:#{1,6}\s|```)/.test(text))return 'markdown';
  if(/^(?:<!doctype\s+html|<html\b|<head\b|<body\b)/i.test(text))return 'html';
  if(/\b(?:import\s+[\s\S]+?\s+from\s*['"]|export\s+default\b|ReactDOM\.|React\.createElement\b)/.test(text)||/\b(?:function|const|let)\s+[A-Z]\w*[\s\S]*?(?:return\s*\(?\s*<|=>\s*\(?\s*<)/.test(text))return 'jsx';
@@ -39,7 +41,7 @@ export function inferArtifactLanguage(source,fallback='markdown'){
 export async function artifactDocument(source,language,bootstrap=''){
  language=inferArtifactLanguage(source,language);
  if((window.__TAURI__||window.__TAURI_INTERNALS__)&&(!window.__KINDRED_FILE_DELIVERY||!window.__KINDRED_ARTIFACT_FRAME))throw new Error('Update Kindred to display interactive artifacts in the app. You can open them in a browser.');
- if(new TextEncoder().encode(source).length>LIMIT)throw new Error('Preview supports files up to 256 KB. Download this file to open it locally.');
+ if(new TextEncoder().encode(source).length>ARTIFACT_SOURCE_MAX_BYTES)throw new Error('This preview is too large (limit about 4 MB of text). Download this file or split it into smaller artifacts.');
  // No same-origin, top-navigation, popups, forms, downloads or native IPC rights.
  const policy="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; media-src data: blob:; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'";
  const fonts=await bundledFontStyles();
@@ -110,7 +112,7 @@ export function enhanceMarkdown(root,{sourceText}={}){
    pre.replaceWith(inlineShard(source,language.includes('html')?'html':'jsx'));continue;
   }
   // Retain language metadata without accepting arbitrary author-controlled classes.
-  code.className='';if(source.length<=LIMIT&&hljs.getLanguage(language))code.innerHTML=hljs.highlight(source,{language,ignoreIllegals:true}).value;const box=element('div','markdown-code'),bar=element('div','code-toolbar');
+  code.className='';if(source.length<=HIGHLIGHT_MAX_CHARS&&hljs.getLanguage(language))code.innerHTML=hljs.highlight(source,{language,ignoreIllegals:true}).value;const box=element('div','markdown-code'),bar=element('div','code-toolbar');
   bar.append(element('span','code-language',language),control('Copy code',async()=>{try{await navigator.clipboard.writeText(source);bar.querySelector('button').textContent='Copied';setTimeout(()=>{if(bar.isConnected)bar.querySelector('button').textContent='Copy code';},1800);}catch{bar.querySelector('button').textContent='Copy unavailable';}}));
   pre.replaceWith(box);box.append(bar,pre);
  }

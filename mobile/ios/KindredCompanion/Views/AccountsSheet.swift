@@ -9,6 +9,7 @@ struct AccountsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var path: [UUID] = []
     @State private var adding: AccountPrefill?
+    @State private var pairing: PairingRequest?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -54,8 +55,9 @@ struct AccountsSheet: View {
                     } description: {
                         Text("Add your Kindred server and sign in.")
                     } actions: {
-                        Button("Add Account") { adding = AccountPrefill() }
+                        Button("Scan Pairing Code") { pairing = PairingRequest() }
                             .buttonStyle(.borderedProminent)
+                        Button("Sign In with Password") { adding = AccountPrefill() }
                     }
                     .listRowBackground(Color.clear)
                 }
@@ -68,8 +70,17 @@ struct AccountsSheet: View {
                     Button("Done") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        adding = AccountPrefill()
+                    Menu {
+                        Button {
+                            pairing = PairingRequest()
+                        } label: {
+                            Label("Scan Pairing Code", systemImage: "qrcode.viewfinder")
+                        }
+                        Button {
+                            adding = AccountPrefill()
+                        } label: {
+                            Label("Sign In with Password", systemImage: "person.badge.key")
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -83,6 +94,10 @@ struct AccountsSheet: View {
             }
             .sheet(item: $adding) { prefill in
                 AddAccountSheet(prefill: prefill)
+                    .environment(model)
+            }
+            .sheet(item: $pairing) { request in
+                PairDeviceSheet(request: request)
                     .environment(model)
             }
         }

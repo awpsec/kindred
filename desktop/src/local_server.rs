@@ -10,6 +10,10 @@ pub fn is_origin(address: &str) -> bool {
     })
 }
 
+pub fn local_admin_allowed(label:&str,url:&tauri::Url,installed:bool)->bool {
+    label=="main" && installed && is_origin(url.as_str()) && url.path()=="/" && url.username().is_empty() && url.password().is_none()
+}
+
 fn numbers(version: &str) -> Option<[u32; 3]> {
     let mut result = [0; 3];
     let parts: Vec<_> = version.split('.').collect();
@@ -79,11 +83,24 @@ fn read_prefix(client: &reqwest::blocking::Client, url: &str) -> Option<Vec<u8>>
 pub fn version() -> Option<String> {
     version_at(ORIGIN)
 }
+fn connection_access_at(origin: &str) -> bool {
+    let Ok(client)=reqwest::blocking::Client::builder().timeout(Duration::from_secs(3)).redirect(reqwest::redirect::Policy::none()).no_proxy().build() else {return false;};
+    let Some(bytes)=read_prefix(&client,&format!("{origin}/identity/meta")) else {return false;};
+    let Ok(meta)=serde_json::from_slice::<serde_json::Value>(&bytes) else {return false;};
+    meta["connection_access"]==true && meta["version"].as_str()==Some(env!("CARGO_PKG_VERSION"))
+}
+pub fn connection_access_available() -> bool { connection_access_at(ORIGIN) }
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::{io::Write, net::TcpListener};
+    #[test]
+    fn local_management_requires_the_installed_main_loopback_workspace() {
+        for address in ["http://127.0.0.1:9444/","http://localhost:9444/","http://[::1]:9444/"]{let url=tauri::Url::parse(address).unwrap();assert!(local_admin_allowed("main",&url,true));assert!(!local_admin_allowed("profile-home",&url,true));assert!(!local_admin_allowed("main",&url,false));}
+        for address in ["https://computer.tailnet.ts.net/","http://127.0.0.1:9445/","http://localhost:9444/admin","http://user@localhost:9444/"]{assert!(!local_admin_allowed("main",&tauri::Url::parse(address).unwrap(),true));}
+    }
     #[test]
     fn only_the_managed_loopback_origin_is_blocked_during_setup() {
         for origin in [ORIGIN, "http://localhost:9444", "http://[::1]:9444"] {
@@ -178,4 +195,32 @@ mod tests {
         assert_eq!(version_at(&origin), Some("0.53.0".into()));
         worker.join().unwrap();
     }
+}
+
+pub fn connection_policy_matches(origins: &[String], confirmed: &[String]) -> bool { connection_policy_matches_at(ORIGIN,origins,confirmed) }
+fn connection_policy_matches_at(origin: &str, origins: &[String], confirmed: &[String]) -> bool {
+    let Ok(client)=reqwest::blocking::Client::builder().timeout(Duration::from_secs(3)).redirect(reqwest::redirect::Policy::none()).no_proxy().build() else {return false;};
+    let Some(bytes)=read_prefix(&client,&format!("{origin}/identity/meta")) else {return false;};
+    let Ok(meta)=serde_json::from_slice::<serde_json::Value>(&bytes) else {return false;};
+    let bytes=serde_json::to_vec(&(origins,confirmed)).unwrap();
+    let digest=ring::digest::digest(&ring::digest::SHA256,&bytes).as_ref().iter().map(|b|format!("{b:02x}")).collect::<String>();
+    meta["connection_access"]==true && meta["version"].as_str()==Some(env!("CARGO_PKG_VERSION")) && meta["connection_policy_digest"].as_str()==Some(digest.as_str())
+}
+
+#[cfg(test)]
+mod connection_access_tests {
+ use super::*;
+ use std::{io::Write,net::TcpListener};
+ fn served(body:String,status:&str,check:impl FnOnce(&str)) {
+  let listener=TcpListener::bind("127.0.0.1:0").unwrap();let origin=format!("http://{}",listener.local_addr().unwrap());let status=status.to_owned();
+  let worker=std::thread::spawn(move || {let(mut socket,_)=listener.accept().unwrap();let mut bytes=[0;4096];let n=socket.read(&mut bytes).unwrap();let req=String::from_utf8_lossy(&bytes[..n]);assert!(req.starts_with("GET /identity/meta "));assert!(!req.to_ascii_lowercase().contains("authorization:"));write!(socket,"HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\nLocation: https://example.invalid/\r\n\r\n{body}",body.len()).unwrap();});check(&origin);worker.join().unwrap();
+ }
+ #[test] fn connection_access_requires_actual_supported_metadata_without_redirects() {
+  for (meta,status,expected) in [(serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"connection_access":true}),"200 OK",true),(serde_json::json!({"version":"0.85.7","connection_access":true}),"200 OK",false),(serde_json::json!({"version":env!("CARGO_PKG_VERSION")}),"200 OK",false),(serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"connection_access":true}),"302 Found",false)] {served(meta.to_string(),status,|origin|assert_eq!(connection_access_at(origin),expected));}
+ }
+ #[test] fn connection_access_policy_receipt_must_match_the_applied_exact_origins() {
+  let origins=vec!["http://203.0.113.7:9444".to_owned()];let confirmed=origins.clone();let bytes=serde_json::to_vec(&(&origins,&confirmed)).unwrap();let hash=ring::digest::digest(&ring::digest::SHA256,&bytes).as_ref().iter().map(|b|format!("{b:02x}")).collect::<String>();
+  served(serde_json::json!({"connection_access":true,"version":env!("CARGO_PKG_VERSION"),"connection_policy_digest":hash}).to_string(),"200 OK",|origin|assert!(connection_policy_matches_at(origin,&origins,&confirmed)));
+  for body in [serde_json::json!({"connection_access":true,"version":env!("CARGO_PKG_VERSION"),"connection_policy_digest":"old-policy"}),serde_json::json!({"connection_access":true,"version":"0.85.7","connection_policy_digest":hash}),serde_json::json!({"allowed_origins":origins,"confirmed_http_origins":confirmed})] {served(body.to_string(),"200 OK",|origin|assert!(!connection_policy_matches_at(origin,&origins,&confirmed)));}
+ }
 }

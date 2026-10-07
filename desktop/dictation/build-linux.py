@@ -61,6 +61,9 @@ def build(output, target):
             raise SystemExit('Expected a Linux x86_64 ELF speech worker.')
         destination.chmod(0o755)
         members.append(destination)
+    import importlib.util
+    spec=importlib.util.spec_from_file_location('whistle',source/'build-whistle.py'); module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    members.extend(module.build(package,target))
     license_file = package / 'WHISPER-LICENSE.txt'
     shutil.copy2(whisper / 'LICENSE', license_file)
     members.append(license_file)
@@ -68,7 +71,7 @@ def build(output, target):
         'revision': 'kindred-whisper-linux-v1', 'whisper_commit': COMMIT, 'target': target,
         'backends': ['CPU'], 'cpu_variants': ['x86_64', 'avx2+fma+f16c+sse4.2+bmi2'],
         'source_files': {name: hashlib.sha256((source / name).read_bytes()).hexdigest()
-                         for name in ['worker.cpp', 'CMakeLists.txt', 'build-linux.py']},
+                         for name in ['worker.cpp', 'CMakeLists.txt', 'build-linux.py', 'whistle-worker.cpp', 'build-whistle.py', 'whistle-pins.json']},
         'files': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in members},
     }
     manifest = package / 'BUILD.json'

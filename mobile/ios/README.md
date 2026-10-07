@@ -15,6 +15,12 @@ notifications. iOS 17 or later, iPhone and iPad.
 > checks cover phone, landscape keyboard and tablet-size viewports. iPhone Duo
 > hardware transitions and end-to-end APNs delivery still await verification.
 
+> **Combined update verification (2026-10-07):** Xcode 27.2 beta 2 builds the
+> latest main source together with the existing native mobile presentation. All
+> 76 core tests and 34 app-hosted simulator tests pass. WebKit checks run with
+> the real iOS navigation bridge enabled and an isolated connected VNC fixture,
+> covering control, rotation, keyboard input and the native menu overrides.
+
 ## Layout
 
 ```
@@ -23,7 +29,8 @@ mobile/ios/
   Config/                     xcconfigs: bundle ID, team, version, APNs environment
   KindredCompanion/           app target (SwiftUI + WebKit + UserNotifications)
     App/                      @main app, UIApplicationDelegate, notification delegate
-    Model/AppModel.swift      accounts, sessions, sign-in/out, push registration
+    Model/AppModel.swift      accounts, sessions, sign-in/out, pairing, push registration
+    Pairing/                  QR scanner (AVFoundation) and pairing sheet
     Web/                      WebSession (WKWebView + policy + bridge), host view
     Views/                    root shell, Accounts sheet, Add Account sheet, detail
     Assets.xcassets           icon, accent/canvas/chrome colors, Kindred mark
@@ -34,12 +41,10 @@ mobile/ios/
 
 ## Setup
 
-1. Install Xcode 15.3+ and XcodeGen (`brew install xcodegen`), complete Xcode's
-   first-run setup, and install an iOS simulator runtime. Xcode 27.2 beta 2 was
-   used for the Mac verification above. For iPhone Duo, Apple's
-   [27.2 release notes](https://developer.apple.com/documentation/xcode-release-notes/xcode-27_2-release-notes)
-   require the SDK and simulator support supplied by Xcode 27.1 beta; the
-   standard iOS 27.2 runtime does not support the Duo device type.
+1. Install a current Xcode. Use **Xcode 27.1** for the owner-selected
+   Duo simulator and adaptive native-toolbar checks; older SDKs cannot prove
+   that layout. Install XcodeGen
+   (`brew install xcodegen`).
 2. Create `Config/Local.xcconfig` (ignored by Git) with your values:
    ```
    KINDRED_BUNDLE_IDENTIFIER = com.example.kindred
@@ -112,6 +117,37 @@ with an existing persistent web data store.
 
 ## How it works
 
+### Private computer addresses
+
+Manual entry accepts a bare private IP and port such as `192.168.1.20:9444`
+as HTTP, while names default to HTTPS. An explicit `https://` is preserved;
+there is no downgrade or retry over HTTP. IPv6 needs brackets, for example
+`http://[fd7a::5]:9444`. Only literal addresses in `10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, and **`fd00::/8`** may
+use HTTP. DNS/MagicDNS names, public addresses, loopback, link-local addresses
+and IPv4-mapped IPv6 cannot use HTTP.
+
+Before verification, login or pairing sends anything, the native sheet displays
+**Not encrypted · private network address**, the full origin, and **Connect
+anyway**. Confirmation applies only to that scheme, host and port. HTTP and
+HTTPS at the same host remain separate saved accounts, Keychain sessions and
+web stores. Existing saved HTTPS origins retain HTTPS; prefills include the
+scheme. All native navigation, bridge, downloads and API response checks still
+require the exact origin. Redirects remain refused.
+
+The app requires iOS 17. Apple's current ATS documentation supports CIDR
+exceptions from iOS 17; `Info.plist` contains only these five HTTP exceptions
+and a local-network permission description. It enables no global arbitrary
+loads. See [Apple NSExceptionDomains](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains).
+
+Linux core tests verify parsing, isolation and confirmation policy; they do not
+prove iPhone ATS, local-network permission, WKWebView or WebSocket behavior.
+On a Mac/device, verify cancel sends nothing, private IPv4 and fd IPv6 login
+and QR pairing, the local-network prompt and denied-permission recovery,
+HTTP API and WebSocket connectivity, exact-origin redirects and account
+switching, and existing HTTPS sessions. This requires a new native build;
+a server update alone cannot add this phone transport support.
+
 ### Accounts and credentials
 
 - **Sign in** happens in a native sheet: pick a saved server or enter a new
@@ -120,11 +156,25 @@ with an existing persistent web data store.
   {"login","password"}` and receives `{"token","profile_id"}`.
   `GET /identity/profiles` supplies the server account UUID, username and
   workspace name.
-- **Server addresses** are HTTPS only. A missing scheme means `https://`.
+- **Phone pairing** needs no password. In Kindred on the computer, choose
+  Connect mobile app. On the phone, choose Scan Pairing Code, or paste the
+  link: `kindred://pair?server=<explicit server origin>#code=<64 hex>`. The camera
+  app can also open that link. QR codes are decoded on the device with
+  AVFoundation. The app shows the server and sends nothing until you choose
+  Connect. It then checks `GET /identity/meta` and sends
+  `POST /identity/mobile-pairing/claim {"code"}` without an Origin header.
+  Redirects are refused. Before anything is saved, `GET /identity/profiles`
+  must confirm the returned `account_id`, `login` and `profile_id`.
+  Same server plus same account refreshes that saved account. Other accounts
+  are untouched. Links pointing at loopback, unsupported HTTP or ambiguous numeric
+  hosts are refused. Private HTTP needs the additional unencrypted confirmation. If the server can't be reached, Help shows a checklist and the same code can be tried again. If the connection drops after the code was sent, the result is unconfirmed and a new code is needed. A
+  rejected code says to create a new one. Nothing is retried automatically.
+- **Server addresses** use HTTPS for names and public IPs; a bare supported
+  private literal IP means HTTP and requires confirmation.
   Addresses with credentials, a path, query, fragment, backslash, non-ASCII
   characters (use punycode) or an invalid port are refused with a specific
   message, not silently cleaned up. The saved form is the canonical origin
-  (`https://host[:port]`, lowercased, default port dropped).
+  (`http(s)://host[:port]`, canonical host, scheme-default port dropped).
 - **Session bearer** is stored only in the Keychain: one generic-password item
   per account, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, never
   synced or restored to another device. Account metadata (server, login,
@@ -302,6 +352,36 @@ In Xcode 27 Device Hub, disable **Device → Keyboard → Simulate Hardware
 Keyboard** when checking software keyboard behavior. **Toggle Software
 Keyboard** can also show it manually.
 
+### System text size
+
+The shared UI follows the iPhone/iPad Settings text size, including accessibility
+sizes. The native host measures UIKit's preferred body font against the Large
+body font, then supplies `window.__KINDRED_SYSTEM_TEXT_SCALE` before page startup.
+It writes the global before dispatching `kindred-system-text-size` with
+`detail.scale` on changes. `__KINDRED_MOBILE_PLATFORM` is `ios`; the shared
+reading-size module applies this signal once, instead of a saved app percentage.
+Desktop and Android reading-size preferences retain their existing behavior.
+
+The script is confined to the selected origin's main frame. Content-size
+notifications, return to the foreground, cached-account attachment and completed
+loads keep the current page and its next bootstrap in sync. Updating the signal
+does not reload the page, alter its session, or set `WKWebView.pageZoom`; the
+remote computer canvas keeps its coordinate system. Native SwiftUI text retains
+its semantic Dynamic Type fonts. These behaviors still need Mac/device acceptance.
+
+To check the generated JavaScript without UIKit, from `mobile/ios`:
+
+```sh
+swiftc Packages/KindredCore/Sources/KindredCore/*.swift tools/text-size-fixtures.swift -o /tmp/kindred-text-size-fixtures
+/tmp/kindred-text-size-fixtures > /tmp/kindred-text-size-fixtures.json
+node tools/test-text-size-bridge.cjs /tmp/kindred-text-size-fixtures.json
+```
+
+This executes scripts emitted by the actual core implementation and checks
+initial/live scale, frame/origin/platform boundaries and unchanged sessions.
+It does not test UIKit's category mapping; `SystemTextSizeTests` belongs to the
+Mac app test target.
+
 ### Notifications
 
 Server support is the `mobile_push` work in the server repository (routes
@@ -355,9 +435,11 @@ these wording changes do not add local notification delivery.
   Tapping one picks the saved account by installation UUID (falling back to
   the server account UUID only when that is unambiguous), switches to the
   event's workspace if needed (`POST /identity/switch`), then loads
-  `https://server/#kindred-chat=<chat id>`; the shared UI opens the
-  conversation and clears the fragment. Unknown or ambiguous payloads are
-  ignored with a notice; invalid IDs are dropped.
+  `https://server/#kindred-chat=<chat id>&kindred-event=<event id>` when a
+  valid event ID is present. With the matching updated server and shared UI,
+  the UI resolves that event within the authenticated workspace to open the
+  request or explain its stale status, then clears the fragment. Older payloads without an event ID open the chat.
+  Unknown or ambiguous payloads are ignored with a notice; invalid IDs are dropped.
 - The server needs `KINDRED_APNS_KEY_FILE`, `KINDRED_APNS_KEY_ID`,
   `KINDRED_APNS_TEAM_ID` and `KINDRED_APNS_TOPIC` (the bundle ID). No APNs key
   or team has been supplied, so **push has not been delivered end to end**.
@@ -370,9 +452,9 @@ these wording changes do not add local notification delivery.
 - Conversation menu data/actions and row-control removal pass checks. The
   native press gesture still awaits live verification; the Mac locked during
   the simulator check.
-- HTTPS origins only; plain HTTP and self-signed certificates (without a
-  trusted profile installed on the device) won't connect. Servers under a
-  path prefix aren't supported.
+- Private literal-IP HTTP needs the updated native app and an explicit
+  confirmation. HTTPS with an untrusted/self-signed certificate still requires
+  a trusted profile installed on the device. Path-prefix servers are unsupported.
 - Downloads go through the share sheet; there is no in-app file browser.
   Pages that open blob URLs in new windows are saved as downloads rather
   than shown.
@@ -387,7 +469,14 @@ these wording changes do not add local notification delivery.
 
 ## Verifying on a Mac
 
+Pairing: scan a code from Connect mobile app and confirm the server screen.
+Check a second scan of the same account, an expired or used code, a server
+that is asleep (Help), a dark-mode QR, denied camera permission (paste
+fallback) and opening the link from the Camera app.
+
 1. `swift test` in `Packages/KindredCore`, then the app test scheme above.
+   `SystemTextSizeTests` checks Large as baseline and all normal/accessibility
+   categories in increasing order.
 2. Run on a simulator against an HTTPS Kindred server: add two accounts on
    one server and one on another; confirm grouping, switching keeps each
    page's state, and each account stays signed in after relaunch.
@@ -411,6 +500,36 @@ mobile-push tests pass. These checks do not establish APNs delivery: enabling
 alerts, receiving a background banner and tapping it into a live conversation
 still require a server offering iOS push plus matching APNs signing/configuration.
 
+### Text-size and return-control acceptance on iPhone
+
+Use an isolated test account/backend; do not use a payment/provider login for
+this check. A Linux/WebKit fixture cannot establish these native results.
+
+- With an old `kindred-text-size` value saved in the account's web store, change
+  Settings → Display & Brightness → Text Size, then the Accessibility → Display
+  & Text Size → Larger Text slider. Check xS, Large, XXXL, AX3 and AX5. The shared
+  Settings screen must explain that iOS text size follows the system. The saved
+  percentage must not block changes or be deleted as a side effect.
+  Repeat using Control Center → Text Size with Kindred Only selected; verify
+  the per-app override is reflected by UIKit and the shared web text.
+- Leave a long chat open with a draft, table and code block. Change the system
+  category via Accessibility Inspector while foregrounded, then via Settings
+  while backgrounded. Confirm size updates without page reload, losing the
+  draft, replaying motion, or jumping away from the visible conversation.
+- Reload, switch to another saved account and back, and load a notification
+  route. Each page must start at the current size and retain its own session.
+  Change size while a page is loading to exercise the completed-load refresh.
+- At the same categories check light/dark chat, sidebar, shared Settings and
+  computer toolbar. Verify reachable composer above the keyboard, safe areas,
+  wrapping/ellipsis, usable controls and at least 44pt touch targets. AX4/AX5
+  failures need review with captures; do not silently cap the system setting.
+- Take manual control in computer view, focus a browser text field, dismiss the
+  keyboard, and tap Return control, both with and without the keyboard visible.
+  Check the toolbar action reaches the intended bot and returns control without
+  the reported white full-width bar; compare the working chat action. Rotate
+  during input and check the host's resize/keyboard avoidance does not swallow
+  the tap. Repeat once with a failed release to confirm a visible retry path.
+
 ### Approved launch animation
 
 The [wake-up animation handoff](design/launch/README.md) contains the approved
@@ -432,3 +551,87 @@ after the layer disappears. Native keyframes were compared with the approved
 GIFs. The 22 native tests also cover the exact motion phases, late/unavailable
 content, opacity-only reduced motion, and completion surviving activation,
 reload and account switches. Physical-device startup still awaits verification.
+
+## Local update and adaptive-navigation acceptance
+
+Use the instructor's accepted combined source commit, not an unreviewed task
+branch. Keep the existing `Config/Local.xcconfig`, bundle identifier, development
+team and signing identity when updating an installed phone. Do not uninstall the
+app, reset simulator content, delete Keychain items, or change its bundle ID:
+those operations can discard saved accounts or separate them from their sessions.
+
+On the Mac, select the intended Xcode in Settings → Locations → Command Line
+Tools, then from `mobile/ios` run `xcodegen generate` and open
+`KindredCompanion.xcodeproj`. Select **KindredCompanion**, your connected unlocked
+phone, and the existing team under Signing & Capabilities. Enable Developer Mode
+on the phone when prompted, and use Product → Run to update the existing app.
+A simulator can use the unsigned build; a physical phone needs the existing valid
+signing configuration. No App Store or TestFlight step is required.
+
+Run core tests locally, then the full app-hosted scheme on an available simulator:
+
+```sh
+cd mobile/ios/Packages/KindredCore
+swift test
+cd ../..
+xcodegen generate
+xcrun simctl list devices available
+xcodebuild test -scheme KindredCompanion -destination 'platform=iOS Simulator,id=YOUR_UDID'
+```
+
+Record the actual SDK, simulator model, app build/source commit and test results.
+Keep the existing Keychain/removal failures separate; do not report this source
+update as fixing them. The generated test host must reference **Kindred.app**.
+
+Follow Apple’s [Duo preparation guidance](https://developer.apple.com/iphone-duo/prepare/)
+for SDK-specific simulator and native toolbar behavior. This source has not been
+validated on that simulator. For Xcode 27.1 Duo and the actual phone, check:
+
+- Open a long chat with a draft, numbered list and nonzero scroll position. Fold,
+  unfold, rotate and resize with the keyboard open and closed. Keep the same
+  account/chat, draft, caret and scroll anchor; the web view must not reload.
+  Repeat with Settings, QR confirmation and an accessibility text size.
+- Inspect all four safe areas and the native title/Accounts toolbar in outer,
+  inner, portrait and landscape layouts. Let the system place native controls;
+  no HTML imitation of a vertical native toolbar is used. Safe areas must not
+  be applied twice, and keyboard shrink must not switch the navigation mode.
+- At compact width, drag from the leftmost 20 points: chat returns to the list,
+  computer returns to its chat. Complete at 35%, or flick after 8%; shorter or
+  backwards/cancelled drags restore the view. Check draft and scroll retention,
+  keyboard dismissal and no send. A resize during a drag cancels it.
+- With computer control held, swipe back and reopen the same computer. Keep the
+  VNC connection and control; do not release control or send remote input.
+  Drag over the canvas, horizontal code/table scroller, text selection, dialogs,
+  menus, request forms and native sheets: navigation must remain disabled.
+  At regular side-by-side chat/list width the list is already present, so no
+  chat-to-list edge gesture is offered.
+- Enable Reduce Motion: no translating views, dim feedback and a brief fade.
+  Repeat Cancel and resize. Confirm no accidental canvas input during geometry
+  changes and validate current aspect-fit/letterbox coordinates before input
+  becomes available again.
+- Make an isolated server unavailable during page loading: **Try again** must
+  be visible and preserve the account's web store. Restore it and retry once.
+  WebKit process termination still reloads with the latest session bootstrap.
+  Foregrounding refreshes text size/identity/push state; it does not forcibly
+  reload a stale page or erase a draft. Check resumed polling/reconnection on
+  the actual phone separately.
+
+### QR diagnosis without exposing a pairing secret
+
+The version label **0.1.0** does not identify an installed source revision.
+The initial QR parser (`f5f08a0`) accepted only explicit HTTPS origins; this
+build additionally accepts confirmed private literal-IP HTTP origins. An old
+HTTPS-only build therefore rejects a private-HTTP code before contacting its
+server, while a Tailscale HTTPS code uses the same link shape in both versions.
+This is a compatibility boundary, not proof of the owner's incident cause.
+
+The scanner reads an AVFoundation QR string, parses the explicit origin and
+64-hex fragment locally, asks for confirmation, verifies server identity, then
+claims once. Claim validation binds the response origin/account/profile before
+saving a session. Expired/used codes, unreachable servers, denied camera access,
+malformed codes and an unallowed origin are separate failure paths. Use Paste
+Pairing Link to distinguish camera recognition from parsing/network failures.
+Capture only the visible error, scheme/host/port, app source/build and whether
+failure happened before confirmation or after Connect. Never copy a real code,
+QR pixels, account token or claim response into logs. Create a fresh disposable
+code for each claim attempt; do not automatically replay an uncertain claim.

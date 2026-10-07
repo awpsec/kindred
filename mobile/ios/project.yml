@@ -29,6 +29,7 @@ settings:
 targets:
   KindredCompanion:
     type: application
+    productName: Kindred
     platform: iOS
     sources:
       - path: KindredCompanion

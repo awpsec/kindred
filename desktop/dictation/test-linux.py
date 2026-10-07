@@ -59,7 +59,7 @@ def main(archive_path, model_path, sample_path):
     with tempfile.TemporaryDirectory(prefix='kindred-whisper-test-') as folder:
         root = Path(folder)
         with zipfile.ZipFile(archive_path) as archive:
-            assert set(archive.namelist()) == {'whisper-cpu', 'whisper-cpu-avx2', 'WHISPER-LICENSE.txt', 'BUILD.json'}
+            assert set(archive.namelist()) == {'whisper-cpu', 'whisper-cpu-avx2', 'WHISPER-LICENSE.txt', 'BUILD.json', 'whistle-worker', 'libneedle.so', 'NEEDLE-LICENSE.txt', 'LLVM-LICENSE.txt'}
             manifest = json.loads(archive.read('BUILD.json'))
             for name, digest in manifest['files'].items():
                 data = archive.read(name)

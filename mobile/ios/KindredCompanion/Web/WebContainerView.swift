@@ -8,18 +8,24 @@ import WebKit
 @MainActor
 struct WebContainerView: UIViewRepresentable {
     let session: WebSession
+    var navigationBlocked = false
 
     func makeUIView(context: Context) -> WebHostView {
         let host = WebHostView()
+        session.setNativeNavigationBlocked(navigationBlocked)
+        session.refreshSystemTextSize()
         host.attach(session)
         return host
     }
 
     func updateUIView(_ host: WebHostView, context: Context) {
+        session.setNativeNavigationBlocked(navigationBlocked)
+        session.refreshSystemTextSize()
         host.attach(session)
     }
 }
 
+@MainActor
 final class WebHostView: UIView {
     private weak var session: WebSession?
     private var hasDivision = false
@@ -44,6 +50,7 @@ final class WebHostView: UIView {
                              isSlab: UIDevice.current.userInterfaceIdiom == .phone && !hasDivision,
                              viewportHeight: session.webView.bounds.height,
                              isPortrait: window?.windowScene?.interfaceOrientation.isPortrait ?? (bounds.height >= bounds.width))
+        publishGeometry()
         session.restoreComputerKeyboard()
     }
 
@@ -54,11 +61,19 @@ final class WebHostView: UIView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         session?.computerHostAttachmentChanged()
+        if window == nil { session?.detachVisibleHost() }
         updateEnvironment()
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
 
+    private func publishGeometry() {
+        guard let window else { return }
+        session?.updateGeometry(width: session?.webView.bounds.width ?? bounds.width,
+            height: session?.webView.bounds.height ?? bounds.height,
+            windowWidth: window.bounds.width, windowHeight: window.bounds.height,
+            safeArea: window.safeAreaInsets)
+    }
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = UIColor(named: "Canvas")

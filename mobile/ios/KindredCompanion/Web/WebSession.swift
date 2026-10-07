@@ -1,5 +1,5 @@
-import KindredCore
 import Observation
+import KindredCore
 import UIKit
 import WebKit
 
@@ -30,13 +30,22 @@ protocol WebSessionHost: AnyObject {
 /// One account's web view: the server's own web UI, isolated in that account's
 /// persistent data store, and allowed to show only that server's origin.
 ///
-/// The page gets exactly two message handlers (session rotation and native
-/// presentation), accepted only from the main frame of the exact origin. There is
+/// Session rotation, account opening and bounded navigation eligibility messages
+/// are accepted only from the main frame of the exact origin. There is
 /// no file, HTTP or native-execution bridge.
+@MainActor
+@Observable
+final class WebLoadState { var failure: String? }
+
 @MainActor
 final class WebSession: NSObject {
     static let sessionHandler = "kindredSession"
     static let accountsHandler = "kindredAccounts"
+    static let navigationHandler = "kindredNavigation"
+    let loadState = WebLoadState()
+    private var edgeBack: EdgeBackGesture?
+    private var geometry: String?
+    private var nativeNavigationBlocked = false
     static var downloadsFolder: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("Downloads", isDirectory: true)
     }
@@ -56,6 +65,7 @@ final class WebSession: NSObject {
     private var computerFocusPending = false
     private var profileID: String?
     private var latestToken: String?
+    private var systemTextScale: Double
     private let policy: NavigationPolicy
     private weak var host: WebSessionHost?
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
@@ -64,6 +74,7 @@ final class WebSession: NSObject {
         accountID = account.id
         profileID = account.profileID
         latestToken = token
+        systemTextScale = SystemTextSize.currentScale
         origin = account.origin
         policy = NavigationPolicy(origin: account.origin)
         self.host = host
@@ -90,7 +101,17 @@ final class WebSession: NSObject {
         let proxy = ScriptMessageProxy(session: self)
         controller.add(proxy, contentWorld: .page, name: WebSession.sessionHandler)
         controller.add(proxy, contentWorld: .page, name: WebSession.accountsHandler)
+        controller.add(proxy, contentWorld: .page, name: WebSession.navigationHandler)
+        edgeBack = EdgeBackGesture(session: self)
         installBootstrap(token: token)
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshSystemTextSize),
+            name: UIContentSizeCategory.didChangeNotification, object: nil)
+        // Settings can change while the app is suspended; reconcile on return.
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshSystemTextSize),
+            name: UIApplication.didBecomeActiveNotification, object: nil)
+
+        NotificationCenter.default.addObserver(self, selector: #selector(suspendEdgeBack),
+            name: UIApplication.willResignActiveNotification, object: nil)
 
         let interaction = UIContextMenuInteraction(delegate: self)
         webView.addInteraction(interaction)
@@ -110,6 +131,15 @@ final class WebSession: NSObject {
         webView.isInspectable = true
         #endif
         webView.load(URLRequest(url: origin.rootURL))
+    }
+
+    @objc private func suspendEdgeBack() { edgeBack?.cancel() }
+
+    func detachVisibleHost() { edgeBack?.cancel() }
+
+    func setNativeNavigationBlocked(_ blocked: Bool) {
+        nativeNavigationBlocked = blocked
+        if blocked { edgeBack?.cancel() }
     }
 
     /// Replaces the document-start script so the next load (reload, crash
@@ -148,7 +178,8 @@ final class WebSession: NSObject {
           } catch { localStorage.removeItem('kindred-dictation-v1'); }
         })();
         """
-        controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        let textSize = WebTextSize.script(origin: origin, scale: systemTextScale)
+        controller.addUserScript(WKUserScript(source: source + "\n" + textSize, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
         // Bundle the presentation layer so an older server still fits an iPhone.
         // The same exact-origin check as the session bootstrap scopes this script.
         if let cssURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "css"),
@@ -215,12 +246,34 @@ final class WebSession: NSObject {
         if enabled { restoreComputerKeyboard() }
     }
 
+    /// Update an already open page without a reload, and the bootstrap for its
+    /// next document. This also catches a cached account becoming visible.
+    @objc func refreshSystemTextSize() {
+        let scale = SystemTextSize.currentScale
+        guard scale != systemTextScale else { return }
+        systemTextScale = scale
+        installBootstrap(token: latestToken)
+        applySystemTextSize()
+    }
+
+    private func applySystemTextSize() {
+        guard origin.matches(webView.url) else { return }
+        let script = WebTextSize.script(origin: origin, scale: systemTextScale)
+        // The JavaScript guard checks the origin again at execution time; a
+        // navigation between this call and execution cannot cross the boundary.
+        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { _ in }
+    }
+
     func open(_ url: URL) {
         guard origin.matches(url) else { return }
+        edgeBack?.setNavigation(nil)
+        loadState.failure = nil
         webView.load(URLRequest(url: url))
     }
 
     func reload() {
+        edgeBack?.setNavigation(nil)
+        loadState.failure = nil
         // A script can leave the main frame on about:blank; start over at the root.
         if !origin.matches(webView.url) {
             webView.load(URLRequest(url: origin.rootURL))
@@ -247,6 +300,9 @@ final class WebSession: NSObject {
 
     func tearDown() {
         presentation.hasChatInterface = false
+        edgeBack?.detach()
+        NotificationCenter.default.removeObserver(self)
+        setComputerInput(false)
         webView.stopLoading()
         let controller = webView.configuration.userContentController
         controller.removeAllScriptMessageHandlers()
@@ -254,6 +310,40 @@ final class WebSession: NSObject {
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.removeFromSuperview()
+    }
+
+    var canBeginEdgeBack: Bool {
+        guard !nativeNavigationBlocked, webView.window != nil, !webView.isLoading, loadState.failure == nil,
+              origin.matches(webView.url),
+              webView.window?.rootViewController?.presentedViewController == nil else { return false }
+        return true
+    }
+
+    func updateGeometry(width: CGFloat, height: CGFloat, windowWidth: CGFloat,
+                        windowHeight: CGFloat, safeArea: UIEdgeInsets) {
+        let values = [width, height, windowWidth, windowHeight]
+        guard values.allSatisfy({ $0.isFinite && $0 > 0 }) else { return }
+        let insets = [safeArea.top, safeArea.right, safeArea.bottom, safeArea.left]
+        guard insets.allSatisfy({ $0.isFinite && $0 >= 0 }) else { return }
+        let payload: [String: Any] = ["width": Double(width), "height": Double(height),
+            "windowWidth": Double(windowWidth), "windowHeight": Double(windowHeight),
+            "safeArea": ["top": Double(safeArea.top), "right": Double(safeArea.right),
+                         "bottom": Double(safeArea.bottom), "left": Double(safeArea.left)]]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+              let next = String(data: data, encoding: .utf8), next != geometry else { return }
+        edgeBack?.cancel()
+        geometry = next
+        applyGeometry()
+    }
+
+    private func applyGeometry() {
+        guard let geometry, origin.matches(webView.url) else { return }
+        let script = """
+        if (window.top !== window.self || window.location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
+        window.__KINDRED_NATIVE_GEOMETRY = \(geometry);
+        window.dispatchEvent(new CustomEvent("kindred-native-geometry", {detail: window.__KINDRED_NATIVE_GEOMETRY}));
+        """
+        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { _ in }
     }
 
     // MARK: Bridge
@@ -266,6 +356,8 @@ final class WebSession: NSObject {
         switch message.name {
         case WebSession.sessionHandler:
             if let parsed = SessionMessage(body: message.body) { host?.webSession(self, didReceive: parsed) }
+        case WebSession.navigationHandler:
+            edgeBack?.setNavigation(WebNavigation(body: message.body))
         case WebSession.accountsHandler:
             if let body = message.body as? [String: Any], body["action"] as? String == "computer-input",
                let enabled = body["enabled"] as? Bool {
@@ -330,7 +422,10 @@ final class WebSession: NSObject {
                 webView.superview?.backgroundColor = color
                 return
             }
-            if AccountsMessage(body: message.body) != nil { host?.webSessionRequestedAccounts(self) }
+            if AccountsMessage(body: message.body) != nil {
+                edgeBack?.cancel()
+                host?.webSessionRequestedAccounts(self)
+            }
         default:
             break
         }
@@ -385,6 +480,17 @@ extension WebSession: WKNavigationDelegate {
         // Clearing this flag briefly restores the native account toolbar above
         // artifacts. A real page failure still restores recovery controls.
         presentation.hasLoadedChats = false
+        edgeBack?.setNavigation(nil)
+        loadState.failure = nil
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loadState.failure = nil
+        refreshSystemTextSize()
+        applyGeometry()
+        // A setting can change after document-start injection but before this
+        // load finishes. Reapply the latest value to that document as well.
+        applySystemTextSize()
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
@@ -460,6 +566,8 @@ extension WebSession: WKNavigationDelegate {
         // WebKitErrorFrameLoadInterruptedByPolicyChange: downloads and refused loads.
         if error.domain == "WebKitErrorDomain" && error.code == 102 { return }
         presentation.hasChatInterface = false
+        loadState.failure = KindredAPIClient.describe(error)
+        edgeBack?.setNavigation(nil)
         notify(KindredAPIClient.describe(error))
     }
 }
@@ -491,6 +599,7 @@ extension WebSession: WKUIDelegate {
             completionHandler()
             return
         }
+        edgeBack?.cancel()
         let alert = UIAlertController(title: origin.displayName, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
         presenter.present(alert, animated: true)
@@ -502,6 +611,7 @@ extension WebSession: WKUIDelegate {
             completionHandler(false)
             return
         }
+        edgeBack?.cancel()
         let alert = UIAlertController(title: origin.displayName, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
         alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
@@ -514,6 +624,7 @@ extension WebSession: WKUIDelegate {
             completionHandler(nil)
             return
         }
+        edgeBack?.cancel()
         let alert = UIAlertController(title: origin.displayName, message: prompt, preferredStyle: .alert)
         alert.addTextField { $0.text = defaultText }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(nil) })

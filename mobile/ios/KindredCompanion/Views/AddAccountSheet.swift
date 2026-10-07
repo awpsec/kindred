@@ -1,7 +1,7 @@
 import KindredCore
 import SwiftUI
 
-/// Native sign-in: choose a saved server or enter a new HTTPS address, then
+/// Native sign-in: choose a saved server or enter a new server address, then
 /// username and password. The password goes only to `POST /identity/login` on
 /// that exact origin and is never stored.
 @MainActor
@@ -17,6 +17,8 @@ struct AddAccountSheet: View {
     @State private var working = false
     @State private var errorMessage: String?
     @State private var prepared = false
+    @State private var pendingPrivateOrigin: ServerOrigin?
+    @State private var showPrivateConfirmation = false
     @FocusState private var focus: Field?
 
     private enum Field: Hashable { case address, login, password }
@@ -51,7 +53,7 @@ struct AddAccountSheet: View {
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("Kindred connects over HTTPS only. Enter the server address without a path.")
+                    Text("Use your Tailscale HTTPS address, or a private address such as 192.168.1.20:9444 on the same network.")
                 }
 
                 Section("Account") {
@@ -103,6 +105,16 @@ struct AddAccountSheet: View {
             .interactiveDismissDisabled(working)
             .disabled(working)
             .onAppear(perform: prepare)
+            .alert("Not encrypted · private network address", isPresented: $showPrivateConfirmation) {
+                Button("Cancel", role: .cancel) { pendingPrivateOrigin = nil }
+                Button("Connect anyway") {
+                    guard let origin = pendingPrivateOrigin else { return }
+                    pendingPrivateOrigin = nil
+                    startSignIn(origin: origin, confirmedPrivateOrigin: origin)
+                }
+            } message: {
+                Text("Your credentials and conversations will use an unencrypted connection to \(pendingPrivateOrigin?.serialized ?? ""). Connect only on a network you trust.")
+            }
         }
         .tint(.primary)
     }
@@ -120,7 +132,7 @@ struct AddAccountSheet: View {
             choice = .saved(origin)
         } else if let origin = prefill.origin {
             choice = .new
-            address = origin.displayName
+            address = origin.serialized
         } else if let first = model.savedOrigins.first, prefill.login.isEmpty, !model.accounts.isEmpty {
             choice = .saved(first)
         }
@@ -143,13 +155,23 @@ struct AddAccountSheet: View {
                 return
             }
         }
+        if origin.isPrivateHTTP {
+            pendingPrivateOrigin = origin
+            showPrivateConfirmation = true
+            return
+        }
+        startSignIn(origin: origin, confirmedPrivateOrigin: nil)
+    }
+
+    private func startSignIn(origin: ServerOrigin, confirmedPrivateOrigin: ServerOrigin?) {
+        guard canSubmit else { return }
         working = true
         errorMessage = nil
         let login = self.login
         let password = self.password
         Task { @MainActor in
             do {
-                try await model.signIn(origin: origin, login: login, password: password)
+                try await model.signIn(origin: origin, login: login, password: password, confirmedPrivateOrigin: confirmedPrivateOrigin)
                 self.password = ""
                 working = false
                 model.sheet = nil

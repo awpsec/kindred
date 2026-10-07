@@ -41,6 +41,12 @@ final class BridgeAndPushTests: XCTestCase {
         XCTAssertTrue(invalid.contains("var token = null"))
     }
 
+    func testBootstrapIdentifiesIOSForSystemTextSize() {
+        let script = WebBootstrap.documentStartScript(origin: origin, token: token)
+        XCTAssertTrue(script.contains("window.__KINDRED_MOBILE_PLATFORM = \"ios\""),
+                      "The shared reading-size module must distinguish iOS from Android and desktop.")
+    }
+
     func testJavaScriptStringEscaping() {
         XCTAssertEqual(WebBootstrap.javaScriptString("a\"b\\c"), "\"a\\\"b\\\\c\"")
         XCTAssertEqual(WebBootstrap.javaScriptString("</script>\n\u{2028}"), "\"\\u003C/script\\u003E\\n\\u2028\"")
@@ -73,6 +79,28 @@ final class BridgeAndPushTests: XCTestCase {
         XCTAssertNil(KindredRoutes.chatURL(origin: origin, chatID: "a&b=c"))
         XCTAssertNil(KindredRoutes.chatURL(origin: origin, chatID: String(repeating: "a", count: 161)))
         XCTAssertEqual(KindredRoutes.percentEncode("a b&c/é~"), "a%20b%26c%2F%C3%A9~")
+    }
+
+    func testNotificationEventURL() {
+        let account = "6f9619ff-8b86-d011-b42d-00cf4fc964ff"
+        let route = PushPayload.route(from: ["account_id": account, "chat_id": "dm-1234abcd", "event_id": "42"])!
+        let url = KindredRoutes.chatURL(origin: origin, chatID: route.chatID!, eventID: route.eventID)!
+        XCTAssertEqual(url.absoluteString, "https://kindred.example.com/#kindred-chat=dm-1234abcd&kindred-event=42")
+        XCTAssertTrue(origin.matches(url))
+        XCTAssertNil(URLComponents(url: url, resolvingAgainstBaseURL: false)?.query)
+        let fragment = URLComponents(string: "https://route.invalid/?" + url.fragment!)!.queryItems!
+        XCTAssertEqual(fragment.first(where: { $0.name == "kindred-chat" })?.value, route.chatID)
+        XCTAssertEqual(fragment.first(where: { $0.name == "kindred-event" })?.value, route.eventID)
+        XCTAssertEqual(KindredRoutes.chatURL(origin: origin, chatID: "dm-1234abcd", eventID: String(repeating: "9", count: 32))?.fragment,
+                       "kindred-chat=dm-1234abcd&kindred-event=" + String(repeating: "9", count: 32))
+    }
+
+    func testInvalidNotificationEventsRetainChatOnlyRoute() {
+        for event in ["", "4a", "-1", " 42", "42\n", "1&kindred-chat=other", "42#x", "４２", String(repeating: "1", count: 33)] {
+            XCTAssertEqual(KindredRoutes.chatURL(origin: origin, chatID: "dm-abc-123", eventID: event)?.absoluteString,
+                           "https://kindred.example.com/#kindred-chat=dm-abc-123", event)
+        }
+        XCTAssertNil(KindredRoutes.chatURL(origin: origin, chatID: "../unsafe", eventID: "42"))
     }
 
     func testAPNsTokenAndEnvironment() {

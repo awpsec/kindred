@@ -11,12 +11,13 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     const context = await browser.newContext({viewport:{width:402,height:780},hasTouch:true});
     await context.addInitScript(({token,css,js}) => {
       window.__KINDRED_MOBILE = true;
+      window.__KINDRED_MOBILE_PLATFORM = 'ios';
       window.__KINDRED_IOS_APP_VERSION = 'iOS 0.1 (1)';
       window.__KINDRED_IOS_LAYOUT = {bottomInset:0,isSlab:true};
       window.__KINDRED_MOBILE_PROFILE = 'ios-fixture';
       window.__KINDRED_NATIVE_SESSION_BOOTSTRAP = true;
       window.accountRequests = [];
-      window.webkit = {messageHandlers:{kindredAccounts:{postMessage:value => window.accountRequests.push(value)}}};
+      window.webkit = {messageHandlers:{kindredAccounts:{postMessage:value => window.accountRequests.push(value)},kindredNavigation:{postMessage:()=>{}}}};
       sessionStorage.setItem('kindred-token',token);
       document.addEventListener('DOMContentLoaded',() => {
         const style = document.createElement('style');
@@ -59,6 +60,22 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       const response=await route.fetch();
       const chats=await response.json();
       return route.fulfill({json:[...chats,{id:'group-fixture',name:'Test group',members:['piper'],archived:false}]});
+    });
+    let computerControlled = false;
+    await page.route('**/api/status*', route => route.fulfill({json:{version:'0.12.1',screen_bot_id:'piper',takeover:computerControlled,vm_enabled:true,control_pauses:computerControlled?[{bot_id:'piper',name:'Piper',control_id:'ios-pause',reason:'manual'}]:[]}}));
+    await page.route('**/api/takeover', route => {
+      computerControlled = route.request().postDataJSON().enabled;
+      return route.fulfill({json:{enabled:computerControlled}});
+    });
+    await page.route('**/api/computer/session', route => route.fulfill({json:{ticket:'ios-fixture'}}));
+    await page.route('**/vendor.js', route => {
+      const real=fs.readFileSync(path.resolve(__dirname,'../../ui/vendor.js'),'utf8').replace('et as RFB','FixtureRFB as RFB');
+      const fixture=`class FixtureRFB extends EventTarget {
+        constructor(host){super();this.host=host;const c=document.createElement('canvas');c.width=1600;c.height=1000;host.append(c);this._display={scale:1,_viewportLoc:{w:1600,h:1000}};setTimeout(()=>this.dispatchEvent(new Event('connect')),10);}
+        set scaleViewport(value){const c=this.host.querySelector('canvas:not(.desktop-glass)'),scale=Math.min(this.host.clientWidth/1600,this.host.clientHeight/1000);this._display.scale=scale;c.style.width=1600*scale+'px';c.style.height=1000*scale+'px';}
+        sendKey(){} disconnect(){this.host.remove();}
+      }\n`;
+      return route.fulfill({contentType:'text/javascript',body:fixture+real});
     });
     const errors=[]; page.on('pageerror',error => errors.push(error.message));
     await page.goto('http://127.0.0.1:'+server.address().port+'/#kindred-chat=dm-piper');
@@ -398,21 +415,23 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert(await page.locator('#computer-settings-link').isHidden());
     assert(await page.locator('#desktop-paste').evaluate(node=>node.parentElement.matches('.desktop-toolbar')),'Paste belongs alongside control below the screen');
     assert(await page.locator('#ios-computer-input').evaluate(node=>node!==document.activeElement),'view-only screens do not raise the keyboard');
+    await page.waitForFunction(()=>document.querySelector('#desktop-mode').textContent==='Watching live'&&!!document.querySelector('.desktop-canvas canvas:not(.desktop-glass)')&&!document.querySelector('#app').dataset.mobileResizing);
     await page.evaluate(()=>{
-      const panel=document.querySelector('#computer-panel'),host=document.createElement('div');host.className='desktop-canvas';
-      const canvas=document.createElement('canvas');canvas.width=1600;canvas.height=1000;host.append(canvas);document.querySelector('#desktop').replaceChildren(host);
-      window.iosRemoteKeys=[];canvas.addEventListener('keydown',event=>window.iosRemoteKeys.push(event.key));
+      const canvas=document.querySelector('.desktop-canvas canvas:not(.desktop-glass)');
       window.iosRemotePointerEvents=0;canvas.addEventListener('pointerdown',()=>window.iosRemotePointerEvents++);
     });
-    await page.locator('.desktop-canvas canvas').dispatchEvent('pointerdown',{button:0});
+    await page.locator('.desktop-canvas canvas:not(.desktop-glass)').dispatchEvent('pointerdown',{button:0});
     assert.equal(await page.evaluate(()=>window.iosRemotePointerEvents),0,'watching screen taps cannot reach desktop expand/input');
     assert(!(await page.locator('#computer-panel').evaluate(node=>node.classList.contains('expanded'))),'watching screen taps do not expand');
+    await page.locator('#take-control').click();
+    await page.waitForFunction(()=>document.querySelector('#computer-panel').classList.contains('is-controlling')&&document.querySelector('#desktop-mode').textContent==='You have control'&&!!document.querySelector('.desktop-canvas canvas:not(.desktop-glass)')&&!document.querySelector('#app').dataset.mobileResizing);
     await page.evaluate(()=>{
-      const panel=document.querySelector('#computer-panel');
-      panel.classList.add('is-controlling');
+      const canvas=document.querySelector('.desktop-canvas canvas:not(.desktop-glass)');
+      window.iosRemoteKeys=[];canvas.addEventListener('keydown',event=>window.iosRemoteKeys.push(event.key));
+      canvas.addEventListener('pointerdown',()=>window.iosRemotePointerEvents++);
     });
     assert(await page.locator('#ios-computer-input').evaluate(node=>node===document.activeElement));
-    await page.locator('.desktop-canvas canvas').dispatchEvent('pointerdown',{button:0});
+    await page.locator('.desktop-canvas canvas:not(.desktop-glass)').dispatchEvent('pointerdown',{button:0});
     assert.equal(await page.evaluate(()=>window.iosRemotePointerEvents),1,'controlled taps reach the actual canvas');
     assert(!(await page.locator('#computer-panel').evaluate(node=>node.classList.contains('expanded'))),'controlled taps do not trigger desktop expansion');
     await page.setViewportSize({width:874,height:350});
@@ -424,9 +443,11 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert(await page.locator('#ios-computer-input').evaluate(node=>node!==document.activeElement),'remote keyboard is never focused in landscape');
     await page.setViewportSize({width:402,height:780});
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{viewportHeight:780,isSlab:true,isPortrait:true}})));
+    await page.waitForFunction(()=>document.querySelector('#ios-computer-input')===document.activeElement);
     assert(await page.locator('#ios-computer-input').evaluate(node=>node===document.activeElement),'portrait rotation restores remote typing');
     await page.evaluate(()=>{document.querySelector('#ios-computer-input').blur();window.__kindredComputerInput.focus(true);});
     assert(await page.locator('#ios-computer-input').evaluate(node=>node===document.activeElement),'dismissed keyboard can be restored while controlling');
+    await page.waitForFunction(()=>!document.querySelector('#app').dataset.mobileResizing);
     await page.evaluate(()=>{
       const input=document.querySelector('#ios-computer-input');input.value+='Hi é';input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));
       input.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'deleteContentBackward'}));
@@ -444,7 +465,8 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       assert(Math.abs(bounds.height-44)<0.01); assert(Math.abs(bounds.width-44)<0.01,'computer actions are compact circular targets');
       assert(await action.getAttribute('aria-label'),'icon-only actions retain accessible names');
     }
-    await page.evaluate(()=>document.querySelector('#computer-panel').classList.remove('is-controlling'));
+    await page.locator('#take-control').click();
+    await page.waitForFunction(()=>!document.querySelector('#computer-panel').classList.contains('is-controlling'));
     assert(await page.locator('#ios-computer-input').evaluate(node=>node!==document.activeElement),'returning control dismisses native entry');
     await page.setViewportSize({width:402,height:780});
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{isSlab:true,bottomInset:0}})));

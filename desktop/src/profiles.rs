@@ -915,10 +915,7 @@ pub fn start_standalone(
 // Only the managed loopback workspace may operate its local installation.
 pub(crate) fn local_admin(window: &crate::surface::Surface) -> Result<()> {
     let url = window.url().map_err(error)?;
-    if window.label() == "main"
-        && url.origin().ascii_serialization() == crate::local_server::ORIGIN
-        && url.path() == "/"
-        && root()?.join("standalone").is_dir()
+    if crate::local_server::local_admin_allowed(window.label(),&url,root()?.join("standalone").is_dir())
     {
         Ok(())
     } else {
@@ -1045,6 +1042,12 @@ fn start_setup_mode(app: tauri::AppHandle, prepare_only: bool, activate_only: bo
                                 .env("KINDRED_KVM_GID", meta.gid().to_string());
                         }
                     }
+                }
+                // Use the same saved port plan for activation and updates. Compose
+                // must replace inherited wildcard ports, never append to them.
+                if index == 3 && root.join("network.json").exists() {
+                    let override_file=crate::standalone_network::prepare_override(&root)?;
+                    command.arg("-f").arg(override_file);
                 }
                 command.env("KINDRED_BIND",crate::standalone_network::saved(&root)?).env("KINDRED_PORT","9444").env("KINDRED_ALLOWED_ORIGINS",serde_json::to_string(&crate::standalone_network::origins(&root)?).map_err(error)?);
                 command.args(args);

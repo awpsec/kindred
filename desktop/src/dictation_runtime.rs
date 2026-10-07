@@ -83,7 +83,7 @@ impl Channel {
         }
         Ok(value)
     }
-    pub fn transcribe(&mut self, audio: &[u8]) -> Result<String> {
+    pub fn transcribe(&mut self, audio: &[u8]) -> Result<Value> {
         self.input
             .write_all(&(audio.len() as u32).to_le_bytes())
             .and_then(|_| self.input.write_all(audio))
@@ -99,14 +99,16 @@ impl Channel {
         reply["text"]
             .as_str()
             .filter(|s| s.len() <= 64000)
-            .map(|s| s.trim().to_owned())
+            .map(|_| reply.clone())
             .ok_or_else(|| "The transcript exceeded the message limit.".into())
     }
 }
-pub fn launch(root: &Path, model: &Path, gpu: bool) -> Result<(Process, Channel)> {
-    let binary = binary_name(gpu);
+pub fn launch(root: &Path, model: &Path, gpu: bool, whistle: bool) -> Result<(Process, Channel)> {
+    let binary = if whistle { if cfg!(windows) { "whistle-worker.exe" } else { "whistle-worker" } } else { binary_name(gpu) };
     let mut command = Command::new(root.join(binary));
     command
+        .env("NEEDLE_TELEMETRY", "0")
+        .env("DO_NOT_TRACK", "1")
         .arg(model)
         .current_dir(root)
         .stdin(Stdio::piped())

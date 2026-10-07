@@ -1,19 +1,24 @@
 # Writing messages
 
 Type `- `, `* ` or `+ ` at the start of a line to begin a bulleted list.
-**Enter** adds the next bullet; Enter on an empty bullet exits the list.
+For a numbered list, type one to three digits followed by `. `, such as `1. `
+or `100. `. The starting number is preserved when sent or restored. Four-digit
+prefixes such as `2024. ` stay plain text.
+**Enter** adds the next bullet or number; Enter on an empty item exits the list.
 **Tab** indents and **Shift+Tab** outdents. Outside a list, Enter sends the
 message and Shift+Enter inserts a line break. Ctrl/Cmd+Enter can send while
 editing a list; the Send button remains available.
 
-**Ctrl+Shift+8** (**Cmd+Shift+8** on macOS) remains an optional shortcut to
-convert selected lines or remove list formatting. The composer + menu contains
+**Ctrl+Shift+7** (**Cmd+Shift+7** on macOS) toggles numbered lists.
+**Ctrl+Shift+8** (**Cmd+Shift+8** on macOS) toggles bulleted lists. These
+optional shortcuts convert selected lines or remove that list formatting. The composer + menu contains
 Attach files and Teach a task. List formatting is part of typing.
 
 Pasted Markdown and restored drafts support continuation and indentation too.
 Lists are sent and saved as ordinary Markdown, including nested lists produced
 by Chromium's and WebKit's different DOM structures. Mention chips and native
-undo remain intact.
+undo remain intact. Undo after autoformat restores the literal prefix; typing a
+space next keeps that line as plain text.
 
 The shared UI serializes browser line wrappers without adding a trailing line or
 joining adjacent lines. It preserves intentional internal blank lines. Sent user
@@ -44,13 +49,30 @@ readable messages and scroll anchor. Failed opening requests show Retry; late
 responses cannot replace another selected conversation. Reduced-motion settings
 turn off the loading animation.
 
+## Leaving and returning to the page
+
+Navigation pauses new API requests before the old document leaves. If you choose
+Stay in the teaching confirmation, the first click or keystroke resumes updates
+once that document can render again. Automatic polling waits for that interaction;
+there is no portable event identifying a cancelled leave-page dialog. The original
+action waits for recovery rather than being dropped or replayed. Returning through
+page history also resumes updates.
+
+A change already sent is kept intact if navigation is cancelled. If the page leaves
+before its response is confirmed, the result is uncertain: check whether it completed
+before retrying. A change waiting for page recovery is reported as not sent if the
+page leaves first. Neither state automatically repeats a write.
+
 ## Verification scope
 
 `tools/frontend/test-composer-lists.cjs` runs in Chromium and WebKit with Linux,
 Windows, and macOS platform fixtures. It checks typed line breaks, intentional
 blank lines, sent payloads and bubble height, typed markers, Enter continuation, Tab indentation, selected-line lists, continuation
 and exit, undo, mention preservation, IME Enter, paste, draft reload, and reading
-preferences. `test-feedback-library.cjs` checks the refresh icon at 1280, 800 and
+preferences. `test-numbered-lists.cjs` checks start values, numbered autoformat,
+Enter/exit, native undo, four-digit plain text, multi-digit parent indentation
+through actual sending and rendering, and marker containment under text scaling,
+CSS zoom and different viewport widths. `test-feedback-library.cjs` checks the refresh icon at 1280, 800 and
 390 pixel widths, manual refresh, and explicit size persistence.
 
 `test-chat-opening.cjs` holds history and historical task-detail responses

@@ -4,7 +4,7 @@
   if (!window.__KINDRED_MOBILE || html.dataset.kindredIos) return;
   html.dataset.kindredIos = 'true';
   html.dataset.mobile = 'true';
-  // This is an app interface with its own text-size setting. Respect fixed
+  // UIKit supplies system text size separately. Respect fixed
   // page scale in WKWebView so double taps and pinches cannot zoom the shell.
   // Leave Safari and embedded computer/document content's own gestures alone.
   const viewport = document.querySelector('meta[name=viewport]') || document.createElement('meta');

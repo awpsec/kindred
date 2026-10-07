@@ -37,10 +37,15 @@ struct RootView: View {
                 case .addAccount(let prefill):
                     AddAccountSheet(prefill: prefill)
                         .environment(model)
+                case .pair(let request):
+                    PairDeviceSheet(request: request)
+                        .environment(model)
                 }
             }
             .preferredColorScheme(pageIsDark.map { $0 ? .dark : .light })
         }
+        // `kindred://pair` links from the camera app open the confirmation screen.
+        .onOpenURL { model.handleOpenURL($0) }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
@@ -84,12 +89,26 @@ struct RootView: View {
     private var content: some View {
         if let account = model.activeAccount {
             if model.isSignedIn(account.id) {
-                WebContainerView(session: model.session(for: account))
-                    .id(account.id)
-                    .ignoresSafeArea(.container, edges: isShowingConversation ? [.top, .bottom] : .bottom)
-                    // WebHostView's keyboard layout guide owns avoidance.
-                    // Keep SwiftUI from subtracting the same space again.
-                    .ignoresSafeArea(.keyboard)
+                let session = model.session(for: account)
+                ZStack {
+                    WebContainerView(session: session, navigationBlocked: model.sheet != nil || model.download != nil)
+                    if let failure = session.loadState.failure {
+                        VStack(spacing: 16) {
+                            Text("Couldn't open Kindred").font(.headline)
+                            Text(failure).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                            Button("Try again") { session.reload() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        .padding(24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Theme.canvas)
+                    }
+                }
+                .id(account.id)
+                .ignoresSafeArea(.container, edges: isShowingConversation ? [.top, .bottom] : .bottom)
+                // WebHostView owns keyboard avoidance exactly once.
+                .ignoresSafeArea(.keyboard)
             } else {
                 SignedOutView(account: account)
             }
@@ -136,16 +155,6 @@ struct RootView: View {
                 Text("Kindred").font(.headline)
             }
         }
-        ToolbarItem(placement: .topBarLeading) {
-            if let account = model.activeAccount, model.isSignedIn(account.id) {
-                Button {
-                    model.reloadActive()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .accessibilityLabel("Reload")
-            }
-        }
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 model.sheet = .accounts
@@ -172,21 +181,33 @@ struct WelcomeView: View {
             VStack(spacing: 6) {
                 Text("Kindred")
                     .font(.largeTitle.weight(.semibold))
-                Text("Sign in to your Kindred server to pick up your conversations.")
+                Text("Pair with Kindred on your computer, or sign in to your server to pick up your conversations.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-            Button {
-                model.sheet = .addAccount(AccountPrefill())
-            } label: {
-                Text("Add Account")
-                    .font(.body.weight(.semibold))
-                    .frame(maxWidth: 280)
-                    .padding(.vertical, 4)
+            VStack(spacing: 10) {
+                Button {
+                    model.sheet = .pair(PairingRequest())
+                } label: {
+                    Label("Scan Pairing Code", systemImage: "qrcode.viewfinder")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: 280)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                Button {
+                    model.sheet = .addAccount(AccountPrefill())
+                } label: {
+                    Text("Sign In with Password")
+                        .font(.body.weight(.medium))
+                        .frame(maxWidth: 280)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
             Spacer()
             Spacer()
         }

@@ -111,3 +111,13 @@ saves retain the draft, a manual merge preserves both contributions, and readers
 refresh to the saved result. Moving an artifact through its menu while editing now
 advances the editor's baseline for that editor's own metadata change and updates
 its folder field, without weakening checks against another writer's revision.
+
+## Capacity and transport
+
+Saved artifact source and HTML/JSX previews support **4,194,304 UTF-8 bytes (4 MiB)**. Shared state supports **2,097,152 bytes (2 MiB)** of serialized UTF-8 JSON, including the complete rich-document editing model. These are byte budgets, not character counts. No source or state is truncated to fit. Rejected saves retain the existing content and revision.
+
+Only artifact create/update HTTP routes accept up to **38,797,312 wire bytes (37 MiB)**. JSON may spell each source/state byte as a six-byte Unicode escape; the allowance covers that expansion plus bounded metadata. The ordinary API remains capped at 128 KiB. Validation still enforces source/state budgets after JSON decoding. Sandbox, authentication, optimistic revisions and the preview's existing loading deadline remain intact. External packages, network access and embedded binary payloads are not newly supported.
+
+Saved capacity is separate from model generation and tool transport: Codex/Pi bridges remain bounded at 8 MiB per frame, with their existing output/token budgets. Ordinary combined source/state near 6 MiB fits a frame, but escaping or nested tool-result encoding can exceed it. Models may need smaller incremental updates or a user source edit; the saved budget is not a promise that every model can produce a maximum-size app in one reply. Preview memory/CPU depend on the code and rendered data, not source bytes alone. No arbitrary infinite-app guarantee is made.
+
+Each accepted revision stores another source/state snapshot in SQLite. Larger artifacts increase backup and history storage; workspace transfer retains its separate 256 MiB serialized package limit. This change does not raise migration capacity or imply that an entire large artifact library fits one transfer.
