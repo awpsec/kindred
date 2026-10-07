@@ -75,7 +75,7 @@ if(window.__KINDRED_MOBILE_PLATFORM==='android' && window.kindredNative){
 
 // Native iOS owns edge recognition and touch cancellation; the shared document
 // owns route eligibility, retained views and the interactive visual transition.
-export function installMobileNavigation({route,back,resized,computerGeometryValid}) {
+export function installMobileNavigation({route,back,resized,computerGeometryValid,inputAvailabilityChanged}) {
   if(window.__KINDRED_MOBILE_PLATFORM!=='ios')return;
   const html=document.documentElement,shell=document.querySelector('#app');
   const edge=document.createElement('div');edge.className='ios-computer-edge';edge.setAttribute('aria-hidden','true');document.querySelector('#computer-panel').append(edge);for(const type of ['pointerdown','pointerup','click'])edge.addEventListener(type,e=>{e.preventDefault();e.stopPropagation();});
@@ -100,11 +100,11 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
     html.dataset.iosLayout=list?'regular':'compact';html.dataset.iosShort=String(layoutHeight<480);html.dataset.iosComputer=side?'side':'overlay';
     if(window.__KINDRED_NATIVE_GEOMETRY)html.dataset.nativeSafeArea='host';
     if(html.dataset.iosLayout==='regular')shell.classList.remove('sidebar-open');
-    shell.dataset.mobileResizing='true';cancelAnimationFrame(settleFrame);resized?.();
+    shell.dataset.mobileResizing='true';inputAvailabilityChanged?.();cancelAnimationFrame(settleFrame);resized?.();
     let previous='';
     const validate=()=>{
       const canvas=document.querySelector('#desktop canvas:not(.desktop-glass)'),rect=canvas?.getBoundingClientRect(),stamp=rect?[rect.x,rect.y,rect.width,rect.height].join('|'):'none';
-      if(previous===stamp&&computerGeometryValid?.()===true){delete shell.dataset.mobileResizing;publish();return;}
+      if(previous===stamp&&computerGeometryValid?.()===true){delete shell.dataset.mobileResizing;inputAvailabilityChanged?.();publish();return;}
       previous=stamp;settleFrame=requestAnimationFrame(validate);
     };
     settleFrame=requestAnimationFrame(validate);publish();
@@ -136,7 +136,7 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
   new MutationObserver(()=>{geometry();publish();}).observe(document.querySelector('#computer-panel'),{attributes:true,attributeFilter:['hidden']});
   new MutationObserver(publish).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','open','class']});
   new MutationObserver(publish).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['open','hidden']});
-  document.addEventListener('selectionchange',publish);window.addEventListener('resize',geometry);window.visualViewport?.addEventListener('resize',geometry);window.addEventListener('kindred-native-geometry',()=>geometry(true));const observedResize=()=>{shell.dataset.mobileResizing='true';cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>geometry(true));};new ResizeObserver(observedResize).observe(shell);new ResizeObserver(observedResize).observe(document.querySelector('#desktop'));
+  document.addEventListener('selectionchange',publish);window.addEventListener('resize',geometry);window.visualViewport?.addEventListener('resize',geometry);window.addEventListener('kindred-native-geometry',()=>geometry(true));const observedResize=()=>{shell.dataset.mobileResizing='true';inputAvailabilityChanged?.();cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>geometry(true));};new ResizeObserver(observedResize).observe(shell);new ResizeObserver(observedResize).observe(document.querySelector('#desktop'));
   for(const type of ['pointerdown','pointerup','pointermove','mousedown','mouseup','mousemove','click','touchstart','touchmove','touchend','gesturestart','gesturemove','gestureend','wheel','keydown','keyup'])document.addEventListener(type,e=>{if(shell.dataset.mobileResizing==='true'&&e.target.closest?.('#desktop')){e.preventDefault();e.stopImmediatePropagation();}},{capture:true,passive:false});
   geometry();publish();
 }
