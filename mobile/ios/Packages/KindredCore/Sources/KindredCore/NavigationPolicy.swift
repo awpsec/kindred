@@ -58,6 +58,7 @@ public struct NavigationPolicy: Sendable {
             if origin.matches(url) { return .allow }
             return leaving(url, trigger: trigger, otherwise: .otherOrigin(host: url.host))
         case "http":
+            if origin.matches(url) { return .allow }
             return leaving(url, trigger: trigger, otherwise: .insecure)
         case "about":
             let value = url.absoluteString.lowercased()
@@ -91,7 +92,7 @@ public struct NavigationPolicy: Sendable {
     public func allowsDownload(from url: URL?) -> Bool {
         guard let url, let scheme = url.scheme?.lowercased() else { return false }
         switch scheme {
-        case "https": return origin.matches(url)
+        case "https", "http": return origin.matches(url)
         case "blob": return blobMatchesOrigin(url)
         case "data": return true
         default: return false

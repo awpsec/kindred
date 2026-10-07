@@ -64,6 +64,36 @@ final class AppModelSignInTests: XCTestCase {
         }
     }
 
+    func testPrivateHTTPNeedsExactConfirmationBeforeAnyRequest() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("http://192.168.1.20:9444")
+        for confirmation in [nil, try ServerAddress.normalize("https://192.168.1.20:9444"),
+                             try ServerAddress.normalize("http://192.168.1.20:9445")] as [ServerOrigin?] {
+            do {
+                try await model.signIn(origin: origin, login: "ada", password: "pw", confirmedPrivateOrigin: confirmation)
+                XCTFail("Unconfirmed origin must not send a request")
+            } catch { XCTAssertEqual(error as? ServerAddressError, .privateConfirmation) }
+            XCTAssertTrue(StubProtocol.paths.isEmpty)
+            XCTAssertTrue(model.accounts.isEmpty)
+        }
+        try await model.signIn(origin: origin, login: "ada", password: "pw", confirmedPrivateOrigin: origin)
+        XCTAssertEqual(model.accounts.first?.origin, origin)
+        XCTAssertEqual(Array(StubProtocol.paths.prefix(3)), ["/identity/meta", "/identity/login", "/identity/profiles"])
+    }
+
+    func testPrivatePairingNeedsConfirmationBeforeCodeOrVerification() async throws {
+        serveKindred()
+        let code = String(repeating: "a", count: 64)
+        let link = try PairingLink.parse("kindred://pair?server=http%3A%2F%2F192.168.1.20%3A9444#code=" + code)
+        do {
+            _ = try await model.pair(with: link)
+            XCTFail("Unconfirmed pairing must not send a request")
+        } catch { XCTAssertEqual(error as? ServerAddressError, .privateConfirmation) }
+        XCTAssertTrue(StubProtocol.paths.isEmpty)
+        XCTAssertFalse(model.isPairing)
+        XCTAssertTrue(model.accounts.isEmpty)
+    }
+
     func testSignInKeepsTheTokenOutOfMetadata() async throws {
         serveKindred()
         let origin = try ServerAddress.normalize("kindred.example.com")

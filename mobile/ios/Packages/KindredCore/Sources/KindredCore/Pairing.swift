@@ -4,7 +4,7 @@ import FoundationNetworking
 #endif
 
 /// A one-time phone pairing link issued by Kindred on a computer:
-/// `kindred://pair?server=<percent-encoded HTTPS origin>#code=<64 hex>`.
+/// `kindred://pair?server=<percent-encoded explicit origin>#code=<64 hex>`.
 ///
 /// Parsing never contacts the server. The person confirms `origin` before
 /// `code` is sent anywhere, so an untrusted QR code cannot sign the app in to
@@ -37,13 +37,19 @@ public struct PairingLink: Equatable, Sendable, CustomStringConvertible, CustomD
               let server = item.value, !server.isEmpty else { throw PairingLinkError.invalidServer }
         if items.contains(where: { $0.name == "code" }) { throw PairingLinkError.invalidCode }
         // Manual entry may omit the scheme; a pairing link names it explicitly.
-        guard server.lowercased().hasPrefix("https://") else {
-            throw server.lowercased().hasPrefix("http://") ? PairingLinkError.insecureServer : PairingLinkError.invalidServer
+        guard server.lowercased().hasPrefix("https://") || server.lowercased().hasPrefix("http://") else {
+            throw PairingLinkError.invalidServer
         }
         let origin: ServerOrigin
         do {
             origin = try ServerAddress.normalize(server)
+        } catch ServerAddressError.phoneLoopback {
+            throw PairingLinkError.loopbackServer
         } catch ServerAddressError.insecureScheme {
+            throw PairingLinkError.insecureServer
+        } catch ServerAddressError.publicHTTP {
+            throw PairingLinkError.insecureServer
+        } catch ServerAddressError.unsupportedHTTPAddress {
             throw PairingLinkError.insecureServer
         } catch {
             throw PairingLinkError.invalidServer
@@ -85,9 +91,9 @@ public enum PairingLinkError: Error, Equatable, LocalizedError {
         case .empty: return "Paste the pairing link from Kindred on your computer."
         case .notPairingLink: return "That isn't a Kindred pairing code."
         case .invalidServer: return "This pairing code doesn't contain a usable server address."
-        case .insecureServer: return "This pairing code uses an unencrypted address. Kindred connects over HTTPS only."
+        case .insecureServer: return "This pairing code needs HTTPS or a supported private IP address."
         case .loopbackServer:
-            return "This code points to localhost, which a phone can't reach. Create it with the computer's HTTPS address instead."
+            return "This code points to localhost, which a phone can't reach. Create it with the computer's reachable private IP or HTTPS address instead."
         case .invalidCode: return "This pairing code is incomplete. Create a new code on your computer and scan it again."
         }
     }
@@ -232,7 +238,7 @@ public enum PairingError: Error, Equatable, LocalizedError {
         case .unreachable: return "Your phone couldn't reach this server."
         case .claimUnconfirmed: return "The connection dropped after the code was sent, so it may already be used. Create a new code and scan it."
         case .notKindredServer: return "That address didn't answer like a Kindred server, so the pairing code wasn't sent."
-        case .redirected: return "The server tried to redirect the request, so Kindred stopped. Pairing works only with the server's final HTTPS address."
+        case .redirected: return "The server tried to redirect the request, so Kindred stopped. Pairing works only with the server's final server address."
         case .codeRejected: return "It's invalid, expired or already used. Create a new code in Kindred on your computer, then scan it."
         case .unsupported: return "This server doesn't support phone pairing yet. Update Kindred on the server, or sign in with your username and password."
         case .rateLimited: return "Too many pairing attempts. Wait a minute, then create a new code."

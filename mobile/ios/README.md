@@ -62,6 +62,37 @@ the account metadata store. App tests cover the Keychain store (round trip,
 
 ## How it works
 
+### Private computer addresses
+
+Manual entry accepts a bare private IP and port such as `192.168.1.20:9444`
+as HTTP, while names default to HTTPS. An explicit `https://` is preserved;
+there is no downgrade or retry over HTTP. IPv6 needs brackets, for example
+`http://[fd7a::5]:9444`. Only literal addresses in `10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, and **`fd00::/8`** may
+use HTTP. DNS/MagicDNS names, public addresses, loopback, link-local addresses
+and IPv4-mapped IPv6 cannot use HTTP.
+
+Before verification, login or pairing sends anything, the native sheet displays
+**Not encrypted · private network address**, the full origin, and **Connect
+anyway**. Confirmation applies only to that scheme, host and port. HTTP and
+HTTPS at the same host remain separate saved accounts, Keychain sessions and
+web stores. Existing saved HTTPS origins retain HTTPS; prefills include the
+scheme. All native navigation, bridge, downloads and API response checks still
+require the exact origin. Redirects remain refused.
+
+The app requires iOS 17. Apple's current ATS documentation supports CIDR
+exceptions from iOS 17; `Info.plist` contains only these five HTTP exceptions
+and a local-network permission description. It enables no global arbitrary
+loads. See [Apple NSExceptionDomains](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsexceptiondomains).
+
+Linux core tests verify parsing, isolation and confirmation policy; they do not
+prove iPhone ATS, local-network permission, WKWebView or WebSocket behavior.
+On a Mac/device, verify cancel sends nothing, private IPv4 and fd IPv6 login
+and QR pairing, the local-network prompt and denied-permission recovery,
+HTTP API and WebSocket connectivity, exact-origin redirects and account
+switching, and existing HTTPS sessions. This requires a new native build;
+a server update alone cannot add this phone transport support.
+
 ### Accounts and credentials
 
 - **Sign in** happens in a native sheet: pick a saved server or enter a new
@@ -72,7 +103,7 @@ the account metadata store. App tests cover the Keychain store (round trip,
   workspace name.
 - **Phone pairing** needs no password. In Kindred on the computer, choose
   Connect mobile app. On the phone, choose Scan Pairing Code, or paste the
-  link: `kindred://pair?server=<HTTPS origin>#code=<64 hex>`. The camera
+  link: `kindred://pair?server=<explicit server origin>#code=<64 hex>`. The camera
   app can also open that link. QR codes are decoded on the device with
   AVFoundation. The app shows the server and sends nothing until you choose
   Connect. It then checks `GET /identity/meta` and sends
@@ -80,14 +111,15 @@ the account metadata store. App tests cover the Keychain store (round trip,
   Redirects are refused. Before anything is saved, `GET /identity/profiles`
   must confirm the returned `account_id`, `login` and `profile_id`.
   Same server plus same account refreshes that saved account. Other accounts
-  are untouched. Links pointing at loopback, plain HTTP or ambiguous numeric
-  hosts are refused. If the server can't be reached, Help shows a checklist and the same code can be tried again. If the connection drops after the code was sent, the result is unconfirmed and a new code is needed. A
+  are untouched. Links pointing at loopback, unsupported HTTP or ambiguous numeric
+  hosts are refused. Private HTTP needs the additional unencrypted confirmation. If the server can't be reached, Help shows a checklist and the same code can be tried again. If the connection drops after the code was sent, the result is unconfirmed and a new code is needed. A
   rejected code says to create a new one. Nothing is retried automatically.
-- **Server addresses** are HTTPS only. A missing scheme means `https://`.
+- **Server addresses** use HTTPS for names and public IPs; a bare supported
+  private literal IP means HTTP and requires confirmation.
   Addresses with credentials, a path, query, fragment, backslash, non-ASCII
   characters (use punycode) or an invalid port are refused with a specific
   message, not silently cleaned up. The saved form is the canonical origin
-  (`https://host[:port]`, lowercased, default port dropped).
+  (`http(s)://host[:port]`, canonical host, scheme-default port dropped).
 - **Session bearer** is stored only in the Keychain: one generic-password item
   per account, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, never
   synced or restored to another device. Account metadata (server, login,
@@ -231,9 +263,9 @@ answer 404 and the app says notifications aren't offered.
 ## Known limitations
 
 - Not compiled, not run on a simulator or device, no UI review on hardware.
-- HTTPS origins only; plain HTTP and self-signed certificates (without a
-  trusted profile installed on the device) won't connect. Servers under a
-  path prefix aren't supported.
+- Private literal-IP HTTP needs the updated native app and an explicit
+  confirmation. HTTPS with an untrusted/self-signed certificate still requires
+  a trusted profile installed on the device. Path-prefix servers are unsupported.
 - Downloads go through the share sheet; there is no in-app file browser.
   Pages that open blob URLs in new windows are saved as downloads rather
   than shown.

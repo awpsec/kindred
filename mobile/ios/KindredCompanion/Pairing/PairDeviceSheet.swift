@@ -57,6 +57,7 @@ struct PairDeviceSheet: View {
     @State private var scanHint: String?
     @State private var resumeToken = 0
     @State private var prepared = false
+    @State private var confirmedPrivateOrigin: ServerOrigin?
 
     var body: some View {
         NavigationStack {
@@ -103,7 +104,10 @@ struct PairDeviceSheet: View {
         switch stage {
         case .scan: scanStage
         case .paste: pasteStage
-        case .confirm(let link): ConfirmServerView(link: link, connect: { connect(link) }, cancel: { dismiss() })
+        case .confirm(let link): ConfirmServerView(link: link, connect: {
+            confirmedPrivateOrigin = link.origin.isPrivateHTTP ? link.origin : nil
+            connect(link)
+        }, cancel: { dismiss() })
         case .connecting(let link): ConnectingView(origin: link.origin)
         case .failed(let link, let failure):
             PairingFailureView(failure: failure, origin: link?.origin,
@@ -241,7 +245,7 @@ struct PairDeviceSheet: View {
         stage = .connecting(link)
         Task { @MainActor in
             do {
-                let id = try await model.pair(with: link)
+                let id = try await model.pair(with: link, confirmedPrivateOrigin: confirmedPrivateOrigin)
                 let added = model.account(id)
                 model.sheet = nil
                 dismiss()
@@ -412,9 +416,9 @@ private struct ConfirmServerView: View {
             VStack(spacing: 20) {
                 ServerBadge(symbol: "server.rack")
                     .padding(.top, 28)
-                Text("Connect to this server?")
+                Text(link.origin.isPrivateHTTP ? "Not encrypted · private network address" : "Connect to this server?")
                     .font(.title2.weight(.semibold))
-                Text(link.origin.displayName)
+                Text(link.origin.serialized)
                     .font(.title3.monospaced().weight(.medium))
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
@@ -422,7 +426,9 @@ private struct ConfirmServerView: View {
                     .frame(maxWidth: .infinity)
                     .background(Theme.chrome, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .accessibilityLabel("Server \(link.origin.displayName)")
-                Text("Make sure this matches the address on your computer.")
+                Text(link.origin.isPrivateHTTP
+                     ? "Your pairing code and conversations will use an unencrypted connection. Connect only on a network you trust, and check that this matches your computer."
+                     : "Make sure this matches the address on your computer.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -432,7 +438,7 @@ private struct ConfirmServerView: View {
                     }
                     .buttonStyle(.bordered)
                     Button(action: connect) {
-                        Text("Connect").font(.body.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 4)
+                        Text(link.origin.isPrivateHTTP ? "Connect anyway" : "Connect").font(.body.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 4)
                     }
                     .buttonStyle(.borderedProminent)
                 }
