@@ -20,8 +20,9 @@ pub fn settings(root: &Path) -> Result<crate::network_plan::Plan> {
             let mut plan = crate::network_plan::Plan::decode(
                 serde_json::from_slice(&bytes).map_err(|_| "Could not read network settings.")?,
             )?;
-            plan.origins = normalize_origins(plan.origins)?;
-            plan.extra_origins = normalize_origins(plan.extra_origins)?;
+            plan.origins = normalize_origins_with_consent(plan.origins, &plan.confirmed_http_origins)?;
+            plan.extra_origins = normalize_origins_with_consent(plan.extra_origins, &plan.confirmed_http_origins)?;
+            if plan.confirmed_http_origins.iter().any(|v| !v.starts_with("http://") || !plan.origins.contains(v)) {return Err("Saved HTTP confirmation does not match the connection addresses. Confirm the addresses again before saving.".into());}
             Ok(plan)
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -30,14 +31,19 @@ pub fn settings(root: &Path) -> Result<crate::network_plan::Plan> {
         Err(e) => Err(e.to_string()),
     }
 }
+fn legacy_change_allowed(plan: &Plan, changing: bool, restart: bool) -> Result<()> {
+    if (changing || restart) && !plan.confirmed_http_origins.is_empty() {return Err("Use Connection access in the updated app to change these confirmed HTTP settings.".into());}
+    Ok(())
+}
 pub fn saved(root: &Path) -> Result<String> {
     Ok(settings(root)?.bind)
 }
 pub fn origins(root: &Path) -> Result<Vec<String>> {
-    normalize_origins(settings(root)?.origins)
+    let plan=settings(root)?; normalize_origins_with_consent(plan.origins,&plan.confirmed_http_origins)
 }
 
-fn normalize_origins(values: Vec<String>) -> Result<Vec<String>> {
+fn normalize_origins(values: Vec<String>) -> Result<Vec<String>> { normalize_origins_with_consent(values,&[]) }
+fn normalize_origins_with_consent(values: Vec<String>, confirmed: &[String]) -> Result<Vec<String>> {
     if values.len() > 128 {
         return Err("Too many connection addresses.".into());
     }
@@ -73,7 +79,7 @@ fn normalize_origins(values: Vec<String>) -> Result<Vec<String>> {
                     host == "localhost" || host.ends_with(".ts.net") || host.ends_with(".local")
                 }
             };
-            if !private {
+            if !private && !confirmed.contains(&url.origin().ascii_serialization()) {
                 return Err(
                     "Use HTTPS for public addresses, or enter a LAN or Tailscale address.".into(),
                 );
@@ -100,7 +106,7 @@ fn inspect(root: &Path) -> Result<Value> {
     let output = root.join("network-inspect.json");
     std::fs::write(&output, "").map_err(|e| e.to_string())?;
     let mut command = Command::new(crate::profiles::docker_executable());
-    command.args(["inspect","--format",r#"{"origins":{{json (index .Config.Labels "io.kindred.network-origins")}},"ports":{{json .NetworkSettings.Ports}},"files":{{json (index .Config.Labels "com.docker.compose.project.config_files")}},"directory":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}}}"#,"kindred-standalone-server-1"]);
+    command.args(["inspect","--format",r#"{"origins":{{json (index .Config.Labels "io.kindred.network-origins")}},"confirmed_http":{{json (index .Config.Labels "io.kindred.network-confirmed-http")}},"ports":{{json .NetworkSettings.Ports}},"files":{{json (index .Config.Labels "com.docker.compose.project.config_files")}},"directory":{{json (index .Config.Labels "com.docker.compose.project.working_dir")}}}"#,"kindred-standalone-server-1"]);
     crate::profiles::hidden(&mut command);
     let result = crate::setup_progress::run(&mut command, &output, Duration::from_secs(15), |_| {});
     let bytes = std::fs::read(&output).map_err(|e| e.to_string())?;
@@ -228,6 +234,30 @@ fn generated_origins(plan: &Plan, inventory: &[Interface], tailnet: &Value) -> V
     }
     origins
 }
+fn connection_origins(plan: &Plan, inventory: &[Interface], tailnet: &Value) -> Vec<String> {
+    let mut result=plan.connection_origins(inventory);
+    if plan.all_networks || plan.interfaces.iter().any(|s|inventory.iter().any(|r|r.id==s.id&&r.kind=="tailnet")) {
+        if let Some(address)=tailnet["browser_address"].as_str(){result.push(address.into());}
+    }
+    result
+}
+fn applied_response(plan: &Plan, actual: &[String], pending: bool, tailnet: Value, inventory: Vec<Interface>, error: Option<String>, applied: &[String]) -> Result<Value> {
+    let mut addresses=std::collections::BTreeSet::new();
+    for row in &inventory {if row.available {for ip in &row.addresses {if let Ok(ip)=ip.parse::<std::net::IpAddr>() {if usable_address(ip)&&bound(ip,actual) {addresses.insert(origin(ip));}}}}}
+    if tailnet["state"]=="shared" {if let Some(a)=tailnet["address"].as_str(){addresses.insert(a.into());}}
+    let share_active=tailnet["state"]=="shared";
+    let sharing_unknown=!matches!(tailnet["state"].as_str(),Some("shared"|"not_set_up"|"not_signed_in"));
+    let needs_reconcile=share_active!=plan.tailnet_https;
+    let mut value=network_response(plan,actual,pending,tailnet,inventory,error)?;
+    value["connection_access_supported"]=json!(true);
+    value["tailnet_https"]=json!(plan.tailnet_https);
+    value["active_origins"]=json!(applied);
+    value["applied_addresses"]=json!(addresses.into_iter().collect::<Vec<_>>());
+    value["confirmed_http_origins"]=json!(plan.confirmed_http_origins);
+    value["needs_reconcile"]=json!(needs_reconcile);
+    value["sharing_unknown"]=json!(sharing_unknown);
+    Ok(value)
+}
 fn saved_access(root: &Path, _bind: &str) -> Result<String> {
     Ok(settings(root)?.access)
 }
@@ -351,7 +381,7 @@ fn network_response(
         let Ok(ip) = address.parse::<std::net::IpAddr>() else {
             continue;
         };
-        if !usable_address(ip) || !private_browser_address(ip) || !seen.insert(ip) {
+        if !usable_address(ip) || (!private_browser_address(ip) && !plan.confirmed_http_origins.contains(&origin(ip))) || !seen.insert(ip) {
             continue;
         }
         let url = origin(ip);
@@ -428,9 +458,11 @@ fn compose_version_supported(version: &str) -> bool {
 fn compose_override(plan: &Plan) -> Result<String> {
     let origins = serde_json::to_string(&plan.origins).map_err(|e| e.to_string())?;
     let mut value = format!(
-        "services:\n  server:\n    environment:\n      KINDRED_ALLOWED_ORIGINS: {}\n    labels:\n      io.kindred.network-origins: {}\n    ports: !override\n",
+        "services:\n  server:\n    environment:\n      KINDRED_ALLOWED_ORIGINS: {}\n      KINDRED_CONFIRMED_HTTP_ORIGINS: {}\n    labels:\n      io.kindred.network-origins: {}\n      io.kindred.network-confirmed-http: {}\n    ports: !override\n",
         serde_json::to_string(&origins).unwrap(),
-        serde_json::to_string(&origins).unwrap()
+        serde_json::to_string(&serde_json::to_string(&plan.confirmed_http_origins).unwrap()).unwrap(),
+        serde_json::to_string(&origins).unwrap(),
+        serde_json::to_string(&serde_json::to_string(&plan.confirmed_http_origins).unwrap()).unwrap()
     );
     for ip in plan.bindings()? {
         value.push_str(&format!("      - target: 9444\n        published: \"9444\"\n        host_ip: {}\n        protocol: tcp\n",serde_json::to_string(&ip).unwrap()));
@@ -474,6 +506,9 @@ pub async fn standalone_network(
     disable_tailnet: Option<bool>,
     interfaces: Option<Vec<String>>,
     all_networks: Option<bool>,
+    apply_access: Option<bool>,
+    tailnet_https: Option<bool>,
+    confirmed_http_origins: Option<Vec<String>>,
 ) -> Result<Value> {
     crate::profiles::local_admin(&window)?;
     let app = window.app_handle().clone();
@@ -485,9 +520,17 @@ pub async fn standalone_network(
             let info=inspect(&root)?;let actual=active_bindings(&info)?;let mut plan=settings(&root)?;
             let discovered=crate::network_interfaces::discover(&root);let discovery_error=discovered.as_ref().err().cloned();let mut inventory=discovered.unwrap_or_default();
             let mut tailnet=tailnet(&root);
+            let applying=apply_access.unwrap_or(false);
+            let original=plan.clone();
+            let accepted=confirmed_http_origins.unwrap_or_default();
+            let desired_share=applying && (access.as_deref()==Some("tailnet") || access.as_deref()==Some("lan") && tailnet_https.unwrap_or(false));
+            let enable_tailnet=if applying {Some(desired_share)} else {enable_tailnet};
+            let disable_tailnet=if applying {Some(!desired_share && tailnet["state"]=="shared")} else {disable_tailnet};
+            let restart=if applying {Some(true)} else {restart};
             enrich_tailnet(&mut inventory,&tailnet);
             if enable_tailnet.unwrap_or(false)&&disable_tailnet.unwrap_or(false){return Err("Choose one phone access action at a time.".into());}
-            let changing=access.is_some()||bind.is_some()||addresses.is_some()||interfaces.is_some()||all_networks.is_some()||enable_tailnet.unwrap_or(false);
+            let changing=disable_tailnet.unwrap_or(false)||access.is_some()||bind.is_some()||addresses.is_some()||interfaces.is_some()||all_networks.is_some()||enable_tailnet.unwrap_or(false)||applying;
+            if !applying {legacy_change_allowed(&plan,changing,restart.unwrap_or(false))?;}
             if let Some(mode)=access.as_deref(){
                 if !matches!(mode,"local"|"tailnet"|"lan"){return Err("Choose who can reach this Kindred.".into());}
                 plan.access=mode.into();
@@ -499,31 +542,52 @@ pub async fn standalone_network(
                 if let Some(error)=&discovery_error{return Err(error.clone());}
                 plan.select(&interfaces.unwrap_or_else(||plan.interfaces.iter().map(|r|r.id.clone()).collect()),all_networks.unwrap_or(false),&inventory)?;
             }
-            if let Some(addresses)=addresses {plan.extra_origins=normalize_origins(addresses)?;}
+            if let Some(addresses)=addresses {plan.extra_origins=if applying {normalize_origins_with_consent(addresses,&accepted)?}else{normalize_origins(addresses)?};}
+            if applying {
+                if access.is_none(){return Err("Choose who can reach this Kindred.".into());}
+                if !crate::local_server::connection_access_available(){return Err("Update the local server to match this app before changing connection access.".into());}
+                if desired_share && !matches!(tailnet["state"].as_str(),Some("shared"|"not_set_up")){return Err(tailnet["message"].as_str().unwrap_or("Check Tailscale before saving.").into());}
+                if !desired_share && original.tailnet_https && !matches!(tailnet["state"].as_str(),Some("shared"|"not_set_up")){return Err("Could not confirm whether Kindred is still shared. Check Tailscale before changing access.".into());}
+                if plan.access!="lan" {plan.extra_origins.clear();}
+                if let Some(address)=tailnet["address"].as_str(){plan.extra_origins.retain(|v|v!=address);if desired_share {plan.extra_origins.push(address.into());}}
+                plan.tailnet_https=desired_share;
+                let mut wanted_origins=plan.extra_origins.clone();
+                if plan.access=="lan" {wanted_origins.extend(connection_origins(&plan,&inventory,&tailnet));}
+                plan.origins=normalize_origins_with_consent(wanted_origins,&accepted)?;
+                plan.confirm_http(&plan.origins.clone(),&accepted)?;
+                plan.preflight(&inventory)?;
+                check_compose(&root)?;
+                for address in plan.bindings()? {if address!="0.0.0.0" {let ip:std::net::IpAddr=address.parse().map_err(|_|"Invalid listening address.")?;if !bound(ip,&actual){std::net::TcpListener::bind(std::net::SocketAddr::new(ip,9444)).map_err(|e|format!("Could not listen on {address}: {e}. Current settings were not changed."))?;}}}
+            }
             if disable_tailnet.unwrap_or(false){
                 if tailnet["state"]!="shared"{return Err("Only the confirmed Kindred phone share can be turned off here. Check Tailscale before trying again.".into());}
+                host.setup.lock().unwrap()["stage"]=json!("Turning off Kindred sharing…");
                 let mut command=tailnet_command(true);crate::setup_progress::run(&mut command,&root.join("tailnet-disable.log"),Duration::from_secs(30),|_|{}).map_err(|_|"Could not turn off private phone sharing. Check Tailscale and try again.".to_string())?;
-                tailnet=self::tailnet(&root);if tailnet["state"]!="not_set_up"{return Err("Phone sharing could not be confirmed off. Check Tailscale before retrying.".into());}
+                tailnet=self::tailnet(&root);if tailnet["state"]!="not_set_up"{return Err("Sharing could not be confirmed off. Check Tailscale before retrying.".into());}
+                if !applying {plan.tailnet_https=false;if plan.access=="tailnet" {plan.access="local".into();}if let Some(address)=tailnet["address"].as_str(){plan.extra_origins.retain(|v|v!=address);}}
             }
             if enable_tailnet.unwrap_or(false){
-                if plan.access!="tailnet"{return Err("Choose My devices with Tailscale first.".into());}
+                if plan.access!="tailnet" && !(applying && plan.access=="lan"){return Err("Choose My devices with Tailscale first.".into());}
                 if !matches!(tailnet["state"].as_str(),Some("shared"|"not_set_up")){return Err(tailnet["message"].as_str().unwrap_or("Set up Tailscale first, then check again.").into());}
                 let address=tailnet["address"].as_str().ok_or("Tailscale has no phone address.")?.to_owned();
                 if !plan.extra_origins.contains(&address){plan.extra_origins.push(address);}
                 // Validate the complete setting before touching the host share.
-                normalize_origins(plan.extra_origins.clone())?;
+                normalize_origins_with_consent(plan.extra_origins.clone(),&plan.confirmed_http_origins)?;
                 if tailnet["state"]!="shared"{
+                    host.setup.lock().unwrap()["stage"]=json!("Setting up encrypted access…");
                     let mut command=tailnet_command(false);crate::setup_progress::run(&mut command,&root.join("tailnet-enable.log"),Duration::from_secs(30),|_|{}).map_err(|_|"Tailscale needs attention. Open a terminal and run tailscale serve --bg http://127.0.0.1:9444, follow its HTTPS consent instructions, then check again.".to_string())?;
                     tailnet=self::tailnet(&root);if tailnet["state"]!="shared"{return Err("Private phone sharing could not be confirmed. Check Tailscale and try again.".into());}
                 }
             }
             if changing {
                 let mut origins=plan.extra_origins.clone();if plan.access=="lan"{origins.extend(generated_origins(&plan,&inventory,&tailnet));}
-                plan.origins=normalize_origins(origins)?;
+                if !applying {plan.origins=normalize_origins(origins)?;plan.confirmed_http_origins.clear();plan.tailnet_https=plan.access=="tailnet"&&tailnet["state"]=="shared";}
                 crate::local_files::atomic(&root.join("network.json"),&serde_json::to_value(&plan).map_err(|e|e.to_string())?)?;
             }
             let applied:Vec<String>=serde_json::from_str(info["origins"].as_str().unwrap_or("[]")).unwrap_or_default();
-            let wanted=plan.bindings()?;let pending=!matches_bindings(&wanted,&actual)||plan.origins!=applied;
+            let wanted=plan.bindings()?;let applied_http:Vec<String>=serde_json::from_str(info["confirmed_http"].as_str().unwrap_or("[]")).unwrap_or_default();
+            let runtime_verified=if applying || crate::local_server::connection_access_available() {crate::local_server::connection_policy_matches(&applied,&applied_http)} else {true};
+            let pending=!matches_bindings(&wanted,&actual)||plan.origins!=applied||plan.confirmed_http_origins!=applied_http||!runtime_verified;
             if restart.unwrap_or(false)&&pending {
                 if crate::local_server::version().as_deref()!=Some(env!("CARGO_PKG_VERSION")){return Err("Update the local server to match this app before applying network settings.".into());}
                 plan.preflight(&inventory)?;
@@ -546,18 +610,40 @@ pub async fn standalone_network(
                 up.args(["up","-d","--no-build","--pull","never","--force-recreate","server"]);crate::profiles::hidden(&mut up);host.setup.lock().unwrap()["stage"]=json!("Restarting local server");
                 crate::setup_progress::run(&mut up,&root.join("network-restart.log"),Duration::from_secs(180),|_|{})?;
                 let deadline=Instant::now()+Duration::from_secs(90);
+                host.setup.lock().unwrap()["stage"]=json!("Reconnecting…");
                 while crate::local_server::version().is_none(){if Instant::now()>=deadline{return Err("The server has not reconnected yet. Check local server status before retrying.".into());}std::thread::sleep(Duration::from_secs(1));}
+                host.setup.lock().unwrap()["stage"]=json!("Checking access…");
                 let after=inspect(&root)?;let current=active_bindings(&after)?;let after_origins:Vec<String>=serde_json::from_str(after["origins"].as_str().unwrap_or("[]")).unwrap_or_default();
-                if !matches_bindings(&wanted,&current)||plan.origins!=after_origins{return Err("The server restarted but its listening addresses did not match the saved settings. Check again before retrying.".into());}
-                return network_response(&plan,&current,false,tailnet,inventory,discovery_error);
+                if !matches_bindings(&wanted,&current)||plan.origins!=after_origins||plan.confirmed_http_origins!=serde_json::from_str::<Vec<String>>(after["confirmed_http"].as_str().unwrap_or("[]")).unwrap_or_default(){return Err("The server restarted but its listening addresses did not match the saved settings. Check again before retrying.".into());}
+                if applying&&!crate::local_server::connection_policy_matches(&plan.origins,&plan.confirmed_http_origins){return Err("The server restarted but its connection policy could not be confirmed. Check again before retrying.".into());}
+                return applied_response(&plan,&current,false,tailnet,inventory,discovery_error,&after_origins);
             }
-            network_response(&plan,&actual,pending,tailnet,inventory,discovery_error)
-        })();*host.setup.lock().unwrap()=previous;result
+            applied_response(&plan,&actual,pending,tailnet,inventory,discovery_error,&applied)
+        })();*host.setup.lock().unwrap()=previous;result.map(|mut value|{value["connection_access_server_supported"]=json!(crate::local_server::connection_access_available());value})
     }).await.map_err(|e|e.to_string())?
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn connection_access_legacy_changes_cannot_inherit_confirmed_origins() {
+        let mut plan=Plan::default();plan.origins=vec!["http://203.0.113.7:9444".into()];plan.confirmed_http_origins=plan.origins.clone();let before=plan.clone();
+        assert!(legacy_change_allowed(&plan,false,false).is_ok(),"read-only legacy observation remains available");
+        for (changing,restart) in [(true,false),(false,true),(true,true)] {assert!(legacy_change_allowed(&plan,changing,restart).is_err());assert_eq!(plan,before);}
+        assert!(legacy_change_allowed(&Plan::default(),true,true).is_ok(),"old private-network settings retain their legacy behavior");
+    }
+    #[test]
+    fn connection_access_saved_consent_cannot_authorize_unselected_addresses() {
+        let root=std::env::temp_dir().join(format!("kindred-consent-{}",uuid::Uuid::new_v4()));std::fs::create_dir(&root).unwrap();let mut plan=Plan::default();plan.access="lan".into();plan.origins=vec!["http://203.0.113.7:9444".into()];plan.confirmed_http_origins=plan.origins.clone();
+        std::fs::write(root.join("network.json"),serde_json::to_vec(&plan).unwrap()).unwrap();assert_eq!(settings(&root).unwrap(),plan);
+        plan.confirmed_http_origins.push("http://203.0.113.8:9444".into());std::fs::write(root.join("network.json"),serde_json::to_vec(&plan).unwrap()).unwrap();assert!(settings(&root).is_err());std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn connection_access_current_state_uses_actual_bindings_not_the_saved_plan() {
+        let mut plan=Plan::default();plan.access="lan".into();plan.origins=vec!["http://192.168.1.20:9444".into()];let rows=vec![Interface{id:"wifi".into(),name:"Wi-Fi".into(),kind:"lan".into(),addresses:vec!["192.168.1.20".into()],available:true}];
+        let value=applied_response(&plan,&["127.0.0.1".into()],true,json!({"state":"not_set_up"}),rows.clone(),None,&[]).unwrap();assert_eq!(value["applied_addresses"],json!([]));assert_eq!(value["active_origins"],json!([]));assert_eq!(value["pending"],true);
+        let value=applied_response(&Plan::default(),&["127.0.0.1".into(),"192.168.1.20".into()],true,json!({"state":"shared","address":"https://computer.tailnet.ts.net"}),rows,None,&[]).unwrap();assert_eq!(value["applied_addresses"],json!(["http://192.168.1.20:9444","https://computer.tailnet.ts.net"]));assert_eq!(value["needs_reconcile"],true);assert_eq!(value["tailnet_address_ready"],false);
+    }
     #[test]
     fn applied_https_share_stays_pairable_with_explicit_lan_bindings() {
         let mut plan = Plan::default();
@@ -651,6 +737,7 @@ mod tests {
             id: "fixture".into(),
             addresses: vec!["192.168.1.20".into(), "fd7a:115c::5".into()],
         }];
+        plan.origins=vec!["http://192.168.1.20:9444".into()];plan.confirmed_http_origins=plan.origins.clone();
         std::fs::write(root.join("network.yaml"), compose_override(&plan).unwrap()).unwrap();
         let output = Command::new(crate::profiles::docker_executable())
             .args(["compose", "-f"])
@@ -666,6 +753,8 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["services"]["server"]["environment"]["KINDRED_CONFIRMED_HTTP_ORIGINS"],serde_json::to_string(&plan.confirmed_http_origins).unwrap());
+        assert_eq!(value["services"]["server"]["labels"]["io.kindred.network-confirmed-http"],serde_json::to_string(&plan.confirmed_http_origins).unwrap());
         let ports = value["services"]["server"]["ports"].as_array().unwrap();
         let mut actual: Vec<_> = ports
             .iter()
@@ -678,6 +767,8 @@ mod tests {
                 .iter()
                 .all(|p| p["target"] == 9444 && p["published"] == "9444")
         );
+        std::fs::write(root.join("network.yaml"),compose_override(&Plan::default()).unwrap()).unwrap();
+        let revoked=Command::new(crate::profiles::docker_executable()).args(["compose","-f"]).arg(root.join("base.yaml")).arg("-f").arg(root.join("network.yaml")).args(["config","--format","json"]).output().unwrap();assert!(revoked.status.success());let revoked:Value=serde_json::from_slice(&revoked.stdout).unwrap();assert_eq!(revoked["services"]["server"]["ports"].as_array().unwrap().len(),1);assert_eq!(revoked["services"]["server"]["ports"][0]["host_ip"],"127.0.0.1");assert_eq!(revoked["services"]["server"]["environment"]["KINDRED_ALLOWED_ORIGINS"],"[]");assert_eq!(revoked["services"]["server"]["environment"]["KINDRED_CONFIRMED_HTTP_ORIGINS"],"[]");
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]

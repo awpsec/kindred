@@ -19,6 +19,10 @@ pub struct Plan {
     pub extra_origins: Vec<String>,
     pub interfaces: Vec<Selection>,
     pub all_networks: bool,
+    /// Desired Kindred-owned HTTPS root share, independent of LAN listeners.
+    pub tailnet_https: bool,
+    /// Exact HTTP origins accepted in the single Save confirmation.
+    pub confirmed_http_origins: Vec<String>,
 }
 impl Default for Plan {
     fn default() -> Self {
@@ -30,14 +34,19 @@ impl Default for Plan {
             extra_origins: vec![],
             interfaces: vec![],
             all_networks: false,
+            tailnet_https: false,
+            confirmed_http_origins: vec![],
         }
     }
 }
 impl Plan {
     pub fn decode(value: serde_json::Value) -> Result<Self, String> {
         let legacy = value.get("schema").is_none();
+        let infer_share = value.get("tailnet_https").is_none();
         let mut plan: Self = serde_json::from_value(value)
             .map_err(|_| "Could not read the saved network settings.".to_string())?;
+        if infer_share { plan.tailnet_https = plan.access == "tailnet"; }
+        if plan.confirmed_http_origins.len() > 8 { return Err("Choose up to 8 connection addresses.".into()); }
         if !legacy && plan.schema != 2 {
             return Err("Unsupported saved network settings version.".into());
         }
@@ -159,6 +168,20 @@ impl Plan {
             .into_iter()
             .collect()
     }
+    pub fn connection_origins(&self, inventory: &[Interface]) -> Vec<String> {
+        let addresses: Vec<_> = if self.all_networks {
+            inventory.iter().filter(|r|r.available).flat_map(|r|r.addresses.clone()).collect()
+        } else { self.interfaces.iter().flat_map(|r|r.addresses.clone()).collect() };
+        addresses.into_iter().filter_map(|s|s.parse::<IpAddr>().ok()).filter(|ip|usable_address(*ip)).map(origin).collect::<BTreeSet<_>>().into_iter().collect()
+    }
+    pub fn confirm_http(&mut self, origins: &[String], confirmed: &[String]) -> Result<(), String> {
+        let wanted: BTreeSet<_> = origins.iter().filter(|s|s.starts_with("http://")).cloned().collect();
+        let accepted: BTreeSet<_> = confirmed.iter().cloned().collect();
+        if confirmed.len()>8 || wanted != accepted {
+            return Err("Confirm the exact unencrypted connection addresses before saving.".into());
+        }
+        self.confirmed_http_origins=accepted.into_iter().collect();Ok(())
+    }
     pub fn preflight(&self, inventory: &[Interface]) -> Result<(), String> {
         for selected in &self.interfaces {
             let row = inventory
@@ -261,5 +284,20 @@ mod tests {
         let mut plan = Plan::default();
         plan.select(&["wifi".into()], false, &rows).unwrap();
         assert!(plan.generated_origins(&rows).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod connection_access_tests {
+    use super::*;
+    #[test] fn connection_access_consent_is_exact_and_revocable(){
+        let mut p=Plan::default();let origins=vec!["http://203.0.113.7:9444".into(),"https://computer.tailnet.ts.net".into()];
+        assert!(p.confirm_http(&origins,&[]).is_err());assert!(p.confirm_http(&origins,&["http://203.0.113.8:9444".into()]).is_err());
+        p.confirm_http(&origins,&[origins[0].clone()]).unwrap();let saved=p.clone();assert!(p.confirm_http(&origins,&origins).is_err());assert_eq!(p,saved);
+        let v=serde_json::to_value(&p).unwrap();assert_eq!(Plan::decode(v).unwrap(),p);p.confirm_http(&[],&[]).unwrap();assert!(p.confirmed_http_origins.is_empty());
+    }
+    #[test] fn connection_access_old_share_and_public_selection_preserve_scope(){
+        let old=serde_json::json!({"schema":2,"access":"tailnet","bind":"127.0.0.1","origins":["https://computer.tailnet.ts.net"]});assert!(Plan::decode(old).unwrap().tailnet_https);
+        let mut p=Plan::default();let inventory=vec![Interface{id:"wired".into(),name:"Ethernet".into(),kind:"lan".into(),available:true,addresses:vec!["203.0.113.7".into()]}];p.select(&["wired".into()],false,&inventory).unwrap();assert!(p.generated_origins(&inventory).is_empty());assert_eq!(p.connection_origins(&inventory),vec!["http://203.0.113.7:9444"]);assert_eq!(p.bindings().unwrap(),vec!["127.0.0.1","203.0.113.7"]);
     }
 }
