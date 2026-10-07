@@ -3587,7 +3587,7 @@ function updateDesktopState() {
     $("desktop-mode").textContent = takeover
       ? "You have control"
       : updating ? "Updating computer" : "Watching live";
-  $("desktop-paste").disabled = !takeover || !state.desktopConnected;
+  $("desktop-paste").disabled = !takeover || !state.desktopConnected || !computerInputReady() || $("desktop-paste").dataset.pending==='true';
   if(state.teaching && (!takeover || !state.desktopConnected) && !state.teaching.paused){state.teaching.paused=true;renderTeaching();}
   $("desktop-address").textContent = location.host;
 }
@@ -3784,9 +3784,11 @@ $("take-control").onclick = () => perform(()=>state.teaching && state.desktopCon
 $("teach-task").onclick = () => perform(()=>state.teaching ? reviewTeaching() : startTeaching());
 $("computer-settings-link").onclick = () =>
   perform(() => openSettings("bot-computer"));
+function computerInputReady(){return window.__KINDRED_MOBILE_PLATFORM!=='ios'||$('app').dataset.mobileResizing!=='true';}
 async function pasteIntoComputer(value) {
   if (!state.rfb || !state.status.takeover || !state.desktopControlRequested)
     throw new Error("Take control of the computer first.");
+  if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
   if (!value) throw new Error("Your clipboard has no text to paste.");
   if (value.length > 16000) throw new Error("Paste up to 16,000 characters at a time.");
   // Use the current control session: the HTTP input path must evict its VNC lease.
@@ -3795,25 +3797,31 @@ async function pasteIntoComputer(value) {
   for (const character of value.replace(/\r\n?/g, "\n")) {
     if (state.rfb !== rfb || !state.desktopConnected || !state.status.takeover || !state.desktopControlRequested)
       throw new Error("Computer control ended before the paste finished.");
+    if(!computerInputReady())throw new Error(sent?"The computer view changed before the paste finished. Check the text before trying again.":"The computer view is adjusting. Try Paste again when it settles.");
     const point = character.codePointAt(0);
     const key = character === "\n" ? 0xff0d : character === "\t" ? 0xff09 : point <= 0xff ? point : 0x01000000 | point;
     rfb.sendKey(key);
     if (++sent % 32 === 0) await new Promise(resolve => setTimeout(resolve, 10));
   }
 }
-$("desktop-paste").onclick = () => perform(async () => {
+$("desktop-paste").onclick = async () => {await perform(async () => {
+  if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
+  const expectedRFB=state.rfb;
   let value;
   try {
     value = await navigator.clipboard.readText();
   } catch {
+    if(state.rfb!==expectedRFB)throw new Error("The computer connection changed. Check the current computer before trying Paste again.");
+    if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
     // Some browsers deny clipboard reads. Keep a direct paste target outside chat.
     $("paste-text").value = "";
     $("text-dialog").showModal();
     $("paste-text").focus();
     return;
   }
+  if(state.rfb!==expectedRFB)throw new Error("The computer connection changed. Check the current computer before trying Paste again.");
   await pasteIntoComputer(value);
-}, $("desktop-paste"));
+}, $("desktop-paste"));updateDesktopState();};
 $("text-form").onsubmit = (e) => {
   e.preventDefault();
   perform(async () => {
@@ -8111,13 +8119,18 @@ async function decisionsConnection() {
 }
 
 installMobileNavigation({
+ inputAvailabilityChanged:updateDesktopState,
  route:()=>({key:currentConversationId()+'|'+screenBotId(),target:$('app').hidden||document.querySelector('.artifact-studio')||!$('details-panel').hidden?'none':!$('computer-panel').hidden?(document.documentElement.dataset.iosComputer==='overlay'||$('computer-panel').classList.contains('expanded')?'bot-chat':'none'):document.documentElement.dataset.iosLayout==='compact'&&!$('app').classList.contains('sidebar-open')&&state.bot?'chat-list':'none'}),
  back:target=>{saveDraft();captureChatAnchor();if(target==='bot-chat'){leaveControlPane();state.desktopNavigationHidden=true;state.desktopNavigationBot=screenBotId();state.desktopNavigationExpanded=$('computer-panel').classList.contains('expanded');$('computer-panel').hidden=true;$('computer-panel').inert=true;renderControlNotice(true);}else $('app').classList.add('sidebar-open');},
  resized:()=>{
    // Keep the pre-resize message anchor; measuring after reflow loses its offset.
    // End a held pointer at its last validated position before refitting. Do not
    // send a new press or replay the interrupted click after the geometry changes.
-   const rfb=state.rfb;if(rfb?._mouseMoveTimer!=null){clearTimeout(rfb._mouseMoveTimer);rfb._mouseMoveTimer=null;}
+   const rfb=state.rfb,keyboard=rfb?._keyboard;
+   // Cancel a deferred AltGr modifier before releasing held keys; flushing that
+   // pending sequence would synthesize a new Control press during the resize.
+   if(keyboard?._altGrArmed){keyboard._altGrArmed=false;clearTimeout(keyboard._altGrTimeout);}
+   keyboard?._allKeysUp();if(rfb?._mouseMoveTimer!=null){clearTimeout(rfb._mouseMoveTimer);rfb._mouseMoveTimer=null;}
    if(rfb?._mouseButtonMask&&rfb._mousePos){
      const prior=state.desktopInputTransform,current=rfb._display,viewport=current?._viewportLoc;
      let {x,y}=rfb._mousePos;
