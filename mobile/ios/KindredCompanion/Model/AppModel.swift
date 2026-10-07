@@ -259,7 +259,9 @@ final class AppModel {
 
     // MARK: Sign-in
 
-    func signIn(origin: ServerOrigin, login rawLogin: String, password: String) async throws {
+    func signIn(origin: ServerOrigin, login rawLogin: String, password: String,
+                confirmedPrivateOrigin: ServerOrigin? = nil) async throws {
+        try ServerConnectionConsent.require(origin: origin, confirmedPrivateOrigin: confirmedPrivateOrigin)
         let login = rawLogin.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !login.isEmpty, login.count <= 80 else { throw AccountActionError.invalidLogin }
         guard !password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, password.utf8.count <= 1024 else {
@@ -332,7 +334,8 @@ final class AppModel {
     /// Called only after the person confirmed `link.origin`. The code is spent
     /// at most once; failures are reported, never retried here.
     @discardableResult
-    func pair(with link: PairingLink) async throws -> UUID {
+    func pair(with link: PairingLink, confirmedPrivateOrigin: ServerOrigin? = nil) async throws -> UUID {
+        try ServerConnectionConsent.require(origin: link.origin, confirmedPrivateOrigin: confirmedPrivateOrigin)
         guard !isPairing else { throw PairingError.server("Another pairing is already in progress.") }
         isPairing = true
         defer { isPairing = false }
