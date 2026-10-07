@@ -41,6 +41,39 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Kindred uses the camera when you choose to scan a pairing code or take a photo or video to attach to a conversation.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Kindred connects to your computer on the private network when you choose its address.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>10.0.0.0/8</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>172.16.0.0/12</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>192.168.0.0/16</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>100.64.0.0/10</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>fd00::/8</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Kindred uses the microphone when you choose to dictate or record audio in a conversation.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
