@@ -286,8 +286,8 @@ public enum PairingError: Error, Equatable, LocalizedError {
     /// Steps shown under "Help" for connection failures.
     public static let connectionChecklist: [String] = [
         "Kindred is running and the computer is awake.",
-        "For direct network access, Server admin › Network listens on All interfaces.",
-        "This HTTPS address is trusted and listed in Server admin › Network › Connection addresses.",
+        "Server admin › Networking shows an applied address reachable from this phone.",
+        "The exact address is listed under Networking; names need trusted HTTPS, and private HTTP needs the updated phone app.",
         "Your phone is on the same network, or its VPN (such as Tailscale) is on.",
     ]
 }
