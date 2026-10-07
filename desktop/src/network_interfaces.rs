@@ -11,6 +11,64 @@ pub struct Interface {
     pub available: bool,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscoveryFailureKind {
+    Enumeration,
+    Command,
+    OutputRead,
+    OutputTooLarge,
+    OutputInvalid,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DiscoveryFailure {
+    pub kind: DiscoveryFailureKind,
+    pub elapsed_ms: u64,
+    pub process: Option<crate::setup_progress::RunFailure>,
+    pub output_bytes: Option<u64>,
+    pub output_removed: bool,
+    pub io_error_kind: Option<String>,
+}
+
+impl std::fmt::Display for DiscoveryFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use crate::setup_progress::RunFailureKind;
+        let message = match self.process.as_ref().map(|p| &p.kind) {
+            Some(RunFailureKind::Timeout) => {
+                "Reading this computer's networks took too long. Try again."
+            }
+            Some(RunFailureKind::Spawn) => {
+                "The system network reader could not start. Check the system network settings."
+            }
+            Some(RunFailureKind::Nonzero) => {
+                "The system network reader failed. Check the system network settings, then try again."
+            }
+            _ => "Could not read this computer's networks. Check the system network settings.",
+        };
+        f.write_str(message)
+    }
+}
+
+fn discovery_failure(kind: DiscoveryFailureKind, start: std::time::Instant) -> DiscoveryFailure {
+    DiscoveryFailure {
+        kind,
+        elapsed_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+        process: None,
+        output_bytes: None,
+        output_removed: true,
+        io_error_kind: None,
+    }
+}
+
+#[cfg(unix)]
+pub fn discover_with_diagnostics(
+    root: &std::path::Path,
+) -> Result<Vec<Interface>, DiscoveryFailure> {
+    let start = std::time::Instant::now();
+    discover(root).map_err(|_| discovery_failure(DiscoveryFailureKind::Enumeration, start))
+}
+
 pub fn private_address(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v) => {
@@ -193,12 +251,23 @@ pub fn discover(_root: &std::path::Path) -> Result<Vec<Interface>, String> {
 
 #[cfg(windows)]
 pub fn discover(_root: &std::path::Path) -> Result<Vec<Interface>, String> {
+    discover_with_diagnostics(_root).map_err(|e| e.to_string())
+}
+
+#[cfg(windows)]
+pub fn discover_with_diagnostics(
+    _root: &std::path::Path,
+) -> Result<Vec<Interface>, DiscoveryFailure> {
+    let start = std::time::Instant::now();
     let script = "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $adapters=@(Get-NetAdapter -IncludeHidden); ConvertTo-Json -Depth 4 -Compress -InputObject @((Get-NetIPAddress | Group-Object InterfaceIndex | ForEach-Object { $index=[int]$_.Name; $a=$adapters|Where-Object { $_.ifIndex -eq $index }|Select-Object -First 1; [pscustomobject]@{id=$_.Group[0].InterfaceAlias; addresses=@($_.Group.IPAddress); description=$a.InterfaceDescription; up=($a.Status -eq 'Up')} }))";
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", script]);
     let bytes = read_command(_root, command)?;
-    let values: Vec<serde_json::Value> = serde_json::from_slice(&bytes)
-        .map_err(|_| "Unreadable network information.".to_string())?;
+    let values: Vec<serde_json::Value> = serde_json::from_slice(&bytes).map_err(|_| {
+        let mut failure = discovery_failure(DiscoveryFailureKind::OutputInvalid, start);
+        failure.output_bytes = Some(bytes.len() as u64);
+        failure
+    })?;
     let mut raw = BTreeMap::new();
     for row in &values {
         if let (Some(id), Some(addresses)) = (row["id"].as_str(), row["addresses"].as_array()) {
@@ -223,29 +292,54 @@ pub fn discover(_root: &std::path::Path) -> Result<Vec<Interface>, String> {
     Ok(result)
 }
 
-#[cfg(any(windows, target_os = "macos"))]
+#[cfg(any(windows, target_os = "macos", test))]
 fn read_command(
     root: &std::path::Path,
     mut command: std::process::Command,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, DiscoveryFailure> {
+    let start = std::time::Instant::now();
     let output = root.join(format!("network-enumeration-{}.txt", uuid::Uuid::new_v4()));
     crate::profiles::hidden(&mut command);
-    let result = crate::setup_progress::run(
+    let result = crate::setup_progress::run_detailed(
         &mut command,
         &output,
         std::time::Duration::from_secs(10),
         |_| {},
     );
-    let bytes = if std::fs::metadata(&output).is_ok_and(|m| m.len() <= 262144) {
-        std::fs::read(&output).map_err(|e| e.to_string())
-    } else {
-        Err("Network information is too large.".into())
+    let metadata = std::fs::metadata(&output);
+    let output_bytes = metadata.as_ref().ok().map(|m| m.len());
+    let bytes = match result {
+        Err(process) => {
+            let mut failure = discovery_failure(DiscoveryFailureKind::Command, start);
+            failure.process = Some(process);
+            Err(failure)
+        }
+        Ok(_) => match metadata {
+            Ok(m) if m.len() <= 262144 => std::fs::read(&output).map_err(|e| {
+                let mut failure = discovery_failure(DiscoveryFailureKind::OutputRead, start);
+                failure.io_error_kind = Some(format!("{:?}", e.kind()));
+                failure
+            }),
+            Ok(_) => Err(discovery_failure(
+                DiscoveryFailureKind::OutputTooLarge,
+                start,
+            )),
+            Err(e) => {
+                let mut failure = discovery_failure(DiscoveryFailureKind::OutputRead, start);
+                failure.io_error_kind = Some(format!("{:?}", e.kind()));
+                Err(failure)
+            }
+        },
     };
-    let _ = std::fs::remove_file(output);
-    result.map_err(|_| {
-        "Could not read this computer's networks. Check the system network settings.".to_string()
-    })?;
-    bytes
+    let removed = match std::fs::remove_file(&output) {
+        Ok(()) => true,
+        Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+    };
+    bytes.map_err(|mut failure| {
+        failure.output_bytes = output_bytes;
+        failure.output_removed = removed;
+        failure
+    })
 }
 
 #[cfg(test)]
@@ -364,5 +458,77 @@ mod tests {
         assert_eq!(rows[0].name, "Wi-Fi");
         assert_eq!(rows[0].addresses.len(), 1);
         assert_eq!(rows[1].name, "Docker");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod discovery_diagnostics_regression {
+    use super::*;
+    fn root() -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!(
+            "kindred-discovery-regression-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&p).unwrap();
+        p
+    }
+    #[test]
+    fn discovery_diagnostics_nonzero_cause_survives_cleanup() {
+        let p = root();
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "printf PRIVATE_FIXTURE_STDERR >&2; exit 17"]);
+        let error = read_command(&p, command).unwrap_err();
+        let value = serde_json::to_value(&error).unwrap();
+        assert!(std::fs::read_dir(&p).unwrap().next().is_none());
+        std::fs::remove_dir_all(&p).unwrap();
+        assert!(!value.to_string().contains("PRIVATE_FIXTURE_STDERR"));
+        assert_eq!(value["kind"], "command");
+        assert_eq!(value["process"]["kind"], "nonzero");
+        assert_eq!(value["process"]["exit_code"], 17);
+        assert!(value["elapsed_ms"].as_u64().unwrap() < 10000);
+        assert_eq!(value["output_removed"], true);
+    }
+    #[test]
+    fn discovery_diagnostics_spawn_cause_survives_cleanup() {
+        let p = root();
+        let command = std::process::Command::new(p.join("missing-owned-fixture"));
+        let error = read_command(&p, command).unwrap_err();
+        let value = serde_json::to_value(&error).unwrap();
+        assert!(std::fs::read_dir(&p).unwrap().next().is_none());
+        std::fs::remove_dir_all(&p).unwrap();
+        assert_eq!(value["kind"], "command");
+        assert_eq!(value["process"]["kind"], "spawn");
+        assert!(value["elapsed_ms"].as_u64().unwrap() < 10000);
+        assert_eq!(value["output_removed"], true);
+    }
+    #[test]
+    fn discovery_diagnostics_actual_ten_second_timeout_cleans_output() {
+        let p = root();
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "exec sleep 30"]);
+        let error = read_command(&p, command).unwrap_err();
+        let value = serde_json::to_value(&error).unwrap();
+        assert_eq!(value["kind"], "command");
+        assert_eq!(value["process"]["kind"], "timeout");
+        assert!((10000..13000).contains(&value["elapsed_ms"].as_u64().unwrap()));
+        assert_eq!(value["process"]["cleanup"]["reaped"], true);
+        assert_eq!(value["output_removed"], true);
+        assert!(std::fs::read_dir(&p).unwrap().next().is_none());
+        std::fs::remove_dir_all(&p).unwrap();
+    }
+    #[test]
+    fn discovery_diagnostics_output_cap_and_success_preserve_cleanup() {
+        let p = root();
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "head -c 262145 /dev/zero"]);
+        let value = serde_json::to_value(read_command(&p, command).unwrap_err()).unwrap();
+        assert_eq!(value["kind"], "output_too_large");
+        assert_eq!(value["output_bytes"], 262145);
+        assert_eq!(value["output_removed"], true);
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "printf fixture-success"]);
+        assert_eq!(read_command(&p, command).unwrap(), b"fixture-success");
+        assert!(std::fs::read_dir(&p).unwrap().next().is_none());
+        std::fs::remove_dir_all(&p).unwrap();
     }
 }
