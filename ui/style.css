@@ -5363,3 +5363,20 @@ html[data-mobile] .message-bubble pre{max-width:100%;overflow-x:auto}
 .connection-address button { justify-self:start; }
 
 .tailnet-sharing { overflow-wrap: anywhere; }
+
+/* Keep applied access separate from the draft and its single confirmation. */
+.access-current {font-weight:600;overflow-wrap:anywhere;}
+.access-save-bar {position:sticky;bottom:0;padding:12px;background:var(--surface);border-top:1px solid var(--line);flex-wrap:wrap;}
+.access-confirm {max-width:min(600px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;}
+.access-confirm .settings-main {padding:24px;display:flex;flex-direction:column;gap:16px;}
+.access-confirm p,.access-confirm li {overflow-wrap:anywhere;line-height:1.5;}
+.access-phone {display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding-top:16px;border-top:1px solid var(--border);}
+
+.access-confirm[open] {display:block;}
+
+.access-choice>input {appearance:none;border:2px solid var(--soft);border-radius:50%;background:var(--bg);display:grid;place-content:center;}
+.access-choice>input:checked {border-color:var(--fg);}
+.access-choice>input:checked::before {content:"";width:8px;height:8px;border-radius:50%;background:var(--fg);}
+.access-choice:has(input:disabled) {cursor:default;color:var(--soft);outline:none;background:none;opacity:.65;}
+.access-read-only .access-save-bar {position:static;}
+.access-confirm ul:empty {display:none;}
