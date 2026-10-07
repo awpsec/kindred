@@ -4063,7 +4063,7 @@ if (window.__KINDRED_TOKEN__) {
 }
 let startingWorkspace=false;
 async function openInitialWorkspace(){
-  if(startingWorkspace)return;startingWorkspace=true;
+  if(startingWorkspace||window.__KINDRED_STARTUP?.failed)return;startingWorkspace=true;
   const status=$('startup-status');status.replaceChildren(node('span','','Opening Kindred…'));
   document.documentElement.dataset.starting='';status.hidden=false;
   try{

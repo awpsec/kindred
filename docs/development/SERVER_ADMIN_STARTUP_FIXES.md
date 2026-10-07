@@ -71,3 +71,5 @@ missing modules, native stalls/rejection, API/identity failure, expired-session
 sign-in, late completion and the older desktop command contract in Chromium
 and WebKit. Its deadline is advanced with Playwright's clock. Native IPC is
 simulated; these checks are not a new native or owner-host recovery claim.
+
+Delayed main-module evaluation is also covered by `test-startup-late-module.cjs`: a held app.js response is released after the startup deadline, then DOMContentLoaded settles. The entry latch preserves recovery and does not begin native restoration after failure. Retry remains a separate document reload.
