@@ -4070,12 +4070,17 @@ async function openInitialWorkspace(){
     for(let attempt=0;;attempt++){
       try{
         await profilesUI.init(pairCode);
+        if(window.__KINDRED_STARTUP?.failed)return;
         if(state.token&&!pairCode)await connect();
+        if(window.__KINDRED_STARTUP?.failed)return;
+        window.__KINDRED_STARTUP?.finish();
         delete document.documentElement.dataset.starting;status.hidden=true;break;
       }catch(e){
+        if(window.__KINDRED_STARTUP?.failed)return;
         if(e.status===401){$('app').hidden=true;$('connect').hidden=false;state.token='';sessionStorage.removeItem('kindred-token');localStorage.removeItem('kindred-token');continue;}
         if(attempt<3){status.replaceChildren(node('span','','Reconnecting to your workspace…'));await new Promise(r=>setTimeout(r,1500));continue;}
-        status.replaceChildren(node('span','','Your server isn’t responding.'),button('Try again',()=>openInitialWorkspace(),'outline-button'));
+        if(window.__KINDRED_STARTUP){window.__KINDRED_STARTUP.fail();break;}
+        status.replaceChildren(node('span','','Your server isn’t responding.'),button('Try again',()=>location.reload(),'outline-button'));
         if(window.__KINDRED_PROFILE_HOST)status.append(button('Accounts',()=>nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark'}),'subtle-button'));
         notice(e.message||'Could not open your workspace.',true);break;
       }

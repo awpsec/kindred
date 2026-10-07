@@ -43,3 +43,31 @@ performed. No storage migration is involved.
 5. Exercise failed server startup and retry; verify the error remains visible.
 
 Native Windows/macOS update behavior still needs platform verification.
+
+## 0.85.6 served-module incident
+
+The published server omitted the `/standalone-access.js` route imported by
+`profiles.js`. The missing transitive module aborted application evaluation, so
+the initial “Opening Kindred…” screen remained in both desktop and browser.
+This was independently reproduced from the published binary and confirmed by
+read-only requests on Idyllic. Clearing storage or removing accounts cannot
+repair an HTTP 404. Preserve accounts, configuration, databases and VM volumes;
+use the corrected server package when selected by the release owner.
+
+The correction serves this dependency with JavaScript MIME. A separate classic
+`startup.js` runs before the main module graph, shows a retryable error after a
+module error or a 30-second initialization deadline, and never clears saved
+sessions or drafts. Try again reloads the document so a failed attempt cannot
+complete later over the recovery screen. Desktop users can open the same server
+in a browser, without putting credentials in the URL. This does not repair a
+stalled native bridge itself; it bounds the visible failure.
+
+`cargo test startup_module_graph_is_served_by_the_actual_router` starts the real
+asset router and uses Node's SourceTextModule parser to traverse the HTTP static
+module graph, including transitive dependencies and the early startup script.
+Node with `--experimental-vm-modules` is required for this focused test.
+`tools/frontend/test-startup-recovery.cjs` checks retained sessions/drafts,
+missing modules, native stalls/rejection, API/identity failure, expired-session
+sign-in, late completion and the older desktop command contract in Chromium
+and WebKit. Its deadline is advanced with Playwright's clock. Native IPC is
+simulated; these checks are not a new native or owner-host recovery claim.

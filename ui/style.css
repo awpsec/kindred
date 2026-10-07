@@ -5343,3 +5343,6 @@ html[data-mobile] .message-bubble pre{max-width:100%;overflow-x:auto}
 .browser-task-goal { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 
 .approval .browser-task-action { white-space: pre-wrap; overflow-wrap: anywhere; color:var(--fg); font-size:calc(15px * var(--text-scale,1)); }
+
+#startup-status > p { max-width:32em; padding:0 24px; margin:0; text-align:center; line-height:1.5; }
+#startup-status > strong { padding:0 24px; text-align:center; color:var(--fg); }
