@@ -19,7 +19,14 @@ with tempfile.TemporaryDirectory(prefix='kindred-native-network-') as temp:
  code=modules+'\nmod local_server {pub const ORIGIN:&str="http://127.0.0.1:9444";}\nmod profiles {use std::process::Command;'+hidden+'}\nuse network_plan::Plan;\ntype Result<T> = std::result::Result<T,String>;\n'+compose+'''
 fn main() {
  let root=std::env::temp_dir().join(format!("kindred-interface-proof-{}",uuid::Uuid::new_v4())); std::fs::create_dir(&root).unwrap();
- let inventory=network_interfaces::discover(&root).expect("Actual native discovery failed");
+ let inventory=match network_interfaces::discover_with_diagnostics(&root) {
+  Ok(inventory)=>inventory,
+  Err(failure)=>{
+   let temporary_directory_removed=std::fs::remove_dir_all(&root).is_ok();
+   println!("{}",serde_json::json!({"actual_native_discovery_passed":false,"discovery_failure":failure,"temporary_directory_removed":temporary_directory_removed}));
+   std::process::exit(1);
+  }
+ };
  assert!(!inventory.is_empty(),"Actual native interface inventory is empty");
  assert!(!inventory.iter().any(|r|r.id=="lo"));
  assert!(std::fs::read_dir(&root).unwrap().next().is_none(),"Discovery wrote persistent settings");
@@ -48,6 +55,15 @@ fn main() {
  result=subprocess.run(command,env=env,capture_output=True,text=True,timeout=180)
  (out/'network-harness.log').write_text(result.stdout+result.stderr)
  receipt['exit_code']=result.returncode
- if result.returncode==0:receipt.update(json.loads(result.stdout.strip().splitlines()[-1]));receipt['passed']=True
+ # Production failures emit safe structured metadata before returning nonzero.
+ # Retain that metadata while keeping every failed gate failed.
+ lines=result.stdout.strip().splitlines()
+ if lines:
+  try: detail=json.loads(lines[-1])
+  except json.JSONDecodeError: detail=None
+  if isinstance(detail,dict):
+   for key in ['actual_native_discovery_passed','discovery_failure','temporary_directory_removed','interface_count','explicit_compose_generation_passed','actual_compose_merge_passed','compose_gap','settings_written']:
+    if key in detail:receipt[key]=detail[key]
+ receipt['passed']=result.returncode==0 and receipt.get('actual_native_discovery_passed') is True and receipt.get('explicit_compose_generation_passed') is True
  (out/'network-validation.json').write_text(json.dumps(receipt,indent=2)+'\n')
- if result.returncode:raise SystemExit(result.returncode)
+ if not receipt['passed']:raise SystemExit(result.returncode or 1)
