@@ -364,11 +364,15 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     if(!meta?.mobile_pairing){body.append(el('p','','Update this server to connect the mobile app with a QR code.'));return;}
     if(projection?.legacy){body.append(el('p','','Set up your Kindred account to connect the mobile app.'),button('Set up account',()=>{d.close();return authentication(projection.claim_available?'register':'login');},'outline-button'));return;}
     const account=el('div','mobile-pairing-account');account.append(el('strong','',projection?.username||'Your account'),el('span','muted',projection?.profiles?.find(p=>p.active)?.name||''));body.append(account);
-    const address=label('Server address','url',localAccess?.ready_to_pair?localAccess.tailnet.address:location.protocol==='https:'?location.origin:getServerAddress());address.input.placeholder='https://kindred.example.com';address.input.autocomplete='off';address.input.spellcheck=false;
+    const phoneAddress=value=>{try{const u=new URL(value);if(u.username||u.password||u.search||u.hash||u.pathname!=='/')return false;if(u.protocol==='https:')return !['localhost','127.0.0.1','[::1]'].includes(u.hostname);if(!meta?.mobile_pairing_private_http||u.protocol!=='http:')return false;const h=u.hostname.replace(/^\[|\]$/g,'');if(h.includes(':'))return /^fd[0-9a-f]{2}:/i.test(h);const n=h.split('.').map(Number);return n.length===4&&(n[0]===10||n[0]===192&&n[1]===168||n[0]===172&&n[1]>=16&&n[1]<=31||n[0]===100&&n[1]>=64&&n[1]<=127);}catch{return false;}};
+    const options=[];if(localAccess?.ready_to_pair||localAccess?.tailnet_address_ready)options.push(localAccess.tailnet.address);for(const row of localAccess?.connection_addresses||[])if(row.state==='listening'&&row.phone_capable&&phoneAddress(row.address)&&!options.includes(row.address))options.push(row.address);
+    const address=label('Server address','url',options[0]||(location.protocol==='https:'?location.origin:getServerAddress()));address.input.placeholder='https://kindred.example.com';address.input.autocomplete='off';address.input.spellcheck=false;
+    if(options.length){const picker=el('select');picker.setAttribute('aria-label','Phone connection address');for(const value of options){const option=el('option','',value+(value.startsWith('http:')?' · Not encrypted · updated phone app':' · Recommended'));option.value=value;picker.append(option);}picker.onchange=()=>{address.input.value=picker.value;address.input.dispatchEvent(new Event('input'));};body.append(picker);}
+
     const qr=el('div','mobile-pairing-qr'),status=el('p','mobile-pairing-status');status.setAttribute('role','status');
     const actions=el('div','mobile-pairing-actions'),help=el('details','mobile-pairing-help');help.append(el('summary','','Connection help'));
-    const tips=el('ul');for(const text of ['Keep the server computer on and awake.','Turn on Tailscale on your phone to open this same workspace from anywhere.','The phone app needs the full HTTPS address; localhost and 127.0.0.1 refer to the phone itself.'])tips.append(el('li','',text));help.append(tips);
-    if(meta?.deployment==='standalone'||isLocalStandalone()){if(isLocalStandalone()&&projection?.admin)body.append(button(localAccess?.ready_to_pair?'Phone access is on · Manage':'Set up phone access',()=>{d.close();return admin('Phone & remote access');},'outline-button'));else body.append(el('p','muted','Manage phone access from Kindred on the computer running this server.'));}
+    const tips=el('ul');for(const text of ['Keep the server computer on and awake.','Turn on Tailscale on your phone to open this same workspace from anywhere.','HTTPS is recommended. Private IP addresses with HTTP need the updated phone app and are not encrypted. localhost and 127.0.0.1 refer to the phone itself.'])tips.append(el('li','',text));help.append(tips);
+    if(meta?.deployment==='standalone'||isLocalStandalone()){if(isLocalStandalone()&&projection?.admin)body.append(button((localAccess?.ready_to_pair||localAccess?.tailnet_address_ready||localAccess?.connection_addresses?.some(r=>r.phone_capable&&r.state==='listening'))?'Phone access is on · Manage':'Set up phone access',()=>{d.close();return admin('Phone & remote access');},'outline-button'));else body.append(el('p','muted','Manage phone access from Kindred on the computer running this server.'));}
     const regenerate=button('Create QR code',generate,'outline-button'),copy=button('Copy pairing link',async()=>{if(!issued||Date.now()/1000>=issued.expires_at)return;await navigator.clipboard.writeText(issued.url);notice('Pairing link copied.');},'subtle-button');copy.hidden=true;
     actions.append(regenerate,copy);body.append(address.root,qr,status,actions,help);
     body.append(el('p','muted small mobile-pairing-note','In Kindred on your phone, choose Add account → Scan pairing code. This code works once.'));
@@ -385,6 +389,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       const version=++generation;clear();const old=issued;issued=null;if(old)await cancel(old.id);
       regenerate.disabled=true;status.textContent='Creating a pairing code…';
       try{
+        if(!phoneAddress(address.input.value.trim()))throw new Error('Use HTTPS or an enabled private IP address with HTTP. Private HTTP needs the updated phone app.');
         const result=await api('mobile-pairing',{server:address.input.value.trim()});
         if(closed||version!==generation){await cancel(result.id);return;}
         issued=result;address.input.value=result.server;drawQR(result.qr);copy.hidden=false;regenerate.textContent='New code';
@@ -403,7 +408,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     }
     address.input.addEventListener('input',()=>{++generation;clear();if(issued)void cancel(issued.id);issued=null;regenerate.disabled=false;regenerate.textContent='Create QR code';status.textContent='Create a new code for this address.';});
     d.addEventListener('close',()=>{closed=true;++generation;clear();if(issued)void cancel(issued.id);issued=null;},{once:true});
-    if(address.input.value.startsWith('https://'))void generate();else{status.textContent='Enter the server’s HTTPS address reachable from your phone.';help.open=true;address.input.value='';address.input.focus();}
+    if(phoneAddress(address.input.value))void generate();else{status.textContent='Enter the server address reachable from your phone. HTTPS is recommended.';help.open=true;address.input.value='';address.input.focus();}
   }
 
   async function disconnect(){if(enabled&&projection&&!projection.legacy)await api('logout',{});}
