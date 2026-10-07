@@ -1,0 +1,86 @@
+name: iOS simulator validation (manual only)
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: 'Exact reviewed desktop/iOS source commit.'
+        required: true
+        type: string
+      approve_runner_usage:
+        description: 'Approve this one unsigned simulator job, maximum 20 minutes; no automatic retry.'
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: kindred-ios-simulator-manual
+  cancel-in-progress: false
+jobs:
+  simulator:
+    if: ${{ inputs.approve_runner_usage }}
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_commit }}
+          persist-credentials: false
+      - name: Verify exact source and record Xcode identity
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ inputs.source_commit }}
+        run: |
+          mkdir -p ios-validation
+          python3 - <<'PY'
+          import json,os,re,subprocess
+          from pathlib import Path
+          expected=os.environ['EXPECTED_SOURCE']
+          assert re.fullmatch(r'[0-9a-f]{40}',expected)
+          actual=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert actual==expected
+          result={'source_commit':actual,'unsigned_simulator_only':True,'xcode':subprocess.check_output(['xcodebuild','-version'],text=True),'developer_directory':subprocess.check_output(['xcode-select','-p'],text=True).strip(),'sdk_identity':subprocess.check_output(['xcodebuild','-showsdks'],text=True)}
+          Path('ios-validation/environment.json').write_text(json.dumps(result,indent=2)+'\n')
+          PY
+      - name: Generate the existing iOS project
+        shell: bash
+        run: |
+          command -v xcodegen || brew install xcodegen
+          xcodegen --version > ios-validation/xcodegen-version.txt
+          cd mobile/ios
+          xcodegen generate
+      - name: Run real UIKit app-hosted simulator tests once
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,subprocess,time
+          from pathlib import Path
+          out=Path('ios-validation').resolve()
+          devices=json.loads(subprocess.check_output(['xcrun','simctl','list','devices','available','--json'],text=True))
+          (out/'simulator-inventory.json').write_text(json.dumps(devices,indent=2)+'\n')
+          candidates=[(runtime,d) for runtime,rows in devices['devices'].items() if '.iOS-' in runtime for d in rows if d.get('isAvailable') and d['name'].startswith('iPhone')]
+          assert candidates,'No available iPhone iOS simulator; no download or retry selected'
+          runtime,device=max(candidates,key=lambda v:tuple(int(x) for x in v[0].rsplit('iOS-',1)[-1].split('-')))
+          destination='platform=iOS Simulator,id='+device['udid']
+          command=['xcodebuild','test','-project','KindredCompanion.xcodeproj','-scheme','KindredCompanion','-destination',destination,'-destination-timeout','90','-parallel-testing-enabled','NO','-maximum-concurrent-test-simulator-destinations','1','-resultBundlePath',str(out/'KindredCompanion.xcresult'),'CODE_SIGNING_ALLOWED=NO']
+          receipt={'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'runtime':runtime,'device':device,'destination':destination,'command':command,'full_scheme_includes_AppModelSignInTests':True,'attempt':1,'passed':False}
+          (out/'test-receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          started=time.monotonic()
+          with (out/'xcodebuild.log').open('w') as log:
+              try:
+                  result=subprocess.run(command,cwd='mobile/ios',stdout=log,stderr=subprocess.STDOUT,timeout=850)
+                  receipt.update(exit_code=result.returncode,passed=result.returncode==0)
+              except subprocess.TimeoutExpired:
+                  receipt.update(timed_out=True,passed=False)
+          receipt['elapsed_seconds']=round(time.monotonic()-started,2)
+          (out/'test-receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          if not receipt['passed']:raise SystemExit('Simulator test failed or timed out; no automatic retry')
+          PY
+      - name: Preserve exact results including failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ios-simulator-validation-${{ inputs.source_commit }}
+          path: ios-validation/
+          if-no-files-found: warn
+          retention-days: 14
