@@ -1,4 +1,4 @@
-import {mobileSession,mobileConversationKey,mobileRequestedChat,mobileRequestedEvent} from './mobile.js';
+import {mobileSession,mobileConversationKey,mobileRequestedChat,mobileRequestedEvent,installMobileNavigation} from './mobile.js';
 import {createServerUpdater} from './server-update.js';
 import {settingsHeaderArt} from './settings-header-art.js';
 import {workspaceArtifactCard,artifactStudio,artifactUpdateRow,artifactUpdateBatches} from './workspace-artifacts.js';
@@ -171,7 +171,7 @@ function renderControlNotice(force=false) {
   for(const pause of pauses){
     const row=node('div','control-notice-row'),copy=node('div','control-notice-copy');
     const reason=pause.reason==='open_app'?'Opening an app paused this computer.':pause.reason==='teaching'?'Teaching paused this computer.':pause.reason==='manual'?'Manual control paused this computer.':'This computer is still marked as under manual control. The earlier action was not recorded.';
-    copy.append(node('strong','',pause.name),node('p','',reason+' '+(pendingHumanTask(pause.bot_id)?'Its requested subtask still needs your response.':'Return control to let this bot continue.')));
+    copy.append(node('strong','',pause.name),node('span','control-notice-context',' is waiting for control'),node('p','',reason+' '+(pendingHumanTask(pause.bot_id)?'Its requested subtask still needs your response.':'Return control to let this bot continue.')));
     const error=node('p','control-notice-error');error.hidden=true;error.setAttribute('role','alert');
     const action=button('Return control',async()=>{try{await returnScreenControl(pause);}catch(e){error.textContent=e.message||'Could not return control. Try again.';error.hidden=false;}},'primary small-button');
     action.setAttribute('aria-label','Return control to '+pause.name);row.append(copy,action,error);box.append(row);
@@ -2542,15 +2542,15 @@ async function settingsConnections(revision) {
       }));
       if(['claude-code','codex'].includes(provider.id)) {
         const codex=provider.id==='codex',source=codex?'Codex':'Claude';
-        const inherited=node('div','provider-catalog'),status=node('p','muted small',source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
+        const inherited=node('div','provider-catalog'),status=node('p','muted small',codex?'Refresh to check connected apps.':source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
         status.setAttribute('role','status');
         const refreshConnectors=async()=>{
-          refresh.disabled=true;status.classList.remove('run-error');status.textContent='Checking '+source+' account connectors…';items.replaceChildren();
+          refresh.disabled=true;status.hidden=false;status.classList.remove('run-error');status.textContent='Checking '+source+' account connectors…';items.replaceChildren();
           try {
             const result=await api(codex?'/codex/connectors':'/provider-cli/claude-code/connectors','POST',{});
             if(!inherited.isConnected)return;
             const rows=(codex?result.connections:result.data)||[];
-            status.textContent=rows.length?'Available through this workspace’s '+source+' sign-in. Kindred-connected apps remain available to all providers.':'No connectors were returned by this '+source+' account. Connect an app in '+source+', then refresh.';
+            status.hidden=codex&&rows.length>0&&!result.warning;status.textContent=rows.length?(codex?'':'Available through this workspace’s '+source+' sign-in. Kindred-connected apps remain available to all providers.'):'No connectors were returned by this '+source+' account. Connect an app in '+source+', then refresh.';
             if(result.warning){status.textContent=connectorRefreshMessage(result.warning,source);status.classList.add('run-error');}
             for(const connection of rows){const item=node('div','connector-setting-row'),info=node('div');info.append(connectorHeading(connection.display_name,source),node('p','muted small',connection.status==='connected'?'Connected':connection.status==='needs-auth'?'Reconnect in '+source:'Unavailable'));if(codex&&connection.availability_message)info.append(node('p','muted small',connection.availability_message));item.append(info);items.append(item);}
           }catch(e){if(inherited.isConnected){status.textContent=connectorRefreshMessage(e,source);status.classList.add('run-error');}}
@@ -3464,6 +3464,10 @@ function retryDesktop(generation, message) {
   state.desktopRetryTimer = setTimeout(() => perform(connectDesktop), delay);
 }
 async function openComputer(controlRequested = false, expanded = false) {
+  if(state.desktopNavigationHidden && state.rfb && state.desktopConnected && state.desktopNavigationBot===screenBotId() && (!controlRequested||state.desktopControlRequested)){
+    state.desktopNavigationHidden=false;state.controlPaneEngaged=true;showPane($('computer-panel'));setComputerExpanded(expanded||state.desktopNavigationExpanded);renderControlNotice();return;
+  }
+
   // Workspace settings may preview any bot; opening it enters that bot's chat.
   if(!chatScreenBots().some(b=>b.id===screenBotId())){
     const selected=state.bots.find(b=>b.id===screenBotId()&&!profile(b).archived);
@@ -3898,7 +3902,13 @@ function updateComposerLayout(){
   if(width===composerWidth&&font===composerFont&&mode===composerMode)return;
   composerWidth=width;composerFont=font;composerMode=mode;resizeComposer();
 }
-const composerLayout=new ResizeObserver(updateComposerLayout);
+let composerLayoutFrame=0;
+const composerLayout=new ResizeObserver(()=>{
+  if(window.__KINDRED_MOBILE_PLATFORM!=='ios'){updateComposerLayout();return;}
+  // Changing the composer height inside observer delivery can resize the
+  // earlier chat observations in WebKit. Refit in the next rendering phase.
+  cancelAnimationFrame(composerLayoutFrame);composerLayoutFrame=requestAnimationFrame(updateComposerLayout);
+});
 new MutationObserver(updateComposerLayout).observe($('composer'),{attributes:true,attributeFilter:['class']});
 composerLayout.observe($('composer'));document.fonts.ready.then(resizeComposer);
 // The composer remains a floating surface. Animate its reserved space instead
@@ -5958,6 +5968,7 @@ async function refreshResources() {
   state.resourcesLoading = true;
   try {
     const r = await api("/computer/resources");
+    if(!["cpu_percent","cpus","memory_used","memory_total","disk_used","disk_total","uptime_seconds","sampled_at"].every(key=>Number.isFinite(r?.[key]))||r.memory_total<=0||r.disk_total<=0)throw new Error("Resource usage unavailable");
     const size = (n) => (n / 1024 ** 3).toFixed(1) + " GB";
     for (const target of targets) {
       target.replaceChildren(node("h3", "", "Resources"));
@@ -5996,7 +6007,7 @@ async function refreshResources() {
   } catch (e) {
     for (const n of targets)
       n.replaceChildren(
-        node("p", "muted small", "Resources unavailable: " + e.message),
+        node("p", "muted small", "Resource usage unavailable"),
       );
   } finally {
     state.resourcesLoading = false;
@@ -6629,7 +6640,7 @@ function setPaneWidth(panel,width,natural){
   else{panel.removeAttribute('data-pane-sized');panel.style.removeProperty('--pane-width');}
 }
 function layoutPanes(){
-  const shell=$('app');if(paneDrag||shell.hidden||!shell.clientWidth)return;
+  const shell=$('app');if(window.__KINDRED_MOBILE_PLATFORM==='ios'){setSidebarWidth(null);for(const id of ['details-panel','computer-panel'])setPaneWidth($(id),0,0);return;}if(paneDrag||shell.hidden||!shell.clientWidth)return;
   const panels=[$('details-panel'),$('computer-panel')];
   if(computerTransition)return;
   for(const panel of panels)panel.classList.remove('pane-overlay');
@@ -8076,27 +8087,52 @@ function workflowOptions(chatId,panel){return {
 function animateWorkflowDetails(root){for(const details of root.querySelectorAll('.workflow-details')){const body=node('div','chat-disclosure-body');for(const child of [...details.children])if(child.tagName!=='SUMMARY')body.append(child);details.append(body);animateChatDisclosure(details,body);}}
 
 async function decisionsConnection() {
-  const root=node('div','provider-catalog decisions-connection');root.append(node('h3','','Browser helper'));
-  root.append(node('p','muted small',"Optional. Lets Codex bots hand routine browser steps to OpenAI Decisions. Decisions uses a separate OpenAI API key; your Codex sign-in powers the normal bot. Usage is billed to the API key’s account."));
+  const root=node('div','provider-catalog decisions-connection');root.append(node('h3','','Decisions API (optional)'));
   const status=node('p','muted small');status.setAttribute('role','status');
   const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'Paste your OpenAI API key'}),actions=node('div','row-actions');
   key.input.spellcheck=false;key.input.autocapitalize='off';
-  const scope=node('p','muted small');
-  const paint=result=>{scope.textContent=result.scope==='workspace'?'Saved for this workspace.':'Your key is saved for your account and used in all its workspaces.';status.textContent=result.last_error?('Last browser task could not use Decisions. '+result.last_error):result.configured?(result.source==='environment'?'Provided by this server':'Key saved · checked when a browser task runs'):'Not set up · Codex bots use their normal computer controls.';key.input.placeholder=result.source==='environment'?'Paste your own key to use it instead':result.configured?'Saved · paste a replacement key':'Paste your OpenAI API key';remove.hidden=!result.configured||result.source==='environment';};
+  const paint=result=>{status.textContent=result.last_error?('Last browser task failed: '+result.last_error):result.configured?(result.source==='environment'?'Provided by this server':'Key saved · checked when a browser task runs'):'Not set up';key.input.placeholder=result.source==='environment'?'Paste your own key to use it instead':result.configured?'Saved · paste a replacement key':'Paste your OpenAI API key';remove.hidden=!result.configured||result.source==='environment';};
   const save=button('Save key',async()=>{
     if(!key.input.value.trim()){status.textContent='Paste your API key first.';return;}
     const value=key.input.value;key.input.value='';save.disabled=true;remove.disabled=true;
     try{paint(await api('/connections/decisions','POST',{key:value}));}
     catch(e){status.textContent=e.message;}
     finally{save.disabled=false;remove.disabled=false;}
-  });
+  },'outline-button');
   const remove=button('Disconnect',async()=>{
     if(!confirm('Remove the Decisions API key? Codex will keep using its normal computer tools.'))return;
     save.disabled=true;remove.disabled=true;
     try{paint(await api('/connections/decisions','DELETE'));}catch(e){status.textContent=e.message;}
     finally{save.disabled=false;remove.disabled=false;}
-  },'outline-button');remove.hidden=true;
-  actions.append(save,remove);root.append(status,key.label,actions,scope);
+  },'subtle-button');remove.hidden=true;
+  actions.append(save,remove);root.append(status,key.label,actions);
   try{paint(await api('/connections/decisions'));}catch(e){status.textContent=e.message;}
   return root;
 }
+
+installMobileNavigation({
+ route:()=>({key:currentConversationId()+'|'+screenBotId(),target:$('app').hidden||document.querySelector('.artifact-studio')||!$('details-panel').hidden?'none':!$('computer-panel').hidden?(document.documentElement.dataset.iosComputer==='overlay'||$('computer-panel').classList.contains('expanded')?'bot-chat':'none'):document.documentElement.dataset.iosLayout==='compact'&&!$('app').classList.contains('sidebar-open')&&state.bot?'chat-list':'none'}),
+ back:target=>{saveDraft();captureChatAnchor();if(target==='bot-chat'){leaveControlPane();state.desktopNavigationHidden=true;state.desktopNavigationBot=screenBotId();state.desktopNavigationExpanded=$('computer-panel').classList.contains('expanded');$('computer-panel').hidden=true;$('computer-panel').inert=true;renderControlNotice(true);}else $('app').classList.add('sidebar-open');},
+ resized:()=>{
+   // Keep the pre-resize message anchor; measuring after reflow loses its offset.
+   // End a held pointer at its last validated position before refitting. Do not
+   // send a new press or replay the interrupted click after the geometry changes.
+   const rfb=state.rfb;if(rfb?._mouseMoveTimer!=null){clearTimeout(rfb._mouseMoveTimer);rfb._mouseMoveTimer=null;}
+   if(rfb?._mouseButtonMask&&rfb._mousePos){
+     const prior=state.desktopInputTransform,current=rfb._display,viewport=current?._viewportLoc;
+     let {x,y}=rfb._mousePos;
+     if(prior?.rfb===rfb&&viewport&&current.scale>0){x=(x/prior.scale+prior.x-(viewport.x||0))*current.scale;y=(y/prior.scale+prior.y-(viewport.y||0))*current.scale;}
+     rfb._handleMouseButton(x,y,0);
+   }
+   finishComputerTransition();refitComputer();restoreChatPosition();resizeComposer();
+ },
+ computerGeometryValid:()=>{
+   const canvas=$('desktop').querySelector('canvas:not(.desktop-glass)');if(!canvas||$('computer-panel').hidden||!state.desktopConnected)return true;
+   const display=state.rfb?._display,rect=canvas.getBoundingClientRect(),viewport=display?._viewportLoc;
+   // noVNC maps client offsets through this scale and viewport, rather than
+   // backing-store pixels (which can differ with device pixel ratio).
+   const valid=!!viewport&&Number.isFinite(display.scale)&&display.scale>0&&rect.width>0&&rect.height>0&&Math.abs(rect.width-display.scale*viewport.w)<1&&Math.abs(rect.height-display.scale*viewport.h)<1;
+   if(valid)state.desktopInputTransform={rfb:state.rfb,scale:display.scale,x:viewport.x||0,y:viewport.y||0};
+   return valid;
+ }
+});

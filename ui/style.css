@@ -5102,10 +5102,11 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .progress-choices>legend{font-size:13px;margin-bottom:12px;padding:0}
 .progress-choice-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,132px));gap:12px}
 .progress-choice{position:relative;display:block;aspect-ratio:1;margin:0!important;border:1px solid var(--line);border-radius:12px;background:var(--bg);cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease}
-.progress-choice:has(input:checked){border-color:color-mix(in srgb,var(--progress-accent) 55%,transparent);box-shadow:0 0 0 2px color-mix(in srgb,var(--progress-accent) 12%,transparent),0 0 15px color-mix(in srgb,var(--progress-accent) 10%,transparent)}
-.progress-choice:has(input:focus-visible){outline:2px solid var(--fg);outline-offset:4px}
+
+.progress-choice>input:focus-visible{outline:2px solid var(--fg);outline-offset:4px}
 .progress-choice:has(input:disabled){opacity:.5;cursor:default}
-.progress-choice>input{position:absolute;width:1px;height:1px;opacity:0;margin:0}
+.progress-choice>input{position:absolute;top:9px;right:9px;width:14px;height:14px;margin:0;appearance:none;border:1.5px solid var(--fg);border-radius:50%;display:grid;place-content:center;background:var(--bg)}
+.progress-choice>input:checked::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--fg)}
 .progress-choice-title{position:absolute;top:9px;left:10px;font-size:12px;color:var(--fg)}
 .progress-choice-preview{position:absolute;inset:33px 11px 10px;display:flex;flex-direction:column;gap:5px;pointer-events:none}
 .progress-sketch-user{width:43%;height:10px;flex:none;align-self:flex-end;border-radius:5px 5px 1px 5px;background:color-mix(in srgb,var(--fg) 30%,transparent)}
@@ -5337,7 +5338,7 @@ html[data-mobile] .message-bubble pre{max-width:100%;overflow-x:auto}
 
 .profile-menu-actions>.profile-menu-label:first-child {border-top:0;margin-top:0;padding-top:6px;}
 .profile-menu {scrollbar-gutter:stable;}
-.access-choice:has(input:checked) {background:var(--selected);border-radius:8px;outline:1px solid var(--fg);outline-offset:4px;}
+
 .access-choice input {accent-color:var(--fg);}
 
 .browser-task-goal { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
@@ -5380,3 +5381,45 @@ html[data-mobile] .message-bubble pre{max-width:100%;overflow-x:auto}
 .access-choice:has(input:disabled) {cursor:default;color:var(--soft);outline:none;background:none;opacity:.65;}
 .access-read-only .access-save-bar {position:static;}
 .access-confirm ul:empty {display:none;}
+
+.decisions-connection {border-top:1px solid var(--line);margin-top:24px;padding-top:24px;}
+
+html[data-ios-layout] .shell {position:relative;min-width:0;}
+html[data-ios-layout] .conversation {min-width:0;flex:1;background:var(--bg);}
+html[data-ios-layout=regular] .sidebar {display:flex;position:relative;inset:auto;width:300px;flex:0 0 300px;box-shadow:none;}
+html[data-ios-layout=compact] .sidebar {display:none;position:absolute;inset:0;z-index:5;width:100%;box-shadow:none;}
+html[data-ios-layout=compact] .sidebar-open .sidebar,html[data-ios-layout=compact] .ios-edge-preview[data-edge-target=chat-list] .sidebar {display:flex;}
+html[data-ios-layout=compact] .ios-edge-preview[data-edge-target=chat-list] .conversation {position:relative;z-index:6;}
+html[data-ios-computer=overlay] .computer-panel:not([hidden]) {position:absolute!important;inset:0!important;width:100%!important;max-width:none!important;height:100%!important;z-index:8;}
+html[data-ios-computer=side] .computer-panel:not([hidden]) {position:relative!important;inset:auto!important;flex:0 1 42%;width:42%!important;max-width:none!important;min-width:360px;height:100%!important;}
+html[data-ios-layout] .computer-panel #desktop {min-height:0;}
+html[data-ios-short=true] .conversation-header {min-height:40px;padding-block:4px;}
+html[data-ios-short=true] #prompt {max-height:calc(3lh + 12px);overflow-y:auto;}
+html[data-ios-layout] dialog {max-width:calc(100% - 32px);max-height:calc(100dvh - 32px);}
+html[data-ios-layout] .mobile-pairing-dialog {width:min(560px,calc(100% - 32px));}
+html[data-ios-layout] .mobile-pairing-qr svg {width:min(70vw,70vh,320px);max-width:100%;height:auto;}
+html[data-ios-layout] .pane-separator {display:none;}
+html[data-ios-layout] .mobile-only {display:inline-flex;}
+html[data-ios-layout=regular] #mobile-menu {display:none;}
+
+html[data-ios-layout] .ios-computer-edge {position:absolute;inset:0 auto 0 0;width:20px;z-index:30;touch-action:none;}
+
+html[data-ios-layout]:not([data-native-safe-area=host]) .shell {padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);box-sizing:border-box;}
+html[data-native-safe-area=host] .artifact-editor-footer {padding-bottom:10px;}
+
+.access-choice>input:focus-visible {outline:2px solid var(--fg);outline-offset:4px;}
+
+html[data-ios-layout] .computer-panel.expanded:not([hidden]) {position:absolute!important;inset:0!important;flex:none;width:100%!important;max-width:none!important;height:100%!important;z-index:8;}
+
+/* Chat may scroll behind its floating composer, but status text remains opaque. */
+html[data-ios-layout] .conversation>.composer-area {background:var(--bg);}
+html[data-ios-layout] .composer-area:has(#queue-status:not([hidden])) #composer-caption {display:none;}
+html[data-ios-short=true] .control-notice {left:16px;right:16px;top:48px;width:auto;max-height:80px;padding:8px 12px;display:flex;gap:12px;align-items:center;}
+html[data-ios-short=true] .control-notice-heading {order:2;}
+html[data-ios-short=true] .control-notice-heading>strong,html[data-ios-short=true] .control-notice-copy p {display:none;}
+html[data-ios-short=true] .control-notice-row {border:0;margin:0;padding:0;flex:1;}
+html[data-ios-short=true] .control-notice-copy {flex:1;}
+
+.control-notice-context {display:none;}
+html[data-ios-short=true] .control-notice-context {display:inline;}
+html[data-ios-short=true] .control-notice-copy strong {display:inline-block;max-width:8em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
