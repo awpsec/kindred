@@ -229,7 +229,7 @@ pub fn discover(_root: &std::path::Path) -> Result<Vec<Interface>, String> {
                 row.name = "Other".into();
             }
         }
-        if let Ok(bytes) = read_command(_root, command) {
+        if let Ok((bytes, _removed)) = read_command(_root, command) {
             for block in String::from_utf8_lossy(&bytes).split("\n\n") {
                 let device = block.lines().find_map(|l| l.strip_prefix("Device: "));
                 let hardware = block
@@ -262,12 +262,8 @@ pub fn discover_with_diagnostics(
     let script = "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $adapters=@(Get-NetAdapter -IncludeHidden); ConvertTo-Json -Depth 4 -Compress -InputObject @((Get-NetIPAddress | Group-Object InterfaceIndex | ForEach-Object { $index=[int]$_.Name; $a=$adapters|Where-Object { $_.ifIndex -eq $index }|Select-Object -First 1; [pscustomobject]@{id=$_.Group[0].InterfaceAlias; addresses=@($_.Group.IPAddress); description=$a.InterfaceDescription; up=($a.Status -eq 'Up')} }))";
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", script]);
-    let bytes = read_command(_root, command)?;
-    let values: Vec<serde_json::Value> = serde_json::from_slice(&bytes).map_err(|_| {
-        let mut failure = discovery_failure(DiscoveryFailureKind::OutputInvalid, start);
-        failure.output_bytes = Some(bytes.len() as u64);
-        failure
-    })?;
+    let (bytes, removed) = read_command(_root, command)?;
+    let values = parse_network_output(&bytes, removed, start)?;
     let mut raw = BTreeMap::new();
     for row in &values {
         if let (Some(id), Some(addresses)) = (row["id"].as_str(), row["addresses"].as_array()) {
@@ -292,11 +288,25 @@ pub fn discover_with_diagnostics(
     Ok(result)
 }
 
+#[cfg(any(windows, test))]
+fn parse_network_output(
+    bytes: &[u8],
+    output_removed: bool,
+    start: std::time::Instant,
+) -> Result<Vec<serde_json::Value>, DiscoveryFailure> {
+    serde_json::from_slice(bytes).map_err(|_| {
+        let mut failure = discovery_failure(DiscoveryFailureKind::OutputInvalid, start);
+        failure.output_bytes = Some(bytes.len() as u64);
+        failure.output_removed = output_removed;
+        failure
+    })
+}
+
 #[cfg(any(windows, target_os = "macos", test))]
 fn read_command(
     root: &std::path::Path,
     mut command: std::process::Command,
-) -> Result<Vec<u8>, DiscoveryFailure> {
+) -> Result<(Vec<u8>, bool), DiscoveryFailure> {
     let start = std::time::Instant::now();
     let output = root.join(format!("network-enumeration-{}.txt", uuid::Uuid::new_v4()));
     crate::profiles::hidden(&mut command);
@@ -335,7 +345,7 @@ fn read_command(
         Ok(()) => true,
         Err(e) => e.kind() == std::io::ErrorKind::NotFound,
     };
-    bytes.map_err(|mut failure| {
+    bytes.map(|bytes| (bytes, removed)).map_err(|mut failure| {
         failure.output_bytes = output_bytes;
         failure.output_removed = removed;
         failure
@@ -464,6 +474,23 @@ mod tests {
 #[cfg(all(test, unix))]
 mod discovery_diagnostics_regression {
     use super::*;
+    #[test]
+    fn invalid_json_preserves_the_actual_removal_outcome() {
+        for removed in [false, true] {
+            let error = parse_network_output(b"invalid-json", removed, std::time::Instant::now())
+                .unwrap_err();
+            let value = serde_json::to_value(error).unwrap();
+            assert_eq!(value["kind"], "output_invalid");
+            assert_eq!(value["output_removed"], removed);
+            assert_eq!(value["output_bytes"], 12);
+        }
+        assert!(
+            parse_network_output(b"[]", false, std::time::Instant::now())
+                .unwrap()
+                .is_empty()
+        );
+    }
+
     fn root() -> std::path::PathBuf {
         let p = std::env::temp_dir().join(format!(
             "kindred-discovery-regression-{}",
@@ -527,7 +554,10 @@ mod discovery_diagnostics_regression {
         assert_eq!(value["output_removed"], true);
         let mut command = std::process::Command::new("sh");
         command.args(["-c", "printf fixture-success"]);
-        assert_eq!(read_command(&p, command).unwrap(), b"fixture-success");
+        assert_eq!(
+            read_command(&p, command).unwrap(),
+            (b"fixture-success".to_vec(), true)
+        );
         assert!(std::fs::read_dir(&p).unwrap().next().is_none());
         std::fs::remove_dir_all(&p).unwrap();
     }
