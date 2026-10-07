@@ -163,6 +163,16 @@ jobs:
         env:
           RUSTFLAGS: '-C target-feature=+crt-static'
         run: cargo build --manifest-path desktop/Cargo.toml --release --locked --target x86_64-pc-windows-msvc
+      - name: Verify actual native interface discovery and explicit Compose replacement
+        shell: bash
+        run: python scripts/release/test-native-network.py --target ${{ matrix.target }} --output native-network-validation
+      - name: Preserve native network evidence including gaps
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-network-${{ inputs.version }}-${{ matrix.target }}
+          path: native-network-validation/
+          if-no-files-found: warn
       - name: Verify native background command lifetime and cancellation
         shell: bash
         run: |
