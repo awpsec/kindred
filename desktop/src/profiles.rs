@@ -1043,6 +1043,12 @@ fn start_setup_mode(app: tauri::AppHandle, prepare_only: bool, activate_only: bo
                         }
                     }
                 }
+                // Use the same saved port plan for activation and updates. Compose
+                // must replace inherited wildcard ports, never append to them.
+                if index == 3 && root.join("network.json").exists() {
+                    let override_file=crate::standalone_network::prepare_override(&root)?;
+                    command.arg("-f").arg(override_file);
+                }
                 command.env("KINDRED_BIND",crate::standalone_network::saved(&root)?).env("KINDRED_PORT","9444").env("KINDRED_ALLOWED_ORIGINS",serde_json::to_string(&crate::standalone_network::origins(&root)?).map_err(error)?);
                 command.args(args);
                 if activate_only && index == 3 {
