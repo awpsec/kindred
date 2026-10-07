@@ -14,7 +14,7 @@ SOURCE = Path(__file__).with_name('test-macos-package.py')
 
 
 class CaptureTests(unittest.TestCase):
-    def invoke(self, samples, wait=1.0, exited=False):
+    def invoke(self, samples, wait=1.0, exited=False, words=None):
         tree = ast.parse(SOURCE.read_text())
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'capture')
         clock = SimpleNamespace(value=0.0)
@@ -49,7 +49,7 @@ class CaptureTests(unittest.TestCase):
             child = SimpleNamespace(pid=123, poll=lambda: 1 if exited else None)
             self.calls = calls
             self.clock = clock
-            return ns['capture'](child,'preview',['sent you a message'],render_wait=wait,window_title='Kindred notification')
+            return ns['capture'](child,'preview',['sent you a message'] if words is None else words,render_wait=wait,window_title='Kindred notification')
 
     def test_window_appears_before_deadline(self):
         rows = self.invoke(['absent','visible'])
@@ -101,6 +101,10 @@ class CaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'expected UI text missing'):
             self.invoke(['text_pending'])
         self.assertEqual(self.clock.value, 1.0)
+
+    def test_empty_text_requirements_still_require_a_window(self):
+        with self.assertRaisesRegex(AssertionError, 'No visible test-app window by render deadline'):
+            self.invoke(['absent'],wait=0,words=[])
 
 
 if __name__ == '__main__':
