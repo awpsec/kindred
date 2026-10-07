@@ -5,11 +5,12 @@ settings and everything else are the shared web UI loaded in a `WKWebView`; the
 native layer handles accounts, credentials, navigation safety, downloads and
 notifications. iOS 17 or later, iPhone and iPad.
 
-> **Status:** the app target has **not been compiled or run**; it was written
-> on Linux without Xcode. `KindredCore` builds and its tests pass on Linux
-> (Swift 6.1 container), and every app/test file passes `swiftc -parse`, but
-> UIKit/SwiftUI/WebKit code is unchecked until the first Mac build (see
-> "Verifying on a Mac").
+> **Status:** the retained 0.85.9 simulator run compiled the UIKit app and
+> executed 18 app tests: 14 passed and 4 failed (three Keychain entitlement
+> errors and one account-removal crash). These failures remain unresolved.
+> The new edge gesture, recovery overlay and geometry integration require a
+> fresh local Mac build and simulator/iPhone validation. Linux core tests and
+> syntax parsing do not establish UIKit behavior.
 
 ## Layout
 
@@ -31,7 +32,9 @@ mobile/ios/
 
 ## Setup
 
-1. Install Xcode 15.3+ (Xcode 16 recommended) and XcodeGen
+1. Install a current Xcode. Use **Xcode 27.1** for the owner-selected
+   Duo simulator and adaptive native-toolbar checks; older SDKs cannot prove
+   that layout. Install XcodeGen
    (`brew install xcodegen`).
 2. Create `Config/Local.xcconfig` (ignored by Git) with your values:
    ```
@@ -337,3 +340,87 @@ this check. A Linux/WebKit fixture cannot establish these native results.
 The [wake-up animation handoff](design/launch/README.md) contains the approved
 light/dark previews and exact motion reference for native integration. It keeps
 the mobile navigation unbranded; startup integration is pending Mac validation.
+
+## Local update and adaptive-navigation acceptance
+
+Use the instructor's accepted combined source commit, not an unreviewed task
+branch. Keep the existing `Config/Local.xcconfig`, bundle identifier, development
+team and signing identity when updating an installed phone. Do not uninstall the
+app, reset simulator content, delete Keychain items, or change its bundle ID:
+those operations can discard saved accounts or separate them from their sessions.
+
+On the Mac, select the intended Xcode in Settings → Locations → Command Line
+Tools, then from `mobile/ios` run `xcodegen generate` and open
+`KindredCompanion.xcodeproj`. Select **KindredCompanion**, your connected unlocked
+phone, and the existing team under Signing & Capabilities. Enable Developer Mode
+on the phone when prompted, and use Product → Run to update the existing app.
+A simulator can use the unsigned build; a physical phone needs the existing valid
+signing configuration. No App Store or TestFlight step is required.
+
+Run core tests locally, then the full app-hosted scheme on an available simulator:
+
+```sh
+cd mobile/ios/Packages/KindredCore
+swift test
+cd ../..
+xcodegen generate
+xcrun simctl list devices available
+xcodebuild test -scheme KindredCompanion -destination 'platform=iOS Simulator,id=YOUR_UDID'
+```
+
+Record the actual SDK, simulator model, app build/source commit and test results.
+Keep the existing Keychain/removal failures separate; do not report this source
+update as fixing them. The generated test host must reference **Kindred.app**.
+
+Follow Apple’s [Duo preparation guidance](https://developer.apple.com/iphone-duo/prepare/)
+for SDK-specific simulator and native toolbar behavior. This source has not been
+validated on that simulator. For Xcode 27.1 Duo and the actual phone, check:
+
+- Open a long chat with a draft, numbered list and nonzero scroll position. Fold,
+  unfold, rotate and resize with the keyboard open and closed. Keep the same
+  account/chat, draft, caret and scroll anchor; the web view must not reload.
+  Repeat with Settings, QR confirmation and an accessibility text size.
+- Inspect all four safe areas and the native title/Accounts toolbar in outer,
+  inner, portrait and landscape layouts. Let the system place native controls;
+  no HTML imitation of a vertical native toolbar is used. Safe areas must not
+  be applied twice, and keyboard shrink must not switch the navigation mode.
+- At compact width, drag from the leftmost 20 points: chat returns to the list,
+  computer returns to its chat. Complete at 35%, or flick after 8%; shorter or
+  backwards/cancelled drags restore the view. Check draft and scroll retention,
+  keyboard dismissal and no send. A resize during a drag cancels it.
+- With computer control held, swipe back and reopen the same computer. Keep the
+  VNC connection and control; do not release control or send remote input.
+  Drag over the canvas, horizontal code/table scroller, text selection, dialogs,
+  menus, request forms and native sheets: navigation must remain disabled.
+  At regular side-by-side chat/list width the list is already present, so no
+  chat-to-list edge gesture is offered.
+- Enable Reduce Motion: no translating views, dim feedback and a brief fade.
+  Repeat Cancel and resize. Confirm no accidental canvas input during geometry
+  changes and validate current aspect-fit/letterbox coordinates before input
+  becomes available again.
+- Make an isolated server unavailable during page loading: **Try again** must
+  be visible and preserve the account's web store. Restore it and retry once.
+  WebKit process termination still reloads with the latest session bootstrap.
+  Foregrounding refreshes text size/identity/push state; it does not forcibly
+  reload a stale page or erase a draft. Check resumed polling/reconnection on
+  the actual phone separately.
+
+### QR diagnosis without exposing a pairing secret
+
+The version label **0.1.0** does not identify an installed source revision.
+The initial QR parser (`f5f08a0`) accepted only explicit HTTPS origins; this
+build additionally accepts confirmed private literal-IP HTTP origins. An old
+HTTPS-only build therefore rejects a private-HTTP code before contacting its
+server, while a Tailscale HTTPS code uses the same link shape in both versions.
+This is a compatibility boundary, not proof of the owner's incident cause.
+
+The scanner reads an AVFoundation QR string, parses the explicit origin and
+64-hex fragment locally, asks for confirmation, verifies server identity, then
+claims once. Claim validation binds the response origin/account/profile before
+saving a session. Expired/used codes, unreachable servers, denied camera access,
+malformed codes and an unallowed origin are separate failure paths. Use Paste
+Pairing Link to distinguish camera recognition from parsing/network failures.
+Capture only the visible error, scheme/host/port, app source/build and whether
+failure happened before confirmation or after Connect. Never copy a real code,
+QR pixels, account token or claim response into logs. Create a fresh disposable
+code for each claim attempt; do not automatically replay an uncertain claim.

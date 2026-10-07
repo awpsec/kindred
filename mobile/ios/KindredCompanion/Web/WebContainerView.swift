@@ -8,21 +8,49 @@ import WebKit
 @MainActor
 struct WebContainerView: UIViewRepresentable {
     let session: WebSession
+    var navigationBlocked = false
 
     func makeUIView(context: Context) -> WebHostView {
         let host = WebHostView()
+        session.setNativeNavigationBlocked(navigationBlocked)
         session.refreshSystemTextSize()
-        host.attach(session.webView)
+        host.attach(session)
         return host
     }
 
     func updateUIView(_ host: WebHostView, context: Context) {
+        session.setNativeNavigationBlocked(navigationBlocked)
         session.refreshSystemTextSize()
-        host.attach(session.webView)
+        host.attach(session)
     }
 }
 
+@MainActor
 final class WebHostView: UIView {
+    private weak var session: WebSession?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil { session?.detachVisibleHost() }
+        else { publishGeometry() }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        publishGeometry()
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        publishGeometry()
+    }
+
+    private func publishGeometry() {
+        guard let window else { return }
+        session?.updateGeometry(width: bounds.width, height: bounds.height,
+            windowWidth: window.bounds.width, windowHeight: window.bounds.height,
+            safeArea: window.safeAreaInsets)
+    }
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = UIColor(named: "Canvas")
@@ -33,7 +61,9 @@ final class WebHostView: UIView {
         backgroundColor = UIColor(named: "Canvas")
     }
 
-    func attach(_ webView: WKWebView) {
+    func attach(_ session: WebSession) {
+        self.session = session
+        let webView = session.webView
         guard webView.superview !== self else { return }
         subviews.forEach { $0.removeFromSuperview() }
         webView.removeFromSuperview()
