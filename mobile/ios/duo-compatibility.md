@@ -14,6 +14,11 @@ restriction while typing on a remote computer remain in place.
   display's vertical bar. Matching HTML buttons are suppressed on Duo. The
   Bot Details gear joins these native actions. The centered bot tag remains
   in the conversation; there is no permanent logo.
+- Duo Search uses a bounded field with a 44-point minimum height, readable
+  text and independent safe-top spacing, including in a narrow landscape list.
+  Native + presents the existing conversation or artifact-type menu through
+  UIKit. It owns the visible page rather than the hidden HTML toolbar or a
+  previous tap; folding, hiding the page or navigating invalidates stale choices.
 - Flat inner space can show the chat list, conversation and computer together.
   Larger text or less space collapses panes before the conversation becomes
   unusable. Touch separators resize the list and computer while preserving a
@@ -87,6 +92,8 @@ It does not contact user bots or generate real computer input.
 | Native book/tabletop | Actual DeviceHub poses supplied vertical/horizontal 40-point divisions; panes avoided those divisions; tabletop controls remained above the real software keyboard |
 | Native software keyboard / Return control | Real keyboard displayed on taking control; one touch returned control, dismissed the keyboard and restored Watching, including tabletop |
 | Native artifact navigation | List, document and native Back observed without duplicate HTML menus |
+| Native inner-landscape Search / + | Search filtered at a 160-point list width; cold + and + after Search opened native New bot/New chat menus and their original forms; artifact + opened its native type menu and the selected sheet form |
+| WebKit Search / + regressions | Narrow field, larger text, asymmetric safe areas and keyboard geometry passed; one native menu, cancel/generation guards, fold/hide rejection and artifact type/form/route validity passed |
 | Native edge gesture recognition / remaining matrix | **Pending** — automation drags did not trigger UIKit's edge recognizer; native Back worked. Remaining theme/launch/background, live-input and recovery checks are listed below |
 | Physical Duo, live computer, APNs delivery | **Pending** — simulator/fixture checks do not prove these |
 

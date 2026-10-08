@@ -128,6 +128,116 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     for(const selector of ['#mobile-menu','#show-computer','#ios-computer-back','#computer-close','#details-close','.sidebar-top'])
       assert(await page.locator(selector).isHidden(),`${selector} duplicates native Duo navigation`);
 
+    // Native toolbar presses have no trusted DOM pointer source. In particular,
+    // + must work before any WebKit tap and after Search focuses its input.
+    const nativeMenus=()=>page.evaluate(()=>window.accountRequests.filter(value=>value.action==='native-menu'));
+    const nativeAdd=async(owner,hiddenMenu)=>{
+      const before=(await nativeMenus()).length;
+      await action('newChat');await settled();
+      const menus=await nativeMenus();
+      assert.equal(menus.length,before+1,'native + must present exactly one menu without a DOM tap');
+      const menu=menus.at(-1),bounds=await page.locator(owner).boundingBox();
+      assert.deepEqual(menu.rect,[Math.max(0,Math.min(inner.width-1,bounds.x+bounds.width-1)),Math.max(0,Math.min(inner.height-1,bounds.y+1)),1,1],'native menu must own the visible page instead of a hidden or previously tapped control');
+      assert(await page.locator(hiddenMenu).isHidden(),'native + must suppress the HTML menu');
+      return menu;
+    };
+    const chooseNative=(menu,title)=>page.evaluate(id=>window.__kindredNativeMenus.perform(id),menu.items.find(item=>item.title===title).id);
+    await relay(inner);
+    const coldAdd=await nativeAdd('.sidebar','#new-menu');
+    assert.deepEqual(coldAdd.items.map(item=>item.title),['New bot','New chat']);
+    await chooseNative(coldAdd,'New bot');
+    await page.locator('#bot-dialog').waitFor({state:'visible'});
+    await page.getByRole('button',{name:'Close new bot',exact:true}).click();
+    await page.locator('#bot-dialog').waitFor({state:'hidden'});
+    await action('search');
+    const search=page.locator('.sidebar>.search'),searchInput=page.locator('#search');
+    await search.waitFor({state:'visible'});
+    const afterSearch=await nativeAdd('.sidebar','#new-menu');
+    await chooseNative(afterSearch,'New chat');
+    const newChat=page.locator('dialog[aria-label="New chat"]');
+    await newChat.waitFor({state:'visible'});
+    await newChat.getByRole('button',{name:'Close',exact:true}).click();
+    await newChat.waitFor({state:'detached'});
+    const cancelledAdd=await nativeAdd('.sidebar','#new-menu');
+    await page.evaluate(key=>window.__kindredNativeMenus.cancel(key),cancelledAdd.key);
+    await chooseNative(cancelledAdd,'New bot');
+    assert(await page.locator('#bot-dialog').isHidden(),'cancelled native actions cannot be reused');
+    const obsoleteAdd=await nativeAdd('.sidebar','#new-menu');
+    const currentAdd=await nativeAdd('.sidebar','#new-menu');
+    await chooseNative(obsoleteAdd,'New bot');
+    assert(await page.locator('#bot-dialog').isHidden(),'a superseded native menu cannot open a form');
+    await page.evaluate(key=>window.__kindredNativeMenus.cancel(key),obsoleteAdd.key);
+    await chooseNative(currentAdd,'New bot');
+    await page.locator('#bot-dialog').waitFor({state:'visible'});
+    await page.getByRole('button',{name:'Close new bot',exact:true}).click();
+    await page.locator('#bot-dialog').waitFor({state:'hidden'});
+    const foldedAdd=await nativeAdd('.sidebar','#new-menu');
+    await relay(outer);
+    await chooseNative(foldedAdd,'New bot');
+    assert(await page.locator('#bot-dialog').isHidden(),'folding away the owning page invalidates its menu action');
+    await relay(inner);
+    const hiddenAdd=await nativeAdd('.sidebar','#new-menu');
+    await action('chats');await settled();
+    await chooseNative(hiddenAdd,'New bot');
+    assert(await page.locator('#bot-dialog').isHidden(),'hiding the owning list invalidates its menu action');
+    await action('chats');await settled();
+
+    const assertSearch=async(minTop=8)=>{
+      const metrics=await search.evaluate(node=>{
+        const rect=target=>target.getBoundingClientRect().toJSON();
+        return {field:rect(node),sidebar:rect(node.parentElement),input:rect(node.querySelector('input')),icon:rect(node.querySelector('#search-icon')),font:parseFloat(getComputedStyle(node.querySelector('input')).fontSize),shortcut:getComputedStyle(node.querySelector('kbd')).display};
+      });
+      assert(metrics.field.height>=44 && metrics.field.y>=minTop,'search must retain a mobile touch height below the current safe top');
+      for(const [child,parent] of [[metrics.field,metrics.sidebar],[metrics.input,metrics.field],[metrics.icon,metrics.field]])
+        assert(child.x>=parent.x && child.x+child.width<=parent.x+parent.width && child.y>=parent.y && child.y+child.height<=parent.y+parent.height,'search children must stay inside the visible sidebar without clipping');
+      assert(metrics.input.width>=44 && metrics.font>=16,'search text must stay readable and avoid iOS focus zoom');
+      assert.equal(metrics.shortcut,'none','Duo search omits desktop keyboard shortcuts');
+      assert.equal((await ui()).scrollWidth,(await ui()).width,'search must not create page overflow');
+      return metrics;
+    };
+    await assertSearch();
+    await dragPane('sidebar',-50);
+    assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-160)<2);
+    await assertSearch();
+    await searchInput.fill('Vivienne');await assertSearch();
+    await nativeAdd('.sidebar','#new-menu');
+    await page.evaluate(key=>window.__kindredNativeMenus.cancel(key),(await nativeMenus()).at(-1).key);
+    await relay(inner,{insets:{top:59,right:21,bottom:0,left:12}});await assertSearch(67);
+    await relay({...inner,height:315},{insets:{top:59,right:21,bottom:0,left:12}});
+    assert.equal((await ui()).iosLayout,'regular','the search keyboard preserves the inner list layout');
+    await assertSearch(67);
+    await relay(inner);
+    await page.evaluate(()=>{window.__KINDRED_SYSTEM_TEXT_SCALE=1.5;window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:1.5}}));});
+    await settled();
+    const largeSearch=await assertSearch();
+    assert(Math.abs(largeSearch.font-24)<.1 && largeSearch.field.height>44,`search grows with Dynamic Type instead of clipping its larger text: ${JSON.stringify(largeSearch)}`);
+    await page.screenshot({path:path.join(out,'inner-narrow-search-large-text.png')});
+    await page.evaluate(()=>{window.__KINDRED_SYSTEM_TEXT_SCALE=1;window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:1}}));});
+    await settled();await dragPane('sidebar',50);
+    await action('search');await search.waitFor({state:'hidden'});
+
+    // Artifact + uses the live type menu and the original selected-type form.
+    await action('artifacts');await page.waitForURL('**/artifacts');
+    await page.locator('[data-artifact-id="duo-document"]').waitFor({state:'visible'});await settled();
+    const artifactAdd=await nativeAdd('.artifact-studio-library','.artifact-add-menu');
+    assert.deepEqual(artifactAdd.items.map(item=>item.title),['New doc','New sheet','New slides','New app','New folder']);
+    await chooseNative(artifactAdd,'New sheet');
+    const artifactForm=page.locator('.artifact-new-dialog');
+    await artifactForm.waitFor({state:'visible'});
+    assert.equal(await artifactForm.getByLabel('Artifact kind').inputValue(),'sheet','native artifact choice retains its server-owned closure');
+    await artifactForm.getByRole('button',{name:'Cancel',exact:true}).click();
+    await artifactForm.waitFor({state:'detached'});
+    const staleArtifactAdd=await nativeAdd('.artifact-studio-library','.artifact-add-menu');
+    await page.locator('[data-artifact-id="duo-document"]').click();
+    await page.waitForURL('**/artifacts/duo-document');await settled();
+    await chooseNative(staleArtifactAdd,'New doc');
+    assert.equal(await artifactForm.count(),0,'document navigation invalidates the list-owned artifact menu');
+    await action('back');await page.waitForURL('**/artifacts');
+    await action('back');await page.locator('.artifact-studio').waitFor({state:'detached'});await settled();
+    assert.equal(fixtureState().events.filter(event=>event.type==='artifact-create').length,0,'opening and cancelling native forms creates no artifact');
+    assert((await ui()).heading.includes('Vivienne'),'native menus and artifact navigation retain the selected bot');
+    await relay(outer);
+
     const draft='Retain this Duo draft, its caret, and this selected conversation.';
     await prompt.fill(draft);
     const selectDraft=()=>prompt.evaluate(node=>{
@@ -673,7 +783,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert.equal(fixtureState().controlledBot,null,'a compatibility click must not retake control');
     assert.equal(fixtureState().events.filter(event=>event.type==='takeover' && !event.enabled).length,touchReleasesBefore+1,'compatibility suppression must preserve the single release');
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({passed:true,engine:'webkit',outer:true,innerThreePanes:true,nativeDetailsGear:true,reverseSettingsExit:true,previewSafeGlassControls:true,pointerPaneResizeHideRestore:true,foldCancelsPaneDrag:true,outerNormalizesMaximize:true,bookDivision:true,asymmetricBookCoordinates:true,tabletop:true,activeOcclusion:true,keyboardLayout:true,dialogAndChatFocusRetained:true,singlePauseNoticeAndRelease:true,controlledToolbarFocusAndReturnOnce:true,trustedTouchReturnOnce:true,touchCancellation:true,compatibilityClickSuppressed:true,selectedDraftBack:true,draftCaretAndAnchorRetained:true,computerConnectionRetained:true,invalidInputBlocked:true,interruptedGestureCancelled:true,nativeActionsBounded:true,lightDarkAndReduceMotion:true,dynamicTypeTagAndClearance:true,errors}));
+    console.log(JSON.stringify({passed:true,engine:'webkit',outer:true,innerThreePanes:true,nativeDetailsGear:true,reverseSettingsExit:true,previewSafeGlassControls:true,pointerPaneResizeHideRestore:true,foldCancelsPaneDrag:true,outerNormalizesMaximize:true,bookDivision:true,asymmetricBookCoordinates:true,tabletop:true,activeOcclusion:true,keyboardLayout:true,dialogAndChatFocusRetained:true,singlePauseNoticeAndRelease:true,controlledToolbarFocusAndReturnOnce:true,trustedTouchReturnOnce:true,touchCancellation:true,compatibilityClickSuppressed:true,selectedDraftBack:true,draftCaretAndAnchorRetained:true,computerConnectionRetained:true,invalidInputBlocked:true,interruptedGestureCancelled:true,nativeActionsBounded:true,nativeCreateMenusAndForms:true,staleCreateActionsRejected:true,narrowSearchSafeKeyboardAndDynamicType:true,lightDarkAndReduceMotion:true,dynamicTypeTagAndClearance:true,errors}));
   } finally {
     await browser.close();
     await new Promise(resolve=>server.close(resolve));

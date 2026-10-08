@@ -928,9 +928,10 @@
       element.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}));
     }
   };
-  const presentActionMenu = (element, present = true) => {
-    const source = element.matches('.avatar-popover') ? element.parentElement.querySelector('button') : lastMenuSource;
+  const presentActionMenu = (element, present = true, toolbarSource = null) => {
+    const source = toolbarSource || (element.matches('.avatar-popover') ? element.parentElement.querySelector('button') : lastMenuSource);
     if (!source?.isConnected || source.closest('[hidden],[inert]')) { closeActionMenu(element, source); return; }
+    if (toolbarSource && (!source.getClientRects().length || getComputedStyle(source).visibility === 'hidden')) { closeActionMenu(element, source); return; }
     menuActions.clear();
     const generation = String(++actionMenuSerial), context = menuContext();
     const remember = button => {
@@ -957,7 +958,11 @@
       : choices(element);
     // Library pinning belongs to desktop's drawer, which iOS replaces with pages.
     const allowed = items.filter(item => !/^(Close|Unpin|Pin) (artifact )?library$/.test(item.title));
-    const rect = source.getBoundingClientRect();
+    const bounds = source.getBoundingClientRect();
+    // Native toolbar buttons have no web rectangle. Anchor to the current
+    // page's visible corner, retaining that page as the action's owner.
+    const rect = toolbarSource ? {x:Math.max(0,Math.min(innerWidth-1,bounds.right-1)),
+      y:Math.max(0,Math.min(innerHeight-1,bounds.top+1)),width:1,height:1} : bounds;
     closeActionMenu(element, source);
     if (!allowed.length) { menuActions.clear(); return; }
     const model = {action:'native-menu',key:generation,
@@ -983,8 +988,10 @@
       return menu ? presentActionMenu(menu, false) : null;
     },
     perform(id) {
-      const action = menuActions.get(id); menuActions.clear();
-      if (!action || action.context !== menuContext() || !action.source.isConnected ||
+      const action = menuActions.get(id);
+      if (!action) return;
+      menuActions.clear();
+      if (action.context !== menuContext() || !action.source.isConnected ||
           action.source.closest('[hidden],[inert]') || !action.source.getClientRects().length || action.button.disabled || action.button.getAttribute('aria-disabled') === 'true') return;
       action.button.click();
       // Avatar choice closures reopen the desktop flyout while saving.
@@ -1001,6 +1008,13 @@
     attributeFilter:['hidden','class','aria-expanded']});
   document.addEventListener('toggle', scanActionMenus, true);
   scanActionMenus();
+  const openToolbarMenu = (trigger, source, selector) => {
+    if (!trigger || !source?.isConnected || source.closest('[hidden],[inert]') ||
+        !source.getClientRects().length || getComputedStyle(source).visibility === 'hidden') return;
+    trigger.click(); // Keep server-owned menu construction and leaf closures.
+    const element = document.querySelector(selector);
+    if (element && openActionMenu(element)) presentActionMenu(element,true,source);
+  };
   const duoRoute = () => {
     const library = document.querySelector('.artifact-studio');
     if (library) return library.dataset.iosArtifactView === 'document' ? 'artifact' : 'artifacts';
@@ -1044,7 +1058,9 @@
       const selectors = {computer:'#show-computer',botSettings:'#bot-settings',settings:'#settings-button',artifacts:'#artifacts-button',marketplace:'#marketplace-button',search:'#ios-search',newChat:'#new-bot'};
       if (action === 'botSettings' && (route !== 'details' || document.querySelector('#bot-settings')?.hidden)) return;
       if (action === 'search' && route === 'artifacts') document.querySelector('.ios-artifact-navigation [aria-label="Search artifacts"]')?.click();
-      else if (action === 'newChat' && route === 'artifacts') document.querySelector('.artifact-add')?.click();
+      else if (action === 'newChat' && route === 'artifacts') openToolbarMenu(document.querySelector('.artifact-add'),document.querySelector('.artifact-studio-library'),'.artifact-add-menu');
+      else if (action === 'newChat' && ['chat-list','bot-chat','computer'].includes(route)) openToolbarMenu(document.querySelector('#new-bot'),sidebar,'#new-menu');
+      else if (action === 'newChat') return;
       else if (Object.hasOwn(selectors,action)) document.querySelector(selectors[action])?.click();
     }
     publishDuoNavigation();
