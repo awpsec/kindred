@@ -16,7 +16,7 @@
   if (!shell || !header) return;
   // UIKit sizes WKWebView to the keyboard layout guide. Once native geometry
   // arrives, do not subtract WebKit's transient visualViewport height again.
-  let nativeHeight = 0, nativePortrait;
+  let nativeHeight = 0, nativePortrait, nativeDuo = false;
   const updateViewport = () => {
     const height = nativeHeight || window.visualViewport?.height || window.innerHeight;
     html.style.setProperty('--ios-viewport-height', `${height}px`);
@@ -426,9 +426,16 @@
     const adaptControlNotice = () => {
       const queueAction = queueStatus.querySelector('button');
       queueStatus.classList.toggle('ios-control-paused', !!queueAction);
+      const botID = queueStatus.dataset.controlBotId;
+      // Older servers omit IDs. Ignore the heading's primary-bot badge when
+      // matching their text-only return action.
+      const headingName = [...(document.querySelector('#heading')?.childNodes || [])]
+        .filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent).join('').trim();
       const duplicate = queueAction && !controlNotice.hidden && [...controlNotice.querySelectorAll('.control-notice-row button')]
-        .some(action => action.getAttribute('aria-label') === queueAction.getAttribute('aria-label') ||
-          action.getAttribute('aria-label') === 'Return control to ' + document.querySelector('#heading')?.textContent.trim());
+        .some(action => botID && action.closest('.control-notice-row').dataset.controlBotId
+          ? action.closest('.control-notice-row').dataset.controlBotId === botID
+          : action.getAttribute('aria-label') === queueAction.getAttribute('aria-label') ||
+            action.getAttribute('aria-label') === 'Return control to ' + headingName);
       queueStatus.classList.toggle('ios-control-duplicate', !!duplicate);
       if (queueAction) {
         if (!queueAction.hasAttribute('aria-label')) queueAction.setAttribute('aria-label', 'Return control');
@@ -443,7 +450,7 @@
       }
     };
     const pauseObserver = new MutationObserver(adaptControlNotice);
-    for (const source of [controlNotice,queueStatus]) pauseObserver.observe(source,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['hidden']});
+    for (const source of [controlNotice,queueStatus]) pauseObserver.observe(source,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['hidden','data-control-bot-id']});
     adaptControlNotice();
   }
   if (computer) {
@@ -537,10 +544,14 @@
       if (!restoringFocus && canvas()) window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'computer-keyboard'});
     });
     let awaitingControl = false, controlTimeout, hadControl = false, inputWanted = false;
-    const portrait = () => nativePortrait ?? (window.innerHeight >= window.innerWidth);
+    const portrait = () => nativeDuo || (nativePortrait ?? (window.innerHeight >= window.innerWidth));
     window.__kindredComputerInput = {
       focus(force = false) {
         if (!canvas() || !portrait()) return;
+        // A fold can resize the computer behind a sheet or a second editor.
+        // Keep that editor's keyboard and caret instead of stealing focus.
+        if (document.querySelector('dialog[open]') ||
+            (document.activeElement !== input && document.activeElement?.matches('input,textarea,select,[contenteditable=true]'))) return;
         restoringFocus = true;
         if (force) input.blur();
         input.focus({preventScroll:true}); restoringFocus = false;
@@ -610,35 +621,83 @@
     updateControl();
   }
   function updateNavigation() {
+    const isCompact = html.dataset.iosLayout ? html.dataset.iosLayout === 'compact' : compact.matches;
     const railClasses = ['sidebar-rail', 'sidebar-fading', 'sidebar-peek'];
-    if (compact.matches && railClasses.some(name => shell.classList.contains(name))) shell.classList.remove(...railClasses);
+    if (isCompact && railClasses.some(name => shell.classList.contains(name))) shell.classList.remove(...railClasses);
     const open = shell.classList.contains('sidebar-open');
     menu?.setAttribute('aria-expanded', String(open));
-    if (sidebar) sidebar.inert = compact.matches && !open;
+    if (sidebar) sidebar.inert = isCompact && !open;
     if (sidebar?.inert && libraryMenu.matches(':popover-open')) libraryMenu.hidePopover();
-    if (conversation) conversation.inert = compact.matches && open;
+    if (conversation) conversation.inert = isCompact && open;
   }
   compact.addEventListener('change', updateNavigation);
   new MutationObserver(updateNavigation).observe(shell, {attributes:true, attributeFilter:['class']});
+  new MutationObserver(updateNavigation).observe(html, {attributes:true, attributeFilter:['data-ios-layout']});
   updateNavigation();
   function updateEnvironment(value) {
     if (!value) return;
     html.style.setProperty('--ios-safe-top', `${Math.max(0, Number(value.topInset) || 0)}px`);
+    html.style.setProperty('--ios-safe-left', `${Math.max(0, Number(value.leftInset) || 0)}px`);
+    html.style.setProperty('--ios-safe-right', `${Math.max(0, Number(value.rightInset) || 0)}px`);
+    nativeDuo = value.isDuo === true;
+    html.dataset.iosDuo = String(nativeDuo);
     html.dataset.iosSlab = String(value.isSlab === true);
     html.style.setProperty('--ios-safe-bottom', `${Math.max(0, Number(value.bottomInset) || 0)}px`);
     nativeHeight = Math.max(0, Number(value.viewportHeight) || 0);
     nativePortrait = typeof value.isPortrait === 'boolean' ? value.isPortrait : undefined;
     updateViewport();
+    updateReservedControls();
     window.__kindredComputerInput?.focus();
   }
   window.addEventListener('kindred-ios-layout', event => updateEnvironment(event.detail));
   updateEnvironment(window.__KINDRED_IOS_LAYOUT);
+  function updateReservedControls() {
+    const regions = nativeDuo ? window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || [] : [];
+    const horizontal = regions.find(r => r.kind === 'division' && r.width > r.height && r.y > 0);
+    html.dataset.iosDuoPose = horizontal ? 'tabletop' : 'flat';
+    html.style.setProperty('--ios-tabletop-top',`${horizontal?.y || 0}px`);
+    // If the keyboard covers the lower half, controls stay above it instead
+    // of reserving a hinge gap outside the remaining web viewport.
+    const below = horizontal && (nativeHeight || innerHeight) > horizontal.y + horizontal.height + 128;
+    html.style.setProperty('--ios-tabletop-gap',`${below ? horizontal.height : 0}px`);
+    const occlusions = regions.filter(r => r.kind === 'occlusion');
+    const intersects = (a,b) => a.left < b.x+b.width && a.right > b.x && a.top < b.y+b.height && a.bottom > b.y;
+    const tag = document.querySelector('.bot-heading');
+    html.style.setProperty('--ios-header-obstruction','0px');
+    html.style.setProperty('--ios-composer-obstruction','0px');
+    if (tag) {
+      const rect = tag.getBoundingClientRect();
+      const move = Math.max(0,...occlusions.filter(r => intersects(rect,r)).map(r => r.y+r.height+8-rect.top));
+      html.style.setProperty('--ios-header-obstruction',`${move}px`);
+    }
+    const area = document.querySelector('#composer-area');
+    if (area) {
+      const rect = area.getBoundingClientRect();
+      const move = Math.max(0,...occlusions.filter(r => intersects(rect,r)).map(r => rect.bottom-r.y+8));
+      html.style.setProperty('--ios-composer-obstruction',`${move}px`);
+    }
+    requestAnimationFrame(() => updateClearance());
+  }
+  window.addEventListener('kindred-native-geometry',updateReservedControls);
   // Floating controls share the message viewport. Reserve their measured sizes,
   // including attachments/replies and keyboard/rotation changes, for scroll ends.
   const composerArea = document.querySelector('#composer-area');
+  // Dynamic Type and draft growth can hit a camera region without changing
+  // the native viewport. Recheck after those controls actually change size.
+  let obstructionFrame = 0;
+  const obstructionObserver = new ResizeObserver(() => {
+    if (obstructionFrame) return;
+    obstructionFrame = requestAnimationFrame(() => {
+      obstructionFrame = 0;
+      updateReservedControls();
+    });
+  });
+  for (const control of [document.querySelector('.bot-heading'), composerArea]) {
+    if (control) obstructionObserver.observe(control);
+  }
   const updateClearance = () => {
     const top = header.getBoundingClientRect().height;
-    const bottom = composerArea?.hidden ? 0 : composerArea?.getBoundingClientRect().height || 0;
+    const bottom = composerArea?.hidden ? 0 : (composerArea?.getBoundingClientRect().height || 0) + (parseFloat(getComputedStyle(html).getPropertyValue('--ios-composer-obstruction')) || 0);
     conversation.style.setProperty('--ios-chat-top', `${top}px`);
     conversation.style.setProperty('--ios-chat-bottom', `${bottom}px`);
   };
@@ -821,6 +880,52 @@
     attributeFilter:['hidden','class','aria-expanded']});
   document.addEventListener('toggle', scanActionMenus, true);
   scanActionMenus();
+  const duoRoute = () => {
+    const library = document.querySelector('.artifact-studio');
+    if (library) return library.dataset.iosArtifactView === 'document' ? 'artifact' : 'artifacts';
+    if (document.querySelector('#marketplace-dialog[open]')) return 'marketplace';
+    if (!computer?.hidden) return 'computer';
+    if (!document.querySelector('#details-panel')?.hidden) return 'details';
+    if (shell.hidden) return 'marketplace';
+    return html.dataset.iosLayout === 'compact' && shell.classList.contains('sidebar-open') ? 'chat-list' : 'bot-chat';
+  };
+  let lastDuoNavigation = '';
+  const publishDuoNavigation = () => {
+    if (!nativeDuo) return;
+    const route = duoRoute();
+    const state = {action:'duo-navigation', route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160), listVisible:['bot-chat','computer'].includes(route) && html.dataset.iosLayout === 'regular'};
+    const next = JSON.stringify(state);
+    if (lastDuoNavigation === next) return;
+    lastDuoNavigation = next;
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage(state);
+  };
+  window.__kindredDuoActions = {perform(action) {
+    const route = duoRoute();
+    if (!nativeDuo || (document.querySelector('dialog[open]') && !(action === 'back' && route === 'marketplace'))) return;
+    if (action === 'back' || (action === 'computer' && route === 'computer')) {
+      if (route === 'computer') {
+        if (typeof window.__KINDRED_MOBILE_BACK === 'function') window.__KINDRED_MOBILE_BACK('bot-chat');
+        else document.querySelector('#ios-computer-back')?.click();
+      } else if (route === 'details') document.querySelector('#details-close')?.click();
+      else if (route === 'artifact') document.querySelector('.artifact-workbench-header [aria-label="Back to artifacts"]')?.click();
+      else if (route === 'artifacts') document.querySelector('.ios-artifact-navigation [aria-label="Back to chats"]')?.click();
+      else if (route === 'marketplace') document.querySelector('#marketplace-dialog')?.close();
+      else if (route === 'bot-chat') {
+        if (typeof window.__KINDRED_MOBILE_BACK === 'function') window.__KINDRED_MOBILE_BACK('chat-list');
+        else menu?.click();
+      }
+    } else {
+      const selectors = {computer:'#show-computer',settings:'#settings-button',artifacts:'#artifacts-button',marketplace:'#marketplace-button',search:'#ios-search',newChat:'#new-bot'};
+      if (action === 'search' && route === 'artifacts') document.querySelector('.ios-artifact-navigation [aria-label="Search artifacts"]')?.click();
+      else if (action === 'newChat' && route === 'artifacts') document.querySelector('.artifact-add')?.click();
+      else if (Object.hasOwn(selectors,action)) document.querySelector(selectors[action])?.click();
+    }
+    publishDuoNavigation();
+  }};
+  new MutationObserver(publishDuoNavigation).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class','data-ios-artifact-view']});
+  new MutationObserver(publishDuoNavigation).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
+  new MutationObserver(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo']});
+  publishDuoNavigation();
   // Hand navigation to the page before slow fonts/images finish loading.
   window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'interface-ready'});
 })();

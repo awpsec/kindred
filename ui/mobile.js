@@ -82,13 +82,20 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
   const edge=document.createElement('div');edge.className='ios-computer-edge';edge.setAttribute('aria-hidden','true');document.querySelector('#computer-panel').append(edge);for(const type of ['pointerdown','pointerup','click'])edge.addEventListener(type,e=>{e.preventDefault();e.stopPropagation();});
   let revision=0,signature='',gesture=null,lastSize='',settleFrame=0,resizeFrame=0,layoutHeight=0,layoutWidth=0,windowShape='';
   const visible=n=>!!n&&!n.hidden&&n.getClientRects().length>0;
-  const blocked=()=>shell.dataset.mobileResizing==='true'||!!document.querySelector('dialog[open]')||!!getSelection()?.toString()||[...document.querySelectorAll('[role=menu],.identity-menu,.composer-menu,.message-action-menu,#new-menu,.mention-options,.command-options,#content form')].some(visible);
+  const blocked=(allowSelection=false)=>shell.dataset.mobileResizing==='true'||!!document.querySelector('dialog[open]')||(!allowSelection&&!!getSelection()?.toString())||[...document.querySelectorAll('[role=menu],.identity-menu,.composer-menu,.message-action-menu,#new-menu,.mention-options,.command-options,#content form')].some(visible);
   function state(){const r=route(),target=blocked()?'none':r.target;return {...r,target};}
   function clear(){if(!gesture)return;gesture.animation?.cancel();for(const n of gesture.nodes){n.style.removeProperty('transform');n.style.removeProperty('opacity');n.style.removeProperty('will-change');}shell.classList.remove('ios-edge-preview');shell.removeAttribute('data-edge-target');gesture=null;}
   function publish(){const r=state(),s=r.key+'|'+r.target;if(s===signature)return;signature=s;revision++;clear();window.webkit?.messageHandlers?.kindredNavigation?.postMessage({target:r.target,revision});}
+  // Native toolbar taps share retained navigation with edge gestures.
+  window.__KINDRED_MOBILE_BACK=target=>{
+    if(blocked(true)||!['chat-list','bot-chat'].includes(target))return false;
+    if(target==='bot-chat'&&!visible(document.querySelector('#computer-panel')))return false;
+    if(target==='chat-list'&&(html.dataset.iosLayout!=='compact'||route().target!=='chat-list'))return false;
+    clear();document.activeElement?.blur();back(target);publish();return true;
+  };
   function geometry(force=false){
     // Keyboard-only visual viewport changes do not alter the layout size class.
-    const w=shell.clientWidth||innerWidth,h=document.documentElement.clientHeight||innerHeight,scale=parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1,minChat=32*15*scale,computerWidth=Math.max(360,w*.42),computerOpen=visible(document.querySelector('#computer-panel')),size=[w,h,scale,computerOpen].join('|');
+    const style=getComputedStyle(shell),w=(shell.clientWidth||innerWidth)-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0),h=document.documentElement.clientHeight||innerHeight,scale=parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1,duo=window.__KINDRED_IOS_LAYOUT?.isDuo===true,minChat=(duo?24:32)*15*scale,computerWidth=duo?Math.max(280,w>=850?280:w*.46):Math.max(360,w*.42),computerOpen=visible(document.querySelector('#computer-panel')),size=[w,h,scale,computerOpen,duo].join('|');
     if(size===lastSize&&force!==true)return;
     lastSize=size;clear();
     const native=window.__KINDRED_NATIVE_GEOMETRY,shape=native?native.windowWidth+'x'+native.windowHeight:'',typing=document.activeElement?.matches('input,textarea,[contenteditable=true]');
@@ -96,8 +103,21 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
     // when the native window is unchanged and an editor still has focus.
     const keyboardHost=typing&&shape&&shape===windowShape&&layoutWidth===w&&layoutHeight>h;
     if(!keyboardHost){layoutHeight=h;layoutWidth=w;}windowShape=shape;
-    const side=computerOpen&&layoutHeight>=480&&w-computerWidth>=minChat;
-    const list=layoutHeight>=480&&w-300-(side?computerWidth:0)>=minChat;
+    let sidebarWidth=duo?210:300,paneWidth=computerWidth,gap=0;
+    const contentLeft=shell.getBoundingClientRect().left+(parseFloat(style.paddingLeft)||0);
+    const division=duo?native?.reservedRegions?.filter(r=>r.kind==='division'&&r.height>r.width).map(r=>({...r,x:r.x-contentLeft})).find(r=>r.x>0&&r.x+r.width<w):null;
+    let side=computerOpen&&layoutHeight>=480&&w-paneWidth>=minChat;
+    let list=layoutHeight>=480&&w-sidebarWidth-(side?paneWidth:0)>=minChat;
+    if(division){
+      gap=division.width;paneWidth=w-division.x-gap;
+      side=computerOpen&&division.x>=minChat&&paneWidth>=280;
+      list=!computerOpen&&division.x>=210&&paneWidth>=minChat;
+      sidebarWidth=division.x;
+      if(!side&&!list)gap=0;
+    }
+    html.style.setProperty('--ios-sidebar-width',sidebarWidth+'px');
+    html.style.setProperty('--ios-computer-width',paneWidth+'px');
+    html.style.setProperty('--ios-division-gap',gap+'px');
     html.dataset.iosLayout=list?'regular':'compact';html.dataset.iosShort=String(layoutHeight<480);html.dataset.iosComputer=side?'side':'overlay';
     if(window.__KINDRED_NATIVE_GEOMETRY)html.dataset.nativeSafeArea='host';
     if(html.dataset.iosLayout==='regular')shell.classList.remove('sidebar-open');

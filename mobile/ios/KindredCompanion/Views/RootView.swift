@@ -55,6 +55,9 @@ struct RootView: View {
             @unknown default:
                 break
             }
+            if let account = model.activeAccount, model.isSignedIn(account.id) {
+                model.session(for: account).sceneActivityChanged(active: phase == .active)
+            }
         }
     }
 
@@ -66,9 +69,10 @@ struct RootView: View {
                 .background(pageCanvas)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbar }
+                .tint(usesDuoNavigation ? Color.primary : Theme.accent)
                 .toolbarBackground(Theme.chrome, for: .navigationBar)
                 .toolbarBackground(isShowingConversation ? .hidden : .visible, for: .navigationBar)
-                .toolbar(isShowingConversation ? .hidden : .visible, for: .navigationBar)
+                .toolbar(isShowingConversation && !usesDuoNavigation ? .hidden : .visible, for: .navigationBar)
                 .sheet(item: $model.download) { file in
                     ShareSheet(items: [file.url])
                 }
@@ -78,7 +82,7 @@ struct RootView: View {
         .overlay(alignment: .top) {
             if let banner = model.banner {
                 BannerView(banner: banner) { model.banner = nil }
-                    .padding(.top, 52)
+                    .safeAreaPadding(.top)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
@@ -106,7 +110,7 @@ struct RootView: View {
                     }
                 }
                 .id(account.id)
-                .ignoresSafeArea(.container, edges: isShowingConversation ? [.top, .bottom] : .bottom)
+                .ignoresSafeArea(.container, edges: isShowingConversation && !usesDuoNavigation ? [.top, .bottom] : .bottom)
                 // WebHostView owns keyboard avoidance exactly once.
                 .ignoresSafeArea(.keyboard)
             } else {
@@ -137,8 +141,56 @@ struct RootView: View {
         return model.isSignedIn(account.id) && model.session(for: account).presentation.hasChatInterface
     }
 
+    private var activeSession: WebSession? {
+        guard let account = model.activeAccount, model.isSignedIn(account.id) else { return nil }
+        return model.session(for: account)
+    }
+
+    private var usesDuoNavigation: Bool {
+        isShowingConversation && activeSession?.presentation.isDuo == true
+    }
+
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        if usesDuoNavigation, let session = activeSession {
+            ToolbarItem(placement: .topBarLeading) {
+                if session.presentation.route != "chat-list" && !(session.presentation.route == "bot-chat" && session.presentation.listVisible) {
+                    Button {
+                        session.performDuoAction(.back)
+                    } label: { Label("Back", systemImage: "chevron.backward") }
+                }
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if ["bot-chat", "computer"].contains(session.presentation.route) {
+                    Button {
+                        session.performDuoAction(.computer)
+                    } label: { Label(session.presentation.route == "computer" ? "Close computer" : "Bot computer", systemImage: "desktopcomputer") }
+                }
+                if session.presentation.route == "chat-list" || session.presentation.listVisible {
+                    Button {
+                        session.performDuoAction(.settings)
+                    } label: { Label("Settings and accounts", systemImage: "person.crop.circle") }
+                    Menu {
+                        Button("Artifacts", systemImage: "folder") { session.performDuoAction(.artifacts) }
+                        Button("Marketplace", systemImage: "square.grid.2x2") { session.performDuoAction(.marketplace) }
+                    } label: { Label("More", systemImage: "ellipsis") }
+                    Button {
+                        session.performDuoAction(.search)
+                    } label: { Label("Search chats", systemImage: "magnifyingglass") }
+                    Button {
+                        session.performDuoAction(.newChat)
+                    } label: { Label("New conversation", systemImage: "plus") }
+                }
+                if session.presentation.route == "artifacts" {
+                    Button {
+                        session.performDuoAction(.search)
+                    } label: { Label("Search artifacts", systemImage: "magnifyingglass") }
+                    Button {
+                        session.performDuoAction(.newChat)
+                    } label: { Label("New artifact", systemImage: "plus") }
+                }
+            }
+        } else {
         ToolbarItem(placement: .principal) {
             if let account = model.activeAccount {
                 VStack(spacing: 0) {
@@ -162,6 +214,7 @@ struct RootView: View {
                 AccountAvatar(account: model.activeAccount, size: 30)
             }
             .accessibilityLabel("Accounts")
+        }
         }
     }
 }

@@ -17,6 +17,10 @@ final class WebPresentationState {
     var hasLoadedChats = false
     var canvas = UIColor(named: "Canvas") ?? .systemBackground
     var isDark: Bool?
+    var isDuo = false
+    var route = "chat-list"
+    var chatTitle = ""
+    var listVisible = false
 }
 
 @MainActor
@@ -58,6 +62,8 @@ final class WebSession: NSObject {
     private weak var nativeMenuAlert: UIAlertController?
     private var layoutTop: CGFloat = 0
     private var layoutBottom: CGFloat = 0
+    private var layoutLeft: CGFloat = 0
+    private var layoutRight: CGFloat = 0
     private var layoutIsSlab = false
     private var layoutHeight: CGFloat = 0
     private var layoutIsPortrait = true
@@ -106,13 +112,6 @@ final class WebSession: NSObject {
         installBootstrap(token: token)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshSystemTextSize),
             name: UIContentSizeCategory.didChangeNotification, object: nil)
-        // Settings can change while the app is suspended; reconcile on return.
-        NotificationCenter.default.addObserver(self, selector: #selector(refreshSystemTextSize),
-            name: UIApplication.didBecomeActiveNotification, object: nil)
-
-        NotificationCenter.default.addObserver(self, selector: #selector(suspendEdgeBack),
-            name: UIApplication.willResignActiveNotification, object: nil)
-
         let interaction = UIContextMenuInteraction(delegate: self)
         webView.addInteraction(interaction)
         webView.navigationDelegate = self
@@ -133,7 +132,26 @@ final class WebSession: NSObject {
         webView.load(URLRequest(url: origin.rootURL))
     }
 
-    @objc private func suspendEdgeBack() { edgeBack?.cancel() }
+    func sceneActivityChanged(active: Bool) {
+        if active {
+            refreshSystemTextSize()
+            restoreComputerKeyboard(force: true)
+        } else { edgeBack?.cancel() }
+    }
+
+    enum DuoAction: String {
+        case back, computer, settings, artifacts, marketplace, search, newChat
+    }
+
+    func performDuoAction(_ action: DuoAction) {
+        guard presentation.isDuo, presentation.hasChatInterface, !nativeNavigationBlocked,
+              origin.matches(webView.url), loadState.failure == nil else { return }
+        edgeBack?.cancel()
+        webView.callAsyncJavaScript("""
+        if (window.top !== window.self || location.origin !== expectedOrigin) return;
+        window.__kindredDuoActions?.perform(action);
+        """, arguments: ["expectedOrigin": origin.serialized, "action": action.rawValue], in: nil, in: .page) { _ in }
+    }
 
     func detachVisibleHost() { edgeBack?.cancel() }
 
@@ -204,13 +222,18 @@ final class WebSession: NSObject {
 
     /// Presentation values only, delivered to the trusted main frame. The host
     /// extends behind system chrome while WebKit avoids the keyboard.
-    func updateLayout(topInset: CGFloat, bottomInset: CGFloat, isSlab: Bool, viewportHeight: CGFloat = 0, isPortrait: Bool = true) {
-        guard layoutTop != topInset || layoutBottom != bottomInset || layoutIsSlab != isSlab || layoutHeight != viewportHeight || layoutIsPortrait != isPortrait else { return }
+    func updateLayout(topInset: CGFloat, bottomInset: CGFloat, leftInset: CGFloat = 0, rightInset: CGFloat = 0,
+                      isDuo: Bool = false, isSlab: Bool, viewportHeight: CGFloat = 0, isPortrait: Bool = true) {
+        guard layoutTop != topInset || layoutBottom != bottomInset || layoutLeft != leftInset || layoutRight != rightInset || presentation.isDuo != isDuo || layoutIsSlab != isSlab || layoutHeight != viewportHeight || layoutIsPortrait != isPortrait else { return }
         layoutTop = topInset
         layoutBottom = bottomInset
+        layoutLeft = leftInset
+        layoutRight = rightInset
+        presentation.isDuo = isDuo
         layoutIsSlab = isSlab
         layoutHeight = viewportHeight
         layoutIsPortrait = isPortrait
+        computerHostAttachmentChanged()
         publishLayout()
     }
 
@@ -218,21 +241,23 @@ final class WebSession: NSObject {
         guard origin.matches(webView.url) else { return }
         let script = """
         if (window.top !== window.self || location.origin !== expectedOrigin) return;
-        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, isSlab, viewportHeight, isPortrait};
+        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, leftInset, rightInset, isDuo, isSlab, viewportHeight, isPortrait};
         window.dispatchEvent(new CustomEvent('kindred-ios-layout', {detail: window.__KINDRED_IOS_LAYOUT}));
         """
         webView.callAsyncJavaScript(script, arguments: ["expectedOrigin": origin.serialized,
             "topInset": Double(layoutTop), "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab,
+            "leftInset": Double(layoutLeft), "rightInset": Double(layoutRight), "isDuo": presentation.isDuo,
             "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait], in: nil, in: .page) { _ in }
     }
 
     func computerHostAttachmentChanged() {
-        ComputerOrientation.shared.update(webView: webView, active: computerInputWanted && webView.window != nil)
+        ComputerOrientation.shared.update(webView: webView, active: computerInputWanted && webView.window != nil, isSlab: layoutIsSlab)
     }
 
     func restoreComputerKeyboard(force: Bool = false) {
-        guard computerInputWanted, layoutIsPortrait, webView.window != nil,
-              UIApplication.shared.applicationState == .active, origin.matches(webView.url), !computerFocusPending else { return }
+        guard computerInputWanted, (!layoutIsSlab || layoutIsPortrait), webView.window != nil,
+              !nativeNavigationBlocked, webView.window?.windowScene?.activationState == .foregroundActive,
+              origin.matches(webView.url), !computerFocusPending else { return }
         computerFocusPending = true
         webView.evaluateJavaScript("window.__kindredComputerInput?.focus(\(force ? "true" : "false"))") { [weak self] _, _ in
             self?.computerFocusPending = false
@@ -249,7 +274,7 @@ final class WebSession: NSObject {
     /// Update an already open page without a reload, and the bootstrap for its
     /// next document. This also catches a cached account becoming visible.
     @objc func refreshSystemTextSize() {
-        let scale = SystemTextSize.currentScale
+        let scale = webView.window == nil ? SystemTextSize.currentScale : SystemTextSize.scale(for: webView.traitCollection.preferredContentSizeCategory)
         guard scale != systemTextScale else { return }
         systemTextScale = scale
         installBootstrap(token: latestToken)
@@ -320,7 +345,7 @@ final class WebSession: NSObject {
     }
 
     func updateGeometry(width: CGFloat, height: CGFloat, windowWidth: CGFloat,
-                        windowHeight: CGFloat, safeArea: UIEdgeInsets) {
+                        windowHeight: CGFloat, safeArea: UIEdgeInsets, reservedRegions: [[String: Any]] = []) {
         let values = [width, height, windowWidth, windowHeight]
         guard values.allSatisfy({ $0.isFinite && $0 > 0 }) else { return }
         let insets = [safeArea.top, safeArea.right, safeArea.bottom, safeArea.left]
@@ -328,7 +353,8 @@ final class WebSession: NSObject {
         let payload: [String: Any] = ["width": Double(width), "height": Double(height),
             "windowWidth": Double(windowWidth), "windowHeight": Double(windowHeight),
             "safeArea": ["top": Double(safeArea.top), "right": Double(safeArea.right),
-                         "bottom": Double(safeArea.bottom), "left": Double(safeArea.left)]]
+                         "bottom": Double(safeArea.bottom), "left": Double(safeArea.left)],
+            "reservedRegions": reservedRegions]
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
               let next = String(data: data, encoding: .utf8), next != geometry else { return }
         edgeBack?.cancel()
@@ -359,6 +385,15 @@ final class WebSession: NSObject {
         case WebSession.navigationHandler:
             edgeBack?.setNavigation(WebNavigation(body: message.body))
         case WebSession.accountsHandler:
+            if let body = message.body as? [String: Any], body["action"] as? String == "duo-navigation",
+               let route = body["route"] as? String,
+               ["chat-list", "bot-chat", "computer", "details", "artifacts", "artifact", "marketplace"].contains(route),
+               let title = body["title"] as? String, title.count <= 160, let listVisible = body["listVisible"] as? Bool {
+                presentation.route = route
+                presentation.chatTitle = title
+                presentation.listVisible = listVisible
+                return
+            }
             if let body = message.body as? [String: Any], body["action"] as? String == "computer-input",
                let enabled = body["enabled"] as? Bool {
                 setComputerInput(enabled)

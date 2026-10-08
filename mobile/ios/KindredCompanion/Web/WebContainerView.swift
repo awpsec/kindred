@@ -37,7 +37,7 @@ final class WebHostView: UIView {
 
     override func safeAreaInsetsDidChange() {
         super.safeAreaInsetsDidChange()
-        updateEnvironment()
+        setNeedsLayout()
     }
 
     private func updateEnvironment() {
@@ -46,10 +46,14 @@ final class WebHostView: UIView {
         }
         guard let session else { return }
         let keyboardVisible = session.webView.frame.maxY < bounds.maxY - safeAreaInsets.bottom - 1
-        session.updateLayout(topInset: safeAreaInsets.top, bottomInset: keyboardVisible ? 0 : safeAreaInsets.bottom,
-                             isSlab: UIDevice.current.userInterfaceIdiom == .phone && !hasDivision,
+        let insets = session.webView.safeAreaInsets
+        let windowBounds = window?.bounds ?? bounds
+        session.updateLayout(topInset: insets.top, bottomInset: keyboardVisible ? 0 : insets.bottom,
+                             leftInset: insets.left, rightInset: insets.right, isDuo: hasDivision,
+                             isSlab: traitCollection.userInterfaceIdiom == .phone && !hasDivision,
                              viewportHeight: session.webView.bounds.height,
-                             isPortrait: window?.windowScene?.interfaceOrientation.isPortrait ?? (bounds.height >= bounds.width))
+                             isPortrait: windowBounds.height >= windowBounds.width)
+        session.refreshSystemTextSize()
         publishGeometry()
         session.restoreComputerKeyboard()
     }
@@ -62,22 +66,34 @@ final class WebHostView: UIView {
         super.didMoveToWindow()
         session?.computerHostAttachmentChanged()
         if window == nil { session?.detachVisibleHost() }
-        updateEnvironment()
+        setNeedsLayout()
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
 
     private func publishGeometry() {
         guard let window else { return }
+        var regions: [[String: Any]] = []
+        if #available(iOS 27.1, *), let webView = session?.webView {
+            for (kind, name) in [(UIView.ReservedRegion.Kind.division, "division"), (.occlusion, "occlusion")] {
+                for region in webView.reservedRegions(kind: kind) {
+                    let rect = region.frame.intersection(webView.bounds)
+                    guard !rect.isNull else { continue }
+                    regions.append(["kind": name, "x": rect.minX, "y": rect.minY,
+                                    "width": rect.width, "height": rect.height])
+                }
+            }
+        }
         session?.updateGeometry(width: session?.webView.bounds.width ?? bounds.width,
             height: session?.webView.bounds.height ?? bounds.height,
             windowWidth: window.bounds.width, windowHeight: window.bounds.height,
-            safeArea: window.safeAreaInsets)
+            safeArea: session?.webView.safeAreaInsets ?? safeAreaInsets, reservedRegions: regions)
     }
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = UIColor(named: "Canvas")
         keyboardLayoutGuide.usesBottomSafeArea = false
+        observeTextSize()
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardDidHide), name: UIResponder.keyboardDidHideNotification, object: nil)
     }
 
@@ -85,11 +101,20 @@ final class WebHostView: UIView {
         super.init(coder: coder)
         backgroundColor = UIColor(named: "Canvas")
         keyboardLayoutGuide.usesBottomSafeArea = false
+        observeTextSize()
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardDidHide), name: UIResponder.keyboardDidHideNotification, object: nil)
+    }
+
+    private func observeTextSize() {
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: WebHostView, _: UITraitCollection) in
+            view.session?.refreshSystemTextSize()
+            view.setNeedsLayout()
+        }
     }
 
     func attach(_ session: WebSession) {
         self.session = session
+        hasDivision = hasDivision || session.presentation.isDuo
         let webView = session.webView
         guard webView.superview !== self else { return }
         subviews.forEach { $0.removeFromSuperview() }

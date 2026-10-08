@@ -231,3 +231,36 @@ html[data-kindred-ios] :is(.artifact-workbench-actions button[aria-label^="Edit 
 html[data-kindred-ios] .artifact-workbench-body { padding:16px; }
 html[data-kindred-ios] .artifact-workbench-body:has(>.artifact-studio-preview) { padding:0; }
 html[data-kindred-ios] .artifact-studio :is(.artifact-new-dialog,.artifact-metadata-dialog) { max-width:calc(100% - 24px); max-height:calc(100% - 24px); overflow:auto; border-radius:24px; }
+
+/* Duo lets UIKit place native actions on the hardware edge. Its web content
+   retains the bot tag, while available space and actual division regions
+   choose the panes. A keyboard alone never changes that navigation choice. */
+html[data-kindred-ios] .shell { box-sizing:border-box; padding-left:var(--ios-safe-left,0px); padding-right:var(--ios-safe-right,0px); }
+html[data-kindred-ios][data-ios-duo=true] .sidebar-top { visibility:hidden; height:0; min-height:0; padding:0; overflow:hidden; }
+html[data-kindred-ios][data-ios-duo=true] :is(#mobile-menu,#show-computer,#ios-computer-back,#computer-close,#details-close) { visibility:hidden; pointer-events:none; }
+html[data-kindred-ios][data-ios-duo=true] .conversation-header { position:absolute; inset:0 0 auto; height:64px; min-height:64px; padding:10px 12px; border:0; background:transparent; pointer-events:none; z-index:4; }
+html[data-kindred-ios][data-ios-duo=true] .bot-heading { position:absolute; left:50%; top:10px; transform:translateX(-50%); display:flex; flex-direction:row; align-items:center; gap:8px; min-height:44px; height:auto; padding:5px 12px 5px 8px; max-width:calc(100% - 24px); border-radius:24px; pointer-events:auto; }
+html[data-kindred-ios][data-ios-duo=true] #header-avatar .character { width:32px!important; height:32px!important; }
+html[data-kindred-ios][data-ios-duo=true] .bot-heading strong { font-size:calc(15px * var(--text-scale,1)); line-height:calc(20px * var(--text-scale,1)); }
+html[data-kindred-ios][data-ios-duo=true] #chat-actions { display:none; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-layout=regular] .shell>.sidebar { display:flex; position:relative; inset:auto; flex:0 0 var(--ios-sidebar-width,210px); width:var(--ios-sidebar-width,210px); margin:0 var(--ios-division-gap,0px) 0 0; z-index:auto; border:0; background:var(--bg); }
+html[data-kindred-ios][data-ios-duo=true][data-ios-layout=regular] .shell>.conversation { visibility:visible; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-computer=side] .shell>.computer-panel:not([hidden]):not(.expanded) { position:relative!important; inset:auto!important; flex:0 0 var(--ios-computer-width,280px); width:var(--ios-computer-width,280px)!important; min-width:0; margin-left:var(--ios-division-gap,0px); z-index:auto; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-computer=side] .shell>.details-panel:not([hidden]) { position:absolute; inset:0; width:100%; max-width:100%; z-index:9; }
+html[data-kindred-ios][data-ios-duo=true] .pane-resizer { display:none; }
+html[data-kindred-ios][data-ios-duo=true] .sidebar>.search { display:none; }
+html[data-kindred-ios][data-ios-duo=true] .sidebar.ios-searching>.search { display:flex; }
+html[data-kindred-ios][data-ios-duo=true] #identity-row { display:none; }
+html[data-kindred-ios][data-ios-duo=true] .pinned-bots { overflow-x:auto; flex-wrap:nowrap; justify-content:flex-start; }
+html[data-kindred-ios][data-ios-duo=true] .pinned-entry { flex:none; }
+html[data-kindred-ios][data-ios-duo=true] .computer-panel.ios-keyboard-active #desktop { flex:1; min-height:0; }
+html[data-kindred-ios][data-ios-duo=true] .computer-panel.ios-keyboard-active .ios-computer-controls { flex:none; }
+html[data-kindred-ios][data-ios-duo=true] :is(.composer-area,.desktop-toolbar) { padding-inline:10px; }
+html[data-kindred-ios][data-ios-duo=true] :is(.ios-artifact-navigation,.artifact-workbench-header [aria-label="Back to artifacts"]) { visibility:hidden; pointer-events:none; }
+html[data-kindred-ios][data-ios-duo=true] .conversation-header { height:calc(max(64px,20px * var(--text-scale,1) + 32px) + var(--ios-header-obstruction,0px)); }
+html[data-kindred-ios][data-ios-duo=true] .bot-heading { top:calc(10px + var(--ios-header-obstruction,0px)); }
+html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area { bottom:var(--ios-composer-obstruction,0px); }
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden]) #desktop { flex:0 1 calc(var(--ios-tabletop-top) - 64px); max-height:calc(100% - 128px); min-height:0; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden])>.ios-computer-controls { flex:1; min-height:56px; padding-top:var(--ios-tabletop-gap,0px); box-sizing:border-box; overflow:auto; }
+html[data-kindred-ios][data-ios-duo=true] .ios-artifact-navigation { height:0; min-height:0; padding:0; overflow:hidden; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden])>.ios-computer-controls { display:flex; flex-direction:column; }

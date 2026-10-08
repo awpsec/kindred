@@ -51,16 +51,18 @@ final class AppModelSignInTests: XCTestCase {
 
     func testComputerPortraitLockBelongsOnlyToTheControllingView() {
         let first = WKWebView(), second = WKWebView()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.addSubview(first)
+        window.addSubview(second)
         let policy = ComputerOrientation.shared
-        policy.update(webView: first, active: true)
-        if UIDevice.current.userInterfaceIdiom == .phone {
-            XCTAssertEqual(policy.mask, .portrait)
-            policy.update(webView: second, active: false)
-            XCTAssertEqual(policy.mask, .portrait, "Another account cannot release the owner's portrait lock")
-        }
-        policy.update(webView: first, active: false)
-        XCTAssertTrue(policy.mask.contains(.landscapeLeft))
-        XCTAssertTrue(policy.mask.contains(.landscapeRight))
+        policy.update(webView: first, active: true, isSlab: true)
+        XCTAssertEqual(policy.mask(for: window), .portrait)
+        policy.update(webView: second, active: false, isSlab: true)
+        XCTAssertEqual(policy.mask(for: window), .portrait, "Another account cannot release the owner's portrait lock")
+        policy.update(webView: first, active: true, isSlab: false)
+        XCTAssertTrue(policy.mask(for: window).contains(.landscapeLeft), "Duo control must release a slab lock when its capability changes")
+        XCTAssertTrue(policy.mask(for: window).contains(.landscapeRight))
+        policy.update(webView: first, active: false, isSlab: false)
     }
 
     func testNativeKeyboardGuideSizesWebViewExactlyOnce() async throws {

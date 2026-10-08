@@ -21,6 +21,16 @@ notifications. iOS 17 or later, iPhone and iPad.
 > the real iOS navigation bridge enabled and an isolated connected VNC fixture,
 > covering control, rotation, keyboard input and the native menu overrides.
 
+> **Duo preparation (2026-10-07):** Xcode 27.1 beta 27A9269 and its genuine
+> iPhone Duo simulator run all 34 native tests; all 78 core tests pass. The
+> system places the native actions on the inner display's right edge. A live
+> Dynamic Type change updates the open page without reloading it. Automated
+> WebKit tests cover retained drafts, selection, reading position and computer
+> connection across outer/inner geometry, book/tabletop divisions, keyboard
+> shrink, asymmetric safe areas, camera clearance and light/dark/Reduce Motion.
+> The remaining interactive simulator checks are recorded in
+> [Duo compatibility](duo-compatibility.md); they are not hardware certification.
+
 ## Layout
 
 ```
@@ -447,8 +457,10 @@ these wording changes do not add local notification delivery.
 ## Known limitations
 
 - Live sign-in, a chat roundtrip, settings/accounts appearance, computer views
-  and library navigation have been checked in the simulator. iPhone Duo
-  transitions and UI on physical hardware still await verification.
+  and library navigation have been checked in the simulator. Duo's inner
+  native toolbar and live text-size changes have also been checked. The full
+  Duo touch, software-keyboard and fold-pose matrix remains incomplete; see
+  [the acceptance record](duo-compatibility.md). Physical Duo verification is pending.
 - Conversation menu data/actions and row-control removal pass checks. The
   native press gesture still awaits live verification; the Mac locked during
   the simulator check.
@@ -584,8 +596,9 @@ Keep the existing Keychain/removal failures separate; do not report this source
 update as fixing them. The generated test host must reference **Kindred.app**.
 
 Follow Apple’s [Duo preparation guidance](https://developer.apple.com/iphone-duo/prepare/)
-for SDK-specific simulator and native toolbar behavior. This source has not been
-validated on that simulator. For Xcode 27.1 Duo and the actual phone, check:
+for SDK-specific simulator and native toolbar behavior. The
+[acceptance record](duo-compatibility.md) distinguishes native simulator results
+from automated web geometry checks. For Xcode 27.1 Duo and the actual phone, check:
 
 - Open a long chat with a draft, numbered list and nonzero scroll position. Fold,
   unfold, rotate and resize with the keyboard open and closed. Keep the same
