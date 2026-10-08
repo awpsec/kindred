@@ -23,7 +23,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
       window.__KINDRED_MOBILE_PROFILE = profileID;
       window.__KINDRED_NATIVE_SESSION_BOOTSTRAP = true;
       window.__KINDRED_IOS_APP_VERSION = 'iOS Duo regression';
-      window.__KINDRED_IOS_LAYOUT = {topInset:0,bottomInset:0,leftInset:0,rightInset:0,isSlab:false,isDuo:true,isPortrait:true,viewportHeight:outer.height};
+      window.__KINDRED_IOS_LAYOUT = {topInset:0,bottomInset:0,leftInset:0,rightInset:0,isSlab:true,isDuo:true,isDuoInner:false,isPortrait:true,viewportHeight:outer.height};
       window.__KINDRED_NATIVE_GEOMETRY = {...outer,safeArea:{top:0,right:0,bottom:0,left:0},reservedRegions:[]};
       window.accountRequests = [];
       window.navigation = [];
@@ -58,7 +58,8 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     const relay = async (bounds,{regions=[],insets={top:0,right:0,bottom:0,left:0}}={}) => {
       await page.setViewportSize({width:bounds.width,height:bounds.height});
       await page.evaluate(({bounds,regions,insets}) => {
-        window.__KINDRED_IOS_LAYOUT = {topInset:insets.top,bottomInset:insets.bottom,leftInset:insets.left,rightInset:insets.right,isSlab:false,isDuo:true,isPortrait:bounds.windowHeight>=bounds.windowWidth,viewportHeight:bounds.height};
+        const isDuoInner=bounds.windowWidth>=945;
+        window.__KINDRED_IOS_LAYOUT = {topInset:insets.top,bottomInset:insets.bottom,leftInset:insets.left,rightInset:insets.right,isSlab:!isDuoInner,isDuo:true,isDuoInner,isPortrait:bounds.windowHeight>=bounds.windowWidth,viewportHeight:bounds.height};
         window.__KINDRED_NATIVE_GEOMETRY = {...bounds,safeArea:insets,reservedRegions:regions};
         window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:window.__KINDRED_IOS_LAYOUT}));
         window.dispatchEvent(new CustomEvent('kindred-native-geometry',{detail:window.__KINDRED_NATIVE_GEOMETRY}));
@@ -93,6 +94,17 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
         .filter(node=>node.dataset.controlBotId==='vivienne' || (node.id==='queue-status'?!!node.querySelector('button'):node.querySelector('.control-notice-copy strong')?.textContent==='Vivienne'))
         .map(node=>({id:node.id || node.className,label:node.querySelector('button')?.getAttribute('aria-label')})));
       assert.equal(notices.length,1,`the current bot must have one actionable pause notice: ${JSON.stringify(notices)}`);
+    };
+    const assertHitTarget=async(locator,min=44)=>{
+      const result=await locator.evaluate(node=>{const rect=node.getBoundingClientRect(),hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);return {width:rect.width,height:rect.height,hittable:node.contains(hit)};});
+      assert(result.width>=min && result.height>=min && result.hittable,`the visible control must be a reachable hit target: ${JSON.stringify(result)}`);
+    };
+    const dragPane=async(kind,delta)=>{
+      const handle=page.locator(`.ios-duo-resizer[data-pane="${kind}"]`);
+      await assertHitTarget(handle,24);
+      const rect=await handle.boundingBox(),x=rect.x+rect.width/2,y=rect.y+rect.height/2;
+      await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+delta,y,{steps:4});
+      await page.mouse.up();await settled();
     };
     const assertRetained = async baseline => {
       const state=await ui();
@@ -198,6 +210,69 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert.equal(await page.locator('.bot-heading').evaluate(node=>getComputedStyle(node).top),'10px','inactive occlusions must not leave an empty header gap');
     assert.equal(await page.locator('#composer-area').evaluate(node=>getComputedStyle(node).bottom),'0px','inactive occlusions must not leave an empty composer gap');
 
+    // The native gear targets the existing settings form only on Details.
+    await action('botSettings');
+    assert(await page.locator('#details-panel').isHidden(),'a stale gear action cannot open bot settings from chat');
+    await page.locator('.bot-heading').click();
+    await page.locator('#details-panel').waitFor({state:'visible'});
+    await page.waitForFunction(()=>window.accountRequests.filter(v=>v.action==='duo-navigation').at(-1)?.botSettingsAvailable===true);
+    assert(await page.locator('#bot-settings').isHidden(),'Duo Details must not duplicate the native gear');
+    await action('botSettings');
+    await page.waitForFunction(()=>document.querySelector('#details-title').textContent==='Bot settings');
+    assert.equal((await nav()).botSettingsAvailable,false,'the gear is unavailable while its settings form is already open');
+    await action('back');await page.locator('#details-panel').waitFor({state:'hidden'});await settled();
+    assert.equal(await prompt.evaluate(node=>node.value),draft);
+
+    // Exit keeps the sheet modal while both its position and input availability
+    // settle. An interrupted entrance must close from its actual current pose.
+    for(const interruptEntrance of [false,true]) {
+      await action('settings');await page.locator('#settings-dialog').waitFor({state:'visible'});
+      const exit=await page.evaluate(async interruptEntrance=>{
+        const sheet=document.querySelector('#settings-dialog');
+        const entries=sheet.getAnimations();
+        if(interruptEntrance){for(const animation of entries){animation.pause();animation.currentTime=Number(animation.effect.getTiming().duration)*.4;}}
+        else await Promise.all(entries.map(animation=>animation.finished));
+        const translate=()=>{const value=getComputedStyle(sheet).transform;return value==='none'?0:new DOMMatrixReadOnly(value).m42;};
+        const start=translate();sheet.querySelector('[aria-label="Close settings sheet"]').click();
+        const animations=sheet.getAnimations().filter(animation=>!entries.includes(animation));
+        const closeStart=translate();
+        for(const animation of animations){animation.pause();animation.currentTime=Number(animation.effect.getTiming().duration)*.5;}
+        const during={y:translate(),open:sheet.open,modal:sheet.matches(':modal'),inert:sheet.inert};
+        for(const animation of animations)animation.finish();
+        return {start,closeStart,during,end:translate(),height:sheet.getBoundingClientRect().height};
+      },interruptEntrance);
+      assert(Math.abs(exit.closeStart-exit.start)<2,'sheet dismissal must start at its current visible position');
+      assert(exit.during.open && exit.during.modal && exit.during.inert,'the descending sheet remains modal and rejects duplicate input');
+      assert(exit.during.y>exit.start+8 && exit.end>=exit.height-1,'settings must move downward before the modal is removed');
+      await page.locator('#settings-dialog').waitFor({state:'hidden'});await settled();
+      await assertHitTarget(prompt,1);
+    }
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await action('settings');await page.locator('#settings-dialog').waitFor({state:'visible'});
+    assert.equal(await page.getByRole('button',{name:'Close settings sheet',exact:true}).evaluate(button=>{button.click();return document.querySelector('#settings-dialog').open;}),false,'Reduce Motion closes without a spatial exit');
+    await page.emulateMedia({reducedMotion:'no-preference'});await settled();
+
+    // A real document preview uses a glass SVG close control below system chrome.
+    await relay(outer,{insets:{top:47,right:12,bottom:21,left:8}});
+    await page.evaluate(async()=>{
+      const {openDocumentPreview}=await import('/document-preview.js');
+      const card=document.createElement('div');card.id='duo-document-preview';document.body.append(card);
+      window.duoPreviewDownloads=0;
+      await openDocumentPreview({card,name:'Duo mobile document preview',extension:'txt',getBlob:async()=>new Blob(['Retained document preview content'],{type:'text/plain'}),download:()=>window.duoPreviewDownloads++});
+    });
+    const documentDialog=page.locator('#duo-document-preview .document-dialog'),previewClose=documentDialog.getByRole('button',{name:'Close preview',exact:true});
+    await documentDialog.getByText('Retained document preview content',{exact:true}).waitFor();
+    await assertHitTarget(previewClose);
+    const previewStyle=await previewClose.evaluate(node=>({radius:getComputedStyle(node).borderRadius,blur:getComputedStyle(node).backdropFilter,svg:!!node.querySelector('svg'),top:node.getBoundingClientRect().top}));
+    assert(previewStyle.svg && previewStyle.radius==='50%' && previewStyle.blur.includes('blur'),'preview Close must use the same glass circle and SVG controls as mobile chat');
+    assert(previewStyle.top>=57,'preview controls must clear the native status area');
+    assert(await documentDialog.getByRole('button',{name:'Download',exact:true}).isHidden(),'mobile preview omits the desktop download control');
+    await previewClose.click();await documentDialog.waitFor({state:'detached'});
+    assert.equal(await page.evaluate(()=>duoPreviewDownloads),0);
+    await page.evaluate(()=>document.querySelector('#duo-document-preview').remove());
+    await relay(inner);
+    assert.equal(await prompt.evaluate(node=>node.value),draft);
+
     // Native toolbar actions open the same live computer path as the app.
     await action('computer');
     await page.waitForFunction(()=>window.__duoFixtureRFB && !document.querySelector('#computer-panel').hidden);
@@ -208,11 +283,57 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert(panes[0].width>=200 && panes[1].width>=360 && panes[2].width>=280,'three panes must retain useful minimum widths');
     assert(panes[0].x+panes[0].width<=panes[1].x+1 && panes[1].x+panes[1].width<=panes[2].x+1,'three panes must not overlap');
     await page.screenshot({path:path.join(out,'flat-three-panes.png')});
+    await page.evaluate(()=>window.duoExpandedRFB=window.__duoFixtureRFB);
+    await page.locator('#computer-expand').click();await settled();
+    assert.equal(await page.locator('#computer-panel').evaluate(node=>node.classList.contains('expanded')),true,'the inner display can explicitly expand its computer');
+    await relay(outer);
+    assert.equal(await page.locator('#computer-panel').evaluate(node=>node.classList.contains('expanded')),false,'closing must normalize an inherited maximize state before hiding its collapse control');
+    assert.equal(await page.evaluate(()=>__duoFixtureRFB===duoExpandedRFB && __duoFixtureRFB.disconnects===0),true,'fold-time maximize normalization must preserve the transport');
+    assert(await page.locator('#computer-expand').isHidden(),'closed-screen normalize leaves no maximize control');
+    await relay(inner);
     await page.locator('#take-control').click();
     await page.waitForFunction(()=>document.querySelector('#computer-panel').classList.contains('is-controlling') && !window.__duoFixtureRFB.viewOnly);
     await settled();
     await page.evaluate(()=>window.retainedDuoRFB=window.__duoFixtureRFB);
     const controlBaseline=fixtureState(),effectsBaseline=noInputEffects(),localEffectsBaseline=await localInputEffects();
+    // Genuine inner capability enables handles. Drags, full hide and restore
+    // retain the page and computer while remote input is guarded during resize.
+    const paneLoad=(await ui()).loadID;
+    await dragPane('sidebar',30);
+    assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-240)<2);
+    await dragPane('computer',-20);
+    assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-300)<2);
+    const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('kindred-ios-duo-panes-v1')));
+    assert.equal(saved.sidebar,240);assert.equal(saved.computer,300);
+    await action('chats');await settled();
+    assert(await page.locator('.sidebar').isHidden());
+    assert.equal((await ui()).iosLayout,'regular','manual list hiding must preserve a fitting inner architecture');
+    assert.equal((await nav()).listVisible,false);assert.equal((await nav()).listToggleAvailable,true,'native Show chat list remains available after hiding');
+    await action('chats');await settled();
+    assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-240)<2,'restoring the list retains its chosen width');
+    await dragPane('sidebar',-200);
+    assert(await page.locator('.sidebar').isHidden(),'dragging the list fully closed must commit the hide');
+    await action('chats');await settled();
+    await dragPane('sidebar',50);await dragPane('computer',20);
+    assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-210)<2);
+    assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-280)<2);
+    assert.equal((await ui()).loadID,paneLoad);assert.equal(await prompt.evaluate(node=>node.value),draft);
+    assert.deepEqual(await localInputEffects(),localEffectsBaseline,'pane gestures must not reach the controlled computer');
+    assert.equal(await page.evaluate(()=>__duoFixtureRFB===retainedDuoRFB && __duoFixtureRFB.disconnects===0),true);
+    const resizingHandle=page.locator('.ios-duo-resizer[data-pane="sidebar"]'),handleBox=await resizingHandle.boundingBox();
+    await page.mouse.move(handleBox.x+handleBox.width/2,handleBox.y+handleBox.height/2);
+    await page.mouse.down();await page.mouse.move(handleBox.x+handleBox.width/2+18,handleBox.y+handleBox.height/2,{steps:2});
+    assert.equal(await page.locator('#app').getAttribute('data-mobile-resizing'),'true','active pane dragging must deny remote input');
+    await relay(outer);
+    assert.equal(await page.locator('.pane-resize-shield').count(),0,'folding must remove the interrupted pane shield');
+    assert.equal(await page.locator('html').evaluate(node=>node.classList.contains('pane-resizing')),false,'folding must cancel the interrupted drag');
+    await page.mouse.move(5,5);await page.mouse.up();
+    assert(await page.locator('#computer-expand').isHidden(),'the closed outer screen has no maximize affordance');
+    assert(await page.locator('.ios-duo-resizer[data-pane="computer"]').isHidden(),'outer capability suppresses inner pane handles');
+    await relay(inner);
+    assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-210)<2,'a cancelled fold-time drag must restore the previous width');
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kindred-ios-duo-panes-v1')).sidebar),210,'a cancelled pane drag must not save its preview');
+    assert.deepEqual(await localInputEffects(),localEffectsBaseline,'fold cancellation must not synthesize remote input');
     await relay(inner,{regions:[division]});
     assert.equal((await ui()).iosComputer,'side','book mode places chat and computer on opposite halves');
     assert.equal((await ui()).iosLayout,'compact','book mode must not squeeze a third pane into one half');
@@ -443,8 +564,116 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     const releases=fixtureState().events.filter(event=>event.type==='takeover' && !event.enabled);
     assert.equal(releases.length,releasesBefore+1,'the pause action must release control exactly once');
     assert.equal(releases.at(-1).botID,'vivienne');
+    // Exercise a real down/up on Return while the native textarea owns focus.
+    // A pointer-down blur requests keyboard restoration and can move the
+    // button out from under the finger before its click. The host's keyboard
+    // bounds are relayed here; actual keyboard animation is checked in iOS.
+    await relay(outer);
+    await action('computer');
+    await page.locator('#computer-panel').waitFor({state:'visible'});await settled();
+    await page.locator('#take-control').click();
+    await page.waitForFunction(()=>document.querySelector('#computer-panel').classList.contains('is-controlling') && document.activeElement.id==='ios-computer-input');
+    await relay({...outer,height:315});
+    const returnButton=page.locator('#take-control');
+    await assertHitTarget(returnButton);
+    const returnBox=await returnButton.boundingBox();
+    assert(returnBox.y+returnBox.height<=315,'Return control remains above the relayed keyboard');
+    const pointerReleasesBefore=fixtureState().events.filter(event=>event.type==='takeover' && !event.enabled).length;
+    const pointerInputBefore=await localInputEffects();
+    await page.evaluate(()=>{
+      window.duoToolbarRFB=window.__duoFixtureRFB;
+      window.duoToolbarBlurCount=0;
+      document.querySelector('#ios-computer-input').addEventListener('blur',()=>window.duoToolbarBlurCount++);
+      window.duoKeyboardRequestsBefore=window.accountRequests.filter(value=>value.action==='computer-keyboard').length;
+    });
+    const returnX=returnBox.x+returnBox.width/2,returnY=returnBox.y+returnBox.height/2;
+    await page.mouse.move(returnX,returnY);await page.mouse.down();
+    assert.equal(await page.evaluate(()=>document.activeElement.id),'ios-computer-input','toolbar pointer-down must retain the native text input until its action click');
+    assert.equal(await page.evaluate(()=>window.duoToolbarBlurCount),0,'toolbar pointer-down must not begin keyboard hide/restore');
+    assert.equal(await page.evaluate(()=>window.accountRequests.filter(value=>value.action==='computer-keyboard').length===window.duoKeyboardRequestsBefore),true,'pointer-down must not request a keyboard reopen');
+    assert.equal(fixtureState().controlledBot,'vivienne','Return control must wait for the actual click');
+    const downBox=await returnButton.boundingBox();
+    assert(Math.abs(downBox.y-returnBox.y)<1,'the Return target must not move between down and up');
+    await page.mouse.up();
+    await page.waitForFunction(()=>!document.querySelector('#computer-panel').classList.contains('is-controlling'));
+    const pointerReleases=fixtureState().events.filter(event=>event.type==='takeover' && !event.enabled);
+    assert.equal(fixtureState().controlledBot,null,'the real toolbar click must release control');
+    assert.equal(pointerReleases.length,pointerReleasesBefore+1,'the real toolbar click must release control exactly once');
+    assert.equal(pointerReleases.at(-1).botID,'vivienne');
+    assert.notEqual(await page.evaluate(()=>document.activeElement.id),'ios-computer-input','returning control must dismiss native computer input');
+    await page.waitForFunction(()=>window.__duoFixtureRFB?.viewOnly && document.querySelector('#desktop-mode').textContent.includes('Watching'));
+    assert.deepEqual(await page.evaluate(()=>({keys:duoToolbarRFB.keys.slice(),keyEvents:duoToolbarRFB.keyEvents.slice(),pointer:duoToolbarRFB.pointer.slice()})),pointerInputBefore,'a toolbar control tap must not type or click on the computer');
+
+    await page.locator('#take-control').click();
+    await page.waitForFunction(()=>document.querySelector('#computer-panel').classList.contains('is-controlling') && document.activeElement.id==='ios-computer-input');
+    await settled();
+    const touchReleasesBefore=fixtureState().events.filter(event=>event.type==='takeover' && !event.enabled).length;
+    const touchInputBefore=await localInputEffects();
+    let touchBox=await returnButton.boundingBox(),touchPoint={x:touchBox.x+touchBox.width/2,y:touchBox.y+touchBox.height/2};
+    const touchPhase=(type,overrides={})=>returnButton.evaluate((button,init)=>{
+      const target=init.target?document.querySelector(init.target):button;
+      const event=new PointerEvent(init.type,{pointerType:'touch',pointerId:731,isPrimary:true,button:0,bubbles:true,cancelable:true,clientX:init.x,clientY:init.y,...init});
+      target.dispatchEvent(event);
+      return {prevented:event.defaultPrevented,active:document.activeElement.id};
+    },{type,...touchPoint,...overrides});
+    // Bounded touch activation rejects a drag, cancelled touch, wrong pointer,
+    // secondary finger/button and a release on a different toolbar control.
+    for(const rejected of ['movement','cancel','pointer','secondary','button','target']) {
+      const down=await touchPhase('pointerdown',rejected==='secondary'?{isPrimary:false}:rejected==='button'?{button:2}:{});
+      if(!['secondary','button'].includes(rejected))assert(down.prevented && down.active==='ios-computer-input',`${rejected}: touch-down must keep native input focused`);
+      if(rejected==='cancel')await touchPhase('pointercancel');
+      await touchPhase('pointerup',rejected==='movement'?{x:touchPoint.x+12}:rejected==='pointer'?{pointerId:732}:rejected==='target'?{target:'#desktop-paste'}:{});
+      assert.equal(fixtureState().controlledBot,'vivienne',`${rejected}: rejected touch must retain control`);
+      assert.equal(fixtureState().events.filter(event=>event.type==='takeover' && !event.enabled).length,touchReleasesBefore,`${rejected}: rejected touch must not issue Return`);
+    }
+    await touchPhase('pointerdown');
+    await relay(inner);
+    await touchPhase('pointerup');
+    assert.equal(fixtureState().controlledBot,'vivienne','folding must cancel a pending toolbar touch before its stale release');
+    await relay({...outer,height:315});
+    touchBox=await returnButton.boundingBox();touchPoint={x:touchBox.x+touchBox.width/2,y:touchBox.y+touchBox.height/2};
+    await touchPhase('pointerdown');
+    await action('back');await page.locator('#computer-panel').waitFor({state:'hidden'});await settled();
+    await touchPhase('pointerup');
+    assert.equal(fixtureState().controlledBot,'vivienne','a hidden computer must reject a pending toolbar release');
+    await action('computer');
+    await page.waitForFunction(()=>!document.querySelector('#computer-panel').hidden && document.activeElement.id==='ios-computer-input');
+    await settled();
+    assert.equal(fixtureState().events.filter(event=>event.type==='takeover' && !event.enabled).length,touchReleasesBefore,'cancelled toolbar gestures must have no deferred release');
+    assert.deepEqual(await localInputEffects(),touchInputBefore,'cancelled toolbar gestures must not reach the computer');
+    await page.evaluate(()=>{
+      window.duoTouchTrace=[];window.duoTouchClicks=[];window.duoTouchRFB=window.__duoFixtureRFB;
+      document.querySelector('#take-control').addEventListener('click',event=>window.duoTouchClicks.push({trusted:event.isTrusted,detail:event.detail}));
+      for(const type of ['pointerdown','pointerup'])document.addEventListener(type,event=>{
+        // Return replaces its SVG synchronously while pointer-up is bubbling;
+        // the event path retains the actual button after that child is removed.
+        if(event.composedPath().some(node=>node instanceof Element && node.id==='take-control'))window.duoTouchTrace.push({type:event.type,pointerType:event.pointerType,trusted:event.isTrusted,primary:event.isPrimary,prevented:event.defaultPrevented,active:document.activeElement.id,at:performance.now()});
+      });
+    });
+    touchBox=await returnButton.boundingBox();
+    await page.touchscreen.tap(touchBox.x+touchBox.width/2,touchBox.y+touchBox.height/2);
+    await page.waitForFunction(()=>!document.querySelector('#computer-panel').classList.contains('is-controlling') && !document.querySelector('#take-control').disabled && window.__duoFixtureRFB?.viewOnly && document.querySelector('#desktop-mode').textContent.includes('Watching'));
+    const touchTrace=await page.evaluate(()=>window.duoTouchTrace);
+    assert.deepEqual(touchTrace.map(event=>[event.type,event.pointerType,event.trusted,event.primary]),[['pointerdown','touch',true,true],['pointerup','touch',true,true]],'the real touchscreen must exercise trusted touch pointer events');
+    assert(touchTrace[0].prevented && touchTrace[0].active==='ios-computer-input','a trusted touch-down must preserve the native keyboard focus');
+    assert.deepEqual(await page.evaluate(()=>window.duoTouchClicks),[{trusted:false,detail:0}],'touch release must activate exactly once without relying on a compatibility click');
+    assert.equal(fixtureState().controlledBot,null,'a real touchscreen Return must release control');
+    const touchReleases=fixtureState().events.filter(event=>event.type==='takeover' && !event.enabled);
+    assert.equal(touchReleases.length,touchReleasesBefore+1,'a real touchscreen Return must release exactly once');
+    assert.equal(touchReleases.at(-1).botID,'vivienne');
+    assert.notEqual(await page.evaluate(()=>document.activeElement.id),'ios-computer-input','touch Return must dismiss native computer input');
+    assert.deepEqual(await page.evaluate(()=>({keys:duoTouchRFB.keys.slice(),keyEvents:duoTouchRFB.keyEvents.slice(),pointer:duoTouchRFB.pointer.slice()})),touchInputBefore,'touch Return must not type or click on the computer');
+    // A trusted mouse click models a delayed compatibility click. It must be
+    // swallowed before the button handler can turn Return into Take control.
+    assert(await page.evaluate(()=>performance.now()-duoTouchTrace.at(-1).at<600),'the compatibility-click probe must occur within the touch suppression window');
+    const compatibleBox=await returnButton.boundingBox();
+    await page.mouse.click(compatibleBox.x+compatibleBox.width/2,compatibleBox.y+compatibleBox.height/2);
+    await page.waitForTimeout(80);
+    assert.deepEqual(await page.evaluate(()=>window.duoTouchClicks),[{trusted:false,detail:0}],'a trusted compatibility click must not reach the button handler twice');
+    assert.equal(fixtureState().controlledBot,null,'a compatibility click must not retake control');
+    assert.equal(fixtureState().events.filter(event=>event.type==='takeover' && !event.enabled).length,touchReleasesBefore+1,'compatibility suppression must preserve the single release');
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({passed:true,engine:'webkit',outer:true,innerThreePanes:true,bookDivision:true,asymmetricBookCoordinates:true,tabletop:true,activeOcclusion:true,keyboardLayout:true,dialogAndChatFocusRetained:true,singlePauseNoticeAndRelease:true,selectedDraftBack:true,draftCaretAndAnchorRetained:true,computerConnectionRetained:true,invalidInputBlocked:true,interruptedGestureCancelled:true,nativeActionsBounded:true,lightDarkAndReduceMotion:true,dynamicTypeTagAndClearance:true,errors}));
+    console.log(JSON.stringify({passed:true,engine:'webkit',outer:true,innerThreePanes:true,nativeDetailsGear:true,reverseSettingsExit:true,previewSafeGlassControls:true,pointerPaneResizeHideRestore:true,foldCancelsPaneDrag:true,outerNormalizesMaximize:true,bookDivision:true,asymmetricBookCoordinates:true,tabletop:true,activeOcclusion:true,keyboardLayout:true,dialogAndChatFocusRetained:true,singlePauseNoticeAndRelease:true,controlledToolbarFocusAndReturnOnce:true,trustedTouchReturnOnce:true,touchCancellation:true,compatibilityClickSuppressed:true,selectedDraftBack:true,draftCaretAndAnchorRetained:true,computerConnectionRetained:true,invalidInputBlocked:true,interruptedGestureCancelled:true,nativeActionsBounded:true,lightDarkAndReduceMotion:true,dynamicTypeTagAndClearance:true,errors}));
   } finally {
     await browser.close();
     await new Promise(resolve=>server.close(resolve));

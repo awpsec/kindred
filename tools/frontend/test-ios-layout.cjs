@@ -306,8 +306,39 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     assert(await page.locator('#ios-file-menu-probe .deliverable-menu').isHidden());
     await chooseNative(fileMenu,'Preview');
     await page.waitForFunction(()=>window.fileMenuReads===1);
-    await page.locator('.document-dialog').getByRole('button',{name:'Close',exact:true}).click();
+    await page.locator('.document-dialog').getByRole('button',{name:'Close preview',exact:true}).click();
     await page.evaluate(()=>document.querySelector('#ios-file-menu-probe').remove());
+    // Exercise both remaining preview paths with a physical-phone status inset.
+    await page.evaluate(()=>{
+      window.previewPreviousLayout=window.__KINDRED_IOS_LAYOUT;
+      window.__KINDRED_IOS_LAYOUT={...window.previewPreviousLayout,topInset:59};
+      dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:window.__KINDRED_IOS_LAYOUT}));
+    });
+    await page.evaluate(async value=>{
+      const {openWorkspaceArtifact}=await import('/workspace-artifacts.js');
+      openWorkspaceArtifact(value,{api:async()=>value,markdown:text=>{const body=document.createElement('div');body.textContent=text;return body;}});
+    },artifact);
+    const workspaceClose=page.locator('.workspace-artifact-dialog>.ios-preview-header').getByRole('button',{name:'Close preview',exact:true});
+    await workspaceClose.waitFor();
+    const checkPreviewControl=async button=>{
+      const box=await button.boundingBox();
+      assert(box.y>=69 && box.width>=44 && box.height>=44,'preview close must clear status chrome and keep a 44pt target');
+      assert.equal(await button.evaluate(node=>document.elementFromPoint(node.getBoundingClientRect().x+22,node.getBoundingClientRect().y+22)===node||node.contains(document.elementFromPoint(node.getBoundingClientRect().x+22,node.getBoundingClientRect().y+22))),true,'preview Close must remain an unobstructed hit target');
+      assert(await button.locator('svg').count(),'preview Close uses the mobile glass icon');
+    };
+    await checkPreviewControl(workspaceClose);
+    await workspaceClose.click();
+    assert.equal(await page.locator('.workspace-artifact-dialog').count(),0,'workspace preview keeps its original cleanup closure');
+    await page.locator('.screenshot-open').first().click();
+    const screenshotClose=page.locator('.screenshot-dialog>.dialog-header').getByRole('button',{name:'Close preview',exact:true});
+    await screenshotClose.waitFor();
+    await checkPreviewControl(screenshotClose);
+    await screenshotClose.click();
+    assert.equal(await page.locator('.screenshot-dialog').count(),0,'screenshot preview keeps its original cleanup closure');
+    await page.evaluate(()=>{
+      window.__KINDRED_IOS_LAYOUT=window.previewPreviousLayout;delete window.previewPreviousLayout;
+      dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:window.__KINDRED_IOS_LAYOUT}));
+    });
     const avatarBox=await page.locator('#header-avatar').boundingBox();
     const headingBox=await page.locator('.bot-heading').boundingBox(),backBox=await page.locator('#mobile-menu').boundingBox();
     assert(Math.abs(headingBox.x+headingBox.width/2-201)<2,'avatar/name tag must be centered independently of side controls');

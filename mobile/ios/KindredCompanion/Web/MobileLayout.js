@@ -177,6 +177,32 @@
     },
   };
   const icon = path => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+  const adaptPreviews = () => {
+    for (const dialog of document.querySelectorAll('.document-dialog,.workspace-artifact-dialog,.screenshot-dialog')) {
+      if (dialog.dataset.iosPreview) continue;
+      let head = dialog.querySelector('.document-header,.dialog-header');
+      let close = head?.querySelector('button:last-child');
+      if (dialog.matches('.workspace-artifact-dialog')) {
+        close = dialog.querySelector(':scope > button');
+        if (!close) continue;
+        head = document.createElement('header'); head.className = 'ios-preview-header';
+        const title = document.createElement('strong');
+        title.textContent = dialog.querySelector('.workspace-artifact-header strong')?.textContent || 'Artifact preview';
+        dialog.prepend(head); head.append(title,close);
+      }
+      if (!head || !close) continue;
+      dialog.dataset.iosPreview = 'true';
+      close.setAttribute('aria-label','Close preview'); close.title = 'Close preview';
+      close.innerHTML = icon('<path d="m6 6 12 12M18 6 6 18"/>');
+      if (dialog.matches('.document-dialog')) {
+        for (const action of head.querySelectorAll('button,a')) {
+          if (action !== close) action.classList.add('ios-preview-download');
+        }
+      }
+    }
+  };
+  new MutationObserver(adaptPreviews).observe(document.body,{childList:true,subtree:true});
+  adaptPreviews();
   // Artifacts retain the server's editor/save closures, but navigate as two
   // pages on iOS. Returning to the list never destroys an in-progress editor.
   const artifactPages = new Map();
@@ -395,6 +421,33 @@
   accountEntry.onclick = () => window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'open'});
   settingsHeader.append(settingsClose, accountEntry);
   settings?.prepend(settingsHeader);
+  if (settings) {
+    const closeImmediately = settings.close.bind(settings);
+    let exit = null, exitTimer;
+    settings.close = returnValue => {
+      if (!settings.open || exit) return;
+      if (html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches) {
+        closeImmediately(returnValue); return;
+      }
+      settings.inert = true;
+      settings.dataset.iosSheetClosing = 'true';
+      const animation = settings.animate([{transform:getComputedStyle(settings).transform},{transform:'translateY(100%)'}],
+        {duration:240,easing:'cubic-bezier(.4,0,.8,.2)',fill:'forwards'});
+      exit = animation;
+      const finish = () => {
+        if (exit !== animation) return;
+        exit = null; clearTimeout(exitTimer);
+        // Remove the modal before releasing the held end pose.
+        closeImmediately(returnValue);
+        animation.cancel(); settings.inert = false;
+        delete settings.dataset.iosSheetClosing;
+      };
+      animation.finished.then(finish,finish);
+      // WebKit animation suspension must never leave an invisible modal.
+      exitTimer = setTimeout(finish,600);
+    };
+    settings.addEventListener('cancel',event => { event.preventDefault(); settings.close(); });
+  }
   // The sheet is a destination from the list; dismissing it returns there.
   // A downward pull at the top dismisses it without interfering with content scrolling.
   let sheetPull;
@@ -506,6 +559,35 @@
     let composing = false;
     const canvas = () => computer.classList.contains('is-controlling') && !computer.hidden
       ? computer.querySelector('.desktop-canvas canvas') : null;
+    // Keep the keyboard's geometry steady until the action click completes.
+    // Blurring this input on pointer-down otherwise moves Return control out
+    // from under the user's finger before pointer-up can activate it.
+    let controlPress = null, completedControlTap = null;
+    toolbar?.addEventListener('pointerdown',event => {
+      controlPress = null;
+      const button = event.target.closest('#desktop-paste,#take-control,#done-subtask');
+      if (!event.isPrimary || event.button !== 0 || !canvas() || !button || button.disabled) return;
+      event.preventDefault();
+      if (event.pointerType === 'touch') controlPress = {button,id:event.pointerId,x:event.clientX,y:event.clientY};
+    });
+    toolbar?.addEventListener('pointercancel',() => { controlPress = null; });
+    toolbar?.addEventListener('pointerup',event => {
+      const press = controlPress; controlPress = null;
+      if (!press || !canvas() || shell.dataset.mobileResizing === 'true' || press.id !== event.pointerId || !press.button.isConnected || press.button.disabled ||
+          event.target.closest('button') !== press.button || Math.hypot(event.clientX-press.x,event.clientY-press.y) > 8) return;
+      // WKWebView suppresses its compatibility click after a prevented touch
+      // pointer-down. Activate once on release without dismissing the keyboard.
+      event.preventDefault();
+      completedControlTap = {button:press.button,at:performance.now()};
+      press.button.click();
+    });
+    toolbar?.addEventListener('click',event => {
+      if (event.isTrusted && event.detail > 0 && completedControlTap?.button === event.target.closest('button') &&
+          performance.now()-completedControlTap.at < 600) {
+        completedControlTap = null; event.preventDefault(); event.stopImmediatePropagation();
+      }
+    },true);
+    window.addEventListener('kindred-native-geometry',() => { controlPress = null; });
     const sendKey = (type, key, code = 'Unidentified', modifiers = {}) => {
       canvas()?.dispatchEvent(new KeyboardEvent(type, {key,code,bubbles:true,cancelable:true,...modifiers}));
     };
@@ -544,7 +626,7 @@
       if (!restoringFocus && canvas()) window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'computer-keyboard'});
     });
     let awaitingControl = false, controlTimeout, hadControl = false, inputWanted = false;
-    const portrait = () => nativeDuo || (nativePortrait ?? (window.innerHeight >= window.innerWidth));
+    const portrait = () => html.dataset.iosDuoInner === 'true' || (nativePortrait ?? (window.innerHeight >= window.innerWidth));
     window.__kindredComputerInput = {
       focus(force = false) {
         if (!canvas() || !portrait()) return;
@@ -626,13 +708,13 @@
     if (isCompact && railClasses.some(name => shell.classList.contains(name))) shell.classList.remove(...railClasses);
     const open = shell.classList.contains('sidebar-open');
     menu?.setAttribute('aria-expanded', String(open));
-    if (sidebar) sidebar.inert = isCompact && !open;
+    if (sidebar) sidebar.inert = (isCompact && !open) || (html.dataset.iosSidebarHidden === 'true' && !html.classList.contains('pane-resizing'));
     if (sidebar?.inert && libraryMenu.matches(':popover-open')) libraryMenu.hidePopover();
     if (conversation) conversation.inert = isCompact && open;
   }
   compact.addEventListener('change', updateNavigation);
   new MutationObserver(updateNavigation).observe(shell, {attributes:true, attributeFilter:['class']});
-  new MutationObserver(updateNavigation).observe(html, {attributes:true, attributeFilter:['data-ios-layout']});
+  new MutationObserver(updateNavigation).observe(html, {attributes:true, attributeFilter:['class','data-ios-layout','data-ios-sidebar-hidden']});
   updateNavigation();
   function updateEnvironment(value) {
     if (!value) return;
@@ -641,7 +723,13 @@
     html.style.setProperty('--ios-safe-right', `${Math.max(0, Number(value.rightInset) || 0)}px`);
     nativeDuo = value.isDuo === true;
     html.dataset.iosDuo = String(nativeDuo);
+    html.dataset.iosDuoInner = String(nativeDuo && value.isDuoInner === true);
     html.dataset.iosSlab = String(value.isSlab === true);
+    // A closed phone must not inherit an inner-display fullscreen state whose
+    // collapse control is intentionally unavailable on the outer display.
+    if (nativeDuo && value.isDuoInner !== true && computer?.classList.contains('expanded')) {
+      document.querySelector('#computer-expand')?.click();
+    }
     html.style.setProperty('--ios-safe-bottom', `${Math.max(0, Number(value.bottomInset) || 0)}px`);
     nativeHeight = Math.max(0, Number(value.viewportHeight) || 0);
     nativePortrait = typeof value.isPortrait === 'boolean' ? value.isPortrait : undefined;
@@ -654,7 +742,7 @@
   function updateReservedControls() {
     const regions = nativeDuo ? window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || [] : [];
     const horizontal = regions.find(r => r.kind === 'division' && r.width > r.height && r.y > 0);
-    html.dataset.iosDuoPose = horizontal ? 'tabletop' : 'flat';
+    html.dataset.iosDuoPose = horizontal ? 'tabletop' : regions.some(r => r.kind === 'division' && r.height > r.width) ? 'book' : 'flat';
     html.style.setProperty('--ios-tabletop-top',`${horizontal?.y || 0}px`);
     // If the keyboard covers the lower half, controls stay above it instead
     // of reserving a hinge gap outside the remaining web viewport.
@@ -893,7 +981,11 @@
   const publishDuoNavigation = () => {
     if (!nativeDuo) return;
     const route = duoRoute();
-    const state = {action:'duo-navigation', route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160), listVisible:['bot-chat','computer'].includes(route) && html.dataset.iosLayout === 'regular'};
+    const regular = html.dataset.iosLayout === 'regular';
+    const state = {action:'duo-navigation', route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160),
+      listVisible:['bot-chat','computer'].includes(route) && regular && html.dataset.iosSidebarHidden !== 'true',
+      listToggleAvailable:['bot-chat','computer'].includes(route) && regular && html.dataset.iosDuoInner === 'true',
+      botSettingsAvailable:route === 'details' && !!document.querySelector('#bot-settings') && !document.querySelector('#bot-settings').hidden};
     const next = JSON.stringify(state);
     if (lastDuoNavigation === next) return;
     lastDuoNavigation = next;
@@ -902,6 +994,7 @@
   window.__kindredDuoActions = {perform(action) {
     const route = duoRoute();
     if (!nativeDuo || (document.querySelector('dialog[open]') && !(action === 'back' && route === 'marketplace'))) return;
+    if (action === 'chats') { window.__KINDRED_DUO_PANES?.toggleList(); publishDuoNavigation(); return; }
     if (action === 'back' || (action === 'computer' && route === 'computer')) {
       if (route === 'computer') {
         if (typeof window.__KINDRED_MOBILE_BACK === 'function') window.__KINDRED_MOBILE_BACK('bot-chat');
@@ -915,7 +1008,8 @@
         else menu?.click();
       }
     } else {
-      const selectors = {computer:'#show-computer',settings:'#settings-button',artifacts:'#artifacts-button',marketplace:'#marketplace-button',search:'#ios-search',newChat:'#new-bot'};
+      const selectors = {computer:'#show-computer',botSettings:'#bot-settings',settings:'#settings-button',artifacts:'#artifacts-button',marketplace:'#marketplace-button',search:'#ios-search',newChat:'#new-bot'};
+      if (action === 'botSettings' && (route !== 'details' || document.querySelector('#bot-settings')?.hidden)) return;
       if (action === 'search' && route === 'artifacts') document.querySelector('.ios-artifact-navigation [aria-label="Search artifacts"]')?.click();
       else if (action === 'newChat' && route === 'artifacts') document.querySelector('.artifact-add')?.click();
       else if (Object.hasOwn(selectors,action)) document.querySelector(selectors[action])?.click();
@@ -924,7 +1018,7 @@
   }};
   new MutationObserver(publishDuoNavigation).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class','data-ios-artifact-view']});
   new MutationObserver(publishDuoNavigation).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
-  new MutationObserver(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo']});
+  new MutationObserver(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo','data-ios-duo-inner','data-ios-sidebar-hidden']});
   publishDuoNavigation();
   // Hand navigation to the page before slow fonts/images finish loading.
   window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'interface-ready'});

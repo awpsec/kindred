@@ -126,6 +126,11 @@ const probeScript = `
   window.__KINDRED_DUO_FIXTURE={snapshot,probe};
   for(const name of ['kindred-native-geometry','kindred-ios-layout','resize','pageshow','pagehide','focus','blur'])window.addEventListener(name,probe);
   for(const name of ['input','selectionchange','focusin','focusout','visibilitychange'])document.addEventListener(name,probe);
+  for(const name of ['pointerdown','pointerup','click'])document.addEventListener(name,event=>{
+    const action=event.target.closest?.('#take-control,#desktop-paste');
+    if(!action)return;
+    fetch('/fixture/telemetry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'annotation',name:'computer-control-tap',phase:name,target:action.id,x:event.clientX,y:event.clientY,pointerType:event.pointerType||null,focus:document.activeElement?.id})}).catch(()=>{});
+  },true);
   window.addEventListener('error',e=>fetch('/fixture/telemetry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'error',message:String(e.message)})}).catch(()=>{}));
   window.addEventListener('unhandledrejection',e=>fetch('/fixture/telemetry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'error',message:String(e.reason?.message||e.reason)})}).catch(()=>{}));
   setInterval(probe,500);probe();

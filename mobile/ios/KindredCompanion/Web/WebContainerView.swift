@@ -41,8 +41,10 @@ final class WebHostView: UIView {
     }
 
     private func updateEnvironment() {
+        var isDuoInner = false
         if #available(iOS 27.1, *) {
-            hasDivision = hasDivision || !(window?.reservedRegions(kind: .division, options: .includeInactive).isEmpty ?? true)
+            isDuoInner = !(window?.reservedRegions(kind: .division, options: .includeInactive).isEmpty ?? true)
+            hasDivision = hasDivision || isDuoInner
         }
         guard let session else { return }
         let keyboardVisible = session.webView.frame.maxY < bounds.maxY - safeAreaInsets.bottom - 1
@@ -50,7 +52,7 @@ final class WebHostView: UIView {
         let windowBounds = window?.bounds ?? bounds
         session.updateLayout(topInset: insets.top, bottomInset: keyboardVisible ? 0 : insets.bottom,
                              leftInset: insets.left, rightInset: insets.right, isDuo: hasDivision,
-                             isSlab: traitCollection.userInterfaceIdiom == .phone && !hasDivision,
+                             isDuoInner: isDuoInner, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
                              viewportHeight: session.webView.bounds.height,
                              isPortrait: windowBounds.height >= windowBounds.width)
         session.refreshSystemTextSize()

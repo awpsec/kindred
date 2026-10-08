@@ -54,7 +54,9 @@ final class ComputerOrientation {
         let root = webView.window?.rootViewController
         root?.setNeedsUpdateOfSupportedInterfaceOrientations()
         root?.presentedViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-        if lock { scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) }
+        // Retract the explicit portrait preference when an inner display or
+        // returned control releases the lock. UIKit chooses the current pose.
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: lock ? .portrait : mask(for: webView.window)))
     }
 }
 

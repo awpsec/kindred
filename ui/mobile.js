@@ -81,10 +81,14 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
   const html=document.documentElement,shell=document.querySelector('#app');
   const edge=document.createElement('div');edge.className='ios-computer-edge';edge.setAttribute('aria-hidden','true');document.querySelector('#computer-panel').append(edge);for(const type of ['pointerdown','pointerup','click'])edge.addEventListener(type,e=>{e.preventDefault();e.stopPropagation();});
   let revision=0,signature='',gesture=null,lastSize='',settleFrame=0,resizeFrame=0,layoutHeight=0,layoutWidth=0,windowShape='';
+  const paneKey='kindred-ios-duo-panes-v1';
+  let panes={sidebar:210,computer:280,hidden:false},paneDrag=null;
+  try{const saved=JSON.parse(localStorage.getItem(paneKey)||'null');if(saved&&Number.isFinite(saved.sidebar)&&saved.sidebar>=160&&saved.sidebar<=600&&Number.isFinite(saved.computer)&&saved.computer>=240&&saved.computer<=800&&typeof saved.hidden==='boolean')panes=saved;}catch{}
+  const savePanes=()=>{try{localStorage.setItem(paneKey,JSON.stringify(panes));}catch{}};
   const visible=n=>!!n&&!n.hidden&&n.getClientRects().length>0;
   const blocked=(allowSelection=false)=>shell.dataset.mobileResizing==='true'||!!document.querySelector('dialog[open]')||(!allowSelection&&!!getSelection()?.toString())||[...document.querySelectorAll('[role=menu],.identity-menu,.composer-menu,.message-action-menu,#new-menu,.mention-options,.command-options,#content form')].some(visible);
   function state(){const r=route(),target=blocked()?'none':r.target;return {...r,target};}
-  function clear(){if(!gesture)return;gesture.animation?.cancel();for(const n of gesture.nodes){n.style.removeProperty('transform');n.style.removeProperty('opacity');n.style.removeProperty('will-change');}shell.classList.remove('ios-edge-preview');shell.removeAttribute('data-edge-target');gesture=null;}
+  function clear(){if(!gesture)return;for(const animation of gesture.animations||[])animation.cancel();for(const n of gesture.nodes){n.style.removeProperty('transform');n.style.removeProperty('opacity');n.style.removeProperty('will-change');}shell.classList.remove('ios-edge-preview');shell.removeAttribute('data-edge-target');gesture=null;}
   function publish(){const r=state(),s=r.key+'|'+r.target;if(s===signature)return;signature=s;revision++;clear();window.webkit?.messageHandlers?.kindredNavigation?.postMessage({target:r.target,revision});}
   // Native toolbar taps share retained navigation with edge gestures.
   window.__KINDRED_MOBILE_BACK=target=>{
@@ -95,7 +99,7 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
   };
   function geometry(force=false){
     // Keyboard-only visual viewport changes do not alter the layout size class.
-    const style=getComputedStyle(shell),w=(shell.clientWidth||innerWidth)-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0),h=document.documentElement.clientHeight||innerHeight,scale=parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1,duo=window.__KINDRED_IOS_LAYOUT?.isDuo===true,minChat=(duo?24:32)*15*scale,computerWidth=duo?Math.max(280,w>=850?280:w*.46):Math.max(360,w*.42),computerOpen=visible(document.querySelector('#computer-panel')),size=[w,h,scale,computerOpen,duo].join('|');
+    const style=getComputedStyle(shell),w=(shell.clientWidth||innerWidth)-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0),h=document.documentElement.clientHeight||innerHeight,scale=parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1,duo=window.__KINDRED_IOS_LAYOUT?.isDuo===true,inner=duo&&window.__KINDRED_IOS_LAYOUT?.isDuoInner===true,computerOpen=visible(document.querySelector('#computer-panel')),minChat=(duo?(computerOpen?20:24):32)*15*scale,computerWidth=duo?(inner?panes.computer:280):Math.max(360,w*.42),size=[w,h,scale,computerOpen,duo,inner,panes.sidebar,panes.computer,panes.hidden].join('|');
     if(size===lastSize&&force!==true)return;
     lastSize=size;clear();
     const native=window.__KINDRED_NATIVE_GEOMETRY,shape=native?native.windowWidth+'x'+native.windowHeight:'',typing=document.activeElement?.matches('input,textarea,[contenteditable=true]');
@@ -103,32 +107,78 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
     // when the native window is unchanged and an editor still has focus.
     const keyboardHost=typing&&shape&&shape===windowShape&&layoutWidth===w&&layoutHeight>h;
     if(!keyboardHost){layoutHeight=h;layoutWidth=w;}windowShape=shape;
-    let sidebarWidth=duo?210:300,paneWidth=computerWidth,gap=0;
+    const regions=duo?native?.reservedRegions||[]:[];
+    if(paneDrag&&(!inner||regions.some(r=>r.kind==='division')||shape!==paneDrag.shape)){paneDrag.cancel();return;}
+    let sidebarWidth=duo?(inner?Math.min(panes.sidebar,Math.max(160,w-minChat)):210):300,paneWidth=inner?Math.min(computerWidth,Math.max(240,w-minChat)):computerWidth,gap=0;
     const contentLeft=shell.getBoundingClientRect().left+(parseFloat(style.paddingLeft)||0);
     const division=duo?native?.reservedRegions?.filter(r=>r.kind==='division'&&r.height>r.width).map(r=>({...r,x:r.x-contentLeft})).find(r=>r.x>0&&r.x+r.width<w):null;
     let side=computerOpen&&layoutHeight>=480&&w-paneWidth>=minChat;
-    let list=layoutHeight>=480&&w-sidebarWidth-(side?paneWidth:0)>=minChat;
+    let list=layoutHeight>=480&&w-sidebarWidth-(side?paneWidth:0)>=minChat&&!(inner&&panes.hidden);
     if(division){
       gap=division.width;paneWidth=w-division.x-gap;
       side=computerOpen&&division.x>=minChat&&paneWidth>=280;
-      list=!computerOpen&&division.x>=210&&paneWidth>=minChat;
+      list=!computerOpen&&division.x>=210&&paneWidth>=minChat&&!(inner&&panes.hidden);
       sidebarWidth=division.x;
       if(!side&&!list)gap=0;
     }
     html.style.setProperty('--ios-sidebar-width',sidebarWidth+'px');
     html.style.setProperty('--ios-computer-width',paneWidth+'px');
     html.style.setProperty('--ios-division-gap',gap+'px');
-    html.dataset.iosLayout=list?'regular':'compact';html.dataset.iosShort=String(layoutHeight<480);html.dataset.iosComputer=side?'side':'overlay';
+    const regular=list||(inner&&panes.hidden&&layoutHeight>=480&&w-(side?paneWidth:0)>=minChat);
+    html.dataset.iosLayout=regular?'regular':'compact';html.dataset.iosSidebarHidden=String(regular&&!list);html.dataset.iosShort=String(layoutHeight<480);html.dataset.iosComputer=side?'side':'overlay';
     if(window.__KINDRED_NATIVE_GEOMETRY)html.dataset.nativeSafeArea='host';
     if(html.dataset.iosLayout==='regular')shell.classList.remove('sidebar-open');
     shell.dataset.mobileResizing='true';inputAvailabilityChanged?.();cancelAnimationFrame(settleFrame);resized?.();
     let previous='';
     const validate=()=>{
       const canvas=document.querySelector('#desktop canvas:not(.desktop-glass)'),rect=canvas?.getBoundingClientRect(),stamp=rect?[rect.x,rect.y,rect.width,rect.height].join('|'):'none';
-      if(previous===stamp&&computerGeometryValid?.()===true){delete shell.dataset.mobileResizing;inputAvailabilityChanged?.();publish();return;}
+      if(!paneDrag&&previous===stamp&&computerGeometryValid?.()===true){delete shell.dataset.mobileResizing;inputAvailabilityChanged?.();publish();return;}
       previous=stamp;settleFrame=requestAnimationFrame(validate);
     };
     settleFrame=requestAnimationFrame(validate);publish();
+  }
+  window.__KINDRED_DUO_PANES={toggleList(){
+    if(!window.__KINDRED_IOS_LAYOUT?.isDuoInner||blocked(true))return;
+    panes.hidden=html.dataset.iosSidebarHidden!=='true';savePanes();geometry(true);
+  }};
+  // Inner-display separators use native available bounds rather than desktop
+  // breakpoints/rail widths. A full hide always has a native restore button.
+  for(const [kind,parent] of [['sidebar',shell.querySelector('.sidebar')],['computer',document.querySelector('#computer-panel')]]){
+    if(!parent)continue;
+    const handle=document.createElement('div');handle.className='ios-duo-resizer';handle.dataset.pane=kind;handle.tabIndex=0;
+    handle.setAttribute('role','separator');handle.setAttribute('aria-orientation','vertical');handle.setAttribute('aria-label',kind==='sidebar'?'Resize chat list':'Resize bot computer');parent.append(handle);
+    const limits=()=>{
+      const style=getComputedStyle(shell),width=shell.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0),scale=parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1;
+      const computer=visible(document.querySelector('#computer-panel')),side=html.dataset.iosComputer==='side',list=html.dataset.iosLayout==='regular'&&html.dataset.iosSidebarHidden!=='true';
+      const other=kind==='sidebar'?(computer&&side?parseFloat(html.style.getPropertyValue('--ios-computer-width'))||280:0):(list?parseFloat(html.style.getPropertyValue('--ios-sidebar-width'))||210:0);
+      const min=kind==='sidebar'?160:240,max=Math.max(min,width-(computer?300:360)*scale-other);
+      handle.setAttribute('aria-valuemin',kind==='sidebar'?'0':String(min));handle.setAttribute('aria-valuemax',String(Math.round(max)));
+      return {min,max,width};
+    };
+    const allowed=()=>window.__KINDRED_IOS_LAYOUT?.isDuoInner===true&&!(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions||[]).some(r=>r.kind==='division')&&!blocked(true)&&!document.querySelector('#computer-panel')?.classList.contains('expanded');
+    const apply=(raw,l)=>{panes[kind]=Math.max(l.min,Math.min(l.max,raw));if(kind==='sidebar')panes.hidden=raw<80;geometry(true);handle.setAttribute('aria-valuenow',String(Math.round(panes.hidden&&kind==='sidebar'?0:panes[kind])));};
+    handle.addEventListener('pointerdown',event=>{
+      if(event.button!==0||!event.isPrimary||paneDrag||!allowed())return;
+      event.preventDefault();event.stopPropagation();clear();
+      const before={...panes},l=limits(),start=parent.getBoundingClientRect().width,x=event.clientX,id=event.pointerId,shape=windowShape;
+      const shield=document.createElement('div');shield.className='pane-resize-shield';shield.setAttribute('aria-hidden','true');document.body.append(shield);
+      html.classList.add('pane-resizing');handle.setPointerCapture(id);let ended=false;
+      const move=e=>{if(e.pointerId===id)apply(start+(e.clientX-x)*(kind==='sidebar'?1:-1),l);};
+      const end=commit=>{
+        if(ended)return;ended=true;paneDrag=null;
+        handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',cancel);handle.removeEventListener('lostpointercapture',cancel);document.removeEventListener('keydown',escape,true);
+        if(handle.hasPointerCapture(id))handle.releasePointerCapture(id);shield.remove();html.classList.remove('pane-resizing');
+        if(commit)savePanes();else panes=before;geometry(true);
+      };
+      const up=e=>{if(e.pointerId===id)end(true);},cancel=()=>end(false),escape=e=>{if(e.key==='Escape'){e.preventDefault();end(false);}};
+      paneDrag={shape,cancel};handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',cancel);handle.addEventListener('lostpointercapture',cancel);document.addEventListener('keydown',escape,true);
+      shell.dataset.mobileResizing='true';inputAvailabilityChanged?.();
+    });
+    handle.addEventListener('keydown',event=>{
+      if(!allowed()||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();const l=limits(),raw=event.key==='Home'?(kind==='sidebar'?0:l.min):event.key==='End'?l.max:parent.getBoundingClientRect().width+(event.key==='ArrowRight'?1:-1)*(kind==='sidebar'?1:-1)*(event.shiftKey?64:16);
+      apply(raw,l);savePanes();
+    });
   }
   window.__KINDRED_EDGE_BACK=message=>{
     if(!message||typeof message.id!=='string'||!/^[0-9a-f-]{36}$/i.test(message.id)||!Number.isSafeInteger(message.revision)||message.revision!==revision||!Number.isFinite(message.progress)||message.progress<0||message.progress>1)return false;
@@ -138,7 +188,7 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
       if(!Number.isFinite(message.x)||!Number.isFinite(message.y)||message.x<0||message.x>20||message.y<0||message.y>innerHeight)return false;
       const hit=document.elementFromPoint(message.x,message.y);if(!hit||hit.closest('canvas'))return false;for(let n=hit;n&&n!==shell;n=n.parentElement)if(n.scrollWidth>n.clientWidth+1&&['auto','scroll'].includes(getComputedStyle(n).overflowX))return false;
       const source=document.querySelector(r.target==='bot-chat'?'#computer-panel':'.conversation'),destination=document.querySelector(r.target==='bot-chat'?'.conversation':'.sidebar');if(!source||!destination)return false;
-      document.activeElement?.blur();gesture={id:message.id,revision,target:r.target,key:r.key,nodes:[source,destination],width:shell.clientWidth};shell.classList.add('ios-edge-preview');shell.dataset.edgeTarget=r.target;
+      document.activeElement?.blur();gesture={id:message.id,revision,target:r.target,key:r.key,nodes:[source,destination],width:source.getBoundingClientRect().width};shell.classList.add('ios-edge-preview');shell.dataset.edgeTarget=r.target;
     }
     if(!gesture||gesture.id!==message.id||gesture.revision!==revision||gesture.key!==r.key||gesture.target!==r.target)return false;
     if(gesture.ending)return false;const [source,destination]=gesture.nodes,reduced=html.dataset.motion==='off'||matchMedia('(prefers-reduced-motion:reduce)').matches;
@@ -150,8 +200,10 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
     if(!['finish','cancel'].includes(message.phase))return false;
     const commit=message.phase==='finish'&&message.commit===true,target=gesture.target;
     // Navigate once after the visual completion; invalidation cancels this effect.
-    gesture.ending=true;const current=gesture,animation=source.animate(reduced?[{opacity:getComputedStyle(source).opacity},{opacity:commit?0:1}]:[{transform:getComputedStyle(source).transform},{transform:`translateX(${commit?gesture.width:0}px)`}],{duration:reduced?150:commit?250:200,easing:'ease-out'});
-    gesture.animation=animation;animation.finished.then(()=>{if(gesture!==current)return;if(commit&&state().key===current.key&&!blocked())back(target);clear();publish();}).catch(()=>{if(gesture===current)clear();});return true;
+    gesture.ending=true;const current=gesture,timing={duration:reduced?150:commit?250:200,easing:'ease-out',fill:'forwards'};
+    const animations=[source.animate(reduced?[{opacity:getComputedStyle(source).opacity},{opacity:commit?0:1}]:[{transform:getComputedStyle(source).transform},{transform:`translateX(${commit?gesture.width:0}px)`}],timing)];
+    if(!reduced)animations.push(destination.animate([{transform:getComputedStyle(destination).transform},{transform:`translateX(${commit?0:-gesture.width*.3}px)`}],timing));
+    gesture.animations=animations;Promise.all(animations.map(animation=>animation.finished)).then(()=>{if(gesture!==current)return;if(commit&&state().key===current.key&&!blocked())back(target);clear();publish();}).catch(()=>{if(gesture===current)clear();});return true;
   };
   new MutationObserver(()=>geometry()).observe(html,{attributes:true,attributeFilter:['style']});
   new MutationObserver(()=>{geometry();publish();}).observe(document.querySelector('#computer-panel'),{attributes:true,attributeFilter:['hidden']});

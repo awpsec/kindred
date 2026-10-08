@@ -12,10 +12,15 @@ restriction while typing on a remote computer remain in place.
   its own coordinates; SDK margins are already included.
 - The system positions standard SwiftUI toolbar actions, including the inner
   display's vertical bar. Matching HTML buttons are suppressed on Duo. The
-  centered bot tag remains in the conversation; there is no permanent logo.
+  Bot Details gear joins these native actions. The centered bot tag remains
+  in the conversation; there is no permanent logo.
 - Flat inner space can show the chat list, conversation and computer together.
   Larger text or less space collapses panes before the conversation becomes
-  unusable. A book division separates chat from computer, or list from chat.
+  unusable. Touch separators resize the list and computer while preserving a
+  usable chat width. Dragging the list fully left hides it; the native sidebar
+  action restores it, including in open portrait. Widths are saved per account.
+  Active book/tabletop divisions use system geometry instead of manual resizing.
+  A book division separates chat from computer, or list from chat.
 - Tabletop places the computer display above the division and its controls
   below it. If the keyboard covers the lower half, Paste and Return control
   remain within the shortened viewport. Active occlusions move the bot tag or
@@ -26,6 +31,17 @@ restriction while typing on a remote computer remain in place.
 - Native Back uses retained mobile navigation. Geometry changes invalidate
   in-flight gestures and remote-coordinate mappings; rejected input is never
   replayed. Settings and other editors keep focus during computer resizing.
+- Both panes animate to their final positions during edge Back, so removing
+  the preview does not snap the incoming list's margins. Settings sheets animate
+  downward before closing; Reduce Motion bypasses that slide.
+- Maximize is available on the inner display and hidden on the outer display.
+  Closing an expanded inner computer also clears expansion through its existing
+  controller, without replacing the connection. Outer remote typing uses the
+  slab portrait policy; releasing it retracts the explicit orientation preference.
+- Document, workspace-artifact and screenshot previews have safe-area-aware
+  headers with circular glass controls. Original dismissal and cleanup handlers
+  remain intact. Touching Paste or Return control keeps keyboard geometry stable
+  until release and activates once, including WKWebView's prevented-click path.
 
 These choices follow Apple's
 [resizability guidance](https://developer.apple.com/videos/play/tech-talks/111461/),
@@ -53,13 +69,23 @@ It does not contact user bots or generate real computer input.
 | WebKit keyboard / safe areas / occlusions | Shortened viewport, independent asymmetric edges, camera and composer clearance passed |
 | WebKit gestures / input | Cancelled fold-time gesture, retained Back/reopen, stale transform denial and no replay passed |
 | WebKit themes / accessibility | Settings-driven light/dark, Reduce Motion and larger text passed |
+| WebKit pane and toolbar regressions | Resize both boundaries, hide/restore list, cancel a drag during folding, Details gear, and inner-to-outer expansion reset passed |
+| WebKit motion regressions | Incoming/outgoing edge animation sampled through completion; Settings reverse dismissal, interrupted entrance and Reduce Motion passed |
+| WebKit preview regressions | All three existing preview modules retain cleanup and expose unobstructed 44-point glass close controls with a 59-point top safe area |
+| WebKit control touches | Trusted touch returns control once; moved/cancelled/nonprimary/stale touches are rejected; compatibility click is suppressed |
 | Slab and tablet web regressions | iOS layout and retained navigation tests passed |
-| Final native outer/inner software-keyboard and touch matrix | **Pending** — Mac locked during interactive testing |
+| Native pane controls | Actual touch resized both boundaries, hid/restored the list in flat landscape and open portrait, and opened Bot Settings through the side toolbar |
+| Native outer/inner computer retention | Same document load ID and zero RFB disconnects during closing/opening with control active; outer maximize hidden; expanded inner view normalized when closed |
+| Native book/tabletop | Actual DeviceHub poses supplied vertical/horizontal 40-point divisions; panes avoided those divisions; tabletop controls remained above the real software keyboard |
+| Native software keyboard / Return control | Real keyboard displayed on taking control; one touch returned control, dismissed the keyboard and restored Watching, including tabletop |
+| Native artifact navigation | List, document and native Back observed without duplicate HTML menus |
+| Native edge gesture recognition / remaining matrix | **Pending** — automation drags did not trigger UIKit's edge recognizer; native Back worked. Remaining theme/launch/background, live-input and recovery checks are listed below |
 | Physical Duo, live computer, APNs delivery | **Pending** — simulator/fixture checks do not prove these |
 
-Do not interpret synthetic viewport/reserved-region tests as a completed
-interactive hardware fold test. The final native checks below still need to
-be run with DeviceHub controls available.
+Interactive checks use actual DeviceHub folding, rotation and touch controls.
+Synthetic viewport/reserved-region tests cover additional transitions but do
+not establish physical-hardware acceptance. The remaining matrix below should
+be completed by hand, especially edge recognition and live computer input.
 
 ## Reproduce automated checks
 

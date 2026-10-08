@@ -264,3 +264,28 @@ html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-
 html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden])>.ios-computer-controls { flex:1; min-height:56px; padding-top:var(--ios-tabletop-gap,0px); box-sizing:border-box; overflow:auto; }
 html[data-kindred-ios][data-ios-duo=true] .ios-artifact-navigation { height:0; min-height:0; padding:0; overflow:hidden; }
 html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden])>.ios-computer-controls { display:flex; flex-direction:column; }
+
+/* Native toolbar settings and inner-display pane affordances. */
+html[data-kindred-ios][data-ios-duo=true] #bot-settings { visibility:hidden; pointer-events:none; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=false] #computer-expand { display:none!important; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-sidebar-hidden=true] .shell>.sidebar { display:none; }
+html[data-kindred-ios] .ios-duo-resizer { display:none; }
+html[data-kindred-ios][data-ios-duo-inner=true][data-ios-duo-pose=flat][data-ios-layout=regular][data-ios-sidebar-hidden=false] .sidebar>.ios-duo-resizer,
+html[data-kindred-ios][data-ios-duo-inner=true][data-ios-duo-pose=flat][data-ios-computer=side] .computer-panel:not(.expanded)>.ios-duo-resizer { display:block; position:absolute; inset:0 -12px 0 auto; width:24px; z-index:35; touch-action:none; user-select:none; -webkit-user-select:none; }
+html[data-kindred-ios][data-ios-duo-inner=true] .computer-panel>.ios-duo-resizer { inset:0 auto 0 -12px!important; }
+html[data-kindred-ios] .ios-duo-resizer::after { content:''; position:absolute; top:calc(50% - 22px); left:10px; width:4px; height:44px; border-radius:3px; background:var(--soft); opacity:.55; }
+html[data-kindred-ios] .ios-duo-resizer:focus-visible { outline:2px solid var(--fg); }
+html[data-kindred-ios].pane-resizing[data-ios-sidebar-hidden=true] .shell>.sidebar { display:flex!important; flex:0 0 0px!important; width:0!important; overflow:visible; }
+html[data-kindred-ios].pane-resizing[data-ios-sidebar-hidden=true] .sidebar>:not(.ios-duo-resizer) { visibility:hidden; }
+html[data-kindred-ios].pane-resizing[data-ios-sidebar-hidden=true] .sidebar>.ios-duo-resizer { display:block; position:absolute; inset:0 auto 0 0; width:24px; z-index:35; }
+
+/* Preview controls sit below system chrome on the same floating glass as chat. */
+html[data-kindred-ios] :is(.document-dialog,.workspace-artifact-dialog,.screenshot-dialog)[open] { position:fixed; inset:0; margin:0; width:100%; max-width:100%; height:100%; max-height:100%; padding:0 0 var(--ios-safe-bottom); border:0; border-radius:0; color:var(--fg); background:var(--bg); overflow:hidden; }
+html[data-kindred-ios] :is(.document-header,.ios-preview-header,.screenshot-dialog>.dialog-header) { position:relative; display:flex; flex:none; align-items:center; gap:8px; min-height:calc(64px + var(--ios-safe-top)); padding:calc(10px + var(--ios-safe-top)) 16px 10px; margin:0; border:0; color:var(--fg); background:transparent; z-index:2; }
+html[data-kindred-ios] :is(.document-header,.ios-preview-header,.screenshot-dialog>.dialog-header) :is(button,a) { display:inline-flex; flex:none; align-items:center; justify-content:center; width:44px; height:44px; min-height:44px; padding:11px; border-radius:50%; color:var(--fg); background:color-mix(in srgb,var(--surface) 48%,transparent); -webkit-backdrop-filter:blur(24px) saturate(180%); backdrop-filter:blur(24px) saturate(180%); border:1px solid color-mix(in srgb,var(--fg) 12%,transparent); box-shadow:inset 0 1px 0 #fff3,0 3px 14px #0001; }
+html[data-kindred-ios] :is(.ios-preview-header>strong,.screenshot-dialog>.dialog-header>h2) { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin:0; font-size:15px; }
+html[data-kindred-ios] .ios-preview-download { display:none!important; }
+html[data-kindred-ios] :is(.document-header,.ios-preview-header,.screenshot-dialog>.dialog-header) svg { width:22px; height:22px; }
+html[data-kindred-ios] :is(.workspace-artifact-dialog,.screenshot-dialog)[open] { display:flex; flex-direction:column; }
+html[data-kindred-ios] .workspace-artifact-dialog>.workspace-artifact { flex:1; min-height:0; overflow:auto; margin:0; }
+html[data-kindred-ios] .screenshot-dialog>img { flex:1; min-height:0; width:100%; max-width:100%; max-height:none; object-fit:contain; }

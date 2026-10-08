@@ -154,13 +154,23 @@ struct RootView: View {
     private var toolbar: some ToolbarContent {
         if usesDuoNavigation, let session = activeSession {
             ToolbarItem(placement: .topBarLeading) {
-                if session.presentation.route != "chat-list" && !(session.presentation.route == "bot-chat" && session.presentation.listVisible) {
+                if session.presentation.route != "chat-list" && !(session.presentation.route == "bot-chat" && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {
                     Button {
                         session.performDuoAction(.back)
                     } label: { Label("Back", systemImage: "chevron.backward") }
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if session.presentation.route == "details" && session.presentation.botSettingsAvailable {
+                    Button {
+                        session.performDuoAction(.botSettings)
+                    } label: { Label("Bot settings", systemImage: "gearshape") }
+                }
+                if session.presentation.listToggleAvailable {
+                    Button {
+                        session.performDuoAction(.chats)
+                    } label: { Label(session.presentation.listVisible ? "Hide chat list" : "Show chat list", systemImage: "sidebar.left") }
+                }
                 if ["bot-chat", "computer"].contains(session.presentation.route) {
                     Button {
                         session.performDuoAction(.computer)

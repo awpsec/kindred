@@ -18,6 +18,9 @@ final class WebPresentationState {
     var canvas = UIColor(named: "Canvas") ?? .systemBackground
     var isDark: Bool?
     var isDuo = false
+    var isDuoInner = false
+    var botSettingsAvailable = false
+    var listToggleAvailable = false
     var route = "chat-list"
     var chatTitle = ""
     var listVisible = false
@@ -140,7 +143,7 @@ final class WebSession: NSObject {
     }
 
     enum DuoAction: String {
-        case back, computer, settings, artifacts, marketplace, search, newChat
+        case back, computer, botSettings, chats, settings, artifacts, marketplace, search, newChat
     }
 
     func performDuoAction(_ action: DuoAction) {
@@ -223,13 +226,14 @@ final class WebSession: NSObject {
     /// Presentation values only, delivered to the trusted main frame. The host
     /// extends behind system chrome while WebKit avoids the keyboard.
     func updateLayout(topInset: CGFloat, bottomInset: CGFloat, leftInset: CGFloat = 0, rightInset: CGFloat = 0,
-                      isDuo: Bool = false, isSlab: Bool, viewportHeight: CGFloat = 0, isPortrait: Bool = true) {
-        guard layoutTop != topInset || layoutBottom != bottomInset || layoutLeft != leftInset || layoutRight != rightInset || presentation.isDuo != isDuo || layoutIsSlab != isSlab || layoutHeight != viewportHeight || layoutIsPortrait != isPortrait else { return }
+                      isDuo: Bool = false, isDuoInner: Bool = false, isSlab: Bool, viewportHeight: CGFloat = 0, isPortrait: Bool = true) {
+        guard layoutTop != topInset || layoutBottom != bottomInset || layoutLeft != leftInset || layoutRight != rightInset || presentation.isDuo != isDuo || presentation.isDuoInner != isDuoInner || layoutIsSlab != isSlab || layoutHeight != viewportHeight || layoutIsPortrait != isPortrait else { return }
         layoutTop = topInset
         layoutBottom = bottomInset
         layoutLeft = leftInset
         layoutRight = rightInset
         presentation.isDuo = isDuo
+        presentation.isDuoInner = isDuoInner
         layoutIsSlab = isSlab
         layoutHeight = viewportHeight
         layoutIsPortrait = isPortrait
@@ -241,12 +245,13 @@ final class WebSession: NSObject {
         guard origin.matches(webView.url) else { return }
         let script = """
         if (window.top !== window.self || location.origin !== expectedOrigin) return;
-        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, leftInset, rightInset, isDuo, isSlab, viewportHeight, isPortrait};
+        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, leftInset, rightInset, isDuo, isDuoInner, isSlab, viewportHeight, isPortrait};
         window.dispatchEvent(new CustomEvent('kindred-ios-layout', {detail: window.__KINDRED_IOS_LAYOUT}));
         """
         webView.callAsyncJavaScript(script, arguments: ["expectedOrigin": origin.serialized,
             "topInset": Double(layoutTop), "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab,
             "leftInset": Double(layoutLeft), "rightInset": Double(layoutRight), "isDuo": presentation.isDuo,
+            "isDuoInner": presentation.isDuoInner,
             "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait], in: nil, in: .page) { _ in }
     }
 
@@ -392,6 +397,8 @@ final class WebSession: NSObject {
                 presentation.route = route
                 presentation.chatTitle = title
                 presentation.listVisible = listVisible
+                presentation.botSettingsAvailable = body["botSettingsAvailable"] as? Bool == true
+                presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "computer-input",
