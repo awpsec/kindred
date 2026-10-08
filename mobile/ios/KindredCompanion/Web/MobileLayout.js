@@ -14,6 +14,39 @@
   const shell = document.querySelector('#app');
   const header = document.querySelector('.conversation-header');
   if (!shell || !header) return;
+  // Older deployed servers finish only the outgoing edge animation. Keep the
+  // incoming pane moving too, without replacing their retained Back closure.
+  // New servers own the paired animation and bypass this compatibility layer.
+  let edgeHandler = window.__KINDRED_EDGE_BACK, edgePreview = null;
+  const clearEdgePreview = () => { edgePreview?.animation?.cancel(); edgePreview = null; };
+  const adaptEdgeHandler = handler => {
+    if (typeof handler !== 'function' || window.__KINDRED_MOBILE_NAVIGATION_VERSION >= 2) return handler;
+    return message => {
+      const accepted = handler(message);
+      if (!accepted) return accepted;
+      if (message.phase === 'begin' && shell.classList.contains('ios-edge-preview')) {
+        clearEdgePreview();
+        const target = shell.dataset.edgeTarget;
+        const destination = shell.querySelector(target === 'bot-chat' ? '.conversation' : '.sidebar');
+        if (destination) edgePreview = {id:message.id,destination,width:shell.clientWidth};
+      }
+      if (edgePreview?.id === message.id && ['finish','cancel'].includes(message.phase) && !edgePreview.animation &&
+          html.dataset.motion !== 'off' && !matchMedia('(prefers-reduced-motion:reduce)').matches) {
+        const commit = message.phase === 'finish' && message.commit === true;
+        edgePreview.animation = edgePreview.destination.animate([
+          {transform:getComputedStyle(edgePreview.destination).transform},
+          {transform:`translateX(${commit ? 0 : -edgePreview.width*.3}px)`},
+        ],{duration:commit ? 250 : 200,easing:'ease-out',fill:'forwards'});
+      }
+      return accepted;
+    };
+  };
+  edgeHandler = adaptEdgeHandler(edgeHandler);
+  Object.defineProperty(window,'__KINDRED_EDGE_BACK',{configurable:true,
+    get:() => edgeHandler,set:value => { clearEdgePreview(); edgeHandler = adaptEdgeHandler(value); }});
+  new MutationObserver(() => {
+    if (!shell.classList.contains('ios-edge-preview')) clearEdgePreview();
+  }).observe(shell,{attributes:true,attributeFilter:['class']});
   // UIKit sizes WKWebView to the keyboard layout guide. Once native geometry
   // arrives, do not subtract WebKit's transient visualViewport height again.
   let nativeHeight = 0, nativePortrait, nativeDuo = false;
@@ -984,7 +1017,7 @@
     const regular = html.dataset.iosLayout === 'regular';
     const state = {action:'duo-navigation', route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160),
       listVisible:['bot-chat','computer'].includes(route) && regular && html.dataset.iosSidebarHidden !== 'true',
-      listToggleAvailable:['bot-chat','computer'].includes(route) && regular && html.dataset.iosDuoInner === 'true',
+      listToggleAvailable:['bot-chat','computer'].includes(route) && regular && html.dataset.iosDuoInner === 'true' && !!window.__KINDRED_DUO_PANES,
       botSettingsAvailable:route === 'details' && !!document.querySelector('#bot-settings') && !document.querySelector('#bot-settings').hidden};
     const next = JSON.stringify(state);
     if (lastDuoNavigation === next) return;

@@ -33,7 +33,9 @@ restriction while typing on a remote computer remain in place.
   replayed. Settings and other editors keep focus during computer resizing.
 - Both panes animate to their final positions during edge Back, so removing
   the preview does not snap the incoming list's margins. Settings sheets animate
-  downward before closing; Reduce Motion bypasses that slide.
+  downward before closing; Reduce Motion bypasses that slide. The app bundles
+  an incoming-pane correction for deployed v1 server navigation, retaining
+  the server's original Back closure. Version 2 owns both animations itself.
 - Maximize is available on the inner display and hidden on the outer display.
   Closing an expanded inner computer also clears expansion through its existing
   controller, without replacing the connection. Outer remote typing uses the
@@ -47,6 +49,11 @@ These choices follow Apple's
 [resizability guidance](https://developer.apple.com/videos/play/tech-talks/111461/),
 [reserved-region guidance](https://developer.apple.com/videos/play/tech-talks/111463/)
 and [native toolbar guidance](https://developer.apple.com/videos/play/tech-talks/111462/).
+
+The new Duo pane controller also requires the matching `ui/mobile.js` on the
+server. Installing the iOS app does not deploy that server update. Older
+servers still receive bundled preview, sheet, toolbar and edge-motion fixes;
+the native sidebar toggle is offered only when its controller is available.
 
 ## Verification record — October 7, 2026
 
@@ -71,6 +78,7 @@ It does not contact user bots or generate real computer input.
 | WebKit themes / accessibility | Settings-driven light/dark, Reduce Motion and larger text passed |
 | WebKit pane and toolbar regressions | Resize both boundaries, hide/restore list, cancel a drag during folding, Details gear, and inner-to-outer expansion reset passed |
 | WebKit motion regressions | Incoming/outgoing edge animation sampled through completion; Settings reverse dismissal, interrupted entrance and Reduce Motion passed |
+| Deployed-server compatibility | Historical v1 and current v2 installers both retain drafts and smooth incoming motion; no duplicate animation; invalid input and geometry cancellation retain ownership |
 | WebKit preview regressions | All three existing preview modules retain cleanup and expose unobstructed 44-point glass close controls with a 59-point top safe area |
 | WebKit control touches | Trusted touch returns control once; moved/cancelled/nonprimary/stale touches are rejected; compatibility click is suppressed |
 | Slab and tablet web regressions | iOS layout and retained navigation tests passed |
@@ -94,6 +102,7 @@ From the repository root, using an installed Playwright with WebKit:
 ```sh
 node tools/frontend/test-ios-duo.cjs
 node tools/frontend/test-ios-layout.cjs
+node tools/frontend/test-ios-edge-compat.cjs
 WEBKIT=1 node tools/frontend/test-mobile-navigation.cjs
 ```
 

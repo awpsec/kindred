@@ -78,6 +78,7 @@ if(window.__KINDRED_MOBILE_PLATFORM==='android' && window.kindredNative){
 // owns route eligibility, retained views and the interactive visual transition.
 export function installMobileNavigation({route,back,resized,computerGeometryValid,inputAvailabilityChanged}) {
   if(window.__KINDRED_MOBILE_PLATFORM!=='ios')return;
+  window.__KINDRED_MOBILE_NAVIGATION_VERSION=2;
   const html=document.documentElement,shell=document.querySelector('#app');
   const edge=document.createElement('div');edge.className='ios-computer-edge';edge.setAttribute('aria-hidden','true');document.querySelector('#computer-panel').append(edge);for(const type of ['pointerdown','pointerup','click'])edge.addEventListener(type,e=>{e.preventDefault();e.stopPropagation();});
   let revision=0,signature='',gesture=null,lastSize='',settleFrame=0,resizeFrame=0,layoutHeight=0,layoutWidth=0,windowShape='';
