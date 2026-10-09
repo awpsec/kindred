@@ -5153,6 +5153,44 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .email-draft-editor textarea{min-height:240px;resize:vertical}
 .email-draft-editor input:focus,.email-draft-editor textarea:focus{outline:none;box-shadow:none;border-color:var(--muted)}
 @media(forced-colors:active){.email-draft-editor input:focus,.email-draft-editor textarea:focus{outline:1px solid Highlight;outline-offset:0}}
+.connector-send-policy>p{margin:10px 0 14px;max-width:62ch;line-height:1.6;font-size:12px}.connector-send-policy>summary{width:fit-content}.connector-send-policy>button{margin-bottom:2px}
+
+/* Recipient chips: quiet boxes that match the draft fields. */
+.email-recipients{display:grid;gap:16px}
+.recipient-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.recipient-row{display:grid;gap:8px}.recipient-row.is-collapsed{display:none}.email-recipients.is-dragging .recipient-row.is-collapsed{display:grid}
+.recipient-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.recipient-toggles{display:flex;gap:2px}.recipient-toggle{border:0;background:transparent;color:var(--muted);font-size:12px;padding:2px 7px;border-radius:6px;min-height:0}.recipient-toggle:hover{color:var(--fg);background:var(--hover)}.recipient-toggle:focus-visible{outline:1px solid var(--muted);outline-offset:0}
+.recipient-box{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:50px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);cursor:text;transition:border-color .15s,background-color .15s}
+.recipient-box:focus-within{border-color:var(--muted)}.recipient-box.is-invalid{border-color:var(--danger)}
+.recipient-box.is-drop-target{border-color:var(--muted);border-style:dashed;background:color-mix(in srgb,var(--hover) 45%,var(--bg))}
+.recipient-list{display:contents;list-style:none;margin:0;padding:0}
+.email-draft-editor .recipient-box .recipient-input,.email-draft-editor .recipient-box .recipient-input:focus{flex:1 1 12ch;min-width:10ch;width:auto;padding:4px 4px;border:0;border-radius:0;background:transparent;box-shadow:none;outline:none;line-height:1.6}
+.recipient-chip{display:inline-flex;align-items:center;gap:2px;max-width:100%;min-height:28px;padding:0 3px 0 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--fg);font-size:13px;line-height:1.4;cursor:pointer;user-select:none;transition:border-color .15s,opacity .15s}
+.recipient-chip:hover{border-color:var(--muted)}.recipient-chip:focus{outline:none}.recipient-chip:focus-visible{border-color:var(--fg)}
+.recipient-chip.is-dragging{opacity:.45}
+.recipient-chip-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recipient-chip-remove{display:inline-grid;place-items:center;width:22px;height:22px;min-height:0;padding:0;border:0;border-radius:5px;background:transparent;color:var(--muted);font-size:15px;line-height:1}
+.recipient-chip-remove:hover{color:var(--fg);background:var(--hover)}
+.recipient-note{margin:0;font-size:12px;color:var(--danger)}
+.recipient-suggestions,.recipient-menu{position:absolute;z-index:20;margin:0;padding:4px;list-style:none;border:1px solid var(--line);border-radius:9px;background:var(--panel);box-shadow:0 8px 24px #0003}
+.recipient-suggestions{left:-1px;right:-1px;top:calc(100% + 4px);max-height:240px;overflow:auto}
+.recipient-suggestion{display:flex;align-items:baseline;gap:8px;padding:7px 10px;border-radius:6px;font-size:13px;cursor:pointer;overflow:hidden}
+.recipient-suggestion:hover,.recipient-suggestion[aria-selected=true]{background:var(--hover)}
+.recipient-suggestion-name{color:var(--fg);white-space:nowrap}.recipient-suggestion-address{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recipient-menu{display:grid;min-width:160px}
+.recipient-menu-item{justify-content:flex-start;min-height:30px;padding:5px 10px;border:0;border-radius:6px;background:transparent;color:var(--fg);font-size:13px;text-align:left}
+.recipient-menu-item:hover,.recipient-menu-item:focus{background:var(--hover);outline:none}
+@keyframes recipient-in{from{opacity:0;transform:scale(.94)}}
+@keyframes recipient-out{to{opacity:0;transform:scale(.94)}}
+@keyframes recipient-repeat{50%{border-color:var(--fg)}}
+.recipient-chip.is-entering{animation:recipient-in .16s ease-out}
+.recipient-chip.is-leaving{animation:recipient-out .12s ease-in forwards;pointer-events:none}
+.recipient-chip.is-duplicate{animation:recipient-repeat .5s ease-in-out}
+@media(prefers-reduced-motion:reduce){.recipient-chip,.recipient-box{transition:none}.recipient-chip.is-entering,.recipient-chip.is-leaving,.recipient-chip.is-duplicate{animation:none}}
+html[data-motion=off] :is(.recipient-chip,.recipient-box){transition:none}html[data-motion=off] .recipient-chip:is(.is-entering,.is-leaving,.is-duplicate){animation:none}
+@media(forced-colors:active){.recipient-box:focus-within{outline:1px solid Highlight}.recipient-chip:focus-visible{outline:2px solid Highlight}}
+@media(pointer:coarse){.recipient-chip{min-height:34px}.recipient-chip-remove{width:30px;height:30px}}
 @media(max-width:620px){.connector-kind-email>.connector-artifact-content,.connector-kind-email .email-draft-editor{padding:18px}.connector-kind-email>footer{padding:14px}.connector-kind-email>footer>.primary{margin-left:0}.connector-kind-email .connector-email-subject{font-size:17px}}
 
 .connector-email-attachments{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:20px;font-size:12px}.connector-attachment-chip{padding:6px 10px;border:1px solid var(--line);border-radius:7px;overflow-wrap:anywhere;max-width:100%}
