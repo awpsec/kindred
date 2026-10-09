@@ -5465,8 +5465,9 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   const helping=!chat.shared&&chat.id.startsWith('dm-')?helperWork(chat.id.slice(3)):null;
   if(helping&&helping.run.chat_id!==id){
     const bot=state.bots.find(b=>b.id===helping.run.bot_id);
-    if(bot){const group=node('article','message-group helper-work');group.dataset.message='helper-work-'+helping.run.id;group.append(workLine(bot,helping.run));
-      if(helping.target)group.append(button("Open "+helping.name+"'s chat",()=>chooseChat(helping.target),'outline-button'));const queuedRun=runs.find(r=>r.status==='queued'),queued=queuedRun&&area.querySelector('article[data-run="'+CSS.escape(queuedRun.id)+'"]');if(queued)queued.before(group);else area.append(group);}
+    if(bot){const group=node('article','message-group helper-work'),line=workLine(bot,helping.run);group.dataset.message='helper-work-'+helping.run.id;
+      if(helping.target){const open=iconButton('arrow',"Open "+helping.name+"'s chat",()=>chooseChat(helping.target));open.classList.add('work-open');line.insertBefore(open,line.querySelector('.work-stop'));}
+      group.append(line);const queuedRun=runs.find(r=>r.status==='queued'),queued=queuedRun&&area.querySelector('article[data-run="'+CSS.escape(queuedRun.id)+'"]');if(queued)queued.before(group);else area.append(group);}
   }
   // A pending card must remain reachable even when its run is in a bot-only
   // collaboration chat or outside the loaded message page. Never copy history.
