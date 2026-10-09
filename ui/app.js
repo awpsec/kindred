@@ -4638,19 +4638,32 @@ function editChecklist(list){
   form.onsubmit=async e=>{e.preventDefault();if(!form.reportValidity())return;save.disabled=true;const saved=await planningPatch('checklists',list,{title:title.input.value,items,archived:archived.checked},feedback);if(saved)d.close();else save.disabled=false;};
 }
 function reminderWhen(reminder){
-  return new Date(reminder.run_at*1000).toLocaleString([],{timeZone:reminder.timezone,dateStyle:'medium',timeStyle:'short'})+' · '+reminder.timezone;
+  const date=new Date(reminder.run_at*1000),now=new Date(),zone=reminder.timezone;
+  const day=d=>{const parts=new Intl.DateTimeFormat('en-US',{timeZone:zone,year:'numeric',month:'numeric',day:'numeric'}).formatToParts(d),part=k=>Number(parts.find(p=>p.type===k).value);return Date.UTC(part('year'),part('month')-1,part('day'));};
+  const offset=(day(date)-day(now))/86400000;
+  const dateLabel=offset===0?'Today':offset===1?'Tomorrow':date.toLocaleDateString([],{timeZone:zone,month:'short',day:'numeric',...(new Date(day(date)).getUTCFullYear()!==new Date(day(now)).getUTCFullYear()?{year:'numeric'}:{weekday:'short'})});
+  const time=date.toLocaleTimeString([],{timeZone:zone,hour:'numeric',minute:'2-digit'});
+  const zoneLabel=new Intl.DateTimeFormat([],{timeZone:zone,timeZoneName:'short'}).formatToParts(date).find(p=>p.type==='timeZoneName')?.value||zone;
+  return {label:dateLabel+', '+time,zone:zone===Intl.DateTimeFormat().resolvedOptions().timeZone?'':zoneLabel,full:date.toLocaleString([],{timeZone:zone,dateStyle:'full',timeStyle:'short'})+' · '+zone};
 }
 function reminderCard(reminder,delivered=false){
-  const card=node('section','planning-card reminder-card'),feedback=planningFeedback();card.dataset.reminder=reminder.id;
-  const heading=node('div','planning-heading');heading.append(node('h3','',delivered?'Reminder':reminder.status==='pending'?'Reminder set':`Reminder ${reminder.status}`));
+  const card=node('section','planning-card reminder-card'),feedback=planningFeedback(),when=reminderWhen(reminder);card.dataset.reminder=reminder.id;card.dataset.status=reminder.status;
+  const title=delivered?'Reminder':reminder.status==='pending'?'Reminder set':`Reminder ${reminder.status}`;
+  card.setAttribute('aria-label',title+', '+when.label);
+  card.append(node('h3','reminder-accessible-title',title));
+  const meta=node('div','reminder-meta'),schedule=node('div','reminder-schedule'),time=node('time','reminder-time',when.label);time.dateTime=new Date(reminder.run_at*1000).toISOString();time.title=when.full;
+  schedule.append(icon('bell',15),time);
+  if(when.zone){const zone=node('span','reminder-zone',when.zone);zone.title=reminder.timezone;schedule.append(zone);}
+  if(delivered||reminder.status!=='pending')schedule.append(node('span','reminder-status',delivered||reminder.status==='delivered'?'Delivered':reminder.status==='cancelled'?'Cancelled':reminder.status==='paused'?'Paused':reminder.status));
+  meta.append(schedule);
   if(!delivered&&reminder.status!=='delivered'){
-    heading.append(button('Edit',()=>editReminder(reminder),'subtle-button small-button'));
-    if(reminder.status!=='cancelled')heading.append(button('Cancel',()=>planningPatch('reminders',reminder,{cancel:true},feedback),'subtle-button small-button'));
+    const actions=node('div','reminder-actions');actions.append(button('Edit',()=>editReminder(reminder),'subtle-button small-button'));
+    if(reminder.status!=='cancelled')actions.append(button('Cancel',async()=>{if(await planningPatch('reminders',reminder,{cancel:true},feedback))notice('Reminder cancelled');},'subtle-button small-button'));
+    meta.append(actions);
   }
-  card.append(heading,node('p','reminder-message',reminder.message),node('p','muted small',reminderWhen(reminder)));
+  card.append(meta,node('p','reminder-message',reminder.message));
   if(delivered&&reminder.delivered_at-reminder.run_at>60)card.append(node('p','muted small','Delivered after its scheduled time when the server and conversation were available.'));
   if(reminder.status==='paused')card.append(node('p','muted small','Paused after transfer. Edit to choose a future delivery time.'));
-  if(reminder.status==='pending')card.append(node('p','muted small','Appears here once. Desktop alerts follow your notification settings while the app is connected.'));
   card.append(planningSources(reminder.sources),feedback);return card;
 }
 function editReminder(reminder){
