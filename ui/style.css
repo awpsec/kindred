@@ -4411,6 +4411,10 @@ details.command-progress>summary{padding-left:0}
 
 .collaboration-wait-row{display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;padding:6px 0;color:var(--muted);font-size:calc(12px * var(--text-scale,1));line-height:1.5}
 .collaboration-wait-row>.character{flex:0 0 24px}
+/* Delegated work is secondary to the current task, like other collaboration waits. */
+.work-line.collaboration-wait-row{margin:0}
+.work-line.collaboration-wait-row .work-label{min-width:0;flex-wrap:nowrap}
+.work-line.collaboration-wait-row .work-label>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .collaboration-wait-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .collaboration-wait-label strong{color:var(--soft);font-weight:500}
 .collaboration-wait-row>.icon-button{flex:0 0 26px;width:26px;height:26px;padding:5px;border-radius:7px}
