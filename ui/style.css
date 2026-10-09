@@ -3916,6 +3916,20 @@ details.bot-connector-preferences>.bot-connectors-heading::before{top:50%;margin
 /* Conversation lists use the same quiet, paper-like surface as chat. */
 .planning-card{max-width:720px;width:100%;padding:18px 20px;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow-wrap:anywhere}
 .planning-heading{display:flex;align-items:flex-start;gap:10px}.planning-heading>div:first-child,.planning-heading>h3:first-child{flex:1}.planning-card h3{font-size:calc(15px * var(--text-scale, 1));margin:0 0 5px}.planning-card p{margin:6px 0}.checklist-items{list-style:none;padding:0;margin:12px 0 0}.checklist-item{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line)}.checklist-content{flex:1;min-width:0}.checklist-label{display:flex;gap:10px;align-items:flex-start;cursor:pointer;line-height:1.5}.checklist-label input{width:17px;height:17px;margin:3px 0 0;accent-color:var(--fg);flex-shrink:0}.checklist-item.done .checklist-label span{text-decoration:line-through;opacity:.6}.checklist-meta{display:flex;gap:8px;align-items:center;margin:4px 0 0 27px}.current-label{font-size:calc(11px * var(--text-scale, 1));border:1px solid var(--line);border-radius:4px;padding:1px 5px}.checklist-actions{display:flex;gap:3px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.planning-sources{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:calc(12px * var(--text-scale, 1));margin-top:6px}.planning-sources a{color:inherit;text-decoration:underline;text-underline-offset:3px}.planning-dialog{width:min(760px,calc(100vw - 28px));max-height:85vh}.planning-overview,.planning-form{padding:20px;display:flex;flex-direction:column;gap:16px}.planning-overview>h3{font-size:calc(14px * var(--text-scale, 1));margin:6px 0}.planning-edit-items{display:flex;flex-direction:column;gap:12px}.planning-edit-item{border-bottom:1px solid var(--line);padding-bottom:8px}.planning-edit-controls{display:flex;gap:5px;flex-wrap:wrap}.planning-archive{display:flex;gap:8px;align-items:center}.planning-archive input{width:16px;height:16px}.planning-message{padding-bottom:8px}.reminder-message{white-space:pre-wrap}.planning-overview details>.planning-card{margin-top:12px}
+
+/* Reminders keep the schedule prominent and the surrounding chrome quiet. */
+.planning-card.reminder-card{padding:12px 16px;border-radius:12px}
+.reminder-accessible-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.reminder-meta{display:flex;align-items:flex-start;gap:8px;min-height:28px}
+.reminder-schedule{display:flex;align-items:center;flex-wrap:wrap;gap:4px 7px;min-width:0;min-height:28px;font-size:calc(13px * var(--text-scale,1))}
+.reminder-schedule>.icon{flex:none;color:var(--muted)}.reminder-time{font-weight:600}.reminder-zone{color:var(--muted);font-size:calc(12px * var(--text-scale,1))}
+.reminder-status{font-size:calc(11px * var(--text-scale,1));color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+.reminder-actions{display:flex;flex:none;gap:2px;margin-left:auto}.reminder-actions>button{min-height:28px;padding:4px 8px;font-size:calc(12px * var(--text-scale,1))}
+.reminder-card .reminder-message{margin:4px 0 0;font-size:calc(14px * var(--text-scale,1));line-height:1.5}
+.reminder-card[data-status=cancelled] .reminder-message{color:var(--muted)}
+.reminder-card .planning-sources:not(:empty){margin-top:8px}.reminder-card .planning-sources:empty{display:none}
+@media(max-width:600px){.planning-card.reminder-card{padding:12px}.reminder-actions>button{min-height:32px}}
+@media(pointer:coarse){.reminder-actions>button{min-height:44px;min-width:44px}}
 @media(max-width:600px){#chat-planning{font-size:calc(11px * var(--text-scale, 1));padding:6px}.planning-card{padding:14px}.checklist-item{flex-direction:column;gap:5px}.checklist-actions{justify-content:flex-start;margin-left:27px}.planning-overview,.planning-form{padding:14px}.planning-heading{flex-wrap:wrap}}
 
 .checklist-label input[type=checkbox],.planning-archive input[type=checkbox]{appearance:auto;border-radius:3px;accent-color:var(--fg)}
