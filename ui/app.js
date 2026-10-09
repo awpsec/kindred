@@ -4786,6 +4786,15 @@ function questionCard(q){
       const saved=await api(q.shared_seq?'/server-chats/'+q.chat_id+'/questions/'+q.shared_seq+'/answer':'/questions/'+q.id+(body.dismiss?'/dismiss':'/answer'),'POST',body);questionDrafts.delete(q.id);
       for(const entry of chatHistory.values())for(const m of entry.messages)if(m.question?.id===q.id)m.question=saved;
       await refresh(true);
+    }catch(error){
+      // A rejected stale decision may already have a server-confirmed receipt.
+      // Refresh without replaying the answer; preserve genuine errors otherwise.
+      if([400,409].includes(error.status)){
+        try{await refresh(true);}catch{}
+        const resolved=[...chatHistory.values()].flatMap(entry=>entry.messages||[]).find(m=>m.question?.id===q.id&&['answered','dismissed','cancelled'].includes(m.question.status));
+        if(resolved){questionDrafts.delete(q.id);return;}
+      }
+      throw error;
     }finally{questionPending.delete(q.id);state.chatKey='';await renderChat(true,'cached');}
   };
   q.options.forEach((label,i)=>{
@@ -5108,10 +5117,19 @@ function approvalChat(run){const source=state.chats.find(c=>c.id===run?.chat_id)
 function renderRequestTray(chat,entry){
   const holder=$('composer-area');let tray=$('request-tray');
   if(!tray){tray=node('section','request-tray');tray.id='request-tray';tray.setAttribute('aria-label','Pending requests');holder.prepend(tray);}
+  // Pending feeds and conversation pages are separate reads. Once this chat
+  // has a server-confirmed terminal receipt, an older feed must not resurrect
+  // its controls. Retain only identities, including when that page is unloaded.
+  const resolved=entry.resolvedTrayRequests??=new Set();
+  for(const m of entry.messages||[]){
+    if(m.approval&&['approved','denied','expired'].includes(m.approval.status))resolved.add('approval:'+m.approval.id);
+    if(m.question&&['answered','dismissed','cancelled'].includes(m.question.status))resolved.add('question:'+m.question.id);
+  }
+  for(const q of state.questions||[])if((q.delivery_chat_id||q.chat_id)===chat.id&&['answered','dismissed','cancelled'].includes(q.status))resolved.add('question:'+q.id);
   const requests=[];
-  for(const a of state.approvals){const run=state.allRuns.find(r=>r.id===a.run_id);if((a.status||'pending')==='pending'&&simpleApproval(a)&&approvalChat(run)===chat.id)requests.push({key:'approval:'+a.id,created:a.created??run.created,seq:a.message_seq??0,a,run});}
-  for(const m of entry.messages||[])if(m.question?.status==='pending')requests.push({key:'question:'+m.question.id,created:m.question.created??m.created,seq:m.seq,q:m.question});
-  for(const q of state.questions||[])if(q.status==='pending'&&(q.delivery_chat_id||q.chat_id)===chat.id&&!requests.some(r=>r.key==='question:'+q.id))requests.push({key:'question:'+q.id,created:q.created,seq:q.message_seq??0,q});
+  for(const a of state.approvals){const run=state.allRuns.find(r=>r.id===a.run_id);if((a.status||'pending')==='pending'&&!resolved.has('approval:'+a.id)&&simpleApproval(a)&&approvalChat(run)===chat.id)requests.push({key:'approval:'+a.id,created:a.created??run.created,seq:a.message_seq??0,a,run});}
+  for(const m of entry.messages||[])if(m.question?.status==='pending'&&!resolved.has('question:'+m.question.id))requests.push({key:'question:'+m.question.id,created:m.question.created??m.created,seq:m.seq,q:m.question});
+  for(const q of state.questions||[])if(q.status==='pending'&&!resolved.has('question:'+q.id)&&(q.delivery_chat_id||q.chat_id)===chat.id&&!requests.some(r=>r.key==='question:'+q.id))requests.push({key:'question:'+q.id,created:q.created,seq:q.message_seq??0,q});
   requests.sort((a,b)=>a.created-b.created||a.seq-b.seq||a.key.localeCompare(b.key));
   const model=trayState.get(chat.id)||{minimized:false,key:''};trayState.set(chat.id,model);
   const selected=requests.findIndex(r=>r.key===model.key),index=selected<0?0:selected;model.key=requests[index]?.key||'';
@@ -5122,11 +5140,11 @@ function renderRequestTray(chat,entry){
   tray.dataset.chat=chat.id;
   if(model.minimized){const count=button(requests.length+' pending request'+(requests.length===1?'':'s'),()=>{model.minimized=false;renderRequestTray(chat,entry);},'outline-button');tray.append(count);if(focused)count.focus({preventScroll:true});return;}
   const bar=node('div','request-tray-bar'),page=node('span','muted small',(index+1)+' / '+requests.length);
-  const step=delta=>{model.key=requests[(index+delta+requests.length)%requests.length].key;renderRequestTray(chat,entry);};
-  if(requests.length>1)bar.append(iconButton('chevron','Previous request',()=>step(-1)),page,iconButton('chevron','Next request',()=>step(1)));else bar.append(page);
+  const step=delta=>{const next=index+delta;if(next<0||next>=requests.length)return;model.key=requests[next].key;renderRequestTray(chat,entry);};
+  if(requests.length>1){const previous=iconButton('chevron','Previous request',()=>step(-1)),next=iconButton('chevron','Next request',()=>step(1));previous.classList.add('request-tray-prev');previous.disabled=index===0;next.disabled=index===requests.length-1;bar.append(previous,page,next);}else bar.append(page);
   bar.append(button('−',()=>{model.minimized=true;renderRequestTray(chat,entry);},'subtle-button'));bar.lastChild.setAttribute('aria-label','Minimize pending requests');
   const item=requests[index],card=item.q?questionCard(item.q):approvalCard(item.a,item.run);card.classList.add('in-request-tray');card.querySelector('.task-card-title')?.remove();card.querySelector('.task-description')?.classList.add('request-tray-heading');const details=card.querySelector('.task-details>summary');if(details)details.textContent='Details';card.querySelector('.question-dismiss')?.replaceChildren(document.createTextNode('Skip'));
-  tray.append(bar,card);if(focused){const target=focusKey&&[...tray.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===focusKey);(target||tray.querySelector('button'))?.focus({preventScroll:true});}
+  tray.append(bar,card);if(focused){const target=focusKey&&[...tray.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===focusKey);(target||tray.querySelector('button:not(:disabled)'))?.focus({preventScroll:true});}
 }
 function queuedMessageWaiting(message){
  const deliveries=message.delivery||[];

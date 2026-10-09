@@ -111,6 +111,8 @@ Send submits a new message using the current setting.
 
 Simple approvals and choices appear in a tray above the composer. Its pager uses
 request IDs and creation order. Minimize keeps the count and any custom answer.
+Server-confirmed terminal request identities suppress older pending-feed reads,
+including after a receipt page unloads. A different request keeps its own controls.
 Approvals and choices each appear once; their terminal receipt stays at its
 original chat position. Approved means permission was granted, not that an action
 succeeded. Email reviews and computer handoffs remain in the conversation.

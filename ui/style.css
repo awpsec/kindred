@@ -5512,3 +5512,5 @@ html[data-ios-short=true] .control-notice-copy strong {display:inline-block;max-
 .summary-progress-heading{gap:4px 6px}.summary-progress-heading>.summary-progress-time{flex-basis:auto;margin-left:auto}.summary-progress-heading>.summary-progress-count{flex-basis:100%}.summary-progress-disclosure:not([open]) .summary-progress-task{display:block}.summary-progress-task{min-width:100px}
 
 .email-notice>footer.email-review-footer{display:grid;gap:12px}.email-review-secondary{flex-wrap:wrap}.email-review-secondary:empty{display:none}.email-review-final{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:nowrap;width:100%}.email-review-final>button{flex:none}.email-review-final>.primary{margin-left:auto;padding:9px 17px;border-radius:9px}
+
+.request-tray-prev svg{transform:rotate(180deg)}
