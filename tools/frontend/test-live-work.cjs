@@ -48,7 +48,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   assert.equal(await p.locator('.work-line').count(),1,'A queued follow-up cannot create a second working avatar');
   assert.equal(await p.locator('.work-line .character').getAttribute('data-action'),'terminal');
   assert(await p.locator('.work-label').isVisible());assert.match(await p.locator('.work-timer').textContent(),/^\d+s$/);
-  assert.match(await p.locator('.message-delivery').textContent(),/queued for the next task/);
+  assert.equal(await p.locator('.message-delivery').count(),0,'Queued status stays outside the message bubble');assert.match(await p.locator('#queue-status').textContent(),/1 message queued/);
   await p.screenshot({path:path.join(artifacts,engine+'-command-progress-dark.png')});
   const timer=await p.locator('.work-timer').textContent();await p.waitForTimeout(1200);assert.notEqual(await p.locator('.work-timer').textContent(),timer);
   await p.locator('#bot-details').click();await p.locator('#bot-settings').click();
@@ -66,7 +66,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   assert.equal(await p.getByRole('combobox',{name:'Local desktop',exact:true}).inputValue(),a);assert.equal(await p.getByRole('combobox',{name:'Model',exact:true}).inputValue(),'claude-sonnet-5');assert(await p.locator('.bot-edit-form').getByLabel('Local access',{exact:true}).isChecked());
   assert.match(await p.locator('.local-access-help').textContent(),/stays assigned while unavailable/);await p.locator('#details-close').click();
   delivered=true;phase='worry';started=Math.floor(Date.now()/1000)-4;await p.getByText(/The last command timed out/).waitFor();
-  assert.equal(await p.locator('.work-line').count(),1);assert.match(await p.locator('.message-delivery').textContent(),/included in this task/);
+  assert.equal(await p.locator('.work-line').count(),1);assert.equal(await p.locator('.message-delivery').count(),0,'Steered delivery does not annotate the message bubble');
   await p.getByText('Command timed out · checking the failure',{exact:true}).waitFor();assert.equal(await p.locator('.work-label.working-glimmer').count(),0);
   phase='waiting';started=Math.floor(Date.now()/1000)-2;await p.getByText('Waiting for permission on Demo workstation',{exact:true}).waitFor();assert.equal(await p.locator('.work-line .character').getAttribute('data-action'),'waiting');
   phase='working';started=Math.floor(Date.now()/1000)-158;await p.getByText('Searching',{exact:true}).waitFor();assert.match(await p.locator('.work-timer').textContent(),/^2m\d{2}s$/);

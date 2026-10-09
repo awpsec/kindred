@@ -5511,12 +5511,9 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       if(quietCompletionMarker(m.text))formatted.textContent=m.text;
       if(!attachmentOnly){bubble.append(...formatted.childNodes);foldLongMessage(bubble,String(m.seq),entry);}
       else {bubble.classList.add("attachment-only");bubble.append(fileLinks(m.files));}
-      for(const delivery of m.delivery||[]) {
-        const recipient=state.bots.find(b=>b.id===delivery.bot_id)?.name||'Bot';
-        const working=state.allRuns.find(r=>r.bot_id===delivery.bot_id&&r.chat_id===chat.id&&active(r));
-        const text=delivery.status==='steered'?`${recipient} · included in this task${['failed','interrupted','cancelled'].includes(delivery.task_status)?' · task stopped':''}`:delivery.status==='withdrawn'?'Removed from the queue':delivery.status==='queued'&&delivery.steer_requested?`${recipient} · will see this after the current action`:delivery.status==='queued'?`${recipient} · ${delivery.mode==='steer'?"queued: couldn't add to this task":'queued for the next task'}`:'';
-        if(text)bubble.append(node('span','message-delivery',text));
-      }
+      // Routine delivery belongs in the work indicator and composer queue.
+      // Retain an explicit withdrawal receipt so an edited message is not mistaken for sent.
+      if((m.delivery||[]).some(d=>d.status==='withdrawn'))bubble.append(node('span','message-delivery','Removed from the queue'));
       row.append(bubble);
     } else row.append(markdown(m.text));
     const bubble=row.lastElementChild;
