@@ -5121,7 +5121,7 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .progress-choices{container:progress-options / inline-size;--progress-accent:#ffb15b;border:0;margin:18px 0 0;padding:0;min-width:0}
 .progress-choices>legend{font-size:13px;margin-bottom:12px;padding:0}
 .progress-choice-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;max-width:558px}
-.progress-choice{position:relative;display:block;aspect-ratio:1;min-height:calc(116px * var(--text-scale,1));margin:0!important;border:1px solid var(--line);border-radius:12px;background:var(--bg);cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease}
+.progress-choice{position:relative;display:block;width:100%;aspect-ratio:1;min-height:calc(116px * var(--text-scale,1));margin:0!important;border:1px solid var(--line);border-radius:12px;background:var(--bg);cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease}
 
 .progress-choice:has(input:focus-visible){outline:2px solid var(--fg);outline-offset:3px}
 .progress-choice>input:focus-visible{outline:none}
