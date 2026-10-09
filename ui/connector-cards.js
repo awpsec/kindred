@@ -124,7 +124,9 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   root.classList.add('email-notice');header.firstChild?.remove();header.prepend(el('strong','email-notice-title',card.title));
   const toggle=button(card.status==='completed'?'Details':'Review',()=>{model.open=!model.open;paint();if(model.open)content.focus({preventScroll:true});},'subtle-button');header.append(toggle);
   const close=button('Close',()=>{model.open=false;paint();toggle.focus({preventScroll:true});},'subtle-button');close.classList.add('email-review-close');footer.prepend(close);
-  const send=[...footer.children].find(b=>b.textContent==='Send email');if(send)footer.append(send);
+  const send=[...footer.children].find(b=>b.textContent==='Send email'),secondary=el('div','connector-card-actions email-review-secondary'),final=el('div','email-review-final');
+  for(const action of [...footer.children])if(action!==close&&action!==send)secondary.append(action);
+  final.append(close);if(send)final.append(send);footer.replaceChildren(secondary,final);footer.classList.add('email-review-footer');
   if(card.retry_unknown){const warning=el('p','connector-outcome-warning','This may already have been sent. Check your Sent folder before sending again.');footer.before(warning);}
   function paint(){content.hidden=!model.open;footer.hidden=!model.open;root.classList.toggle('email-review-open',model.open);toggle.textContent=model.open?'Hide details':card.status==='completed'?'Details':'Review';toggle.setAttribute('aria-expanded',String(model.open));}
   paint();return root;
