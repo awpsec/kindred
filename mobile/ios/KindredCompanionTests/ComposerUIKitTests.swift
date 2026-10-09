@@ -66,7 +66,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         })
         session.reload()
         try await waitFor("exact fixture UI and native geometry", timeout: 30) {
-            try await self.boolean("!!document.querySelector('#prompt') && !!window.__KINDRED_NATIVE_GEOMETRY && document.documentElement.hasAttribute('data-mobile')")
+            try await self.boolean("!!document.querySelector('#prompt')?.getClientRects().length && !!document.querySelector('[data-message=\"1\"] [data-message-action=\"reply\"]') && !!window.__KINDRED_NATIVE_GEOMETRY && document.documentElement.hasAttribute('data-mobile')")
         }
         XCTAssertEqual(session.webView.url?.host, "localhost")
         XCTAssertEqual(session.webView.scrollView.contentInsetAdjustmentBehavior, .never)
@@ -165,6 +165,12 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     }
 
     private func checkComposer(label: String) async throws {
+        // Wait for the real host's geometry bridge, not a fixed rendering delay.
+        let expectedWidth = Double(session.webView.bounds.width)
+        let expectedHeight = Double(session.webView.bounds.height)
+        try await waitFor("native host geometry for " + label) {
+            try await self.boolean("Math.abs(window.__KINDRED_NATIVE_GEOMETRY.width-\(expectedWidth))<2 && Math.abs(window.__KINDRED_NATIVE_GEOMETRY.height-\(expectedHeight))<2")
+        }
         let source = """
         (()=>{const rect=e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}};
         const c=document.querySelector('#composer'),p=document.querySelector('#prompt');
