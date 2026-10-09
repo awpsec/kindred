@@ -74,6 +74,18 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     }
 
     override func tearDown() async throws {
+        // A failed landscape assertion must not contaminate the next test.
+        window?.endEditing(true)
+        if let scene = window?.windowScene, scene.interfaceOrientation.isLandscape {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { error in
+                XCTFail("Portrait cleanup failed: \(error)")
+            }
+            do {
+                try await waitFor("portrait cleanup", timeout: 15) { scene.interfaceOrientation.isPortrait }
+            } catch {
+                // waitFor records the failure; still release the test window.
+            }
+        }
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
         session?.tearDown()
