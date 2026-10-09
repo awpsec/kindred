@@ -2251,12 +2251,14 @@ function progressChoices(value='balanced'){
   description.id='progress-choice-description';description.setAttribute('aria-live','polite');
   const inputs=[];
   for(const [index,[key,label]] of progressModes.entries()){
-    const tile=node('label','progress-choice'),input=node('input');input.type='radio';input.name='progress_updates';input.value=key;input.checked=key===value;input.setAttribute('aria-describedby',description.id);inputs.push(input);
+    const tile=node('label','progress-choice'),input=node('input');input.type='radio';input.name='progress_updates';input.value=key;input.checked=key===value;input.setAttribute('aria-label',label);input.setAttribute('aria-describedby',description.id);inputs.push(input);
     const preview=node('span','progress-choice-preview');preview.setAttribute('aria-hidden','true');preview.append(node('i','progress-sketch-user'));
     const thread=node('span','progress-sketch-thread');
     for(let i=0;i<[1,2,4,2][index];i++){const bubble=node('i','progress-sketch-bubble'+(key==='calm'?' progress-sketch-summary':''));bubble.append(node('i'));if(key==='calm')bubble.append(node('i'));thread.append(bubble);}preview.append(thread);
     const working=node('i','progress-sketch-working');working.append(node('i','progress-sketch-bot'),node('i','progress-sketch-strokes'));preview.append(working);
-    tile.append(input,node('span','progress-choice-title',label),preview);tiles.append(tile);
+    const title=node('span','progress-choice-title',key==='summaries'?'Summaries':label);
+    if(key==='summaries')title.append(node('small','progress-choice-note','Experimental'));
+    tile.append(input,title,preview);tiles.append(tile);
   }
   const update=()=>{description.textContent=progressModes.find(([key])=>inputs.some(i=>i.checked&&i.value===key))?.[2]||progressModes[1][2];};
   root.addEventListener('change',update);root.append(legend,tiles,description);update();
@@ -5138,13 +5140,35 @@ function renderRequestTray(chat,entry){
   const focused=tray.contains(document.activeElement),focusKey=document.activeElement?.dataset.questionFocus;
   tray.replaceChildren();tray.hidden=!requests.length;if(!requests.length){if(focused)$('prompt').focus({preventScroll:true});return;}
   tray.dataset.chat=chat.id;
-  if(model.minimized){const count=button(requests.length+' pending request'+(requests.length===1?'':'s'),()=>{model.minimized=false;renderRequestTray(chat,entry);},'outline-button');tray.append(count);if(focused)count.focus({preventScroll:true});return;}
-  const bar=node('div','request-tray-bar'),page=node('span','muted small',(index+1)+' / '+requests.length);
+  const item=requests[index],card=item.q?questionCard(item.q):approvalCard(item.a,item.run);
+  card.classList.add('in-request-tray');card.querySelector('.task-card-title')?.remove();
+  const heading=card.querySelector('.question-title,.task-description');
+  const title=heading?.textContent||'Review request';
+  tray.classList.toggle('is-minimized',model.minimized);
+  if(model.minimized){
+    const expand=button('',()=>{model.minimized=false;renderRequestTray(chat,entry);},'request-tray-expand');
+    expand.setAttribute('aria-label',requests.length+' pending request'+(requests.length===1?'':'s'));
+    expand.setAttribute('aria-expanded','false');expand.dataset.questionFocus='expand';
+    expand.append(node('span','request-tray-preview',title),node('span','request-tray-count',requests.length+' request'+(requests.length===1?'':'s')),icon('chevron',14));
+    tray.append(expand);if(focused)expand.focus({preventScroll:true});return;
+  }
+  const header=node('div','request-tray-header'),bar=node('div','request-tray-bar'),page=node('span','request-tray-page',(index+1)+' / '+requests.length);
+  if(heading){heading.classList.add('request-tray-heading');header.append(heading);}
   const step=delta=>{const next=index+delta;if(next<0||next>=requests.length)return;model.key=requests[next].key;renderRequestTray(chat,entry);};
-  if(requests.length>1){const previous=iconButton('chevron','Previous request',()=>step(-1)),next=iconButton('chevron','Next request',()=>step(1));previous.classList.add('request-tray-prev');previous.disabled=index===0;next.disabled=index===requests.length-1;bar.append(previous,page,next);}else bar.append(page);
-  bar.append(button('−',()=>{model.minimized=true;renderRequestTray(chat,entry);},'subtle-button'));bar.lastChild.setAttribute('aria-label','Minimize pending requests');
-  const item=requests[index],card=item.q?questionCard(item.q):approvalCard(item.a,item.run);card.classList.add('in-request-tray');card.querySelector('.task-card-title')?.remove();card.querySelector('.task-description')?.classList.add('request-tray-heading');const details=card.querySelector('.task-details>summary');if(details)details.textContent='Details';card.querySelector('.question-dismiss')?.replaceChildren(document.createTextNode('Skip'));
-  tray.append(bar,card);if(focused){const target=focusKey&&[...tray.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===focusKey);(target||tray.querySelector('button:not(:disabled)'))?.focus({preventScroll:true});}
+  if(requests.length>1){
+    const previous=iconButton('chevron','Previous request',()=>step(-1)),next=iconButton('chevron','Next request',()=>step(1));
+    previous.classList.add('request-tray-prev');previous.dataset.questionFocus='previous-request';next.dataset.questionFocus='next-request';
+    previous.disabled=index===0;next.disabled=index===requests.length-1;bar.append(previous,page,next);
+  }
+  const minimize=iconButton('chevron','Minimize pending requests',()=>{model.minimized=true;renderRequestTray(chat,entry);});
+  minimize.classList.add('request-tray-minimize');minimize.dataset.questionFocus='minimize';minimize.setAttribute('aria-expanded','true');bar.append(minimize);
+  header.append(bar);
+  const details=card.querySelector('.task-details>summary');if(details)details.textContent='Details';card.querySelector('.question-dismiss')?.replaceChildren(document.createTextNode('Skip'));
+  tray.append(header,card);
+  if(focused){
+    const target=focusKey==='expand'?card.querySelector('button:not(:disabled),textarea:not(:disabled)'):focusKey&&[...tray.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===focusKey&&!n.disabled);
+    (target||tray.querySelector('button:not(:disabled)'))?.focus({preventScroll:true});
+  }
 }
 function queuedMessageWaiting(message){
  const deliveries=message.delivery||[];
