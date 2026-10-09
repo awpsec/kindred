@@ -5151,7 +5151,8 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .email-draft-editor label{font-size:12px;font-weight:500;gap:8px;margin:0}
 .email-draft-editor input,.email-draft-editor textarea{box-sizing:border-box;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:14px;line-height:1.7;box-shadow:0 1px 2px #00000008}
 .email-draft-editor textarea{min-height:240px;resize:vertical}
-.email-draft-editor input:focus,.email-draft-editor textarea:focus{outline:2px solid color-mix(in srgb,var(--fg) 28%,transparent);outline-offset:2px;border-color:var(--muted)}
+.email-draft-editor input:focus,.email-draft-editor textarea:focus{outline:none;box-shadow:none;border-color:var(--muted)}
+@media(forced-colors:active){.email-draft-editor input:focus,.email-draft-editor textarea:focus{outline:1px solid Highlight;outline-offset:0}}
 @media(max-width:620px){.connector-kind-email>.connector-artifact-content,.connector-kind-email .email-draft-editor{padding:18px}.connector-kind-email>footer{padding:14px}.connector-kind-email>footer>.primary{margin-left:0}.connector-kind-email .connector-email-subject{font-size:17px}}
 
 .connector-email-attachments{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:20px;font-size:12px}.connector-attachment-chip{padding:6px 10px;border:1px solid var(--line);border-radius:7px;overflow-wrap:anywhere;max-width:100%}
