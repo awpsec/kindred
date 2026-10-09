@@ -5183,7 +5183,14 @@ function editQueuedMessage(message,chatId){
       const recipients=merge?state.draftRecipients.get(chatId)||[]:[];state.draftRecipients.set(chatId,[...new Set([...recipients,...payload.mentions])]);
       state.queueEdits.delete(key);saveDraft();persistConversation();normalizePromptMentions();renderPendingFiles();renderReplyDraft();resizeComposer();prompt.remove();$('prompt').focus();
       notice('Removed from the queue. Send to submit it again.');await refresh(true);
-    }catch(error){status.textContent=error.message;for(const action of actions.children)action.disabled=false;}finally{queueEditBusy.delete(busyKey);}
+    }catch(error){
+      status.textContent=error.message;
+      if([400,409].includes(error.status)&&error.message.includes('already reached')){
+        // The server refused the claim because delivery is no longer queued.
+        // Preserve the draft and dismiss; these choices cannot restore it now.
+        state.queueEdits.delete(key);persistConversation();actions.replaceChildren(button('OK',()=>{prompt.remove();$('prompt').focus();},'outline-button'));actions.firstChild.focus();
+      }else for(const action of actions.children)action.disabled=false;
+    }finally{queueEditBusy.delete(busyKey);}
   };
   actions.append(button(hasDraft()?'Add below':'Edit in composer',()=>restore('add'),'primary'));
   if(hasDraft())actions.append(button('Replace draft',()=>restore('replace'),'outline-button'));
