@@ -17,6 +17,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     private var keyboardShows = 0
     private var keyboardHides = 0
     private var observers: [NSObjectProtocol] = []
+    private var layoutEvidence: [String: Any] = [:]
 
     override func setUp() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -182,6 +183,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             "nativeLoadFailed": session?.loadState.failure != nil,
             "webViewLoading": session?.webView.isLoading ?? false,
             "estimatedProgress": session?.webView.estimatedProgress ?? 0]
+        if !layoutEvidence.isEmpty { evidence["layoutTransition"] = layoutEvidence }
         if let url = session?.webView.url {
             evidence["url"] = ["scheme": url.scheme ?? "", "host": url.host ?? "",
                 "port": url.port ?? 0, "path": url.path] as [String: Any]
@@ -244,21 +246,40 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     }
 
     private func checkComposer(label: String) async throws {
-        // Wait for the real host's geometry bridge, not a fixed rendering delay.
-        let expectedWidth = Double(session.webView.bounds.width)
-        let expectedHeight = Double(session.webView.bounds.height)
-        try await waitFor("native host geometry for " + label) {
-            try await self.boolean("Math.abs(window.__KINDRED_NATIVE_GEOMETRY.width-\(expectedWidth))<2 && Math.abs(window.__KINDRED_NATIVE_GEOMETRY.height-\(expectedHeight))<2")
-        }
+        // A native bridge update precedes WebKit's applied CSS viewport in
+        // some transitions. Require applied shell shape, never eventual hits.
         let source = """
         (()=>{const rect=e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}};
         const c=document.querySelector('#composer'),p=document.querySelector('#prompt');
         const reply=document.querySelector('#composer-reply'),files=document.querySelector('.composer-files');
-        return {composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
+        return {layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
         controls:[...c.querySelectorAll('#composer-actions,#send,.dictation-button,.dictation-cancel')].filter(b=>b.getClientRects().length).map(b=>{const r=rect(b),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {...r,hit:h===b||b.contains(h)}})}})()
         """
-        let rawMetrics = try await js(source)
-        var metrics = try XCTUnwrap(rawMetrics as? [String: Any])
+        var measured: [String: Any]?
+        var previousStamp: String?
+        var sampleCount = 0
+        let started = Date()
+        layoutEvidence = ["phase": label]
+        try await waitFor("applied native and shared layout for " + label) {
+            let raw = try await self.js(source)
+            let sample = try XCTUnwrap(raw as? [String: Any])
+            sampleCount += 1
+            // Read the live UIKit host after this sample, not a pre-rotation size.
+            let host = self.session.webView.bounds
+            let stamp = Self.appliedLayoutStamp(sample,
+                hostWidth: Double(host.width), hostHeight: Double(host.height))
+            self.layoutEvidence["samples"] = sampleCount
+            self.layoutEvidence["elapsedSeconds"] = Date().timeIntervalSince(started)
+            self.layoutEvidence["liveHost"] = ["width": host.width, "height": host.height]
+            self.layoutEvidence["latest"] = sample
+            if self.layoutEvidence["first"] == nil { self.layoutEvidence["first"] = sample }
+            let stable = stamp != nil && stamp == previousStamp
+            previousStamp = stamp
+            if stable { measured = sample }
+            return stable
+        }
+        var metrics = try XCTUnwrap(measured)
+        metrics["layoutTransition"] = layoutEvidence
         metrics["keyboardNotifications"] = ["shows": keyboardShows, "hides": keyboardHides]
         metrics["keyboardFrame"] = ["x": keyboardFrame.minX, "y": keyboardFrame.minY, "width": keyboardFrame.width, "height": keyboardFrame.height]
         let c = try XCTUnwrap(metrics["composer"] as? [String: Double])
@@ -294,6 +315,25 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         screenshot.name = label
         screenshot.lifetime = .keepAlways
         add(screenshot)
+    }
+
+    /// Pure shape/state predicate; control visibility and hits remain assertions.
+    private static func appliedLayoutStamp(_ metrics: [String: Any],
+        hostWidth: Double, hostHeight: Double) -> String? {
+        guard let native = metrics["native"] as? [String: Any],
+              let viewport = metrics["viewport"] as? [String: Double],
+              let layout = metrics["layout"] as? [String: Any],
+              let shell = layout["shell"] as? [String: Double],
+              layout["resizing"] as? Bool == false,
+              let nw = native["width"] as? Double, let nh = native["height"] as? Double,
+              let vw = viewport["width"], let vh = viewport["height"],
+              let sw = shell["width"], let sh = shell["height"],
+              let scale = layout["textScale"] as? Double,
+              [hostWidth, hostHeight, nw, nh, vw, vh, sw, sh, scale].allSatisfy({ $0.isFinite && $0 > 0 }),
+              abs(nw - hostWidth) < 2, abs(nh - hostHeight) < 2,
+              abs(vw - hostWidth) < 2, abs(vh - hostHeight) < 2,
+              abs(sw - vw) < 2, abs(sh - vh) < 2 else { return nil }
+        return "\(hostWidth)|\(hostHeight)|\(nw)|\(nh)|\(vw)|\(vh)|\(sw)|\(sh)|\(scale)|\(layout["mode"] as? String ?? "")"
     }
 
     func webSession(_ session: WebSession, didReceive message: SessionMessage) {}
