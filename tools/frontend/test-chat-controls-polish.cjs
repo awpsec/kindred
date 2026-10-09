@@ -32,6 +32,33 @@ await p.setViewportSize({width:1200,height:900});await tiles.last().click();asse
 await capture('settings',p.locator('#settings-dialog'));
 await p.evaluate(()=>document.documentElement.style.setProperty('--text-scale','1.5'));await p.locator('.progress-choices').scrollIntoViewIfNeeded();
 assert(await tiles.evaluateAll(ts=>ts.every(t=>t.querySelector('.progress-choice-title').getBoundingClientRect().bottom<=t.querySelector('.progress-choice-preview').getBoundingClientRect().top)),'Reading size never overlaps tile titles and previews');await capture('settings-large-text',p.locator('#settings-dialog'));
+// A height-derived minimum must not force a tile wider than its grid track.
+// Check actual card/radio rectangles, not only labels against illustrations.
+const progressCases=[];
+for(const theme of ['dark','light'])for(const scale of [1,1.5])for(const width of [1200,1000,800,390]){
+ await p.setViewportSize({width,height:900});
+ await p.evaluate(({theme,scale})=>{document.documentElement.dataset.theme=theme;document.documentElement.style.setProperty('--text-scale',String(scale));},{theme,scale});
+ await p.locator('.progress-choices').scrollIntoViewIfNeeded();
+ const geometry=await p.locator('.progress-choice-tiles').evaluate(grid=>({grid:grid.getBoundingClientRect().toJSON(),cards:[...grid.children].map(n=>n.getBoundingClientRect().toJSON())}));
+ assert.equal(new Set(geometry.cards.map(c=>Math.round(c.top))).size,width>=1000?1:2,'Approved four desktop/two narrow columns');
+ console.log('PROGRESS_BOUNDS',JSON.stringify({theme,scale,width,...geometry}));
+ for(let i=0;i<geometry.cards.length;i++){
+  const a=geometry.cards[i];assert(a.left>=geometry.grid.left-1&&a.right<=geometry.grid.right+1,'Each progress card fits its grid');
+  for(const b of geometry.cards.slice(i+1))assert(a.right<=b.left+1||b.right<=a.left+1||a.bottom<=b.top+1||b.bottom<=a.top+1,'Progress cards never overlap');
+ }
+ for(let i=0;i<4;i++){
+  const tile=tiles.nth(i),radio=tile.locator('input');await radio.scrollIntoViewIfNeeded();
+  const hit=await radio.evaluate(input=>{const r=input.getBoundingClientRect(),tile=input.closest('.progress-choice'),t=tile.getBoundingClientRect(),target=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {visible:r.width>0&&r.height>0&&r.top>=0&&r.bottom<=innerHeight,contained:r.left>=t.left&&r.right<=t.right&&r.top>=t.top&&r.bottom<=t.bottom,hit:target===input};});
+  assert(hit.visible&&hit.contained&&hit.hit,'Every radio remains visible and directly hit-testable');
+  await radio.click();assert(await radio.isChecked(),'Each unobscured radio accepts a real click');
+ }
+ assert(await tiles.evaluateAll(ts=>ts.every(t=>{const title=t.querySelector('.progress-choice-title').getBoundingClientRect(),preview=t.querySelector('.progress-choice-preview').getBoundingClientRect();return title.bottom<=preview.top;})),'Experimental and titles stay above illustrations');
+ const styles=await tiles.evaluateAll(ts=>ts.map(t=>{const s=getComputedStyle(t);return {border:s.borderColor,background:s.backgroundColor,shadow:s.boxShadow};}));assert(styles.every(s=>JSON.stringify(s)===JSON.stringify(styles[0])),'Selection remains a neutral dot without card highlighting');
+ assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await capture('bounds-'+theme+'-'+width+'-'+scale,p.locator('#settings-dialog'));progressCases.push({theme,scale,width});
+}
+await p.emulateMedia({reducedMotion:'reduce'});assert(await tiles.evaluateAll(ts=>ts.every(t=>getComputedStyle(t).transitionDuration==='0s')),'Reduced motion keeps tile transitions off');
+console.log('PROGRESS_MATRIX',JSON.stringify(progressCases));
 await p.evaluate(()=>document.documentElement.style.removeProperty('--text-scale'));
 await p.keyboard.press('Escape');await p.setViewportSize({width:390,height:844});await p.waitForTimeout(300);for(const theme of ['dark','light']){
  await p.evaluate(t=>document.documentElement.dataset.theme=t,theme);
