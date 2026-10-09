@@ -1,7 +1,7 @@
-const {chromium}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
 const {server,token}=require('./fixtures/desktop.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
-(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({headless:true});try{
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await (process.env.WEBKIT?webkit:chromium).launch({headless:true});try{
  const page=await browser.newPage({viewport:{width:1260,height:1080}}),origin='http://127.0.0.1:'+server.address().port,actions=[];
  page.on('pageerror',e=>console.error('PAGE ERROR',e.message));
  const card={id:'email-review',bot_id:'piper',kind:'email',connection:'Gmail',connector:'gmail',source:'Claude',tool:'send_email',title:'A quick project update',email_send:true,status:'pending',approval_id:'approval-email',revision:1,account:'casey@example.invalid',input:{to:['jordan@example.invalid'],subject:'A quick project update',body:'Hi Jordan,\n\nThe first round of testing is complete. We’re continuing the remaining checks during tonight’s agreed window.\n\nI’ll share the report once we’ve reviewed the results. Let me know if anything has changed on your side.\n\nThanks,\nCasey',attachments:[{filename:'project-summary.pdf'}]},records:[]};
@@ -24,19 +24,19 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   emailSenderLabel({from:{text:'me'}},'Work'),
  ];});
  assert.deepEqual(senders,['casey@example.invalid','Connected account','casey@example.invalid','Casey <casey@example.invalid>','Connected account']);
- const view=page.locator('[data-connector-artifact="email-review"]');await view.getByText('Draft · not sent',{exact:true}).waitFor();assert.equal(await view.getByText('<sender.user>',{exact:true}).count(),0);assert.equal(await view.getByText('casey@example.invalid',{exact:true}).count(),1);
+ const view=page.locator('[data-connector-artifact="email-review"]');await view.getByText('Email draft · Not sent',{exact:true}).waitFor();await view.getByRole('button',{name:'Review',exact:true}).click();assert.equal(await view.getByText('<sender.user>',{exact:true}).count(),0);assert.equal(await view.getByText('casey@example.invalid',{exact:true}).count(),1);
  assert.equal(await page.locator('[data-approval="approval-email"]').count(),1,'Only the email card owns this approval');
  const output=process.env.KINDRED_TEST_ARTIFACTS||'/opt/kindred/testing/email-review';fs.mkdirSync(output,{recursive:true});
  for(const theme of ['dark','light']){await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);await view.screenshot({path:path.join(output,'email-draft-'+theme+'.png')});}
  await view.getByRole('button',{name:'Edit draft',exact:true}).click();const editor=view.getByRole('form',{name:'Edit email draft'});
  assert(await view.getByRole('button',{name:'Send email',includeHidden:true,exact:true}).isDisabled());
  await view.screenshot({path:path.join(output,'email-editor-light.png')});
- await editor.getByLabel('Message',{exact:true}).fill('Updated draft, still not sent.');await editor.getByRole('button',{name:'Save draft changes',exact:true}).click();await view.getByText('Updated draft, still not sent.',{exact:true}).waitFor();
+ await editor.getByLabel('Message',{exact:true}).fill('Updated draft, still not sent.');await editor.getByRole('button',{name:'Save edits',exact:true}).click();await view.getByText('Updated draft, still not sent.',{exact:true}).waitFor();
  await view.getByRole('button',{name:'Remove attachments',exact:true}).click();await view.getByText('project-summary.pdf',{exact:true}).waitFor({state:'detached'});
  assert.equal(card.status,'pending');assert.deepEqual(actions.map(a=>a.action),['edit','remove_attachments']);
  await page.setViewportSize({width:390,height:900});await view.screenshot({path:path.join(output,'email-draft-mobile.png')});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  card.input={draft_id:'opaque-draft-id'};card.email={};await page.reload();
- await view.getByText('Email preview unavailable',{exact:true}).waitFor();
+ await view.getByRole('button',{name:'Review',exact:true}).click();await view.getByText('Email preview unavailable',{exact:true}).waitFor();
  assert(await view.getByRole('button',{name:'Send email',exact:true}).isDisabled());
  assert.equal(await view.getByText('opaque-draft-id',{exact:true}).count(),0);
  assert.equal(await page.locator('[data-approval="approval-email"]').count(),1);

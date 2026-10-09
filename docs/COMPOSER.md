@@ -92,3 +92,50 @@ packages on the owner's machines. The changes remain unreleased; a future
 approved release must rebuild both desktop packages and the server, including
 the standalone server bundle. A desktop-only update cannot replace an older
 server's chat UI.
+
+## Working bots and queued messages
+
+Settings → General saves **While a bot is working** for this workspace. The
+initial choice is **Steer**. Send asks to add a message at the bot's next safe
+boundary. If that is unavailable, it queues the message and says so. **Queue**
+keeps new messages for a later task. Changing the setting does not change messages
+already sent. Older clients keep their existing queue behavior.
+
+Edit is available while every recipient delivery is still queued. With an existing
+draft, choose **Add below**, **Replace draft**, or **Cancel**. The server removes
+all queued deliveries together before restoring the text, attachments and reply.
+A message already consumed by a recipient cannot be withdrawn. After editing,
+Send submits a new message using the current setting.
+
+## Pending requests and task progress
+
+Simple approvals and choices appear in a tray above the composer. Its pager uses
+request IDs and creation order. Minimize keeps the count and any custom answer.
+Approvals and choices each appear once; their terminal receipt stays at its
+original chat position. Approved means permission was granted, not that an action
+succeeded. Email reviews and computer handoffs remain in the conversation.
+
+**Summaries** is an experimental fourth progress option. Balanced remains the
+default. Each run records its mode when it starts; later preference changes apply
+to new runs. Only explicitly tagged commentary for that run and phase can group.
+Long tasks with at least three updates use an inset disclosure. Short tasks and
+historical messages without tags remain ordinary messages. Final results, files,
+errors and requests stay outside. Completion does not collapse a group being read
+or one manually expanded.
+
+Reminders created in one task share a stable pager. Scheduling edits and
+cancellation keep each reminder's ID and position; an older untagged reminder
+never joins a batch because it happens to be adjacent.
+
+## Email review and delivery
+
+Review opens the full email card. Save edits changes the reviewed revision and
+never sends. Send requires approval of that exact revision. The card says Sent
+only after the connector returns success. A pre-dispatch failure stays Not sent;
+a lost or failed dispatch receipt is Delivery unknown. Check the Sent folder
+before requesting another review.
+
+Review to send again opens a prefilled editor and requests a fresh bot review task,
+with a new card and approval. It cannot replay the old call. The old card and its
+delivery state stay in history. This path requires the bot to prepare the new draft;
+requesting review does not mean that the new draft is ready or sent.

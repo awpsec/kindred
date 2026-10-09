@@ -15,7 +15,7 @@ const reduce=()=>document.hidden||!document.hasFocus()||document.documentElement
 const settling=new Set(),settleAll=()=>{for(const finish of [...settling])finish();};
 addEventListener('blur',settleAll);document.addEventListener('visibilitychange',settleAll);matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',settleAll);
 new MutationObserver(settleAll).observe(document.documentElement,{attributes:true,attributeFilter:['data-motion']});
-export function decisionReceipt(root,{key,title,outcome,terminal=false}={}){
+export function decisionReceipt(root,{key,title,outcome,terminal=false,compact=false}={}){
  if(!key)return root;
  const previous=receipts.get(key),mounted=document.querySelector('[data-receipt-key="'+CSS.escape(key)+'"]'),oldHeight=mounted?.getBoundingClientRect().height||0,oldWidth=mounted?.getBoundingClientRect().width||0,restoreFocus=mounted?.contains(document.activeElement);
  root.dataset.receiptKey=key;
@@ -32,9 +32,9 @@ export function decisionReceipt(root,{key,title,outcome,terminal=false}={}){
  }
  if(root.dataset.decisionReceipt===key)return root;
  const state={terminal:true,open:previous?.terminal?previous.open:false};receipts.set(key,state);if(receipts.size>500)receipts.delete(receipts.keys().next().value);
- root.dataset.decisionSignature=signature(root);root.dataset.decisionReceipt=key;root.classList.add('decision-receipt');root.dataset.receiptTone=/^(completed|allowed|approved|answered|teammate created|upload approved|time selected|sent)/i.test(outcome)?'success':'neutral';
+ root.classList.toggle('compact-receipt',compact);root.dataset.decisionSignature=signature(root);root.dataset.decisionReceipt=key;root.classList.add('decision-receipt');root.dataset.receiptTone=/^(completed|allowed|approved|answered|teammate created|upload approved|time selected|sent)/i.test(outcome)?'success':/^(denied|declined)/i.test(outcome)?'denied':'neutral';
  const details=el('details','decision-receipt-disclosure'),summary=el('summary','decision-receipt-summary'),copy=el('span','decision-receipt-copy'),status=el('span','decision-receipt-outcome',outcome),toggle=el('span','decision-receipt-toggle','View details'),body=el('div','decision-receipt-body');
- copy.append(el('strong','decision-receipt-title',title),status);summary.append(copy,toggle);summary.setAttribute('aria-label',`${title} · ${outcome} · View details`);while(root.firstChild)body.append(root.firstChild);details.append(summary,body);root.append(details);details.open=!!state.open;body.inert=!state.open;
+ if(compact){copy.append(status,document.createTextNode(' · '),el('span','decision-receipt-title',title),el('span','compact-receipt-mark',outcome==='Approved'?'✓':outcome==='Denied'?'✗':''));}else copy.append(el('strong','decision-receipt-title',title),status);summary.append(copy,toggle);summary.setAttribute('aria-label',`${title} · ${outcome} · View details`);while(root.firstChild)body.append(root.firstChild);details.append(summary,body);root.append(details);details.open=!!state.open;body.inert=!state.open;
  root.classList.toggle('receipt-collapsed',!state.open);
  let animation=null,settle=0,pending=null;
  function setOpen(open,automatic=false){

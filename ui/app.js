@@ -54,11 +54,14 @@ const state = {
   chat: null,
   replyDrafts: new Map(),
   pendingSends: new Map(),
+  queueEdits: new Map(),
+  draftRecipients: new Map(),
   bot: null,
   status: {},
   allRuns: [],
   approvals: [],
   userTasks: [],
+  questions: [],
   routines: [],
   general: { name: "You", theme: "dark", identity: "", reduced_motion: false, approval_mode: "ask", show_activity: false },
   connections: { apps: [] },
@@ -99,7 +102,7 @@ const profilesUI = createProfileUI({
     if(previous)sessionStorage.setItem('kindred-profile-draft-'+previous,JSON.stringify(conversationSnapshot()));
     if(window.__KINDRED_MOBILE)persistConversation();
     let saved={};try{saved=JSON.parse(sessionStorage.getItem('kindred-profile-draft-'+next)||(mobileConversationKey(next)&&localStorage.getItem(mobileConversationKey(next)))||'{}');}catch{}
-    for(const [key,value] of Object.entries({drafts:saved.drafts||[],replies:saved.replies||[],files:saved.files||[],sends:saved.sends||[],selection:saved.selection||{}}))sessionStorage.setItem('kindred-reload-'+key,JSON.stringify(value));
+    for(const [key,value] of Object.entries({drafts:saved.drafts||[],replies:saved.replies||[],files:saved.files||[],sends:saved.sends||[],queueEdits:saved.queueEdits||[],draftRecipients:saved.draftRecipients||[],selection:saved.selection||{}}))sessionStorage.setItem('kindred-reload-'+key,JSON.stringify(value));
     disconnectDesktop();
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:''});
   }
@@ -520,7 +523,7 @@ async function refresh(force = false) {
   let renderingId=null;
   const statusEpoch=state.statusEpoch||0,botEpoch=state.botWriteEpoch||0;
   try {
-    const [fetchedBots, status, runs, approvals, routines, activities, privateChats, userTasks, attention, serverChats] =
+    const [fetchedBots, status, runs, approvals, routines, activities, privateChats, userTasks, attention, serverChats, questions] =
       await Promise.all([
         api("/bots"),
         api("/status"),
@@ -532,6 +535,7 @@ async function refresh(force = false) {
         api("/user-tasks"),
         api("/attention"),
         serverChatsUI.list(),
+        api("/questions").catch(error=>{if(error.status===404)return [];throw error;}),
       ]);
     const chats=[...privateChats,...serverChats];
     for(const chat of serverChats){attention.chats??={};attention.chats[chat.id]={unread:chat.unread,cursor:chat.cursor,read_cursor:chat.unread?chat.read_cursor:chat.cursor,latest_message_seq:chat.cursor};}
@@ -551,6 +555,7 @@ async function refresh(force = false) {
     for(const id of stoppingTasks){const run=runs.find(r=>r.id===id);if(!run||(!active(run)&&run.status!=='queued'))stoppingTasks.delete(id);}
     state.approvals = approvals;
     state.userTasks = userTasks;
+    state.questions = questions;
     state.routines = routines;
     state.activities = activities;
     state.activityReadAt = Date.now();
@@ -562,7 +567,7 @@ async function refresh(force = false) {
         state.reloadResumeKey=updateKey.replace('kindred-update-resume-','kindred-tab-resume-');
         state.mobileDraftKey=mobileConversationKey();
         const stored=localStorage.getItem(updateKey)||(!sessionStorage.getItem('kindred-reload-selection')&&(sessionStorage.getItem(state.reloadResumeKey)||(mobileConversationKey()&&localStorage.getItem(mobileConversationKey()))));
-        if(stored){const resume=JSON.parse(stored);for(const key of ["drafts","replies","files","sends","selection"])sessionStorage.setItem("kindred-reload-"+key,JSON.stringify(resume[key]||(key==="selection"?{}:[])));localStorage.removeItem(updateKey);}
+        if(stored){const resume=JSON.parse(stored);for(const key of ["drafts","replies","files","sends","queueEdits","draftRecipients","selection"])sessionStorage.setItem("kindred-reload-"+key,JSON.stringify(resume[key]||(key==="selection"?{}:[])));localStorage.removeItem(updateKey);}
         state.drafts = new Map(
           JSON.parse(sessionStorage.getItem("kindred-reload-drafts") || "[]"),
         );
@@ -573,6 +578,8 @@ async function refresh(force = false) {
         state.chat = chats.find((c) => c.id === pick.chat) || state.chat;
         state.replyDrafts=new Map(JSON.parse(sessionStorage.getItem("kindred-reload-replies")||"[]"));
         state.pendingSends=new Map(JSON.parse(sessionStorage.getItem("kindred-reload-sends")||"[]"));
+        state.queueEdits=new Map(JSON.parse(sessionStorage.getItem("kindred-reload-queueEdits")||"[]"));
+        state.draftRecipients=new Map(JSON.parse(sessionStorage.getItem("kindred-reload-draftRecipients")||"[]"));
         for(const [id,files] of JSON.parse(sessionStorage.getItem("kindred-reload-files")||"[]"))pendingFiles.set(id,files);
         restoreDraft();
       } catch {
@@ -583,6 +590,8 @@ async function refresh(force = false) {
       sessionStorage.removeItem("kindred-reload-selection");
       sessionStorage.removeItem("kindred-reload-sends");
       sessionStorage.removeItem("kindred-reload-files");
+      sessionStorage.removeItem("kindred-reload-queueEdits");
+      sessionStorage.removeItem("kindred-reload-draftRecipients");
     }
     state.bot =
       bots.find((b) => b.id === state.bot?.id && !profile(b).archived) ||
@@ -1201,6 +1210,7 @@ function renderHeader() {
   chatActions.setAttribute('aria-label',chatActions.title);
 
   $("composer-area").hidden = !b&&!state.chat;
+  const tray=$("request-tray");if(tray&&tray.dataset.chat!==(state.chat?.id||(b?`dm-${b.id}`:''))){tray.hidden=true;delete tray.dataset.signature;}
   $("show-computer").hidden=!!state.chat?.shared&&!chatScreenBots().length;
   $("composer-actions").hidden=false;
   const pause = pausedScreens().find(p=>p.bot_id===b?.id), thisBotPaused=!!pause;
@@ -1236,7 +1246,8 @@ function renderHeader() {
   }
   $("composer-caption").textContent = thisBotPaused
     ? "This computer is paused for manual control. Return control to let the bot continue."
-    : "";
+    : b&&state.allRuns.some(r=>r.bot_id===b.id&&r.chat_id===queueChatId&&r.status==='running')
+      ? (state.general.message_delivery==='queue'?`Queued for ${b.name}\'s next task`:`Sends to ${b.name}\'s current task`) : "";
   renderVersions();
   renderUpdateNotice();
 }
@@ -2234,7 +2245,7 @@ async function defaultModelSettings(root,current) {
     };
   }catch(error){if(current())pane.body.append(node('p','muted small',error.message||String(error)));}
 }
-const progressModes=[['calm','Calm','Mostly quiet, with occasional updates during longer tasks.'],['balanced','Balanced','Useful updates at meaningful milestones.'],['frequent','Frequent','More frequent updates, without narrating every step.']];
+const progressModes=[['calm','Calm','Mostly quiet, with occasional updates during longer tasks.'],['balanced','Balanced','Useful updates at meaningful milestones.'],['frequent','Frequent','More frequent updates, without narrating every step.'],['summaries','Summaries (experimental)','Group progress for new tasks; keep every update available.']];
 function progressChoices(value='balanced'){
   const root=node('fieldset','progress-choices'),legend=node('legend','','Progress updates'),tiles=node('div','progress-choice-tiles'),description=node('p','progress-choice-description');
   description.id='progress-choice-description';description.setAttribute('aria-live','polite');
@@ -2243,7 +2254,7 @@ function progressChoices(value='balanced'){
     const tile=node('label','progress-choice'),input=node('input');input.type='radio';input.name='progress_updates';input.value=key;input.checked=key===value;input.setAttribute('aria-describedby',description.id);inputs.push(input);
     const preview=node('span','progress-choice-preview');preview.setAttribute('aria-hidden','true');preview.append(node('i','progress-sketch-user'));
     const thread=node('span','progress-sketch-thread');
-    for(let i=0;i<[1,2,4][index];i++){const bubble=node('i','progress-sketch-bubble'+(key==='calm'?' progress-sketch-summary':''));bubble.append(node('i'));if(key==='calm')bubble.append(node('i'));thread.append(bubble);}preview.append(thread);
+    for(let i=0;i<[1,2,4,2][index];i++){const bubble=node('i','progress-sketch-bubble'+(key==='calm'?' progress-sketch-summary':''));bubble.append(node('i'));if(key==='calm')bubble.append(node('i'));thread.append(bubble);}preview.append(thread);
     const working=node('i','progress-sketch-working');working.append(node('i','progress-sketch-bot'),node('i','progress-sketch-strokes'));preview.append(working);
     tile.append(input,node('span','progress-choice-title',label),preview);tiles.append(tile);
   }
@@ -2274,7 +2285,9 @@ async function settingsGeneral(revision) {
   const motion=settingSwitch('Reduce motion',state.general.reduced_motion),activity=settingSwitch('Show activity in chats',state.general.show_activity===true);
   const separateBots=settingSwitch('Separate bot conversations',state.general.separate_bot_chats!==false);
   appearance.body.append(settingRow('Theme',theme),motion.label);
-  const conversations=settingsPane('Conversations');conversations.body.append(activity.label,separateBots.label);
+  const conversations=settingsPane('Conversations'),delivery=select([['steer','Steer'],['queue','Queue']],state.general.message_delivery||'steer');
+  delivery.setAttribute('aria-label','While a bot is working');const deliveryHelp=node('p','muted small');const deliveryDescription=()=>{deliveryHelp.textContent=delivery.value==='queue'?"New messages wait for the bot's next task.":'New messages reach the bot during its current task.';};delivery.onchange=deliveryDescription;deliveryDescription();
+  conversations.body.append(settingRow('While a bot is working',delivery),deliveryHelp,activity.label,separateBots.label);
   const textSize=window.KindredReadingSize.systemManaged
     ? node('p','muted','Text size follows your iPhone setting (Settings › Display & Brightness › Text Size).')
     : select([['100','100%'],['115','115%'],['125','125%'],['150','150%']],String(window.KindredReadingSize.get()));
@@ -2325,7 +2338,7 @@ async function settingsGeneral(revision) {
   const speechPane=dictation.querySelector('.settings-pane');speechPane.insertBefore(dictationUI.microphoneControl(),speechPane.querySelector('.dictation-model-row'));
   system.root.hidden=!system.body.children.length;
   form.append(identity.root,appearance.root,conversations.root,dictation,system.root,bots.root,versions.root);
-  const serverControls=[...progress.inputs,name.input,prefs.input,theme,motion.input,activity.input,separateBots.input,timezone,approval.input,notifications];
+  const serverControls=[...progress.inputs,name.input,prefs.input,theme,motion.input,activity.input,separateBots.input,delivery,timezone,approval.input,notifications];
   serverControls.forEach(control=>control.disabled=true);
   root.append(form);renderVersions();
   for(const input of [theme,motion.input])input.addEventListener('change',()=>{state.general={...state.general,theme:theme.value,reduced_motion:motion.input.checked};applyGeneral();});
@@ -2339,10 +2352,10 @@ async function settingsGeneral(revision) {
     motion.input.checked=state.general.reduced_motion===true;activity.input.checked=state.general.show_activity===true;separateBots.input.checked=state.general.separate_bot_chats!==false;
     const selected=state.general.timezone_mode==='fixed'?state.general.timezone:'auto';
     if(selected&&!Array.from(timezone.options).some(o=>o.value===selected))timezone.add(new Option(selected,selected));
-    timezone.value=selected;progress.set(state.general.progress_updates);approval.input.value=state.general.approval_mode||'ask';notifications.value=state.general.notifications||'all';
+    timezone.value=selected;delivery.value=state.general.message_delivery||'steer';deliveryDescription();progress.set(state.general.progress_updates);approval.input.value=state.general.approval_mode||'ask';notifications.value=state.general.notifications||'all';
     serverControls.forEach(control=>control.disabled=false);loading.remove();
     void defaultModelSettings(root,current);
-  livePreferences(form,()=>({name:name.input.value,identity:prefs.input.value,theme:theme.value,reduced_motion:motion.input.checked,approval_mode:approval.input.value,notifications:notifications.value,show_activity:activity.input.checked,separate_bot_chats:separateBots.input.checked,timezone:timezone.value==='auto'?deviceTimezone():timezone.value,timezone_mode:timezone.value==='auto'?'auto':'fixed',progress_updates:progress.value()}),value=>api('/settings','PUT',value),value=>{const zoneChanged=state.general.timezone!==value.timezone;state.general=value;applyGeneral();renderSidebar();void renderChat(true,'cached');if(zoneChanged)void refresh().then(()=>renderComputerRoutines()).catch(e=>notice(e.message,true));});
+  livePreferences(form,()=>({name:name.input.value,identity:prefs.input.value,theme:theme.value,reduced_motion:motion.input.checked,approval_mode:approval.input.value,notifications:notifications.value,show_activity:activity.input.checked,separate_bot_chats:separateBots.input.checked,timezone:timezone.value==='auto'?deviceTimezone():timezone.value,timezone_mode:timezone.value==='auto'?'auto':'fixed',progress_updates:progress.value(),message_delivery:delivery.value}),value=>api('/settings','PUT',value),value=>{const zoneChanged=state.general.timezone!==value.timezone;state.general=value;applyGeneral();renderSidebar();void renderChat(true,'cached');if(zoneChanged)void refresh().then(()=>renderComputerRoutines()).catch(e=>notice(e.message,true));});
   }
   const accountActions=node('div','settings-account-actions');root.append(accountActions);
   accountActions.append(button('Manage archived bots and chats',()=>openSettings('archived'),'outline-button'));
@@ -3844,6 +3857,7 @@ $("composer").onsubmit = (e) => {
     }
     normalizePromptMentions();
     const selectedChatId = composerChatId();
+    if(queueEditBusy.has(state.token+':'+selectedChatId))throw new Error('Wait for the queued message to be restored before sending.');
     const files = [...(pendingFiles.get(selectedChatId) || [])];
     if(files.some(f=>f.loading))throw new Error('Wait for your files to finish uploading.');
     const submittedDraft = $("prompt").value;
@@ -3859,7 +3873,7 @@ $("composer").onsubmit = (e) => {
       state.chat || state.chats.find((c) => c.id === `dm-${state.bot.id}`);
     followChatLatest();
     if (chat) {
-      const payload={prompt,mentions:state.chat?mentions:[],files:files.map(f=>f.id),reply_to:submittedReply?.seq??null};
+      const payload={prompt,delivery_mode:state.general.message_delivery||'steer',mentions:state.chat?[...new Set([...mentions,...(state.draftRecipients.get(selectedChatId)||[])])]:[],files:files.map(f=>f.id),reply_to:submittedReply?.seq??null};
       const signature=JSON.stringify(payload),old=state.pendingSends.get(selectedChatId);
       const send=old?.signature===signature?old:{signature,request_id:crypto.randomUUID()};
       state.pendingSends.set(selectedChatId,send);persistConversation();
@@ -3882,6 +3896,7 @@ $("composer").onsubmit = (e) => {
     renderPendingFiles();
     if(state.replyDrafts.get(selectedChatId)===submittedReply)state.replyDrafts.delete(selectedChatId);
     renderReplyDraft();
+    if(state.drafts?.get(selectedChatId)===submittedDraft)state.draftRecipients.delete(selectedChatId);
     if(state.drafts?.get(selectedChatId)===submittedDraft)state.drafts.delete(selectedChatId);
     if(composerChatId()===selectedChatId && $("prompt").value===submittedDraft){
       $("prompt").value = "";
@@ -3935,7 +3950,7 @@ function settleComposerClearance(){
   setComposerClearance(composerSpace.target);
 }
 const composerClearance=new ResizeObserver(()=>{
-  const area=$('composer-area'),chat=composerChatId(),to=area.hidden?0:area.getBoundingClientRect().height;
+  const area=$('composer-area'),chat=composerChatId(),to=area.hidden?0:area.getBoundingClientRect().height+24;
   const from=composerSpace.height??to,sameChat=chatScroll.view===chat;
   composerSpace.target=to;
   cancelAnimationFrame(composerSpace.frame);composerSpace.frame=0;
@@ -4649,6 +4664,35 @@ function reminderWhen(reminder){
   const zoneLabel=new Intl.DateTimeFormat([],{timeZone:zone,timeZoneName:'short'}).formatToParts(date).find(p=>p.type==='timeZoneName')?.value||zone;
   return {label:dateLabel+', '+time,zone:zone===Intl.DateTimeFormat().resolvedOptions().timeZone?'':zoneLabel,full:date.toLocaleString([],{timeZone:zone,dateStyle:'full',timeStyle:'short'})+' · '+zone};
 }
+function progressGroups(messages){
+  const groups=new Map();for(const m of messages)if(m.kind==='assistant'&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
+  return new Map([...groups].filter(([,items])=>{const run=state.allRuns.find(r=>r.id===items[0].run_id)||state.details.get(items[0].run_id)?.run;const start=run?.progress_started||items[0].created;const end=run&&active(run)?Math.floor(Date.now()/1000):(messages.find(m=>m.run_id===items[0].run_id&&m.kind==='result')?.created||items.at(-1).created);return items.length>=3&&end-start>=60;}));
+}
+function summaryProgress(items,entry,runs){
+  const first=items[0],key=first.progress.group_id,run=runs.find(r=>r.id===first.run_id)||state.allRuns.find(r=>r.id===first.run_id)||state.details.get(first.run_id)?.run;
+  const group=node('article','summary-progress');group.dataset.message=String(first.seq);group.dataset.scrollMessages=items.map(m=>m.seq).join(' ');group.dataset.progressGroup=key;
+  entry.progressOpen??=new Set();entry.progressReading??=new Set();
+  const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),bounds=previous?.getBoundingClientRect(),viewport=$('content').getBoundingClientRect();
+  const reading=!!previous&&(previous.contains(document.activeElement)||bounds.bottom>viewport.top&&bounds.top<viewport.bottom);
+  if(reading&&previous.querySelector('details')?.open)entry.progressReading.add(key);
+  const finished=run&&!active(run)&&run.status!=='queued',manual=entry.progressOpen.has(key),details=node('details','summary-progress-disclosure');details.open=!finished||manual||entry.progressReading.has(key);
+  const title=node('summary','summary-progress-heading'),name=state.bots.find(b=>b.id===first.sender)?.name||'Bot';
+  const elapsed=run?.progress_started?Math.max(0,(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run.id)?.created||items.at(-1).created):Math.floor(Date.now()/1000))-run.progress_started):Math.max(0,items.at(-1).created-first.created);
+  title.append(node('strong','',name),node('span','summary-progress-task',' · '+(run?.prompt||'Task progress')),node('span','muted small summary-progress-time',elapsedTime(elapsed)),node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run.status]||'Task ended'):''}`));
+  const body=node('div','summary-progress-body');for(const m of items){const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);update.append(markdown(m.text));body.append(update);}
+  details.append(title,body);group.append(details);animateChatDisclosure(details,body);
+  title.addEventListener('click',()=>{entry.progressReading.delete(key);details.open?entry.progressOpen.delete(key):entry.progressOpen.add(key);},{capture:true});
+  if(finished&&details.open&&!manual){const observer=new IntersectionObserver(records=>{if(!group.isConnected){observer.disconnect();return;}if(!records[0].isIntersecting&&!group.contains(document.activeElement)&&!entry.progressOpen.has(key)){captureChatAnchor();entry.progressReading.delete(key);details.open=false;restoreChatPosition();observer.disconnect();}},{root:$('content')});requestAnimationFrame(()=>{if(group.isConnected)observer.observe(group);});}
+  return group;
+}
+function reminderBatch(messages,entry){
+  const first=messages[0],records=first.planning_batch||messages.map(m=>m.planning),key=first.planning.batch_id;
+  entry.reminderPages??=new Map();const remembered=entry.reminderPages.get(key),index=Math.max(0,records.findIndex(r=>r.id===remembered)),root=node('section','reminder-batch'),slot=node('div');
+  const bar=node('div','notice-pager'),page=node('span','muted small');let current=index;
+  const paint=()=>{const focus=bar.contains(document.activeElement)?document.activeElement:null;const r=records[current];entry.reminderPages.set(key,r.id);page.textContent=(current+1)+' / '+records.length;const card=reminderCard(r);card.querySelector('.reminder-schedule')?.append(bar);slot.replaceChildren(card);focus?.focus({preventScroll:true});};
+  const step=delta=>{current=(current+delta+records.length)%records.length;paint();};
+  bar.append(iconButton('chevron','Previous reminder',()=>step(-1)),page,iconButton('chevron','Next reminder',()=>step(1)));root.append(slot);paint();return root;
+}
 function reminderCard(reminder,delivered=false){
   const card=node('section','planning-card reminder-card'),feedback=planningFeedback(),when=reminderWhen(reminder);card.dataset.reminder=reminder.id;card.dataset.status=reminder.status;
   const title=delivered?'Reminder':reminder.status==='pending'?'Reminder set':`Reminder ${reminder.status}`;
@@ -4660,14 +4704,15 @@ function reminderCard(reminder,delivered=false){
   if(delivered||reminder.status!=='pending')schedule.append(node('span','reminder-status',delivered||reminder.status==='delivered'?'Delivered':reminder.status==='cancelled'?'Cancelled':reminder.status==='paused'?'Paused':reminder.status));
   meta.append(schedule);
   if(!delivered&&reminder.status!=='delivered'){
-    const actions=node('div','reminder-actions');actions.append(button('Edit',()=>editReminder(reminder),'subtle-button small-button'));
-    if(reminder.status!=='cancelled')actions.append(button('Cancel',async()=>{if(await planningPatch('reminders',reminder,{cancel:true},feedback))notice('Reminder cancelled');},'subtle-button small-button'));
+    const actions=node('div','reminder-actions');actions.append(button(reminder.status==='cancelled'?'Reschedule':'Edit',()=>editReminder(reminder),'subtle-button small-button'));
+    if(reminder.status!=='cancelled')actions.append(button('Cancel',async()=>{await planningPatch('reminders',reminder,{cancel:true},feedback);},'subtle-button small-button'));
     meta.append(actions);
   }
-  card.append(meta,node('p','reminder-message',reminder.message));
+  const excerpt=node('p','reminder-message',reminder.message);excerpt.classList.add('notice-excerpt');card.append(meta,excerpt);
+  if(reminder.message.length>180||reminder.sources?.length){const details=node('details','notice-details');details.append(node('summary','','Details'),node('p','reminder-message',reminder.message),planningSources(reminder.sources));card.append(details);}
   if(delivered&&reminder.delivered_at-reminder.run_at>60)card.append(node('p','muted small','Delivered after its scheduled time when the server and conversation were available.'));
   if(reminder.status==='paused')card.append(node('p','muted small','Paused after transfer. Edit to choose a future delivery time.'));
-  card.append(planningSources(reminder.sources),feedback);return card;
+  card.append(feedback);return card;
 }
 function editReminder(reminder){
   const d=modal('Edit reminder','planning-dialog'),form=node('form','planning-form');
@@ -4732,7 +4777,7 @@ function questionCard(q){
       if(q.selected!==null && q.selected!==undefined)receipt.append(node('span','question-letter',String.fromCharCode(65+q.selected)));
       receipt.append(node('span','',q.answer),icon('check',16));
     }else receipt.append(node('span','muted',q.status==='dismissed'?'Dismissed without an answer.':'This question was cancelled.'));
-    card.append(receipt);return decisionReceipt(card,{key:'question:'+q.id,title:q.question,outcome:q.status==='answered'?'Answered':q.status==='dismissed'?'Dismissed':'Cancelled',terminal:true});
+    card.append(receipt);return decisionReceipt(card,{key:'question:'+q.id,title:q.question,outcome:q.status==='answered'?'Answered':q.status==='dismissed'?'Skipped':'Cancelled',terminal:true,compact:true});
   }
   const choices=node('div','question-choices');
   const submit=async body=>{
@@ -4762,9 +4807,9 @@ function questionCard(q){
       if(bounds.bottom>limit){const messages=card.closest('.messages');if(messages)messages.scrollTop+=bounds.bottom-limit;}
     }
   };
-  input.addEventListener('input',()=>{questionDrafts.set(q.id,input.value);resizeAnswer(true);});
+  input.addEventListener('input',()=>{questionDrafts.set(q.id,input.value);send.disabled=!input.value.trim()||questionPending.has(q.id);resizeAnswer(true);});
   requestAnimationFrame(()=>resizeAnswer(false));
-  const send=node('button','question-send');send.append(icon('send',16));send.setAttribute('aria-label','Send response');send.title='Send response';send.type='submit';send.dataset.questionFocus='send';form.append(input,send);form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity())return;perform(()=>submit({custom:input.value.trim()}),send);};
+  const send=node('button','question-send');send.append(icon('send',16));send.setAttribute('aria-label','Send response');send.title='Send response';send.type='submit';send.disabled=!input.value.trim();send.dataset.questionFocus='send';form.append(input,send);form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity())return;perform(()=>submit({custom:input.value.trim()}),send);};
   const dismiss=button('Dismiss',()=>submit({dismiss:true}),'question-dismiss');dismiss.dataset.questionFocus='dismiss';dismiss.title='Dismiss without answering';
   const actions=node('div','question-actions');actions.append(custom,dismiss);
   form.hidden=!questionDrafts.has(q.id);custom.hidden=!form.hidden;card.append(choices,actions,form);
@@ -5034,7 +5079,7 @@ function connectorBatches(messages,_boundary,runs=[]){
     const previous=batch.at(-1);
     // Quiet routine completions are invisible, so they do not divide receipts.
     if(m.kind==='continuation'||!m.text?.trim()||(hiddenCompletionMessage(m)&&!runs.find(r=>r.id===m.run_id)?.error))continue;
-    if(!['completed','preparing','approved','ready','executing'].includes(m.connector_artifact?.status)){flush();continue;}
+    if(m.connector_artifact?.email_send||!['completed','preparing','approved','ready','executing'].includes(m.connector_artifact?.status)){flush();continue;}
     // Consecutive calls belong together even across scheduled runs and long gaps.
     if(previous&&previous.sender!==m.sender)flush();
     batch.push(m);
@@ -5048,7 +5093,7 @@ function connectorMessage(m,id){
   const card=m.connector_artifact;
   // Only requests for a user decision expand automatically; execution receipts
   // occupy a single line until the person asks to inspect them.
-  if(['pending','changes_requested'].includes(card.status)){group.append(receipt);return group;}
+  if(card.email_send||['pending','changes_requested'].includes(card.status)){group.append(receipt);return group;}
   const disclosure=node('details','connector-call'),summary=connectorCallSummary(card);
   const entry=conversationHistory(id);entry.openConnectorCalls??=new Set();
   disclosure.open=entry.openConnectorCalls.has(card.id);
@@ -5056,22 +5101,75 @@ function connectorMessage(m,id){
   const body=node('div','chat-disclosure-body');body.append(receipt);
   disclosure.append(summary,body);animateChatDisclosure(disclosure,body);group.append(disclosure);return group;
 }
+const simpleApprovalTools=new Set(['guest_exec','computer_open_url','computer_click','computer_type','computer_key','computer_scroll','computer_browser_task','routine_create','routine_update','routine_control','inbox_monitor_save','share_file']);
+function simpleApproval(a){return simpleApprovalTools.has(a.tool)&&!a.args?.artifact_id&&!a.connector_artifact;}
+const trayState=new Map(),queueEditBusy=new Set();
+function approvalChat(run){const source=state.chats.find(c=>c.id===run?.chat_id);return source&&!source.bot_only&&!source.archived?source.id:run?'dm-'+run.bot_id:'';}
+function renderRequestTray(chat,entry){
+  const holder=$('composer-area');let tray=$('request-tray');
+  if(!tray){tray=node('section','request-tray');tray.id='request-tray';tray.setAttribute('aria-label','Pending requests');holder.prepend(tray);}
+  const requests=[];
+  for(const a of state.approvals){const run=state.allRuns.find(r=>r.id===a.run_id);if((a.status||'pending')==='pending'&&simpleApproval(a)&&approvalChat(run)===chat.id)requests.push({key:'approval:'+a.id,created:a.created??run.created,seq:a.message_seq??0,a,run});}
+  for(const m of entry.messages||[])if(m.question?.status==='pending')requests.push({key:'question:'+m.question.id,created:m.question.created??m.created,seq:m.seq,q:m.question});
+  for(const q of state.questions||[])if(q.status==='pending'&&(q.delivery_chat_id||q.chat_id)===chat.id&&!requests.some(r=>r.key==='question:'+q.id))requests.push({key:'question:'+q.id,created:q.created,seq:q.message_seq??0,q});
+  requests.sort((a,b)=>a.created-b.created||a.seq-b.seq||a.key.localeCompare(b.key));
+  const model=trayState.get(chat.id)||{minimized:false,key:''};trayState.set(chat.id,model);
+  const selected=requests.findIndex(r=>r.key===model.key),index=selected<0?0:selected;model.key=requests[index]?.key||'';
+  const signature=JSON.stringify([chat.id,requests,model.minimized,model.key,requests.map(r=>questionDrafts.get(r.q?.id))]);
+  if(tray.dataset.signature===signature)return;tray.dataset.signature=signature;
+  const focused=tray.contains(document.activeElement),focusKey=document.activeElement?.dataset.questionFocus;
+  tray.replaceChildren();tray.hidden=!requests.length;if(!requests.length){if(focused)$('prompt').focus({preventScroll:true});return;}
+  tray.dataset.chat=chat.id;
+  if(model.minimized){tray.append(button(requests.length+' pending request'+(requests.length===1?'':'s'),()=>{model.minimized=false;renderRequestTray(chat,entry);},'outline-button'));return;}
+  const bar=node('div','request-tray-bar'),page=node('span','muted small',(index+1)+' / '+requests.length);
+  const step=delta=>{model.key=requests[(index+delta+requests.length)%requests.length].key;renderRequestTray(chat,entry);};
+  if(requests.length>1)bar.append(iconButton('chevron','Previous request',()=>step(-1)),page,iconButton('chevron','Next request',()=>step(1)));else bar.append(page);
+  bar.append(button('−',()=>{model.minimized=true;renderRequestTray(chat,entry);},'subtle-button'));bar.lastChild.setAttribute('aria-label','Minimize pending requests');
+  const item=requests[index],card=item.q?questionCard(item.q):approvalCard(item.a,item.run);card.classList.add('in-request-tray');card.querySelector('.task-card-title')?.remove();card.querySelector('.task-description')?.classList.add('request-tray-heading');const details=card.querySelector('.task-details>summary');if(details)details.textContent='Details';card.querySelector('.question-dismiss')?.replaceChildren(document.createTextNode('Skip'));
+  tray.append(bar,card);if(focused){const target=focusKey&&[...tray.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===focusKey);(target||tray.querySelector('button'))?.focus({preventScroll:true});}
+}
 function queuedMessageWaiting(message){
  const deliveries=message.delivery||[];
- return deliveries.length>0&&deliveries.every(d=>d.status==='queued')&&deliveries.some(d=>
-  pausedScreens().some(p=>p.bot_id===d.bot_id)||
-  state.allRuns.some(r=>r.bot_id===d.bot_id&&r.id!==d.run_id&&active(r)));
+ return deliveries.length>0&&deliveries.every(d=>d.status==='queued');
 }
 function editQueuedMessage(message,chatId){
- const dialog=modal('Edit queued message','queued-message-dialog'),form=node('form'),input=node('textarea'),status=node('p','muted small');input.value=message.text;input.required=true;input.maxLength=64000;input.setAttribute('aria-label','Queued message');input.rows=6;
- const actions=node('div','row-actions'),save=button('Save changes',()=>{},'primary'),cancel=button('Cancel',()=>dialog.close(),'outline-button');save.type='submit';actions.append(cancel,save);form.append(input,status,actions);dialog.append(form);
- let saving=false;
- const available=()=>{const latest=conversationHistory(chatId).messages.find(m=>m.seq===message.seq);return latest?.delivery?.length&&latest.delivery.every(d=>d.status==='queued');};
- const check=()=>{save.disabled=saving||!available();if(!available())status.textContent='This message has started sending. Your unsaved edit is still here to copy.';};
- status.textContent='Recipients and attachments stay the same.';
- const timer=setInterval(check,500);dialog.addEventListener('close',()=>clearInterval(timer),{once:true});
- form.onsubmit=async event=>{event.preventDefault();if(saving||!available())return;saving=true;check();try{await api('/chats/'+encodeURIComponent(chatId)+'/messages/'+message.seq,'PATCH',{expected_text:message.text,text:input.value});dialog.close();await refresh(true);}catch(e){status.textContent=e.message;}finally{saving=false;save.disabled=!available();}};
- input.focus();input.setSelectionRange(input.value.length,input.value.length);
+  const key=chatId+':'+message.seq,originalToken=state.token;
+  if(composerChatId()!==chatId)return;
+  let prompt=document.getElementById('queued-edit-prompt');if(prompt)prompt.remove();
+  prompt=node('section','queued-edit-prompt');prompt.id='queued-edit-prompt';prompt.setAttribute('aria-label','Edit queued message');
+  const status=node('p','muted small'),actions=node('div','row-actions');prompt.append(status,actions);$('composer').before(prompt);
+  const hasDraft=()=>!!$('prompt').value.trim()||(pendingFiles.get(chatId)||[]).length>0||state.replyDrafts.has(chatId);
+  status.textContent=hasDraft()?'You have a draft. Add the queued message below it, or replace the draft?':'Remove this message from the queue and edit it here?';
+  const restore=async(mode)=>{
+    if(state.token!==originalToken||composerChatId()!==chatId){prompt.remove();return;}
+    const before=$('prompt').value,beforeFiles=[...(pendingFiles.get(chatId)||[])],beforeReply=state.replyDrafts.get(chatId);
+    if(beforeFiles.some(f=>f.loading)){status.textContent='Wait for your files to finish uploading.';return;}
+    if(mode==='add'&&beforeFiles.length+(message.files||[]).length>5){status.textContent='A message can have up to five files. Choose Replace draft, or remove a file first.';return;}
+    const busyKey=originalToken+':'+chatId;if(queueEditBusy.has(busyKey))return;queueEditBusy.add(busyKey);
+    let claim=state.queueEdits.get(key);
+    if(!claim){claim={request_id:crypto.randomUUID(),expected_text:message.text,seq:message.seq,chat_id:chatId};state.queueEdits.set(key,claim);persistConversation();}
+    for(const action of actions.children)action.disabled=true;status.textContent='Removing from the queue…';
+    try{
+      const payload=await api('/chats/'+encodeURIComponent(chatId)+'/messages/'+message.seq,'PATCH',{restore_to_composer:true,expected_text:claim.expected_text,request_id:claim.request_id});
+      if(state.token!==originalToken)return;
+      claim.payload=payload;persistConversation();
+      // A changed draft is merged rather than overwritten. A changed chat keeps
+      // the successful claim for an explicit Restore action in its own chat.
+      if(composerChatId()!==chatId){notice('Removed from the queue. Open its chat to restore the edit.');return;}
+      const changed=$('prompt').value!==before||JSON.stringify(pendingFiles.get(chatId)||[])!==JSON.stringify(beforeFiles)||state.replyDrafts.get(chatId)!==beforeReply;
+      const merge=mode==='add'||changed,base=$('prompt').value;
+      if(merge&&(pendingFiles.get(chatId)||[]).length+payload.files.length>5){status.textContent='Removed from the queue. Remove a draft attachment, then restore this edit. A message can have up to five files.';for(const action of actions.children)action.disabled=false;return;}
+      $('prompt').value=merge&&base?base+'\n\n'+payload.text:payload.text;
+      pendingFiles.set(chatId,merge?[...new Map([...(pendingFiles.get(chatId)||[]),...payload.files].map(f=>[f.id,f])).values()]:payload.files);
+      if(!merge||!state.replyDrafts.has(chatId)){const entry=conversationHistory(chatId),quoted=entry.messages?.find(m=>m.seq===payload.reply_to);if(quoted)state.replyDrafts.set(chatId,{seq:quoted.seq,sender:quoted.sender,text:plainMessage(quoted.text).slice(0,500)});else if(payload.reply_to)state.replyDrafts.set(chatId,{seq:payload.reply_to,sender:'',text:'Quoted message'});else if(!merge)state.replyDrafts.delete(chatId);}
+      const recipients=merge?state.draftRecipients.get(chatId)||[]:[];state.draftRecipients.set(chatId,[...new Set([...recipients,...payload.mentions])]);
+      state.queueEdits.delete(key);saveDraft();persistConversation();normalizePromptMentions();renderPendingFiles();renderReplyDraft();resizeComposer();prompt.remove();$('prompt').focus();
+      notice('Removed from the queue. Send to submit it again.');await refresh(true);
+    }catch(error){status.textContent=error.message;for(const action of actions.children)action.disabled=false;}finally{queueEditBusy.delete(busyKey);}
+  };
+  actions.append(button(hasDraft()?'Add below':'Edit in composer',()=>restore('add'),'primary'));
+  if(hasDraft())actions.append(button('Replace draft',()=>restore('replace'),'outline-button'));
+  actions.append(button('Cancel',()=>{prompt.remove();$('prompt').focus();},'subtle-button'));actions.firstChild.focus();
 }
 
 function connectorCallSummary(card){
@@ -5149,6 +5247,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   const id=chat.id,entry=conversationHistory(id),liveArea=$('content'),area=node('div');
   if(mode==='sync')await syncChatHistory(entry);
   if(currentConversationId()!==id || !entry.loaded)return;
+  renderRequestTray(chat,entry);
   const data={messages:entry.messages},visibleRuns=new Set(data.messages.filter(m=>['assistant','result'].includes(m.kind)).map(m=>m.run_id).filter(Boolean));
   const listedRuns=state.allRuns.filter(r=>!chat.shared&&r.chat_id===id && (visibleRuns.has(r.id) || entry.workingRuns?.has(r.id) || (!entry.hasAfter && (active(r)||r.status==='queued'))));
   const wanted=[...new Set([...visibleRuns,...listedRuns.map(r=>r.id)])];
@@ -5225,7 +5324,8 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   let sequenceAvatar = null, previousSender = null,
     previousTime = 0;
   const boundary=unreadBoundaries.get(id);let unreadInserted=false;
-  const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set();
+  const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages);
+  for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
   for (const m of data.messages) {
     if(stacked.has(m.seq)||m.kind==='continuation')continue;
     if (!m.text?.trim()) continue;
@@ -5236,9 +5336,11 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       if(boundary.seenAt&&Date.now()-boundary.seenAt>8000)divider.classList.add('has-faded');
       area.append(divider);unreadObserver.observe(divider);
     }
+    if(m.progress?.group_id&&summaries.has(m.progress.group_id)){const items=summaries.get(m.progress.group_id);for(const item of items)stacked.add(item.seq);area.append(summaryProgress(items,entry,runs));previousSender=null;continue;}
     if(m.kind==='connection_card'&&validConnectionCard(m.text)){
       const group=node('article','message-group connection-message');group.dataset.message=String(m.seq);group.append(chatConnectionCard(m.text));area.append(group);previousSender=null;continue;
     }
+    if(m.approval){if(m.approval.status==='pending'){previousSender=null;continue;}const group=node('article','message-group approval-message');group.dataset.message=String(m.seq);const run=runs.find(r=>r.id===m.run_id)||state.allRuns.find(r=>r.id===m.run_id)||{id:m.run_id,chat_id:chat.id,bot_id:m.sender};group.append(approvalCard(m.approval,run));area.append(group);previousSender=null;continue;}
     if(m.visual_panel){
       const group=node('article','message-group visual-message');group.dataset.message=String(m.seq);
       group.append(visualPanel(m.visual_panel,{...workflowOptions(chat.id,m.visual_panel),onDiscuss:pick=>{const text=`Let's discuss ${pick.name} (${pick.url}) from the saved comparison “${m.visual_panel.title}” (panel ${pick.panel_key}, product ${pick.product_id}).`; $('prompt').value=text;resizeComposer();$('prompt').dispatchEvent(new Event('input',{bubbles:true}));$('prompt').focus();}}));
@@ -5262,7 +5364,9 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     }
     if (m.planning) {
       const group=node('article','message-group planning-message');group.dataset.message=String(m.seq);
-      group.append(m.kind==='checklist'?checklistCard(m.planning):reminderCard(m.planning,m.kind==='reminder'));
+      const batch=m.kind==='reminder_card'&&m.planning.batch_id&&reminderGroups.get(m.planning.batch_id);
+      if(batch&&(m.planning_batch?.length||batch.length)>1){for(const item of batch)stacked.add(item.seq);group.dataset.scrollMessages=batch.map(item=>item.seq).join(' ');group.append(reminderBatch(batch,entry));}
+      else group.append(m.kind==='checklist'?checklistCard(m.planning):reminderCard(m.planning,m.kind==='reminder'));
       area.append(group);previousSender=null;continue;
     }
     if (m.kind === 'workspace_import' && m.workspace_import) {
@@ -5347,6 +5451,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     const attachmentOnly=isUser&&m.files?.length&&m.text==='Please review the attached files.';
     const row = node("div", "message-row " + (isUser ? "user" : "assistant"));
     if (m.kind === 'question' && m.question) {
+      if(m.question.status==='pending'){previousSender=null;continue;}
       row.append(questionCard(m.question));
     } else if (m.kind === "handoff") {
       const bubble=markdown(m.text,true);bubble.classList.add('handoff-bubble');row.append(bubble);
@@ -5360,9 +5465,8 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       for(const delivery of m.delivery||[]) {
         const recipient=state.bots.find(b=>b.id===delivery.bot_id)?.name||'Bot';
         const working=state.allRuns.find(r=>r.bot_id===delivery.bot_id&&r.chat_id===chat.id&&active(r));
-        const text=delivery.status==='steered'?`${recipient} · included in this task${['failed','interrupted','cancelled'].includes(delivery.task_status)?' · task stopped':''}`:delivery.status==='queued'&&working&&!m.command?.command&&!delivery.steer_requested?`${recipient} · queued for the next task`:'';
+        const text=delivery.status==='steered'?`${recipient} · included in this task${['failed','interrupted','cancelled'].includes(delivery.task_status)?' · task stopped':''}`:delivery.status==='withdrawn'?'Removed from the queue':delivery.status==='queued'&&delivery.steer_requested?`${recipient} · will see this after the current action`:delivery.status==='queued'?`${recipient} · ${delivery.mode==='steer'?"queued: couldn't add to this task":'queued for the next task'}`:'';
         if(text)bubble.append(node('span','message-delivery',text));
-        if(delivery.status==='queued'&&working&&!m.command?.command&&delivery.run_id&&!delivery.steer_requested){const controls=node('div','message-steering');const steer=button('Steer now',async()=>{await api('/runs/'+encodeURIComponent(delivery.run_id)+'/steer','POST',{run_id:working.id});await refresh(true);},'subtle-button');steer.title='Send to '+recipient+' after the current action, without stopping the task';steer.setAttribute('aria-label','Steer '+recipient+' with this message');controls.append(steer);group.prepend(controls);}
       }
       row.append(bubble);
     } else row.append(markdown(m.text));
@@ -5370,10 +5474,10 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));
-    if(['message','assistant','result','handoff','question'].includes(m.kind)){
+    if(['message','withdrawn','assistant','result','handoff'].includes(m.kind)){
       group.tabIndex=0;group.dataset.messageFocus='group';
       const actions=messageActions(chat.id,m);if(attachmentOnly)actions.querySelector('[data-message-action="copy"]')?.remove();row.classList.add('has-message-actions');
-      if(isUser&&!chat.shared&&queuedMessageWaiting(m)){
+      if(isUser&&!chat.shared&&(queuedMessageWaiting(m)||state.queueEdits.has(chat.id+':'+m.seq))){
         const edit=iconButton('edit','Edit queued message',()=>editQueuedMessage(m,chat.id));edit.dataset.messageFocus='edit';edit.dataset.messageAction='edit';actions.append(edit);actions.classList.add('has-queued-edit');
       }
       if(isUser)row.prepend(actions);else row.append(actions);
@@ -5492,7 +5596,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   for(const approval of state.approvals.filter(a=>(a.status||'pending')==='pending')){
     const run=state.allRuns.find(r=>r.id===approval.run_id);if(!run||run.status!=='awaiting_approval')continue;
     const source=state.chats.find(c=>c.id===run.chat_id),target=source&&!source.bot_only&&!source.archived?source.id:'dm-'+run.bot_id;
-    if(target===id&&!area.querySelector('[data-approval="'+CSS.escape(approval.id)+'"]')){const card=approvalCard({...approval,status:approval.status||'pending'},run);card.dataset.approval=approval.id;area.append(card);}
+    if(target===id&&!simpleApproval(approval)&&!area.querySelector('[data-approval="'+CSS.escape(approval.id)+'"]')){const card=approvalCard({...approval,status:approval.status||'pending'},run);card.dataset.approval=approval.id;area.append(card);}
   }
   // Human handoffs belong where they were requested, not beneath the live
   // worker or the final answer. Keep one stable card as its status changes.
@@ -6512,7 +6616,7 @@ addEventListener("beforeunload",()=>{
 });
 function conversationSnapshot(){
   saveDraft();
-  return {drafts:[...state.drafts],replies:[...state.replyDrafts],sends:[...state.pendingSends],files:[...pendingFiles].map(([id,files])=>[id,files.filter(f=>!f.loading)]),selection:{bot:state.bot?.id,chat:state.chat?.id}};
+  return {drafts:[...state.drafts],replies:[...state.replyDrafts],sends:[...state.pendingSends],queueEdits:[...state.queueEdits],draftRecipients:[...state.draftRecipients],files:[...pendingFiles].map(([id,files])=>[id,files.filter(f=>!f.loading)]),selection:{bot:state.bot?.id,chat:state.chat?.id}};
 }
 function persistConversation(){
   if(!state.reloadResumeKey)return;
@@ -7408,7 +7512,7 @@ async function openHumanRequest(task) {
 }
 function focusRequest(kind,id) {
   const key=kind==='user_action'?'userTask':kind==='approval'?'approval':kind==='question'?'questionId':null;
-  const card=key&&[...$('content').querySelectorAll('[data-'+(key==='userTask'?'user-task':key==='questionId'?'question-id':key)+']')].find(n=>n.dataset[key]===id);
+  const card=key&&[...document.querySelectorAll('[data-'+(key==='userTask'?'user-task':key==='questionId'?'question-id':key)+']')].find(n=>n.dataset[key]===id);
   if(!card)return false;
   card.classList.add('notification-target');card.tabIndex=-1;card.scrollIntoView({block:'center',behavior:'auto'});(card.querySelector('input:not(:disabled),button:not(:disabled),a[href]')||card).focus({preventScroll:true});return true;
 }
@@ -7436,7 +7540,7 @@ function taskCards(run) {
   const block=node('div','task-cards');
   const receipts=state.details.get(run.id)?.approvals;
   const approvals=receipts || state.approvals.filter(a=>a.run_id===run.id);
-  for(const a of approvals)if(!a.args?.artifact_id){const card=approvalCard(a,run);card.dataset.approval=a.id;block.append(card);}
+  for(const a of approvals)if(!a.args?.artifact_id&&!a.message_seq&&!((a.status||'pending')==='pending'&&simpleApproval(a))){const card=approvalCard(a,run);card.dataset.approval=a.id;block.append(card);}
   for(const t of state.userTasks.filter(t=>t.run_id===run.id).reverse()) {
     const box=node('div','task-card human-task');box.dataset.userTask=t.id;
     const title=node('div','task-card-title');title.append(icon('computer',15),node('strong','',t.title||'Computer'));
@@ -7573,7 +7677,7 @@ function approvalCard(a,run) {
   box.append(node('p','muted small',browserWhere+caption));
   const details=node('details','task-details');details.append(node('summary','','Show the details'),node('pre','',JSON.stringify(detailsArgs,null,2)));box.append(details);
   if(pending){const actions=node('div','task-card-actions');for(const [label,approved]of [['Allow once',true],['Decline',false]])actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved});await refresh(true);},approved?'primary small-button':'outline-button'));box.append(actions);}
-  return decisionReceipt(box,{key:'approval:'+a.id,title:action,outcome:status==='approved'?'Allowed':status==='denied'?'Declined':'Expired',terminal:!pending});
+  return decisionReceipt(box,{key:'approval:'+a.id,title:action,outcome:status==='approved'?'Approved':status==='denied'?'Denied':'Expired',terminal:!pending,compact:true});
 }
 function connectorBrand(connection='',tool='') {
   const raw=connection.replace(/^claude.ai /,'');
