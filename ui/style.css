@@ -3225,12 +3225,13 @@ html[data-motion='off'] .color-option {transition:none;scale:1;}
 .message-bubble p+p {margin-top:10px;}
 .chat-timestamp {margin:22px 0 18px;font-size:calc(11px * var(--text-scale, 1));}
 .composer-area {padding:8px 16px 10px;}
-#composer {display:grid;grid-template-columns:30px minmax(0,1fr) 29px 30px;align-items:end;column-gap:5px;padding:6px;border-radius:26px;background:var(--surface);}
-#prompt {grid-column:2;grid-row:1;min-height:30px;padding:4px 2px;}
+/* Keep writing above the controls, including an empty or single-line draft. */
+#composer {display:grid;grid-template-columns:30px minmax(0,1fr) 29px 30px;grid-template-rows:auto auto minmax(40px,auto) 32px;min-height:108px;align-items:end;column-gap:5px;padding:12px;border-radius:24px;background:var(--surface);}
+#prompt {grid-column:1/-1;grid-row:3;min-height:40px;padding:2px 4px;margin-bottom:9px;}
 .composer-bottom {display:contents;}
-#composer-actions {grid-column:1;grid-row:1;align-self:end;}
-#composer-hint {grid-column:3;grid-row:1;align-self:end;}
-#send {grid-column:4;grid-row:1;align-self:end;}
+#composer-actions {grid-column:1;grid-row:4;align-self:center;}
+#composer-hint {grid-column:3;grid-row:4;align-self:center;}
+#send {grid-column:4;grid-row:4;align-self:center;}
 .composer-caption:empty {display:none;}
 .settings-dialog[open] {height:700px;max-height:88dvh;background:var(--bg);}
 .settings-nav {width:198px;background:var(--sidebar);}
@@ -3448,12 +3449,11 @@ html:not([data-input-modality=pointer]) .message-group:focus-visible > .message-
 .message-quote-content > span {font-size:calc(12px * var(--text-scale, 1));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .message-quote:hover,.message-quote:focus-visible {background:color-mix(in srgb,var(--fg) 13%,transparent);color:var(--fg);}
 .quoted-highlight > .message-row > .message-bubble {box-shadow:0 0 0 2px var(--muted);}
-#composer.is-replying,#composer.has-files {border-radius:18px;padding:10px 11px 8px;border-color:color-mix(in srgb,var(--fg) 30%,var(--surface));background:color-mix(in srgb,var(--surface) 92%,var(--fg));row-gap:4px;}
+#composer.is-replying,#composer.has-files {border-color:color-mix(in srgb,var(--fg) 30%,var(--surface));background:color-mix(in srgb,var(--surface) 92%,var(--fg));}
 .composer-reply {grid-column:1/-1;grid-row:1;display:flex;align-items:center;gap:7px;min-width:0;padding:4px 7px;border-radius:11px;background:color-mix(in srgb,var(--fg) 8%,transparent);color:var(--muted);font-size:calc(12px * var(--text-scale, 1));}
 .composer-reply > svg {flex:none;}
 .composer-reply-text {min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .composer-reply .icon-button {flex:none;width:23px;height:23px;padding:4px;color:var(--muted);}
-#composer.is-replying #prompt,#composer.has-files #prompt {grid-column:1/-1;grid-row:3;min-height:28px;padding:2px 1px 5px;}
 #composer.is-replying #composer-actions,#composer.has-files #composer-actions {grid-row:4;}
 #composer.is-replying #composer-hint,#composer.has-files #composer-hint {grid-row:4;}
 #composer.is-replying #send,#composer.has-files #send {grid-row:4;}
@@ -3472,7 +3472,7 @@ html[data-motion="off"] .message-actions {transition:none;}
 /* The composer opens upward, with a quiet highlight that follows attention. */
 #composer {position:relative;align-content:end;transition:border-color 200ms ease,background-color 200ms ease,box-shadow 200ms ease,border-radius 320ms cubic-bezier(.22,1,.36,1);}
 #composer:hover {border-color:color-mix(in srgb,var(--fg) 23%,var(--surface));}
-#composer:focus-within {border-color:color-mix(in srgb,var(--fg) 37%,var(--surface));box-shadow:0 0 0 1px color-mix(in srgb,var(--fg) 5%,transparent),0 3px 14px #00000008;}
+#composer:focus-within {border-color:color-mix(in srgb,var(--fg) 37%,var(--surface));box-shadow:none;}
 #composer.is-replying,#composer.has-files {background:var(--surface);}
 #composer.is-morphing {overflow:clip;}
 .composer-reply-ghost {position:absolute;pointer-events:none;}
@@ -3750,7 +3750,7 @@ html[data-motion="off"] #composer,html[data-motion="off"] .composer-reply .icon-
 @media(prefers-reduced-motion:reduce){.unread-divider.is-seen{animation-duration:.01ms;}}
 
 /* Dictation uses the same bottom row in every composer state. */
-.dictation-button{grid-column:4;grid-row:1;align-self:end;justify-self:center;box-sizing:border-box;width:29px;height:29px;min-width:29px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;background:var(--hover);color:var(--muted);cursor:pointer;transition:transform .15s ease;}
+.dictation-button{grid-column:4;grid-row:4;align-self:center;justify-self:center;box-sizing:border-box;width:29px;height:29px;min-width:29px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;background:var(--hover);color:var(--muted);cursor:pointer;transition:transform .15s ease;}
 .dictation-button svg{display:block;width:20px;height:20px;}
 .dictation-button.is-primary{background:var(--button);color:var(--button-fg);}
 .dictation-button:hover{transform:scale(1.05);color:var(--fg);}
@@ -3758,18 +3758,14 @@ html[data-motion="off"] #composer,html[data-motion="off"] .composer-reply .icon-
 .dictation-button.is-recording{background:#ac4e49;color:white;}
 .dictation-button:disabled{opacity:.55;cursor:wait;}
 .dictation-status{grid-column:2;grid-row:4;align-self:center;font-size:calc(11px * var(--text-scale, 1));color:var(--muted);margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#composer .dictation-cancel{grid-column:3;grid-row:4;align-self:end;justify-self:center;width:29px;height:29px;padding:6px;background:var(--hover);border-radius:50%;}
+#composer .dictation-cancel{grid-column:3;grid-row:4;align-self:center;justify-self:center;width:29px;height:29px;padding:6px;background:var(--hover);border-radius:50%;}
 #composer.dictation-enabled{grid-template-columns:30px minmax(0,1fr) 29px 30px 30px;}
 #composer.dictation-empty,#composer.is-dictating{grid-template-columns:30px minmax(0,1fr) 29px 30px;}
 #composer.dictation-enabled #send{grid-column:5;}
 #composer.is-replying .dictation-button,#composer.has-files .dictation-button,#composer.is-dictating .dictation-button{grid-row:4;}
-#composer.is-dictating{border-radius:22px;row-gap:3px;}
-#composer.is-dictating #prompt{grid-column:1/-1;grid-row:3;min-height:30px;padding:4px 7px;}
 #composer.is-dictating #composer-actions{grid-row:4;}
 #composer.is-dictating #composer-hint{display:none;}
-/* Long drafts use the full width above the actions, including the scrollbar. */
-#composer.is-multiline{border-radius:22px;row-gap:3px;}
-#composer.is-multiline #prompt{grid-column:1/-1;grid-row:3;padding:4px 7px;}
+/* Long drafts keep the same writing width and controls as short drafts. */
 #composer.is-multiline #composer-actions,#composer.is-multiline #composer-hint,#composer.is-multiline #send,#composer.is-multiline .dictation-button{grid-row:4;}
 .dictation-detail{min-height:2.4em;line-height:1.5;}
 .dictation-settings select{width:100%;margin-top:12px;}

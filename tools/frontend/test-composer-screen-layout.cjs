@@ -17,12 +17,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    await page.setViewportSize({width,height:900});await page.evaluate(size=>KindredReadingSize.set(size),size);
    await page.locator('#prompt').fill('Short');await settle();
    assert(!await page.locator('#composer').evaluate(n=>n.classList.contains('is-multiline')));
+   assert(await page.locator('#composer').evaluate(n=>{const form=n.getBoundingClientRect(),editor=n.querySelector('#prompt').getBoundingClientRect(),controls=n.querySelector('#composer-actions').getBoundingClientRect();return form.height>=108&&editor.bottom<=controls.top&&editor.left<controls.right&&editor.right>n.querySelector('#send').getBoundingClientRect().left;}),'Even short drafts write above the controls at every size');
    await page.locator('#prompt').fill(Array.from({length:60},(_,i)=>'Line '+i+' of a long draft.').join('\n'));await settle();
    const bounds=await page.evaluate(()=>{
     const rect=id=>document.querySelector(id).getBoundingClientRect().toJSON();
     return {form:rect('#composer'),editor:rect('#prompt'),send:rect('#send'),provider:rect('#composer-hint'),mic:rect('.dictation-button'),actions:rect('#composer-actions'),scrolls:document.querySelector('#prompt').scrollHeight>document.querySelector('#prompt').clientHeight};
    });
-   assert(bounds.scrolls);assert(bounds.form.right-bounds.editor.right<=9,JSON.stringify(bounds));
+   assert(bounds.scrolls);assert(bounds.form.right-bounds.editor.right<=13,JSON.stringify(bounds));
    assert(bounds.editor.right>bounds.provider.right);assert(bounds.editor.bottom<=bounds.send.top+1,JSON.stringify(bounds));
    const bottoms=[bounds.send,bounds.mic,bounds.actions,bounds.provider].map(r=>r.bottom);assert(Math.max(...bottoms)-Math.min(...bottoms)<=1);
    await page.locator('#prompt').press('Control+End');await page.locator('#prompt').press('q');assert((await page.locator('#prompt').innerText()).endsWith('q'));
