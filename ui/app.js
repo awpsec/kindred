@@ -692,14 +692,14 @@ function senderName(bot,avatar) {
   }
   return name;
 }
-function workLine(bot, run) {
-  const line = node("div", "work-line");
+function workLine(bot, run, {secondary = false} = {}) {
+  const line = node("div", secondary ? "work-line collaboration-wait-row" : "work-line");
   line.tabIndex = 0;
   const label = node("span", "work-label working-glimmer", reaction(run.bot_id).label);
   label.dataset.activityLabel = run.bot_id;
   label.dataset.workRun = run.id;
   updateWorkLabel(label);
-  line.append(buddy(bot, 48, true, `work-${run.id}`), label);
+  line.append(buddy(bot, secondary ? 24 : 48, !secondary, `${secondary ? "helper" : "work"}-${run.id}`), label);
   line.append(taskStopButton(bot,run));
   return line;
 }
@@ -760,6 +760,7 @@ function updateWorkLabel(label) {
   if(run?.status==='awaiting_user'&&pendingHumanTask(run.bot_id)&&!pending)caption='Needs you';
   if(delegation)caption=delegation.caption+(!delegation.waiting&&!run.delegation.resuming&&caption&&!['Working','Idle','Resting'].includes(caption)?' · '+caption:'');
   const text=node('span','',stale?'Connection lost · last known: '+(caption||'Waiting to start'):caption);
+  text.title=text.textContent;
   const timer=node('time','work-timer',elapsedTime(now-(current?(a.started_at||now):now)));
   timer.title='Elapsed time in this step';
   label.classList.toggle('working-glimmer',!stale&&a.status==='running'&&r.action!=='waiting'&&r.action!=='worry');
@@ -851,9 +852,9 @@ function updateReactions() {
   for (const [key, avatar] of avatarCache) {
     if (
       !avatar.isConnected &&
-      key.startsWith("work-") &&
+      (key.startsWith("work-") || key.startsWith("helper-")) &&
       !state.allRuns.some(
-        (r) => `work-${r.id}` === key && (active(r) || r.status === "queued"),
+        (r) => [`work-${r.id}`, `helper-${r.id}`].includes(key) && (active(r) || r.status === "queued"),
       )
     )
       avatarCache.delete(key);
@@ -5465,7 +5466,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   const helping=!chat.shared&&chat.id.startsWith('dm-')?helperWork(chat.id.slice(3)):null;
   if(helping&&helping.run.chat_id!==id){
     const bot=state.bots.find(b=>b.id===helping.run.bot_id);
-    if(bot){const group=node('article','message-group helper-work'),line=workLine(bot,helping.run);group.dataset.message='helper-work-'+helping.run.id;
+    if(bot){const group=node('article','message-group helper-work'),line=workLine(bot,helping.run,{secondary:true});group.dataset.message='helper-work-'+helping.run.id;
       if(helping.target){const open=iconButton('arrow',"Open "+helping.name+"'s chat",()=>chooseChat(helping.target));open.classList.add('work-open');line.insertBefore(open,line.querySelector('.work-stop'));}
       group.append(line);const queuedRun=runs.find(r=>r.status==='queued'),queued=queuedRun&&area.querySelector('article[data-run="'+CSS.escape(queuedRun.id)+'"]');if(queued)queued.before(group);else area.append(group);}
   }
