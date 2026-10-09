@@ -5482,3 +5482,31 @@ html[data-ios-short=true] .control-notice-copy {flex:1;}
 .control-notice-context {display:none;}
 html[data-ios-short=true] .control-notice-context {display:inline;}
 html[data-ios-short=true] .control-notice-copy strong {display:inline-block;max-width:8em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
+
+/* Composer-attached decisions; dimensions of the composer remain owned by its layout. */
+.request-tray,.queued-edit-prompt{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:12px;max-width:100%;min-width:0;margin-bottom:8px;text-align:left;overflow-wrap:anywhere}
+.request-tray[hidden]{display:none}.request-tray-bar{display:flex;align-items:center;gap:6px}.request-tray-bar>button:last-child{margin-left:auto}
+.request-tray .task-card,.request-tray .question-card{border:0;background:transparent;padding:8px 0 0;max-width:100%;margin:0}.request-tray .question-response textarea{width:100%;min-height:44px;max-height:240px;resize:none}
+.queued-edit-prompt .row-actions{flex-wrap:wrap}.queued-edit-prompt p{margin:0 0 8px}.decision-receipt[data-receipt-tone=denied] .decision-receipt-outcome{color:var(--danger,#c73b4b)}
+
+/* Compact notices preserve their individual records and touch/keyboard actions. */
+.planning-card.reminder-card{border-radius:6px;background:color-mix(in srgb,var(--fg) 3%,var(--bg));padding:10px 12px;text-align:left;border:1px solid var(--line)}
+.notice-excerpt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.notice-details summary{font-size:calc(12px * var(--text-scale,1));color:var(--muted);cursor:pointer}.notice-details[open] p{white-space:pre-wrap}
+.reminder-batch{max-width:720px;width:100%}.notice-pager{display:flex;align-items:center;gap:8px;margin-bottom:4px}.notice-pager button:first-child{transform:rotate(180deg)}
+@media(hover:hover) and (pointer:fine){.reminder-actions{opacity:0}.reminder-card:hover .reminder-actions,.reminder-card:focus-within .reminder-actions{opacity:1}}
+
+.summary-progress{margin:10px 0 12px 20px;border-top:1px solid var(--line);padding-top:10px;max-width:calc(100% - 20px);font-size:calc(13px * var(--text-scale,1))}.summary-progress-heading{display:flex;flex-wrap:wrap;gap:5px 10px;cursor:pointer;list-style:none}.summary-progress-task{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.summary-progress-heading>.muted{flex-basis:100%}.summary-progress-body{padding-top:8px}.summary-progress-update{padding:5px 0;overflow-wrap:anywhere}.summary-progress-update p{margin:4px 0}.summary-progress-disclosure:not([open]) .summary-progress-body{display:none}
+
+.email-notice{background:color-mix(in srgb,var(--fg) 3%,var(--bg));border-radius:6px;max-width:720px;width:100%;text-align:left}.email-notice .connector-artifact-header{display:flex;align-items:center;flex-wrap:wrap;gap:6px}.email-notice-title{overflow-wrap:anywhere}.email-notice .connector-card-status{flex:1;white-space:normal}.email-notice .connector-card-actions[hidden],.email-notice .connector-artifact-content[hidden]{display:none}.email-notice .connector-card-actions{flex-wrap:wrap}.email-notice .email-review-close{margin-right:auto}.email-notice .connector-card-editor .connector-card-actions>button:last-child{margin-left:auto}.email-retry-confirm{display:flex;gap:8px;align-items:flex-start}.email-retry-confirm input{width:18px;height:18px;flex:none}.email-notice:not(.email-review-open) .connector-card-editor{display:none}
+
+/* Plain terminal decision lines retain the original request position. */
+.compact-receipt.decision-receipt,.compact-receipt.receipt-collapsed{border:0;background:transparent;box-shadow:none;border-radius:0;width:auto;max-width:100%}
+.compact-receipt details.decision-receipt-disclosure>summary.decision-receipt-summary{padding:4px 0;min-height:0;gap:0;border-radius:0;font-size:calc(12px * var(--text-scale,1))}
+.compact-receipt .decision-receipt-copy{display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:flex-start}.compact-receipt .decision-receipt-title{font-size:inherit;font-weight:400;white-space:normal}.compact-receipt .decision-receipt-outcome{font-size:inherit;color:inherit}.compact-receipt .decision-receipt-toggle{display:none}.compact-receipt .decision-receipt-outcome::before{display:none}.compact-receipt[data-receipt-tone=success] .decision-receipt-summary{color:light-dark(#217650,#6bc6a0)}.compact-receipt[data-receipt-tone=denied] .decision-receipt-summary{color:var(--danger,#c73b4b)}.compact-receipt .decision-receipt-summary:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.reminder-schedule .notice-pager{margin:0 0 0 auto;display:inline-flex;flex:none}.reminder-schedule{flex-wrap:wrap}.notice-pager button{padding:2px}
+.summary-progress-body .summary-progress-update{font-size:calc(12px * var(--text-scale,1));background:transparent;border:0}.summary-progress-update .markdown{font-size:inherit;background:transparent}.summary-progress-show{display:none}.summary-progress-disclosure:not([open]) .summary-progress-show{display:inline}.summary-progress-disclosure:not([open]) .summary-progress-task{display:none}
+.email-notice .connector-card-status{flex:0 1 auto;margin-left:auto;max-width:none;background:transparent;border:0;padding:0;border-radius:0;text-align:right}.email-notice .connector-card-status.status-pending{border:0;background:transparent;padding:0}.email-notice .connector-artifact-header{align-items:baseline}.email-notice-title{flex:1;min-width:100px}
+
+.summary-progress-body .message-bubble{font-size:inherit;background:transparent;border:0;border-radius:0;box-shadow:none;padding:0;max-width:100%;margin:0}
+
+.summary-progress-heading{gap:4px 6px}.summary-progress-heading>.summary-progress-time{flex-basis:auto;margin-left:auto}.summary-progress-heading>.summary-progress-count{flex-basis:100%}.summary-progress-disclosure:not([open]) .summary-progress-task{display:block}.summary-progress-task{min-width:100px}

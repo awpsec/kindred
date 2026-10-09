@@ -19,7 +19,7 @@ const server=http.createServer(async(req,res)=>{
  securityHeaders(req,res);
  const url=new URL(req.url,'http://localhost');const route=url.pathname;
  if(route==='/fixture/site'){res.writeHead(200,{'Content-Type':'text/html'});return res.end('<html><style>body{margin:0;background:#f7f5ef;font:18px system-ui;color:#162e30;padding:40px}h1{font-size:38px}.block{height:110px;border-radius:20px;background:#16867c;margin-top:32px;color:white;padding:26px}</style><h1>A website screenshot</h1><p>A visible page captured for the chat attachment test.</p><div class=block>Example content<br>Local fixture only.</div></html>');}
- let input='';try{for await(const c of req)input+=c;}catch(error){if(req.aborted||error.code==='ECONNRESET')return;throw error;}let body={};try{body=JSON.parse(input||'{}');}catch{}
+ let input='';for await(const c of req)input+=c;let body={};try{body=JSON.parse(input||'{}');}catch{}
  const send=(data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
  if(route==='/fixture/finish'&&req.method==='POST'){cursor++;notifications.push({id:cursor,run_id:run.id,bot_id:bot.id,chat_id:chat.id,title:'Kindred native test completed',body:'Minimized-window notification check.'});return send({cursor});}
  if(route==='/fixture/polls')return send(polls);
@@ -38,7 +38,7 @@ const server=http.createServer(async(req,res)=>{
   '/api/attention':{bots:{},chats:{}},
   '/api/bots':[bot],'/api/chats':[chat],'/api/runs':[run],'/api/runs/run-screenshot':{run,events:[],attachments,approvals:[]},
   '/api/chats/dm-piper':{chat,messages:[{seq:1,sender:'user',text:run.prompt,kind:'message',run_id:'',created:run.created},{seq:2,sender:'piper',text:run.output,kind:'result',run_id:run.id,attachments,created:run.created}]},
-  '/api/workspace-artifact-folders':[], '/api/status':{version:'0.12.1',screen_bot_id:'piper',takeover:false,vm_enabled:true},'/api/settings':general,'/api/connections':{apps:[],openrouter_configured:false},'/api/approvals':[],'/api/user-tasks':[],'/api/routines':[],'/api/activity':{piper:{status:'completed',shape:'success',label:'All done',finished_at:run.created}},'/api/codex/models':{data:[{model:'test',displayName:'Test model',isDefault:true,defaultReasoningEffort:'high',supportedReasoningEfforts:[{reasoningEffort:'high'}]}]},'/api/computer':{image:'data:image/png;base64,'+png.toString('base64')},'/api/skills':[],'/api/commands':[]
+  '/api/workspace-artifact-folders':[], '/api/status':{version:'0.12.1',screen_bot_id:'piper',takeover:false,vm_enabled:true},'/api/settings':general,'/api/connections':{apps:[],openrouter_configured:false},'/api/approvals':[],'/api/questions':[], '/api/user-tasks':[],'/api/routines':[],'/api/activity':{piper:{status:'completed',shape:'success',label:'All done',finished_at:run.created}},'/api/codex/models':{data:[{model:'test',displayName:'Test model',isDefault:true,defaultReasoningEffort:'high',supportedReasoningEfforts:[{reasoningEffort:'high'}]}]},'/api/computer':{image:'data:image/png;base64,'+png.toString('base64')},'/api/skills':[],'/api/commands':[]
  };
  if(route in data)return send(data[route]);
  if(route==='/updates/stable.json')return send({},404);

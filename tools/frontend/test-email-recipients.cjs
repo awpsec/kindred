@@ -18,7 +18,7 @@ const output=process.env.KINDRED_TEST_ARTIFACTS||path.join(require('node:os').tm
   };
   const render=()=>document.querySelector('#demo').replaceChildren(connectorCard(card,{button,api,onChange:render,onDiscuss:()=>{},botName:'Piper',heading:()=>{const n=document.createElement('strong');n.textContent='Gmail';return n;},sanitizeHtml:text=>document.createTextNode(text)}));render();
  });
- await p.getByRole('button',{name:'Edit draft',exact:true}).click();
+ await p.getByRole('button',{name:'Review',exact:true}).click();await p.getByRole('button',{name:'Edit draft',exact:true}).click();
  const form=p.getByRole('form',{name:'Edit email draft'}),to=form.getByRole('combobox',{name:'To',exact:true});
  const subject=form.getByLabel('Subject',{exact:true}),body=form.getByLabel('Message',{exact:true});
  assert((await to.boundingBox()).y<(await subject.boundingBox()).y);assert((await subject.boundingBox()).y<(await body.boundingBox()).y);
@@ -32,12 +32,12 @@ const output=process.env.KINDRED_TEST_ARTIFACTS||path.join(require('node:os').tm
  assert.equal(await cc.locator('..').locator('.recipient-chip[data-address="alex@example.invalid"]').count(),1);
  await form.locator('.recipient-chip[data-address="morgan@example.invalid"]').click();await form.getByRole('menuitem',{name:'Move to Bcc',exact:true}).click();await p.waitForTimeout(550);
  await form.locator('.recipient-chip[data-address="alex@example.invalid"]').click();await form.getByRole('menuitem',{name:'Move to To',exact:true}).click();await p.waitForTimeout(550);
- await to.fill('unfinished');await form.getByRole('button',{name:'Save draft changes',exact:true}).click();assert.equal(await p.evaluate(()=>window.calls.length),0);
+ await to.fill('unfinished');await form.getByRole('button',{name:'Save edits',exact:true}).click();assert.equal(await p.evaluate(()=>window.calls.length),0);
  await to.fill('');await to.evaluate(n=>{const e=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(e,'clipboardData',{value:{getData:()=> '"Smith, Jane" <jane@example.invalid>; pat@example.invalid'}});n.dispatchEvent(e);});
  await p.waitForTimeout(450);assert.equal(await form.locator('[role=alert]').count(),0);
  for(const theme of ['dark','light']){await p.evaluate(t=>document.documentElement.dataset.theme=t,theme);await form.screenshot({path:path.join(output,'composer-'+theme+'.png')});}
  await p.evaluate(()=>document.documentElement.dataset.theme='dark');
- await form.getByRole('button',{name:'Save draft changes',exact:true}).click();
+ await form.getByRole('button',{name:'Save edits',exact:true}).click();
  const calls=await p.evaluate(()=>window.calls);assert.equal(calls.length,1);assert.equal(calls[0].action,'edit');assert.match(calls[0].fields.to,/"Smith, Jane" <jane@example.invalid>/);assert.match(calls[0].fields.bcc,/morgan@example.invalid/);assert(!calls[0].fields.to.includes('morgan@example.invalid'));
  await p.getByText('Sending permissions',{exact:true}).click();await p.screenshot({path:path.join(output,'review-permissions.png')});
  await p.getByRole('button',{name:'Edit draft',exact:true}).click();await p.setViewportSize({width:390,height:844});await p.waitForTimeout(300);await form.screenshot({path:path.join(output,'composer-mobile.png')});assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
