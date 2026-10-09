@@ -40,7 +40,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   for(const width of [850,1100,1320]){
    await page.setViewportSize({width,height:900});await settle();
    const controls=await page.evaluate(()=>['teach-task','take-control'].map(id=>{const n=document.getElementById(id);return {rect:n.getBoundingClientRect().toJSON(),label:n.getAttribute('aria-label'),title:n.title,icon:!!n.querySelector('svg'),compact:getComputedStyle(n.querySelector('span')).display==='none'};}));
-   assert(controls.every(c=>c.icon&&c.compact&&c.label===c.title));assert(Math.abs(controls[0].rect.y-controls[1].rect.y)<1);
+   assert(controls.every(c=>c.icon&&c.label&&c.label===c.title&&c.rect.width>0&&c.rect.height>0));
+   const narrow=await page.locator('#computer-panel').evaluate(n=>n.clientWidth<=580);
+   assert.equal(controls[0].compact,narrow,'Teach follows the container icon-only breakpoint');
+   assert.equal(controls[1].compact,false,'Primary Take/Return control retains its visible text label');
+   assert(controls[0].rect.right<=controls[1].rect.left,'Toolbar controls do not overlap');assert(Math.abs(controls[0].rect.y-controls[1].rect.y)<1);
   }
   const sample=expand=>page.evaluate(async expand=>{
    const panel=document.querySelector('#computer-panel'),screen=document.querySelector('#desktop'),rows=[];
@@ -60,8 +64,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await page.evaluate(()=>window.fixture.setComputerExpanded(true));await page.setViewportSize({width:1000,height:800});await settle();assert.equal(await page.locator('#computer-panel').getAttribute('style'),'');
   await page.evaluate(()=>{window.fixture.state.general.reduced_motion=true;window.fixture.setComputerExpanded(false);});
   assert.equal(await page.locator('#computer-panel').evaluate(n=>n.getAnimations().length),0);
-  await page.evaluate(()=>{window.fixture.state.general.reduced_motion=false;window.fixture.setComputerExpanded(true);window.fixture.hidePane(document.querySelector('#computer-panel'));});await page.waitForTimeout(250);
+  await page.evaluate(()=>{window.fixture.state.general.reduced_motion=false;window.fixture.setComputerExpanded(true);window.fixture.hidePane(document.querySelector('#computer-panel'));});
+  // hidePane owns a 170ms effect plus a bounded cleanup fallback. Observe
+  // completion instead of assuming a 250ms recorder sleep covers both.
+  await page.waitForFunction(()=>document.querySelector('#computer-panel').hidden,{},{timeout:1200});
   assert(await page.locator('#computer-panel').isHidden());assert.equal(await page.locator('#desktop').getAttribute('style'),'');
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,longComposerRightScrollbar:true,dictationAligned:true,textSizes:[100,150],widths:[390,850,1050,1320],compactIcons:true,smoothBothDirections:true,reversal:true,resize:true,reducedMotion:true,liveCanvasPreserved:true}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,longComposerRightScrollbar:true,dictationAligned:true,textSizes:[100,150],widths:[390,850,1050,1320],secondaryCompactIcons:true,primaryControlLabelVisible:true,smoothBothDirections:true,reversal:true,resize:true,reducedMotion:true,liveCanvasPreserved:true}));
  }finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1;});

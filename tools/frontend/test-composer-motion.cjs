@@ -28,13 +28,31 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   const first=()=>p.locator('[data-message="1"]'),second=()=>p.locator('[data-message="2"]'),prompt=p.locator('#prompt');
 
   await first().waitFor();
-  const sample=action=>p.evaluate(async action=>{
+  const sample=(action,controlled=true)=>p.evaluate(async({action,controlled})=>{
     const form=document.querySelector('#composer'),prompt=document.querySelector('#prompt');
-    const read=()=>{const f=form.getBoundingClientRect(),t=prompt.getBoundingClientRect();return {height:f.height,bottom:f.bottom,promptTop:t.top,promptLeft:t.left,moving:form.classList.contains('is-morphing')};};
-    const frames=[read()];document.querySelector(action).click();frames.push(read());
-    // Include the bounded cleanup fallback when a busy renderer delays onfinish.
-    const start=performance.now();while(performance.now()-start<600){await new Promise(requestAnimationFrame);frames.push(read());}return frames;
-  },action);
+    const read=()=>{const f=form.getBoundingClientRect(),t=prompt.getBoundingClientRect();return {at:performance.now(),height:f.height,bottom:f.bottom,promptTop:t.top,promptLeft:t.left,moving:form.classList.contains('is-morphing')};};
+    const previous=new Set(form.getAnimations({subtree:true})),frames=[read()];document.querySelector(action).click();
+    // Observe continuity before seeking: resetting time must not hide a jump.
+    frames.push(read());
+    if(controlled){
+      // Seek the actual browser effects, rather than requiring a busy headless
+      // webview to schedule a JS recorder inside the short easing window.
+      const effects=form.getAnimations({subtree:true}).filter(a=>!previous.has(a)&&a.effect.getKeyframes().some(k=>k.height!==undefined||k.transform!==undefined||k.opacity!==undefined));
+      const height=effects.find(a=>a.effect.target===form&&a.effect.getKeyframes().some(k=>k.height!==undefined));
+      if(!height)throw new Error('Composer height animation missing');
+      const timing=height.effect.getTiming();
+      if(timing.duration!==320||timing.easing!=='cubic-bezier(0.22, 1, 0.36, 1)'&&timing.easing!=='cubic-bezier(.22,1,.36,1)')throw new Error('Composer motion timing changed: '+JSON.stringify(timing));
+      for(const a of effects){a.pause();a.currentTime=0;}
+      frames.push(read());
+      for(const time of [16,40,80,120,160,220,280,320]){for(const a of effects)a.currentTime=Math.min(time,Number(a.effect.getTiming().duration));frames.push({...read(),effectTime:time});}
+      height.finish();
+      // Production finish/fallback owns cleanup; the fixture does not remove it.
+      await new Promise(resolve=>setTimeout(resolve,600));frames.push(read());
+    }else{
+      const start=performance.now();while(performance.now()-start<600){await new Promise(requestAnimationFrame);frames.push(read());}
+    }
+    return frames;
+  },{action,controlled});
   const border=()=>p.locator('#composer').evaluate(n=>getComputedStyle(n).borderColor);
   await prompt.evaluate(n=>n.blur());await p.mouse.move(2,2);await p.waitForTimeout(240);const idle=await border();
   await p.locator('#composer').hover();await p.waitForTimeout(240);const hovered=await border();assert.notEqual(hovered,idle);
@@ -42,27 +60,49 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   const expanding=await sample('[data-message="1"] [data-message-action="reply"]');
   const quoteHeight=await p.locator('#composer-reply').evaluate(n=>n.getBoundingClientRect().height);
   assert(expanding.at(-1).height>=expanding[0].height+quoteHeight-2,'Reply adds its own row above the unchanged writing area');
-  function smooth(frames,direction){
+  function smooth(frames,direction,requireIntermediate=true){
     assert(Math.abs(frames[1].height-frames[0].height)<2,'first frame must preserve height');
     assert(Math.abs(frames[1].promptTop-frames[0].promptTop)<2,'writing area must not jump');
     assert(Math.abs(frames[1].promptLeft-frames[0].promptLeft)<2,'writing area horizontal continuity');
-    assert(frames.some(f=>f.height>Math.min(frames[0].height,frames.at(-1).height)+5&&f.height<Math.max(frames[0].height,frames.at(-1).height)-5),'real intermediate heights');
+    if(requireIntermediate)assert(frames.some(f=>f.height>Math.min(frames[0].height,frames.at(-1).height)+5&&f.height<Math.max(frames[0].height,frames.at(-1).height)-5),'real intermediate heights');
     for(let i=1;i<frames.length;i++){assert(Math.abs(frames[i].bottom-frames[0].bottom)<1,'bottom edge stays anchored');assert((frames[i].height-frames[i-1].height)*direction>=-1,'height moves monotonically');}
     assert(!frames.at(-1).moving,'animation cleans up');
   }
   smooth(expanding,1);assert(await prompt.evaluate(n=>n===document.activeElement));
   const collapsing=await sample('#composer-reply button');smooth(collapsing,-1);
   assert.equal(await p.locator('.composer-reply-ghost').count(),0);
-  // Reverse while the first expansion is still running; resume at the visual height.
+  // Retain real-frame continuity and cleanup evidence separately. A sparse
+  // recorder is not proof that the browser failed to interpolate the effect.
+  const liveExpansion=await sample('[data-message="1"] [data-message-action="reply"]',false);smooth(liveExpansion,1,false);
+  const liveCollapse=await sample('#composer-reply button',false);smooth(liveCollapse,-1,false);
+  assert(Math.abs(liveExpansion.at(-1).height-expanding.at(-1).height)<1,'Natural expansion reaches the expected geometry');
+  assert(Math.abs(liveCollapse.at(-1).height-collapsing.at(-1).height)<1,'Natural collapse reaches the expected geometry');
+  assert.equal(await p.locator('.composer-reply-ghost').count(),0,'Natural completion removes the ghost');
+  const liveReport=frames=>({frames,maximumRecorderGap:Math.max(...frames.slice(1).map((f,i)=>f.at-frames[i].at)),intermediateObserved:frames.some(f=>f.height>Math.min(frames[0].height,frames.at(-1).height)+5&&f.height<Math.max(frames[0].height,frames.at(-1).height)-5)});
+
+  // Seek actual active effects before each reversal. Wall-clock sleeps can
+  // overrun this short animation when the recorder is starved.
   const rapid=await p.evaluate(async()=>{
     const form=document.querySelector('#composer'),reply=document.querySelector('[data-message="1"] [data-message-action="reply"]');
-    reply.click();await new Promise(r=>setTimeout(r,65));const before=form.getBoundingClientRect().height;
-    document.querySelector('#composer-reply button').click();const after=form.getBoundingClientRect().height;
-    await new Promise(r=>setTimeout(r,45));reply.click();
-    // Wait for settlement, including the bounded fallback if a busy webview drops finish.
+    const seekActive=time=>{
+      const effects=form.getAnimations({subtree:true});
+      const height=effects.find(a=>a.effect.target===form&&a.effect.getKeyframes().some(k=>k.height!==undefined));
+      if(!height||!form.classList.contains('is-morphing'))throw new Error('Reversal needs an active composer height effect');
+      for(const a of effects){a.pause();a.currentTime=Math.min(time,Number(a.effect.getTiming().duration));}
+      if(height.currentTime!==time||time>=Number(height.effect.getTiming().duration))throw new Error('Reversal reached the endpoint');
+      return {time:height.currentTime,duration:height.effect.getTiming().duration,state:height.playState,height:form.getBoundingClientRect().height};
+    };
+    reply.click();
+    // Let perform() clear the completed action's pending flag before reusing
+    // its real button; no wall-clock wait or event-handler bypass.
+    await Promise.resolve();if(reply.disabled)throw new Error('Reply action still pending');
+    const expansion=seekActive(65);
+    document.querySelector('#composer-reply button').click();const afterCollapse=form.getBoundingClientRect().height;
+    const collapse=seekActive(45);reply.click();const afterExpansion=form.getBoundingClientRect().height;
+    // The final effect completes naturally, including production fallback cleanup.
     const deadline=performance.now()+1500;while(form.classList.contains('is-morphing')&&performance.now()<deadline)await new Promise(r=>setTimeout(r,20));
-    return {before,after,replying:form.classList.contains('is-replying'),ghosts:document.querySelectorAll('.composer-reply-ghost').length,moving:form.classList.contains('is-morphing')};
-  });assert(Math.abs(rapid.before-rapid.after)<2);assert(rapid.replying&&!rapid.moving&&rapid.ghosts===0,JSON.stringify(rapid));
+    return {expansion,afterCollapse,collapse,afterExpansion,replying:form.classList.contains('is-replying'),ghosts:document.querySelectorAll('.composer-reply-ghost').length,moving:form.classList.contains('is-morphing')};
+  });assert(Math.abs(rapid.expansion.height-rapid.afterCollapse)<2);assert(Math.abs(rapid.collapse.height-rapid.afterExpansion)<2);assert(rapid.replying&&!rapid.moving&&rapid.ghosts===0,JSON.stringify(rapid));
   await prompt.fill('A draft stays here.');await p.getByRole('button',{name:'Cancel reply',exact:true}).click();await p.waitForTimeout(380);assert.equal(await prompt.innerText(),'A draft stays here.');
   // Editing during expansion releases the measured height for multiline content.
   await first().getByRole('button',{name:'Reply to message',exact:true}).click();await prompt.fill('First line\nSecond line\nThird line');assert(await prompt.evaluate(n=>n.scrollHeight<=n.clientHeight+1));
@@ -70,12 +110,12 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   for(const theme of ['dark','light']){await p.evaluate(t=>document.documentElement.dataset.theme=t,theme);await prompt.focus();await p.waitForTimeout(240);await p.screenshot({path:path.join(artifacts,engine+'-composer-motion-'+theme+'.png')});}
   await p.setViewportSize({width:390,height:844});await p.waitForTimeout(100);await p.screenshot({path:path.join(artifacts,engine+'-composer-motion-mobile.png')});
   assert(await p.locator('#composer').evaluate(n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}));
-  await p.emulateMedia({reducedMotion:'reduce'});await p.waitForFunction(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);const reduced=await sample('#composer-reply button');assert(reduced.every(f=>!f.moving));assert.equal(reduced[1].height,reduced.at(-1).height);
-  await p.emulateMedia({reducedMotion:'no-preference'});await p.evaluate(()=>document.documentElement.dataset.motion='off');const off=await sample('[data-message="1"] [data-message-action="reply"]');assert(off.every(f=>!f.moving));
+  await p.emulateMedia({reducedMotion:'reduce'});await p.waitForFunction(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);const reduced=await sample('#composer-reply button',false);assert(reduced.every(f=>!f.moving));assert.equal(reduced[1].height,reduced.at(-1).height);
+  await p.emulateMedia({reducedMotion:'no-preference'});await p.evaluate(()=>document.documentElement.dataset.motion='off');const off=await sample('[data-message="1"] [data-message-action="reply"]',false);assert(off.every(f=>!f.moving));
   await p.evaluate(()=>document.documentElement.dataset.motion='on');await p.getByRole('button',{name:'Cancel reply',exact:true}).click();await p.waitForTimeout(370);
   await p.locator('input[type="file"]').setInputFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('A small fixture attachment.')});await p.getByRole('button',{name:'Remove notes.txt',exact:true}).waitFor();
   const withFiles=await sample('[data-message="1"] [data-message-action="reply"]');smooth(withFiles,1);
   const withoutQuote=await sample('#composer-reply button');smooth(withoutQuote,-1);assert(await p.getByRole('button',{name:'Remove notes.txt',exact:true}).isVisible());
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,expansionHeights:expanding.map(f=>Math.round(f.height)),collapseHeights:collapsing.map(f=>Math.round(f.height)),anchoredBottom:true,continuousPrompt:true,rapidReversal:true,draftAndMultiline:true,pollStable:true,reducedMotion:true,errors}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,browserComputedEffectTimes:[0,16,40,80,120,160,220,280,320],liveExpansion:liveReport(liveExpansion),liveCollapse:liveReport(liveCollapse),expansionHeights:expanding.map(f=>Math.round(f.height)),collapseHeights:collapsing.map(f=>Math.round(f.height)),anchoredBottom:true,continuousPrompt:true,activeEffectReversals:rapid,draftAndMultiline:true,pollStable:true,reducedMotion:true,errors}));
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>server.close());
