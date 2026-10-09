@@ -5549,11 +5549,12 @@ html[data-motion=off] .request-tray .question-choices{gap:8px}
 
 .request-tray-prev svg{transform:rotate(180deg)}
 
-/* Mobile writing: a resting pill opens into text above a properly sized touch row. */
+/* Mobile writing: equal side/bottom insets and bottom alignment keep the touch row
+   stationary when focus opens the resting pill upward. */
 html[data-mobile] #composer {
   grid-template-columns:44px minmax(0,1fr) 44px 44px;
   grid-template-rows:auto auto auto 44px;
-  min-height:56px;padding:5px 6px;column-gap:2px;align-content:start;border-radius:28px;border:1px solid var(--line);box-shadow:none;
+  min-height:56px;padding:5px 10px 5px;column-gap:2px;align-content:start;border-radius:28px;border:1px solid var(--line);box-shadow:none;
 }
 html[data-mobile] #composer.dictation-enabled {grid-template-columns:44px minmax(0,1fr) 44px 44px 44px;}
 html[data-mobile] #composer:is(.dictation-empty,.is-dictating) {grid-template-columns:44px minmax(0,1fr) 44px 44px;}
@@ -5564,13 +5565,13 @@ html[data-mobile] #composer #prompt {
 }
 html[data-mobile] #composer #composer-hint {display:none;}
 html[data-mobile] #composer :is(#composer-actions,#send,.dictation-button,.dictation-cancel) {
-  width:44px;height:44px;min-width:44px;min-height:44px;align-self:center;justify-self:center;
+  width:44px;height:44px;min-width:44px;min-height:44px;align-self:center;justify-self:center;translate:none;
 }
 html[data-mobile] #composer #composer-actions {padding:10px;background:transparent;}
 html[data-mobile] #composer :is(#send,.dictation-button,.dictation-cancel) {border:6px solid transparent;background-clip:padding-box;padding:4px;}
 html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating) {
   grid-template-rows:auto auto minmax(28px,auto) 44px;
-  min-height:96px;padding:8px 10px;border-radius:24px;
+  min-height:96px;padding:8px 10px 5px;align-content:end;border-radius:24px;
 }
 html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating) #prompt {
   grid-column:1/-1;grid-row:3;align-self:start;padding:2px 4px;margin-bottom:6px;min-height:28px;
