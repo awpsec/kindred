@@ -21,7 +21,8 @@ export function emailSenderLabel(email,account){
  return address(email?.from?.text)||address(account)||'Connected account';
 }
 export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botName,sanitizeHtml}){
- const root=el('section','connector-artifact connector-kind-'+card.kind);root.dataset.connectorArtifact=card.id;root.setAttribute('aria-label',`${card.connection||card.connector}: ${card.title}`);
+ const root=el('section','connector-artifact connector-kind-'+card.kind);root.dataset.connectorArtifact=card.id;if(card.approval_id)root.dataset.approval=card.approval_id;root.setAttribute('aria-label',`${card.connection||card.connector}: ${card.title}`);
+ const previewMissing=card.email_send&&!(card.email?.to?.text&&card.email?.body);
  const header=el('header','connector-artifact-header');header.append(heading(card.connection||card.connector,card.source,card.tool));
  const status=card.status==='pending'&&card.email_send?'Draft · not sent':card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
  header.append(el('span','connector-card-status status-'+card.status,status));root.append(header);
@@ -42,6 +43,8 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
    if(attachments.length){list.append(el('span','muted','Attachments'));for(const item of attachments)list.append(el('span','connector-attachment-chip',typeof item==='string'?'Attached file':item.filename||item.name||item.file_name||'Attached file'));if(pending)list.append(button('Remove attachments',async()=>{try{await act('remove_attachments');}catch(error){showError(list,error);}},'subtle-button'));content.append(list);}
    else if(Object.values(attachmentValues).some(v=>v&&(!Array.isArray(v)||v.length))){const extra=el('details','connector-extra');extra.append(el('summary','','Attachments and related fields'),details(attachmentValues));content.append(extra);}
   }
+ }else if(previewMissing){
+  content.append(el('h3','','Email preview unavailable'),el('p','muted','The connector supplied a draft reference without the recipients or message. Ask your bot to load the draft before sending.'));
  }else{
   content.append(el('h3','',shown.length===1?shown[0].title:card.title));
   if(!shown.length){content.append(details(card.input));if(!content.querySelector('dd'))content.append(el('p','muted','This tool provides no displayable item fields.'));
@@ -69,10 +72,18 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  if(['failed','interrupted'].includes(card.status))content.append(el('p','connector-outcome-warning',card.read_only===true||card.display_read_only===true?'This lookup did not finish.': 'The final external state is unconfirmed. Check the connected service before retrying a change.'));
  if(card.edited_by_user)content.append(el('p','connector-edit-receipt','Includes your saved edits'));
  const footer=el('footer','connector-card-actions');let sending=false,editorOpen=false,editorOpener=null;
- const syncActionState=()=>{for(const b of root.querySelectorAll('button'))b.disabled=sending||(editorOpen&&!b.closest('.connector-card-editor'));};
+ const syncActionState=()=>{for(const b of root.querySelectorAll('button'))b.disabled=sending||b.dataset.previewBlocked==='true'||(editorOpen&&!b.closest('.connector-card-editor'));};
  const act=async(action,values={})=>{
   if(sending)return;sending=true;for(const b of root.querySelectorAll('button'))b.disabled=true;
-  try{const next=await api('/connector-artifacts/'+encodeURIComponent(card.id),'POST',{action,revision:card.revision,...values});await onChange(next);}finally{sending=false;syncActionState();}
+  try{const next=await api('/connector-artifacts/'+encodeURIComponent(card.id),'POST',{action,revision:card.revision,...values});await onChange(next);}catch(error){
+   if(/draft changed|no longer pending|no longer waiting/i.test(error.message||'')){
+    await onChange();
+    const current=document.querySelector('[data-connector-artifact="'+CSS.escape(card.id)+'"]')||root;
+    showError(current,new Error('This draft changed. Review the updated version before sending.'));
+    return;
+   }
+   throw error;
+  }finally{sending=false;syncActionState();}
  };
  const showError=(form,error)=>{form.querySelector('[role=alert]')?.remove();const notice=el('p','connector-outcome-warning',error.message||String(error));notice.setAttribute('role','alert');form.append(notice);};
  const clearPanel=()=>{if(sending)return;const panel=root.querySelector('.connector-card-editor'),restore=panel?.contains(document.activeElement);panel?.remove();editorOpen=false;root.classList.remove('connector-editing');syncActionState();if(restore&&editorOpener?.isConnected)editorOpener.focus({preventScroll:true});editorOpener=null;};
@@ -82,7 +93,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   return Object.entries(card.edit_fields||{}).filter(([,f])=>f&&f.text!==undefined&&f.key&&f.editable!==false).map(([key,f])=>({label:f.label||key,key:f.key,text:String(f.text??''),type:f.type||'text',options:Array.isArray(f.options)?f.options:[]}));
  };
  if(pending){
-  footer.append(button(card.email_send?'Send email':'Approve action',()=>act('approve'),'primary small-button'));
+  const approve=button(card.email_send?'Send email':'Approve action',()=>act('approve'),'primary small-button');if(previewMissing){approve.disabled=true;approve.dataset.previewBlocked='true';}footer.append(approve);
   const descriptors=editDescriptors();
   if(descriptors.length)footer.append(button(card.kind==='email'?'Edit draft':'Edit fields',()=>{
    clearPanel();const form=el('form','connector-card-editor'),inputs={};form.setAttribute('aria-label',card.kind==='email'?'Edit email draft':'Edit connector fields');
@@ -95,7 +106,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
    const controls=el('div','connector-card-actions'),send=button('Request changes',()=>{},'primary small-button');send.type='submit';controls.append(send,button('Cancel',clearPanel,'subtle-button'));form.append(el('p','muted small','Returns this action to the bot with your feedback. The current draft will not be sent.'),controls);form.onsubmit=async e=>{e.preventDefault();if(form.reportValidity())try{await act('changes',{feedback:input.value});}catch(error){showError(form,error);}};openEditor(form);
   },'outline-button'));
   footer.append(button('Decline',()=>act('deny'),'subtle-button'));
-  if(card.email_send&&!card.forced){const more=el('details','connector-send-policy');more.append(el('summary','','Sending permissions'),el('p','muted small',`Allow ${botName||'this bot'} to send future emails through this same connection without asking. Other connector actions keep their existing permissions.`),button('Approve & allow future emails',()=>act('approve',{choice:'always_allow_email'}),'outline-button'));content.append(more);}
+  if(card.email_send&&!card.forced&&!previewMissing){const more=el('details','connector-send-policy');more.append(el('summary','','Sending permissions'),el('p','muted small',`Allow ${botName||'this bot'} to send future emails through this same connection without asking. Other connector actions keep their existing permissions.`),button('Approve & allow future emails',()=>act('approve',{choice:'always_allow_email'}),'outline-button'));content.append(more);}
  }else footer.append(button('Chat about this',()=>onDiscuss(card),'outline-button'));
  root.append(footer);if(card.approval_id||card.email_send||['pending','denied'].includes(card.status))return decisionReceipt(root,{key:'connector:'+card.id,title:card.title,outcome:status,terminal:['approved','executing','completed','denied'].includes(card.status)});return root;
 }

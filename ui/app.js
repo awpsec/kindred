@@ -7514,6 +7514,12 @@ function chatEditApprovalCard(a,run){
   return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+(a.args.chat_name||'chat'),outcome:a.status==='approved'?'Allowed':a.status==='denied'?'Declined':'Expired',terminal:a.status!=='pending'});
 }
 function approvalCard(a,run) {
+  if(a.connector_artifact)return connectorMessage({seq:'approval-'+a.id,connector_artifact:a.connector_artifact},run.chat_id);
+  if(a.args?.artifact_id){
+    const box=node('div','task-card approval');box.dataset.approval=a.id;
+    box.append(node('strong','','Email review unavailable'),node('p','muted','Reload the conversation to review this action.'),button('Reload',()=>refresh(true),'outline-button'));
+    return box;
+  }
   if(a.tool==='chat_update')return chatEditApprovalCard(a,run);
   if(a.tool==='bot_instructions_update')return instructionApprovalCard(a,run);
   if(['claude_connector','codex_connector','connector_execute','connector_configure'].includes(a.tool))return connectorApprovalCard(a,run);
