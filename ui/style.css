@@ -4024,6 +4024,12 @@ html[data-motion="off"] .connector-call-summary>.icon{transition:none}
 @media(prefers-reduced-motion:reduce){.connector-stack-summary>.icon{transition:none}}
 .work-stop{width:26px;height:26px;padding:5px;flex:none;opacity:0;pointer-events:none;transition:opacity .12s}
 .work-line:hover .work-stop,.work-line:focus-within .work-stop,.work-stop.is-stopping{opacity:1;pointer-events:auto}
+/* Chat navigation sits beside delegated work, revealed with its other controls. */
+.work-open{width:26px;height:26px;padding:5px;flex:none;border:0;background:transparent;color:var(--muted);opacity:0;pointer-events:none;transition:opacity .12s}
+.work-line:hover .work-open,.work-line:focus-within .work-open{opacity:1;pointer-events:auto}
+@media(hover:none){.work-open{opacity:1;pointer-events:auto;min-width:36px;min-height:36px}}
+@media(prefers-reduced-motion:reduce){.work-open{transition:none}}
+html[data-motion=off] .work-open{transition:none}
 .work-stop.is-stopping{opacity:.55}
 @media(hover:none){.work-stop{opacity:1;pointer-events:auto}}
 .message-steering{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin:0 0 5px;color:var(--muted);font-size:calc(11px * var(--text-scale,1))}
