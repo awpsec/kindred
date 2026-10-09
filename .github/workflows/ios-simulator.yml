@@ -6,6 +6,12 @@ on:
         description: 'Exact reviewed desktop/iOS source commit.'
         required: true
         type: string
+      validation_scope:
+        description: 'Full existing hosted suite or scoped real UIKit composer keyboard/safe-area validation.'
+        required: true
+        default: full
+        type: choice
+        options: [full, composer]
       approve_runner_usage:
         description: 'Approve this one unsigned simulator job, maximum 20 minutes; no automatic retry.'
         required: true
@@ -49,33 +55,17 @@ jobs:
           xcodegen --version > ios-validation/xcodegen-version.txt
           cd mobile/ios
           xcodegen generate
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: ${{ inputs.validation_scope == 'composer' }}
+        with:
+          node-version: '22'
       - name: Run real UIKit app-hosted simulator tests once
         shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ inputs.source_commit }}
+          VALIDATION_SCOPE: ${{ inputs.validation_scope }}
         run: |
-          python3 - <<'PY'
-          import json,subprocess,time
-          from pathlib import Path
-          out=Path('ios-validation').resolve()
-          devices=json.loads(subprocess.check_output(['xcrun','simctl','list','devices','available','--json'],text=True))
-          (out/'simulator-inventory.json').write_text(json.dumps(devices,indent=2)+'\n')
-          candidates=[(runtime,d) for runtime,rows in devices['devices'].items() if '.iOS-' in runtime for d in rows if d.get('isAvailable') and d['name'].startswith('iPhone')]
-          assert candidates,'No available iPhone iOS simulator; no download or retry selected'
-          runtime,device=max(candidates,key=lambda v:tuple(int(x) for x in v[0].rsplit('iOS-',1)[-1].split('-')))
-          destination='platform=iOS Simulator,id='+device['udid']
-          command=['xcodebuild','test','-project','KindredCompanion.xcodeproj','-scheme','KindredCompanion','-destination',destination,'-destination-timeout','90','-parallel-testing-enabled','NO','-maximum-concurrent-test-simulator-destinations','1','-resultBundlePath',str(out/'KindredCompanion.xcresult'),'CODE_SIGNING_ALLOWED=NO']
-          receipt={'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'runtime':runtime,'device':device,'destination':destination,'command':command,'full_scheme_includes_AppModelSignInTests':True,'attempt':1,'passed':False}
-          (out/'test-receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
-          started=time.monotonic()
-          with (out/'xcodebuild.log').open('w') as log:
-              try:
-                  result=subprocess.run(command,cwd='mobile/ios',stdout=log,stderr=subprocess.STDOUT,timeout=850)
-                  receipt.update(exit_code=result.returncode,passed=result.returncode==0)
-              except subprocess.TimeoutExpired:
-                  receipt.update(timed_out=True,passed=False)
-          receipt['elapsed_seconds']=round(time.monotonic()-started,2)
-          (out/'test-receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
-          if not receipt['passed']:raise SystemExit('Simulator test failed or timed out; no automatic retry')
-          PY
+          python3 scripts/release/test-ios-simulator.py --scope "$VALIDATION_SCOPE"
       - name: Preserve exact results including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
