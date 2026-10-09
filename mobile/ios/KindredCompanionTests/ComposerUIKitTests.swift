@@ -157,11 +157,83 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     private func waitFor(_ label: String, timeout: TimeInterval = 12, predicate: () async throws -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if try await predicate() { return }
+            do {
+                if try await predicate() { return }
+            } catch {
+                await recordFailureEvidence(label)
+                throw error
+            }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
+        await recordFailureEvidence(label)
         XCTFail("Missing native evidence: \(label)")
         throw NSError(domain: "ComposerUIKitTests", code: 1, userInfo: [NSLocalizedDescriptionKey: label])
+    }
+
+    private func recordFailureEvidence(_ label: String) async {
+        // Diagnose the failed condition without reading tokens, storage values,
+        // input contents or account data. Failure evidence never counts as a
+        // successful keyboard/orientation phase in the runner's acceptance gate.
+        var evidence: [String: Any] = ["condition": label,
+            "navigation": delegate?.milestones ?? [],
+            "nativeLoadFailed": session?.loadState.failure != nil]
+        if let url = session?.webView.url {
+            evidence["url"] = ["scheme": url.scheme ?? "", "host": url.host ?? "",
+                "port": url.port ?? 0, "path": url.path] as [String: Any]
+        }
+        let pageScript = """
+            (()=>{const p=document.querySelector('#prompt');return {
+              readyState:document.readyState,promptExists:!!p,promptVisible:!!p?.getClientRects().length,
+              replyExists:!!document.querySelector('[data-message="1"] [data-message-action="reply"]'),
+              geometry:window.__KINDRED_NATIVE_GEOMETRY??null,
+              mobile:document.documentElement.hasAttribute('data-mobile'),
+              bootstrap:window.__KINDRED_NATIVE_SESSION_BOOTSTRAP===true,
+              fixtureScript:Array.isArray(window.__composerSends),
+              sessionPresent:!!sessionStorage.getItem('kindred-token'),
+              startupFailed:window.__KINDRED_STARTUP?.failed===true,
+              startupVisible:!!document.querySelector('#startup-status')?.getClientRects().length
+            }})()
+            """
+        if let window {
+            evidence["window"] = ["width": window.bounds.width, "height": window.bounds.height,
+                "safeArea": ["top": window.safeAreaInsets.top, "bottom": window.safeAreaInsets.bottom,
+                    "left": window.safeAreaInsets.left, "right": window.safeAreaInsets.right]] as [String: Any]
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let screenshot = XCTAttachment(image: image)
+            screenshot.name = "failure-actual-UIKit"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+        }
+        evidence.merge(await boundedFailurePage(pageScript)) { _, new in new }
+        if let json = try? JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]) {
+            let attachment = XCTAttachment(data: json, uniformTypeIdentifier: "public.json")
+            attachment.name = "failure-actual-UIKit-readiness"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    private func boundedFailurePage(_ source: String) async -> [String: Any] {
+        await withCheckedContinuation { continuation in
+            let probe = FailurePageProbe(continuation)
+            let timeout = Task { @MainActor in
+                do { try await Task.sleep(nanoseconds: 2_000_000_000) }
+                catch { return }
+                probe.finish(["javascriptTimeout": true])
+            }
+            session.webView.evaluateJavaScript(source) { value, error in
+                timeout.cancel()
+                if let error {
+                    let failure = error as NSError
+                    probe.finish(["javascriptFailure": ["domain": failure.domain,
+                        "code": failure.code] as [String: Any]])
+                } else {
+                    probe.finish(["page": value ?? NSNull()])
+                }
+            }
+        }
     }
 
     private func checkComposer(label: String) async throws {
@@ -223,19 +295,37 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     func webSession(_ session: WebSession, didDownload file: URL) {}
 }
 
+/// The callback and diagnostic deadline compete on the main actor. Only the
+/// first may resume the continuation; late WK completions have no effect.
+@MainActor
+private final class FailurePageProbe {
+    private var continuation: CheckedContinuation<[String: Any], Never>?
+    init(_ continuation: CheckedContinuation<[String: Any], Never>) {
+        self.continuation = continuation
+    }
+    func finish(_ result: [String: Any]) {
+        guard let continuation else { return }
+        self.continuation = nil
+        continuation.resume(returning: result)
+    }
+}
+
 /// Test-only TLS acceptance for the disposable loopback certificate. Production
 /// navigation policy is forwarded unchanged; no product trust/ATS setting changes.
 @MainActor
 private final class LocalFixtureDelegate: NSObject, WKNavigationDelegate {
     let session: WebSession
+    private(set) var milestones: [String] = []
     init(session: WebSession) { self.session = session }
     func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
                  completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         guard challenge.protectionSpace.host == "localhost", challenge.protectionSpace.port == 8765,
               challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let trust = challenge.protectionSpace.serverTrust else {
+            milestones.append("authentication-refused")
             completionHandler(.cancelAuthenticationChallenge, nil); return
         }
+        milestones.append("localhost-TLS-trust")
         completionHandler(.useCredential, URLCredential(trust: trust))
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -244,8 +334,8 @@ private final class LocalFixtureDelegate: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         session.webView(webView, decidePolicyFor: response, decisionHandler: decisionHandler)
     }
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { session.webView(webView, didStartProvisionalNavigation: navigation) }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { session.webView(webView, didFinish: navigation) }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { session.webView(webView, didFailProvisionalNavigation: navigation, withError: error) }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { session.webView(webView, didFail: navigation, withError: error) }
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { milestones.append("navigation-start"); session.webView(webView, didStartProvisionalNavigation: navigation) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { milestones.append("navigation-finish"); session.webView(webView, didFinish: navigation) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { milestones.append("provisional-failure:\((error as NSError).domain):\((error as NSError).code)"); session.webView(webView, didFailProvisionalNavigation: navigation, withError: error) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { milestones.append("navigation-failure:\((error as NSError).domain):\((error as NSError).code)"); session.webView(webView, didFail: navigation, withError: error) }
 }
