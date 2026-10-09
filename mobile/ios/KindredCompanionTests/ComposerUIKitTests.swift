@@ -64,7 +64,10 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         observers.append(NotificationCenter.default.addObserver(forName: UIResponder.keyboardDidHideNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.keyboardHides += 1 }
         })
-        session.reload()
+        // The initializer's load was stopped before this delegate and fixture
+        // script were installed. Its pending URL is not a committed document
+        // to reload; issue one fresh request after the host is attached.
+        session.webView.load(URLRequest(url: origin.rootURL))
         try await waitFor("exact fixture UI and native geometry", timeout: 30) {
             try await self.boolean("!!document.querySelector('#prompt')?.getClientRects().length && !!document.querySelector('[data-message=\"1\"] [data-message-action=\"reply\"]') && !!window.__KINDRED_NATIVE_GEOMETRY && document.documentElement.hasAttribute('data-mobile')")
         }
@@ -176,20 +179,24 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // successful keyboard/orientation phase in the runner's acceptance gate.
         var evidence: [String: Any] = ["condition": label,
             "navigation": delegate?.milestones ?? [],
-            "nativeLoadFailed": session?.loadState.failure != nil]
+            "nativeLoadFailed": session?.loadState.failure != nil,
+            "webViewLoading": session?.webView.isLoading ?? false,
+            "estimatedProgress": session?.webView.estimatedProgress ?? 0]
         if let url = session?.webView.url {
             evidence["url"] = ["scheme": url.scheme ?? "", "host": url.host ?? "",
                 "port": url.port ?? 0, "path": url.path] as [String: Any]
         }
         let pageScript = """
-            (()=>{const p=document.querySelector('#prompt');return {
+            (()=>{const p=document.querySelector('#prompt');let sessionPresent=null,storageReadable=true;
+              try {sessionPresent=!!sessionStorage.getItem('kindred-token')} catch {storageReadable=false}
+              return {
               readyState:document.readyState,promptExists:!!p,promptVisible:!!p?.getClientRects().length,
               replyExists:!!document.querySelector('[data-message="1"] [data-message-action="reply"]'),
               geometry:window.__KINDRED_NATIVE_GEOMETRY??null,
               mobile:document.documentElement.hasAttribute('data-mobile'),
               bootstrap:window.__KINDRED_NATIVE_SESSION_BOOTSTRAP===true,
               fixtureScript:Array.isArray(window.__composerSends),
-              sessionPresent:!!sessionStorage.getItem('kindred-token'),
+              sessionPresent,storageReadable,
               startupFailed:window.__KINDRED_STARTUP?.failed===true,
               startupVisible:!!document.querySelector('#startup-status')?.getClientRects().length
             }})()
@@ -329,10 +336,18 @@ private final class LocalFixtureDelegate: NSObject, WKNavigationDelegate {
         completionHandler(.useCredential, URLCredential(trust: trust))
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        session.webView(webView, decidePolicyFor: action, decisionHandler: decisionHandler)
+        milestones.append("navigation-action:" + (action.targetFrame?.isMainFrame == false ? "subframe" : "main"))
+        session.webView(webView, decidePolicyFor: action) { [weak self] policy in
+            self?.milestones.append("navigation-action-policy:" + String(policy.rawValue))
+            decisionHandler(policy)
+        }
     }
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        session.webView(webView, decidePolicyFor: response, decisionHandler: decisionHandler)
+        milestones.append("navigation-response:" + String((response.response as? HTTPURLResponse)?.statusCode ?? 0))
+        session.webView(webView, decidePolicyFor: response) { [weak self] policy in
+            self?.milestones.append("navigation-response-policy:" + String(policy.rawValue))
+            decisionHandler(policy)
+        }
     }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { milestones.append("navigation-start"); session.webView(webView, didStartProvisionalNavigation: navigation) }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { milestones.append("navigation-finish"); session.webView(webView, didFinish: navigation) }
