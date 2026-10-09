@@ -5118,17 +5118,22 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 }
 
 /* Progress cadence: one quiet summary through frequent milestones. */
-.progress-choices{--progress-accent:#ffb15b;border:0;margin:18px 0 0;padding:0;min-width:0}
+.progress-choices{container:progress-options / inline-size;--progress-accent:#ffb15b;border:0;margin:18px 0 0;padding:0;min-width:0}
 .progress-choices>legend{font-size:13px;margin-bottom:12px;padding:0}
-.progress-choice-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,132px));gap:12px}
-.progress-choice{position:relative;display:block;aspect-ratio:1;margin:0!important;border:1px solid var(--line);border-radius:12px;background:var(--bg);cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease}
+.progress-choice-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;max-width:558px}
+.progress-choice{position:relative;display:block;aspect-ratio:1;min-height:calc(116px * var(--text-scale,1));margin:0!important;border:1px solid var(--line);border-radius:12px;background:var(--bg);cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease}
 
-.progress-choice>input:focus-visible{outline:2px solid var(--fg);outline-offset:4px}
+.progress-choice:has(input:focus-visible){outline:2px solid var(--fg);outline-offset:3px}
+.progress-choice>input:focus-visible{outline:none}
 .progress-choice:has(input:disabled){opacity:.5;cursor:default}
-.progress-choice>input{position:absolute;top:9px;right:9px;width:14px;height:14px;margin:0;appearance:none;border:1.5px solid var(--fg);border-radius:50%;display:grid;place-content:center;background:var(--bg)}
+.progress-choice>input[type=radio]{position:absolute;top:9px;right:9px;width:14px;height:14px;min-width:14px;min-height:14px;margin:0;appearance:none;border:1.5px solid var(--fg);border-radius:50%;display:grid;place-content:center;background:var(--bg)}
+.progress-choice>input[type=radio]:checked{background:var(--bg);border-color:var(--fg)}
+.progress-choice>input[type=radio]::after{display:none}
+.progress-choice>input[type=radio]:hover:not(:disabled){box-shadow:none}
 .progress-choice>input:checked::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--fg)}
-.progress-choice-title{position:absolute;top:9px;left:10px;font-size:12px;color:var(--fg)}
-.progress-choice-preview{position:absolute;inset:33px 11px 10px;display:flex;flex-direction:column;gap:5px;pointer-events:none}
+.progress-choice-title{position:absolute;top:9px;left:10px;right:28px;font-size:calc(12px * var(--text-scale,1));line-height:1.35;color:var(--fg)}
+.progress-choice-note{display:block;font-size:calc(10px * var(--text-scale,1));line-height:1.3;font-weight:400;color:var(--muted)}
+.progress-choice-preview{position:absolute;inset:calc(12px + 32px * var(--text-scale,1)) 11px 10px;display:flex;flex-direction:column;gap:5px;pointer-events:none}
 .progress-sketch-user{width:43%;height:10px;flex:none;align-self:flex-end;border-radius:5px 5px 1px 5px;background:color-mix(in srgb,var(--fg) 30%,transparent)}
 .progress-sketch-thread{display:flex;flex:0 1 auto;min-height:0;flex-direction:column;justify-content:flex-start;gap:3px}
 .progress-sketch-bubble{display:flex;flex-direction:column;gap:3px;justify-content:center;width:74%;height:12px;min-height:0;flex-shrink:1;border-radius:4px 4px 4px 1px;background:var(--hover);padding:0 5px}
@@ -5144,7 +5149,7 @@ html[data-motion=off] .pane-resizer::after{transition:none}
 .progress-choice-description{font-size:12px;color:var(--muted);margin:12px 0 0;line-height:1.5;min-height:1.5em}
 @media(prefers-reduced-motion:reduce){.progress-choice{transition:none}}
 :root[data-motion=off] .progress-choice{transition:none}
-@media(max-width:600px){.progress-choice-tiles{gap:8px}.progress-choice-title{top:6px;font-size:10px;left:6px}.progress-choice-preview{inset:24px 6px 6px;gap:3px}.progress-sketch-user{height:6px}.progress-sketch-thread{gap:2px}.progress-sketch-bubble{height:8px;padding:0}.progress-sketch-bubble.progress-sketch-summary{height:15px}.progress-sketch-bubble>i{display:none}.progress-sketch-working{height:10px;gap:4px}.progress-sketch-bot{width:10px;height:10px}.progress-sketch-bot::before,.progress-sketch-bot::after{top:3px;width:1px;height:3px}.progress-sketch-bot::before{left:3px}.progress-sketch-bot::after{left:6px}}
+@container progress-options (max-width:460px){.progress-choice-tiles{grid-template-columns:repeat(2,minmax(0,1fr));max-width:300px;gap:10px}}
 
 /* Unread activity remains visible in full rows, pinned tiles and the avatar rail. */
 .sidebar :is(.bot-link,.pinned-bot).has-unread {
@@ -5485,8 +5490,37 @@ html[data-ios-short=true] .control-notice-copy strong {display:inline-block;max-
 
 /* Composer-attached decisions; dimensions of the composer remain owned by its layout. */
 .request-tray,.queued-edit-prompt{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:12px;max-width:100%;min-width:0;margin-bottom:8px;text-align:left;overflow-wrap:anywhere}
-.request-tray[hidden]{display:none}.request-tray-bar{display:flex;align-items:center;gap:6px}.request-tray-bar>button:last-child{margin-left:auto}
-.request-tray .task-card,.request-tray .question-card{border:0;background:transparent;padding:8px 0 0;max-width:100%;margin:0}.request-tray .question-response textarea{width:100%;min-height:44px;max-height:240px;resize:none}
+.request-tray{padding:14px 16px;border-radius:12px;background:color-mix(in srgb,var(--fg) 4%,var(--bg));max-height:min(52dvh,460px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.request-tray[hidden]{display:none}
+.request-tray-header{display:flex;align-items:flex-start;gap:16px;margin-bottom:10px}
+.request-tray-heading{flex:1;min-width:0;font-size:calc(13px * var(--text-scale,1));font-weight:600;line-height:1.5;margin:4px 0}
+.request-tray-bar{display:flex;align-items:center;gap:2px;flex:none;color:var(--muted)}
+.request-tray-bar .icon-button{width:28px;height:28px;padding:6px;border-radius:6px;color:var(--muted)}
+.request-tray-bar .icon-button:hover{color:var(--fg);background:var(--hover)}
+.request-tray-page{font-size:calc(11px * var(--text-scale,1));font-variant-numeric:tabular-nums;white-space:nowrap;min-width:32px;text-align:center}
+.request-tray-minimize{margin-left:6px}.request-tray-minimize svg{transform:rotate(90deg)}
+.request-tray .task-card,.request-tray .question-card{border:0;background:transparent;padding:0;width:100%;max-width:100%;margin:0;box-shadow:none}
+.request-tray .question-context{color:var(--soft);font-size:calc(12px * var(--text-scale,1));margin-bottom:12px}
+.request-tray .question-choices{gap:8px}
+.request-tray .question-option{border-color:transparent;background:color-mix(in srgb,var(--fg) 3%,transparent);border-radius:7px;transition:background .14s ease,border-color .14s ease}
+.request-tray .question-option:is(:hover,:focus-visible){background:var(--hover);border-color:var(--line)}
+.request-tray .question-actions{align-items:center;margin-top:8px}
+.request-tray :is(.question-custom,.question-dismiss){padding:6px 0;min-height:30px}
+.request-tray .question-response textarea{width:100%;min-height:44px;max-height:240px;resize:none}
+.request-tray .question-response{margin-top:8px;background:var(--bg)}
+.request-tray.is-minimized{padding:0;overflow:hidden}
+.request-tray-expand{display:flex;align-items:center;gap:12px;width:100%;min-height:48px;padding:10px 14px;text-align:left;border-radius:inherit}
+.request-tray-expand:hover{background:var(--hover)}
+.request-tray-expand:focus-visible{outline:2px solid var(--fg);outline-offset:-3px}
+.request-tray-preview{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--text-scale,1));font-weight:500}
+.request-tray-count{flex:none;font-size:calc(11px * var(--text-scale,1));color:var(--soft);font-variant-numeric:tabular-nums}
+.request-tray-expand>svg{flex:none;color:var(--muted);transform:rotate(-90deg)}
+@media(hover:none),(pointer:coarse){.request-tray-bar .icon-button{width:36px;height:36px}.request-tray :is(.question-custom,.question-dismiss){min-height:44px}}
+@media(max-width:600px){.request-tray{padding:12px}.request-tray-header{gap:8px}.request-tray-bar{gap:0}.request-tray-minimize{margin-left:2px}.request-tray-expand{gap:8px}}
+@media(prefers-reduced-motion:reduce){.request-tray .question-choices{gap:8px}
+.request-tray .question-option{transition:none}}
+html[data-motion=off] .request-tray .question-choices{gap:8px}
+.request-tray .question-option{transition:none}
 .queued-edit-prompt .row-actions{flex-wrap:wrap}.queued-edit-prompt p{margin:0 0 8px}.decision-receipt[data-receipt-tone=denied] .decision-receipt-outcome{color:var(--danger,#c73b4b)}
 
 /* Compact notices preserve their individual records and touch/keyboard actions. */
