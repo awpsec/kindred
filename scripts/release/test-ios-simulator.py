@@ -1,5 +1,5 @@
 """Run one unsigned simulator attempt; keep scoped composer evidence separate."""
-import argparse, hashlib, json, os, signal, ssl, subprocess, tempfile, time, urllib.request
+import argparse, hashlib, json, os, re, signal, ssl, subprocess, tempfile, time, urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,12 +31,59 @@ def export_results(bundle):
     return status
 
 
+COMPOSER_PHASES = {
+    'ComposerUIKitTests/testKeyboardOpenClosePreservesDraftAndToolbarAboveKeyboard()':
+        ('keyboard-open', 'keyboard-reply-attachment', 'keyboard-closed'),
+    'ComposerUIKitTests/testOrientationSafeAreaAndTextSizePreserveDraft()':
+        ('landscape-150', 'portrait-150'),
+}
+
+
 def validate_composer_evidence(exports, summary, tree, attachments):
-    assert exports['summary'] == 0 and exports['tests'] == 0 and exports['attachments'] == 0, 'Native result/attachment export failed'
-    assert summary['totalTestCount'] > 0 and summary['passedTests'] == summary['totalTestCount'] and summary['failedTests'] == 0, 'Composer tests did not execute and pass'
-    assert 'ComposerUIKitTests' in tree, 'Selected native class not represented in xcresult'
-    assert any(f.suffix.lower() in ('.png', '.jpg', '.jpeg') and f.stat().st_size > 0 for f in attachments.rglob('*') if f.is_file()), 'Native screenshots were not exported'
-    return summary['totalTestCount']
+    assert all(exports[k] == 0 for k in ('summary', 'tests', 'attachments')), 'Native result/attachment export failed'
+    assert summary['totalTestCount'] == 2 and summary['passedTests'] == 2 and summary['failedTests'] == 0, 'Both exact composer tests must execute and pass'
+    tree = json.loads(tree) if isinstance(tree, str) else tree
+    cases = []
+    def visit(nodes):
+        for node in nodes:
+            if node.get('nodeType') == 'Test Case': cases.append(node)
+            visit(node.get('children', []))
+    visit(tree['testNodes'])
+    assert len(cases) == 2 and {n['nodeIdentifier'] for n in cases} == set(COMPOSER_PHASES), 'Missing, duplicate or renamed composer method'
+    assert all(n['result'] == 'Passed' for n in cases), 'Skipped or failed composer method'
+    manifest = json.loads((attachments / 'manifest.json').read_text())
+    assert isinstance(manifest, list), 'Unknown attachment manifest schema'
+    for identifier, phases in COMPOSER_PHASES.items():
+        groups = [g for g in manifest if g.get('testIdentifier') == identifier]
+        assert len(groups) == 1, 'Missing or ambiguous method attachment binding: ' + identifier
+        rows = groups[0]['attachments']
+        def exported(label, suffixes):
+            # Bind the XCTest attachment name to exporter metadata, never a loose directory scan.
+            matches = [r for r in rows if re.match(r'^' + re.escape(label) + r'(?:[._]|$)', r['suggestedHumanReadableName'])
+                       and Path(r['exportedFileName']).suffix.lower() in suffixes]
+            assert len(matches) == 1, 'Missing or ambiguous attachment: ' + label
+            path = (attachments / matches[0]['exportedFileName']).resolve()
+            assert path.is_relative_to(attachments.resolve()) and path.is_file() and path.stat().st_size > 0, 'Invalid exported attachment path'
+            return path
+        for phase in phases:
+            image = exported(phase, ('.png', '.jpg', '.jpeg'))
+            raw = image.read_bytes()
+            assert raw.startswith(b'\x89PNG\r\n\x1a\n') or raw.startswith(b'\xff\xd8\xff'), 'Screenshot is not image data'
+            decoded = subprocess.check_output(['sips', '-g', 'pixelWidth', '-g', 'pixelHeight', str(image)], text=True, timeout=10)
+            dimensions = [int(line.split(':', 1)[1]) for line in decoded.splitlines() if line.strip().startswith(('pixelWidth:', 'pixelHeight:'))]
+            assert len(dimensions) == 2 and min(dimensions) > 0, 'Screenshot could not be decoded'
+            metrics = json.loads(exported(phase + '-actual-UIKit-geometry', ('.json',)).read_text())
+            native = metrics['native']
+            assert all(isinstance(native['safeArea'][k], (int, float)) and native['safeArea'][k] >= 0 for k in ('top', 'bottom', 'left', 'right')), 'Missing native safe-area geometry'
+            assert native['windowWidth'] > 0 and native['windowHeight'] > 0, 'Missing native window geometry'
+            assert len(metrics['controls']) >= 2 and all(c['width'] >= 44 and c['height'] >= 44 and c['hit'] is True for c in metrics['controls']), 'Missing native control hit geometry'
+            assert metrics['prompt']['height'] >= 24, 'Missing composer prompt geometry'
+            if phase.startswith('keyboard-'):
+                assert metrics['keyboardNotifications']['shows'] > 0 and metrics['keyboardFrame']['height'] > 100, 'Missing actual keyboard show evidence'
+                if phase == 'keyboard-closed': assert metrics['keyboardNotifications']['hides'] > 0, 'Missing actual keyboard hide evidence'
+            if phase == 'landscape-150': assert native['windowWidth'] > native['windowHeight'], 'Missing native landscape geometry'
+            if phase == 'portrait-150': assert native['windowHeight'] > native['windowWidth'], 'Missing native portrait geometry'
+    return 2
 
 
 def main(scope):
