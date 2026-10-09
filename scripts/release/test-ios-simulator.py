@@ -15,16 +15,18 @@ def record(name, value):
 
 
 def boot_simulator(device):
-    """Keep boot phase evidence without extending its existing deadline."""
+    """Allow bounded cold migration, and require terminal boot readiness."""
     started = time.monotonic()
-    status = {'device_udid': device['udid'], 'deadline_seconds': 90,
+    status = {'device_udid': device['udid'], 'deadline_seconds': 180,
+              'boot_command_deadline_seconds': 90,
               'phase': 'boot', 'passed': False}
     try:
         with (OUT / 'simulator-boot.log').open('w') as log:
             if device['state'] != 'Booted':
                 run(['xcrun', 'simctl', 'boot', device['udid']], stdout=log, stderr=subprocess.STDOUT)
             status['phase'] = 'bootstatus'
-            run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'], stdout=log, stderr=subprocess.STDOUT)
+            subprocess.run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'],
+                           check=True, timeout=180, stdout=log, stderr=subprocess.STDOUT)
         status['passed'] = True
     except Exception as error:
         status['error_type'] = type(error).__name__
