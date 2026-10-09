@@ -170,6 +170,7 @@ function renderControlNotice(force=false) {
   box.replaceChildren(heading);
   for(const pause of pauses){
     const row=node('div','control-notice-row'),copy=node('div','control-notice-copy');
+    row.dataset.controlBotId=pause.bot_id;
     const reason=pause.reason==='open_app'?'Opening an app paused this computer.':pause.reason==='teaching'?'Teaching paused this computer.':pause.reason==='manual'?'Manual control paused this computer.':'This computer is still marked as under manual control. The earlier action was not recorded.';
     copy.append(node('strong','',pause.name),node('span','control-notice-context',' is waiting for control'),node('p','',reason+' '+(pendingHumanTask(pause.bot_id)?'Its requested subtask still needs your response.':'Return control to let this bot continue.')));
     const error=node('p','control-notice-error');error.hidden=true;error.setAttribute('role','alert');
@@ -1206,6 +1207,7 @@ function renderHeader() {
   const queueChatId = state.chat?.id || (b ? `dm-${b.id}` : '');
   const queued = queueChatId ? [...new Set(state.allRuns.filter(r=>r.chat_id===queueChatId).map(r=>r.bot_id))].reduce((count,id)=>count+queuedWork(id,queueChatId).waiting,0) : 0;
   $('queue-status').hidden = !queued && !pause;
+  $('queue-status').dataset.controlBotId = pause?.bot_id || '';
   const helping=helperWork(b?.id),queueReason=helping?.name&&(helping.run.status==='running'||helping.waiting||helping.run.delegation.resuming)?` · ${b.name} is working for ${helping.name} and will reply after that.`:'';
   $('queue-status').replaceChildren(node('span','',queued ? `${queued} message${queued===1?'':'s'} queued${pause?' · waiting for control to be returned':queueReason}` : 'Computer paused for manual control'));
   if(pause)$('queue-status').append(button('Return control',()=>returnScreenControl(pause),'subtle-button small-button'));
@@ -3896,11 +3898,11 @@ function resizeComposer() {
   if(!form.getClientRects().length||form.matches('.is-replying,.has-files,.is-dictating')){
     form.classList.remove('is-multiline');return;
   }
-  const css=getComputedStyle(editor),line=parseFloat(css.lineHeight)+parseFloat(css.paddingTop)+parseFloat(css.paddingBottom);
-  // A draft that still wraps at full width cannot fit the compact layout. Keep
-  // the live scrolling editor stable instead of narrowing it on every keystroke.
+  const css=getComputedStyle(editor),line=Math.max(parseFloat(css.minHeight)||0,parseFloat(css.lineHeight)+parseFloat(css.paddingTop)+parseFloat(css.paddingBottom));
+  // Keep the live scrolling editor stable on each keystroke. The minimum
+  // writing height includes the breathing room in an empty composer.
   if(form.classList.contains('is-multiline')&&editor.scrollHeight>Math.ceil(line)+1)return;
-  // Only short drafts need a compact-width measurement at the wrap boundary.
+  // Recheck the multiline state when the draft returns to a single line.
   form.classList.remove('is-multiline');
   form.classList.toggle('is-multiline',editor.scrollHeight>Math.ceil(line)+1);
 }

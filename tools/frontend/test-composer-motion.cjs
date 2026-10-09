@@ -40,7 +40,8 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   await p.locator('#composer').hover();await p.waitForTimeout(240);const hovered=await border();assert.notEqual(hovered,idle);
   await prompt.focus();await p.waitForTimeout(240);assert.notEqual(await border(),hovered);
   const expanding=await sample('[data-message="1"] [data-message-action="reply"]');
-  assert(expanding.at(-1).height>expanding[0].height+40);
+  const quoteHeight=await p.locator('#composer-reply').evaluate(n=>n.getBoundingClientRect().height);
+  assert(expanding.at(-1).height>=expanding[0].height+quoteHeight-2,'Reply adds its own row above the unchanged writing area');
   function smooth(frames,direction){
     assert(Math.abs(frames[1].height-frames[0].height)<2,'first frame must preserve height');
     assert(Math.abs(frames[1].promptTop-frames[0].promptTop)<2,'writing area must not jump');
