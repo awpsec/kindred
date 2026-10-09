@@ -5120,7 +5120,7 @@ function renderRequestTray(chat,entry){
   const focused=tray.contains(document.activeElement),focusKey=document.activeElement?.dataset.questionFocus;
   tray.replaceChildren();tray.hidden=!requests.length;if(!requests.length){if(focused)$('prompt').focus({preventScroll:true});return;}
   tray.dataset.chat=chat.id;
-  if(model.minimized){tray.append(button(requests.length+' pending request'+(requests.length===1?'':'s'),()=>{model.minimized=false;renderRequestTray(chat,entry);},'outline-button'));return;}
+  if(model.minimized){const count=button(requests.length+' pending request'+(requests.length===1?'':'s'),()=>{model.minimized=false;renderRequestTray(chat,entry);},'outline-button');tray.append(count);if(focused)count.focus({preventScroll:true});return;}
   const bar=node('div','request-tray-bar'),page=node('span','muted small',(index+1)+' / '+requests.length);
   const step=delta=>{model.key=requests[(index+delta+requests.length)%requests.length].key;renderRequestTray(chat,entry);};
   if(requests.length>1)bar.append(iconButton('chevron','Previous request',()=>step(-1)),page,iconButton('chevron','Next request',()=>step(1)));else bar.append(page);
