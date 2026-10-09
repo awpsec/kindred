@@ -37,7 +37,9 @@ assert(await tiles.evaluateAll(ts=>ts.every(t=>t.querySelector('.progress-choice
 const progressCases=[];
 for(const theme of ['dark','light'])for(const scale of [1,1.5])for(const width of [1200,1000,800,390]){
  await p.setViewportSize({width,height:900});
- await p.evaluate(({theme,scale})=>{document.documentElement.dataset.theme=theme;document.documentElement.style.setProperty('--text-scale',String(scale));},{theme,scale});
+ await p.getByRole('combobox',{name:'Theme',exact:true}).selectOption(theme);
+ await p.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
+ await p.evaluate(scale=>document.documentElement.style.setProperty('--text-scale',String(scale)),scale);
  await p.locator('.progress-choices').scrollIntoViewIfNeeded();
  const geometry=await p.locator('.progress-choice-tiles').evaluate(grid=>({grid:grid.getBoundingClientRect().toJSON(),cards:[...grid.children].map(n=>n.getBoundingClientRect().toJSON())}));
  assert.equal(new Set(geometry.cards.map(c=>Math.round(c.top))).size,width>=1000?1:2,'Approved four desktop/two narrow columns');
@@ -55,6 +57,7 @@ for(const theme of ['dark','light'])for(const scale of [1,1.5])for(const width o
  assert(await tiles.evaluateAll(ts=>ts.every(t=>{const title=t.querySelector('.progress-choice-title').getBoundingClientRect(),preview=t.querySelector('.progress-choice-preview').getBoundingClientRect();return title.bottom<=preview.top;})),'Experimental and titles stay above illustrations');
  const styles=await tiles.evaluateAll(ts=>ts.map(t=>{const s=getComputedStyle(t);return {border:s.borderColor,background:s.backgroundColor,shadow:s.boxShadow};}));assert(styles.every(s=>JSON.stringify(s)===JSON.stringify(styles[0])),'Selection remains a neutral dot without card highlighting');
  assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ assert.equal(await p.evaluate(()=>document.documentElement.dataset.theme),theme,'Saved theme survives real radio updates');
  await capture('bounds-'+theme+'-'+width+'-'+scale,p.locator('#settings-dialog'));progressCases.push({theme,scale,width});
 }
 await p.emulateMedia({reducedMotion:'reduce'});assert(await tiles.evaluateAll(ts=>ts.every(t=>getComputedStyle(t).transitionDuration==='0s')),'Reduced motion keeps tile transitions off');
