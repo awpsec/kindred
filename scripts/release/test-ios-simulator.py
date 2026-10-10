@@ -328,6 +328,7 @@ def validate_release_ui_evidence(exports, summary, tree, attachments):
     manifest = json.loads((attachments / 'manifest.json').read_text())
     heights = {}
     sizes = {}
+    launch_ids = set()
     def numeric(value):
         assert type(value) in (int, float) and math.isfinite(value), 'Invalid native appearance number'
         return value
@@ -351,12 +352,27 @@ def validate_release_ui_evidence(exports, summary, tree, attachments):
             assert len(dimensions) == 2 and min(dimensions) > 0, 'Native appearance image did not decode'
             metrics = json.loads(attachment(phase + '-geometry', ('.json',)).read_text())
             _, theme, scale, state = phase.split('-')
-            assert metrics['schemaVersion'] == 1 and metrics['phase'] == phase and metrics['scenario'] == state, 'Wrong appearance phase binding'
+            assert metrics['schemaVersion'] == 2 and metrics['phase'] == phase and metrics['scenario'] == state, 'Wrong appearance phase binding'
             assert metrics['theme'] == theme and metrics['textSize'] == scale, 'Wrong native appearance requested traits'
+            import uuid
+            launch = metrics['expectedLaunchID']
+            assert isinstance(launch, str) and str(uuid.UUID(launch)).lower() == launch.lower(), 'Invalid native appearance launch identity'
+            assert launch not in launch_ids, 'Reused native appearance launch identity'
+            launch_ids.add(launch)
+            host = metrics['measuredHost']
+            assert isinstance(host, dict) and host['launchID'] == launch and metrics['launchID'] == launch, 'Stale native appearance host launch'
+            host_keys = ('phase', 'scenario', 'theme', 'textSize', 'requestedCategory', 'observedCategory', 'observedInterfaceStyle', 'nativeBodyPointSize', 'nativeBodyFontName', 'safeArea', 'windowBounds', 'nativeReduceMotion', 'nativeDarkerColors', 'hostAttached', 'windowIsKey', 'windowHidden', 'orientation', 'role', 'signedIn', 'apiPaths')
+            assert all(host[k] == metrics[k] for k in host_keys), 'Native host measurement projection mismatch'
+            assert metrics['accessibilityMeasurement'] == 'XCUIElementQuery; no in-process UIView traversal', 'Wrong native accessibility provenance'
+            assert metrics['hostMeasurement'] == 'DEBUG app-host telemetry; separately measured native traits/font/safeArea', 'Wrong native host provenance'
+            assert metrics['coordinateSpace'] == 'XCUI row/window frames in screen coordinates; native window safeArea is edge distances', 'Wrong native appearance coordinate space'
+            assert metrics['screenshotSource'] == 'XCUIApplication.screenshot of this launch; not drawHierarchy', 'Wrong native screenshot provenance'
+            assert all(type(metrics[k]) is int and metrics[k] == 1 for k in ('rowQueryCount', 'telemetryQueryCount', 'notificationsQueryCount', 'currentAccountQueryCount')), 'Missing or duplicate native appearance query'
+            assert all(numeric(metrics['screenshotSize'][k]) > 0 for k in ('width', 'height')), 'Missing native screenshot dimensions'
             category = 'UICTContentSizeCategoryL' if scale == 'default' else 'UICTContentSizeCategoryAccessibilityXXXL'
             assert metrics['requestedCategory'] == category and metrics['observedCategory'] == category, 'Native text trait mismatch'
             assert metrics['observedInterfaceStyle'] == (1 if theme == 'light' else 2), 'Native theme trait mismatch'
-            assert all(metrics[k] is True for k in ('windowIsKey', 'hostAttached', 'renderSucceeded', 'nativeReduceMotion')), 'Native appearance host/effect/render missing'
+            assert all(metrics[k] is True for k in ('windowIsKey', 'hostAttached', 'appRunningForeground', 'screenshotCaptured', 'nativeReduceMotion')), 'Native appearance host/effect/render missing'
             assert metrics['windowHidden'] is False and numeric(metrics['stableSamples']) >= 2, 'Native appearance row did not settle'
             assert numeric(metrics['nativeBodyPointSize']) > 0 and isinstance(metrics['nativeBodyFontName'], str) and metrics['nativeBodyFontName'], 'Native system font measurement missing'
             assert numeric(metrics['orientation']) in (1, 2, 3, 4), 'Native orientation missing'
@@ -372,6 +388,12 @@ def validate_release_ui_evidence(exports, summary, tree, attachments):
             label = metrics['rowLabel']
             records = metrics['accessibility']
             assert isinstance(label, str) and label and isinstance(records, list), 'Native accessible row missing'
+            assert any(r.get('label') == label and r.get('frame') == metrics['rowFrame'] for r in records), 'Native queried row not represented in accessibility evidence'
+            for key, expected_query_label in (('notificationsQuery', 'Notifications on'), ('currentAccountQuery', 'Current account')):
+                query = metrics[key]
+                assert isinstance(query, list) and len(query) == 1 and query[0]['label'] == expected_query_label, 'Missing actual native icon query'
+                assert any(r.get('label') == query[0]['label'] and r.get('frame') == query[0]['frame'] for r in records), 'Native icon query not represented in accessibility evidence'
+                assert all(numeric(query[0]['frame'][k]) > 0 for k in ('width', 'height')), 'Invalid native queried icon bounds'
             if expected != 'none':
                 assert expected in label, 'Native role badge label missing'
             else:
@@ -380,7 +402,8 @@ def validate_release_ui_evidence(exports, summary, tree, attachments):
             paths = metrics['apiPaths']
             assert isinstance(paths, list) and all(x == 'GET /identity/profiles' for x in paths), 'Unexpected native appearance API write/path'
             assert bool(paths) is signed_in, 'Native identity request state mismatch'
-            window, row, safe = metrics['windowBounds'], metrics['rowFrame'], metrics['safeArea']
+            window, row, safe = metrics['xcuiWindowFrame'], metrics['rowFrame'], metrics['safeArea']
+            assert all(abs(numeric(window[k]) - numeric(host['windowBounds'][k])) <= 1 for k in ('x', 'y', 'width', 'height')), 'Native and XCUI window coordinate mismatch'
             for box in (window, row):
                 assert all(numeric(box[k]) >= 0 for k in ('x', 'y')) and all(numeric(box[k]) > 0 for k in ('width', 'height')), 'Invalid native appearance bounds'
             assert all(numeric(safe[k]) >= 0 for k in ('top', 'bottom', 'left', 'right')), 'Invalid native appearance safe area'
@@ -463,8 +486,8 @@ def main(scope):
             '-only-testing:KindredCompanionTests/' + name.removesuffix('()')
             for name in sorted(DICTATION_METHODS)]
     if scope == 'release-ui':
-        assert (ROOT / 'mobile/ios/KindredCompanionTests/AccountsAppearanceUIKitTests.swift').is_file(), 'Reviewed native appearance tests missing'
-        command += ['-only-testing:KindredCompanionTests/AccountsAppearanceUIKitTests']
+        assert (ROOT / 'mobile/ios/KindredCompanionUITests/AccountsAppearanceUIKitTests.swift').is_file(), 'Reviewed native appearance tests missing'
+        command += ['-only-testing:KindredCompanionUITests/AccountsAppearanceUIKitTests']
     receipt = {'source_commit': source, 'scope': scope, 'runtime': runtime, 'device': device, 'destination': destination, 'command': command, 'full_scheme_includes_AppModelSignInTests': scope == 'full', 'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'automatic_retry': False, 'passed': False}
     if scope in ('composer', 'release-ui'):
         receipt.update(required_methods=sorted(set(COMPOSER_PHASES) | DICTATION_METHODS), required_native_phases=53, real_Apple_recognition_selected=False, real_audio_test_excluded=True, injectable_lifecycle_is_recognition_proof=False)
