@@ -4738,7 +4738,7 @@ function editReminder(reminder){
   const zoneName=z=>z==='UTC'?'UTC':z.split('/').at(-1).replaceAll('_',' ')+' · '+z.split('/').slice(0,-1).join(' / ').replaceAll('_',' ');
   const zone=select(zones.map(z=>[z,zoneName(z)]),reminder.timezone);zone.setAttribute('aria-label','Time zone');zone.dataset.searchable='true';zone.dataset.searchPlaceholder='Search time zones…';zone.dataset.searchEmpty='No matching time zones';
   const zoneRow=node('label','reminder-edit-zone','Time zone');zoneRow.append(zone);zoneRow.hidden=true;
-  const zoneInfo=node('div','reminder-zone-info'),zoneText=node('span'),changeZone=button('Change',()=>{zoneRow.hidden=!zoneRow.hidden;changeZone.setAttribute('aria-expanded',String(!zoneRow.hidden));if(!zoneRow.hidden)zone.focus({preventScroll:true});},'subtle-button');changeZone.setAttribute('aria-label','Change time zone');changeZone.setAttribute('aria-expanded','false');zoneInfo.append(zoneText,changeZone);
+  const zoneInfo=node('div','reminder-zone-info'),zoneText=node('span'),changeZone=button('Change',()=>{zoneRow.hidden=false;zoneInfo.hidden=true;changeZone.setAttribute('aria-expanded','true');zone.focus({preventScroll:true});},'subtle-button');changeZone.setAttribute('aria-label','Change time zone');changeZone.setAttribute('aria-expanded','false');zoneInfo.append(zoneText,changeZone);
   const preview=node('p','reminder-edit-preview');preview.setAttribute('aria-live','polite');
   const feedback=planningFeedback(),actions=node('div','reminder-edit-actions'),cancel=button('Cancel',()=>d.close(),'subtle-button'),save=button(resuming?'Reschedule':'Save reminder',()=>{},'primary');save.onclick=null;save.type='submit';
   actions.append(cancel,save);if(reminder.status==='paused')when.append(node('p','reminder-edit-preview','Paused after transfer. Choose a time to resume.'));when.append(label,quick,timing,preview,zoneInfo,zoneRow);form.append(message.label,when,feedback,actions);d.append(form);
@@ -4767,7 +4767,9 @@ function editReminder(reminder){
     else{preview.textContent=instant.toLocaleString([],{timeZone:zone.value,weekday:'short',month:'short',day:'numeric',...(date.input.value.slice(0,4)!==localDateInput(new Date(),zone.value).slice(0,4)?{year:'numeric'}:{}),hour:'numeric',minute:'2-digit'});if(zone.value!==deviceTimezone())preview.textContent+=' · '+instant.toLocaleString([],{timeZone:deviceTimezone(),weekday:'short',hour:'numeric',minute:'2-digit'})+' your time';}
   }
   const resize=()=>{message.input.style.height='auto';message.input.style.height=message.input.scrollHeight+'px';};
-  form.addEventListener('input',()=>{feedback.hidden=true;update();resize();});zone.addEventListener('change',update);
+  form.addEventListener('input',()=>{feedback.hidden=true;update();resize();});const closeZone=()=>{zoneRow.hidden=true;zoneInfo.hidden=false;changeZone.setAttribute('aria-expanded','false');changeZone.focus({preventScroll:true});};
+  zone.addEventListener('change',()=>{update();closeZone();});
+  zoneRow.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeZone();}});
   update();resize();let width=message.input.clientWidth;
   const observer=new ResizeObserver(()=>{if(message.input.clientWidth!==width){width=message.input.clientWidth;resize();}});observer.observe(message.input);d.addEventListener('close',()=>observer.disconnect(),{once:true});
   if(resuming)date.input.focus({preventScroll:true});else{message.input.focus({preventScroll:true});message.input.setSelectionRange(message.input.value.length,message.input.value.length);}
