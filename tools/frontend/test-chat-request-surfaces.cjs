@@ -22,6 +22,7 @@ const {server,token}=require('./fixtures/desktop.cjs');const {chromium,webkit}=r
  await p.locator('#request-tray').getByRole('button',{name:'Skip',exact:true}).click();await p.locator('#content').getByText('Skipped',{exact:true}).waitFor();await p.locator('#request-tray').getByText('1 / 2',{exact:true}).waitFor();
  await p.locator('#request-tray').getByRole('button',{name:'Allow once',exact:true}).evaluate(b=>{b.click();b.click();});await p.locator('#content').getByText('Approved',{exact:true}).waitFor();assert.equal(writes.filter(w=>w.n==='/approvals/one').length,1);
  await p.locator('#request-tray').getByRole('button',{name:'Decline',exact:true}).click();await p.locator('#content').getByText('Denied',{exact:true}).waitFor();assert(await p.locator('#request-tray').isHidden());
+ assert(await p.locator('#composer-caption').isHidden(),'Running task never adds a caption below the composer');assert.equal(await p.locator('#composer-caption').textContent(),'');
  const summary=p.locator('.summary-progress');await summary.scrollIntoViewIfNeeded();await summary.locator('details').evaluate(d=>d.open=true);const beforeReading=await summary.boundingBox();
  sumrun.status='completed';messages.push({seq:18,kind:'result',sender:'piper',text:'Final report remains outside progress',created:now,run_id:sumrun.id});
  await summary.getByText(/Task finished/).waitFor();assert.equal(await p.locator('#composer-caption').innerText(),'','Idle bot has no delivery hint');assert.equal(await summary.locator('details').getAttribute('open')!==null,true,'Completion must not collapse progress being read');await p.getByText('Final report remains outside progress',{exact:true}).waitFor();assert.equal(await summary.getByText('Final report remains outside progress',{exact:true}).count(),0);
@@ -29,5 +30,29 @@ const {server,token}=require('./fixtures/desktop.cjs');const {chromium,webkit}=r
  const batch=p.locator('.reminder-batch');await batch.getByRole('button',{name:'Next reminder'}).click();await batch.getByRole('button',{name:'Next reminder'}).click();await batch.getByText('3 / 10',{exact:true}).waitFor();await batch.getByRole('button',{name:'Cancel',exact:true}).click();await batch.getByText('Cancelled',{exact:true}).waitFor();assert.equal(await batch.getByRole('button',{name:'Edit',exact:true}).count(),0);assert.equal(await batch.getByRole('button',{name:'Reschedule',exact:true}).count(),1);assert.equal(await batch.getByText('3 / 10',{exact:true}).count(),1,'Cancellation preserves page and record');
  for(const theme of ['dark','light']){await p.evaluate(t=>document.documentElement.dataset.theme=t,theme);for(const width of [1000,390]){await p.setViewportSize({width,height:900});await p.waitForTimeout(400);await p.screenshot({path:path.join(out,engine+'-surfaces-'+theme+'-'+width+'.png')});assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}}
  await p.reload();await p.locator('.summary-progress').waitFor();assert.equal(await p.locator('.summary-progress details').getAttribute('open'),null,'Completed history defaults to collapsed');await p.locator('.summary-progress').scrollIntoViewIfNeeded();await p.screenshot({path:path.join(out,engine+'-summary-collapsed-default.png')});
+ for(const [id,approved] of [['instruction-allow',true],['instruction-deny',false]]){
+  const run={...sumrun,id,status:'awaiting_approval'};runs.push(run);
+  const a={id,run_id:id,tool:'bot_instructions_update',args:{bot_id:'piper',bot_name:'Piper',expected_instructions:'Original rule.',instructions:'Reviewed rule.'},status:'pending',created:now+1,message_seq:40+approvals.length};approvals.push(a);
+  messages.push({seq:a.message_seq,kind:'approval',sender:'piper',text:a.tool,created:a.created,run_id:id,approval:a});
+  await p.reload();const tray=p.locator('#request-tray');await tray.getByRole('heading',{name:'Update Piper’s instructions',exact:true}).waitFor();
+  assert.equal(await p.locator('#content .instruction-review:not(.compact-receipt)').count(),0,'Instruction approval only appears at composer');
+  await tray.getByRole('button',{name:'Minimize pending requests'}).click();await tray.getByText('Update Piper’s instructions',{exact:true}).waitFor();await tray.getByRole('button',{name:'1 pending request',exact:true}).click();
+  assert.equal(await tray.locator('.instruction-review').evaluate(n=>getComputedStyle(n).borderTopWidth),'0px','No nested legacy panel in the tray');
+  await tray.screenshot({path:path.join(out,engine+'-'+id+'-tray.png')});
+  await tray.getByRole('button',{name:approved?'Allow':'Decline',exact:true}).click();await tray.waitFor({state:'hidden'});
+  const receipt=p.locator('[data-receipt-key="approval:'+id+'"]');await receipt.locator('.compact-receipt-mark').waitFor();
+  assert.equal(await receipt.locator('.compact-receipt-mark').textContent(),approved?'✓':'✗');assert.equal(await receipt.getAttribute('data-receipt-tone'),approved?'success':'denied');
+  assert.equal(writes.filter(w=>w.n==='/approvals/'+id).length,1);
+ }
+ sumrun.status='running';
+ const phaseKey='summary-task:later-phase';
+ for(let i=0;i<3;i++)messages.push({seq:80+i,kind:'assistant',sender:'piper',text:'Later phase update '+i,created:now-90+i,run_id:sumrun.id,progress:{run_id:sumrun.id,mode:'summaries',phase:'commentary',group_id:phaseKey}});
+ messages.push({seq:83,kind:'assistant',sender:'piper',text:'Phase outcome stays visible',created:now,run_id:sumrun.id,progress:{run_id:sumrun.id,mode:'summaries',phase:'final_answer',group_id:phaseKey}});
+ messages.push({seq:84,kind:'assistant',sender:'piper',text:'Calm update stays outside prior progress',created:now+1,run_id:sumrun.id,progress:{run_id:sumrun.id,mode:'calm',phase:'commentary',group_id:'summary-task:calm'}});
+ await p.reload();const phase=p.locator('[data-progress-group="'+phaseKey+'"]');await phase.getByText(/Phase complete/).waitFor();
+ assert.equal(await phase.locator('details').getAttribute('open'),null,'A completed phase collapses even while its run continues');
+ assert.equal(await phase.getByText('Phase outcome stays visible',{exact:true}).count(),0);
+ assert.equal(await p.locator('.summary-progress').getByText('Calm update stays outside prior progress',{exact:true}).count(),0);
+ await p.getByText('Phase outcome stays visible',{exact:true}).waitFor();await p.getByText('Calm update stays outside prior progress',{exact:true}).waitFor();
  assert.deepEqual(errors,[]);console.log('Tray three real identities/one presentation/drafts/minimize/one decision/receipts; reminder10 page and cancel stability; durable Summary tags; both themes/widths PASS');
 }finally{await browser.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});

@@ -1214,7 +1214,7 @@ function renderHeader() {
   const tray=$("request-tray");if(tray&&tray.dataset.chat!==(state.chat?.id||(b?`dm-${b.id}`:''))){tray.hidden=true;delete tray.dataset.signature;}
   $("show-computer").hidden=!!state.chat?.shared&&!chatScreenBots().length;
   $("composer-actions").hidden=false;
-  const pause = pausedScreens().find(p=>p.bot_id===b?.id), thisBotPaused=!!pause;
+  const pause = pausedScreens().find(p=>p.bot_id===b?.id);
   const queueChatId = state.chat?.id || (b ? `dm-${b.id}` : '');
   const queued = queueChatId ? [...new Set(state.allRuns.filter(r=>r.chat_id===queueChatId).map(r=>r.bot_id))].reduce((count,id)=>count+queuedWork(id,queueChatId).waiting,0) : 0;
   $('queue-status').hidden = !queued && !pause;
@@ -1245,10 +1245,8 @@ function renderHeader() {
       hint.append(mark);
     }
   }
-  $("composer-caption").textContent = thisBotPaused
-    ? "This computer is paused for manual control. Return control to let the bot continue."
-    : b&&state.allRuns.some(r=>r.bot_id===b.id&&r.chat_id===queueChatId&&r.status==='running')
-      ? (state.general.message_delivery==='queue'?`Queued for ${b.name}\'s next task`:`Sends to ${b.name}\'s current task`) : "";
+  // Delivery and manual-control status already have dedicated controls above the composer.
+  $("composer-caption").textContent = "";
   renderVersions();
   renderUpdateNotice();
 }
@@ -2246,7 +2244,7 @@ async function defaultModelSettings(root,current) {
     };
   }catch(error){if(current())pane.body.append(node('p','muted small',error.message||String(error)));}
 }
-const progressModes=[['calm','Calm','Mostly quiet, with occasional updates during longer tasks.'],['balanced','Balanced','Useful updates at meaningful milestones.'],['frequent','Frequent','More frequent updates, without narrating every step.'],['summaries','Summaries (experimental)','Group progress for new tasks; keep every update available.']];
+const progressModes=[['calm','Calm','Mostly quiet, with occasional updates during longer tasks.'],['balanced','Balanced','Useful updates at meaningful milestones.'],['frequent','Frequent','More frequent updates, without narrating every step.'],['summaries','Summaries (experimental)','Group updates on longer jobs; keep every update available.']];
 function progressChoices(value='balanced'){
   const root=node('fieldset','progress-choices'),legend=node('legend','','Progress updates'),tiles=node('div','progress-choice-tiles'),description=node('p','progress-choice-description');
   description.id='progress-choice-description';description.setAttribute('aria-live','polite');
@@ -4686,10 +4684,12 @@ function summaryProgress(items,entry,runs){
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),bounds=previous?.getBoundingClientRect(),viewport=$('content').getBoundingClientRect();
   const reading=!!previous&&(previous.contains(document.activeElement)||bounds.bottom>viewport.top&&bounds.top<viewport.bottom);
   if(reading&&previous.querySelector('details')?.open)entry.progressReading.add(key);
-  const finished=run&&!active(run)&&run.status!=='queued',manual=entry.progressOpen.has(key),details=node('details','summary-progress-disclosure');details.open=!finished||manual||entry.progressReading.has(key);
-  const title=node('summary','summary-progress-heading'),name=state.bots.find(b=>b.id===first.sender)?.name||'Bot';
-  const elapsed=run?.progress_started?Math.max(0,(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run.id)?.created||items.at(-1).created):Math.floor(Date.now()/1000))-run.progress_started):Math.max(0,items.at(-1).created-first.created);
-  title.append(node('strong','',name),node('span','summary-progress-task',' · '+(run?.prompt||'Task progress')),node('span','muted small summary-progress-time',elapsedTime(elapsed)),node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run.status]||'Task ended'):''}`));
+  const phaseFinal=entry.messages.find(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer');
+  const finished=!!phaseFinal||run&&!active(run)&&run.status!=='queued',manual=entry.progressOpen.has(key),details=node('details','summary-progress-disclosure');details.open=!finished||manual||entry.progressReading.has(key);
+  const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender),name=bot?.name||'Bot';
+  if(bot){const avatar=buddy(bot,20);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
+  const elapsed=Math.max(0,(phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||items.at(-1).created):Math.floor(Date.now()/1000)))-(first.created||run?.progress_started||0));
+  title.append(node('strong','',name),node('span','summary-progress-task',' · '+(run?.prompt||'Task progress')),node('span','muted small summary-progress-time',elapsedTime(elapsed)),node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):''}`));
   const body=node('div','summary-progress-body');for(const m of items){const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);update.append(markdown(m.text));body.append(update);}
   details.append(title,body);group.append(details);animateChatDisclosure(details,body);
   title.addEventListener('click',()=>{entry.progressReading.delete(key);details.open?entry.progressOpen.delete(key):entry.progressOpen.add(key);},{capture:true});
@@ -5121,7 +5121,7 @@ function connectorMessage(m,id){
   const body=node('div','chat-disclosure-body');body.append(receipt);body.inert=!disclosure.open;body.id='connector-details-'+encodeURIComponent(card.id);summary.setAttribute('aria-controls',body.id);summary.setAttribute('aria-expanded',String(disclosure.open));
   disclosure.append(summary,body);animateChatDisclosure(disclosure,body);group.append(disclosure);return group;
 }
-const simpleApprovalTools=new Set(['guest_exec','computer_open_url','computer_click','computer_type','computer_key','computer_scroll','computer_browser_task','routine_create','routine_update','routine_control','inbox_monitor_save','share_file']);
+const simpleApprovalTools=new Set(['bot_instructions_update','guest_exec','computer_open_url','computer_click','computer_type','computer_key','computer_scroll','computer_browser_task','routine_create','routine_update','routine_control','inbox_monitor_save','share_file']);
 function simpleApproval(a){return simpleApprovalTools.has(a.tool)&&!a.args?.artifact_id&&!a.connector_artifact;}
 const trayState=new Map(),queueEditBusy=new Set();
 function approvalChat(run){const source=state.chats.find(c=>c.id===run?.chat_id);return source&&!source.bot_only&&!source.archived?source.id:run?'dm-'+run.bot_id:'';}
@@ -5151,7 +5151,7 @@ function renderRequestTray(chat,entry){
   tray.dataset.chat=chat.id;
   const item=requests[index],card=item.q?questionCard(item.q):approvalCard(item.a,item.run);
   card.classList.add('in-request-tray');card.querySelector('.task-card-title')?.remove();
-  const heading=card.querySelector('.question-title,.task-description');
+  const heading=card.querySelector('.question-title,.task-description,h3');
   const title=heading?.textContent||'Review request';
   tray.classList.toggle('is-minimized',model.minimized);
   if(model.minimized){
@@ -5391,7 +5391,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       if(boundary.seenAt&&Date.now()-boundary.seenAt>8000)divider.classList.add('has-faded');
       area.append(divider);unreadObserver.observe(divider);
     }
-    if(m.progress?.group_id&&summaries.has(m.progress.group_id)){const items=summaries.get(m.progress.group_id);for(const item of items)stacked.add(item.seq);area.append(summaryProgress(items,entry,runs));previousSender=null;continue;}
+    if(m.progress?.phase==='commentary'&&m.progress.group_id&&summaries.has(m.progress.group_id)){const items=summaries.get(m.progress.group_id);for(const item of items)stacked.add(item.seq);area.append(summaryProgress(items,entry,runs));previousSender=null;continue;}
     if(m.kind==='connection_card'&&validConnectionCard(m.text)){
       const group=node('article','message-group connection-message');group.dataset.message=String(m.seq);group.append(chatConnectionCard(m.text));area.append(group);previousSender=null;continue;
     }
@@ -7668,7 +7668,7 @@ function instructionApprovalCard(a,run){
     receipt.append(node('span','',a.status==='approved'?'Allowed for this change':a.status==='denied'?'Declined':a.status));
     card.append(receipt);
   }
-  return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+target+'’s instructions',outcome:a.status==='approved'?'Allowed':a.status==='denied'?'Declined':'Expired',terminal:a.status!=='pending'});
+  return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+target+'’s instructions',outcome:a.status==='approved'?'Approved':a.status==='denied'?'Denied':'Expired',terminal:a.status!=='pending',compact:true});
 }
 function chatEditApprovalCard(a,run){
   const card=node('section','approval-card instruction-review chat-edit-review'),before=a.args.before||{},after=a.args.after||{};
@@ -8267,7 +8267,7 @@ dictationUI=createDictationUI({editor:$("prompt"),send:$("send"),composer:$("com
 
 function workflowOptions(chatId,panel){return {
  onReady:animateWorkflowDetails,
- onRespond:async input=>{const saved=await api('/chats/'+encodeURIComponent(chatId)+'/panels/'+encodeURIComponent(panel.id)+'/respond','POST',input);void refresh();return saved;},
+ onRespond:async input=>{const saved=await api('/chats/'+encodeURIComponent(chatId)+'/panels/'+encodeURIComponent(panel.id)+'/respond','POST',input);void perform(()=>refresh());return saved;},
  avatar:(id,name)=>{const b=state.bots.find(b=>b.id===id);return b?buddy(b,22):node('span','workflow-initial',name.slice(0,1));},
  onChat:async id=>{const c=state.chats.find(c=>c.id===id);if(c)await chooseChat(c);else notice('This conversation is no longer available.');},
  onMonitor:()=>openSettings('routines'),

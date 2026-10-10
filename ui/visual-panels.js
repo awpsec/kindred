@@ -13,9 +13,16 @@ export function visualPanel(data,options={}){
  const root=el('section','visual-panel visual-'+data.kind);root.dataset.visualPanel=data.id||data.key;root.dataset.visualSignature=JSON.stringify(data);root.setAttribute('aria-label',data.title);
  const header=el('header','visual-heading');header.append(el('span','visual-eyebrow',({shopping:'SHORTLIST',finance:'AT A GLANCE',chart:'THE NUMBERS'}[data.kind]||'')),el('h3','',data.title));if(data.description)header.append(el('p','visual-description',data.description));root.append(header);
  if(data.kind==='shopping')shopping(root,data,onDiscuss);else if(data.kind==='finance')finance(root,data);else if(data.kind==='chart')chartPanel(root,data);else workflow(root,data,options);
- options.onReady?.(root);
- if(['sources','monitor'].includes(data.kind)){header.remove();root.classList.add('workflow-inline');return root;}
- const footer=el('footer','visual-source');footer.append(data.source_url?external(data.source,data.source_url):el('span','',data.source),el('span','','As of '+data.as_of));root.append(footer);return workflowReceipt(root,data);
+ if(['sources','monitor'].includes(data.kind)){header.remove();root.classList.add('workflow-inline');options.onReady?.(root);return root;}
+ const footer=el('footer','visual-source');footer.append(data.source_url?external(data.source,data.source_url):el('span','',data.source),el('span','','As of '+data.as_of));root.append(footer);
+ if(['review','upload'].includes(data.kind)){
+  root.classList.add('workflow-notice');
+  const disclosure=el('details','workflow-details workflow-notice-disclosure'),summary=el('summary'),title=el('span','workflow-notice-title',data.title),label=el('span','workflow-notice-toggle','Review');
+  summary.append(title,label);disclosure.append(summary);
+  header.remove();if(data.description)disclosure.append(el('p','workflow-notice-description',data.description));
+  disclosure.append(...root.childNodes);root.append(disclosure);
+ }
+ options.onReady?.(root);return workflowReceipt(root,data);
 }
 function shopping(root,data,onDiscuss){
  const products=data.products||[];if(!products.length)return;
