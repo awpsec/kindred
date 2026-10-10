@@ -5686,3 +5686,5 @@ html[data-mobile] #notice .notice-action {min-height:44px;}
 @media(pointer:coarse){.artifact-folder-actions{width:44px;height:44px;opacity:1;top:0}.artifact-studio .artifact-folder:has(.artifact-folder-actions)>.artifact-folder-heading{padding-right:48px;min-height:44px}.artifact-folder-context-menu button{min-height:44px}}
 
 @media(max-width:760px){.sheet-color-control{margin:0}.sheet-color-state{display:none}}
+.sheet-remove-fill-icon{display:none}
+@media(max-width:760px){.artifact-format-toolbar .sheet-remove-fill{width:36px;padding-inline:0}.sheet-remove-fill-text{display:none}.sheet-remove-fill-icon{display:inline;font-size:20px}}
