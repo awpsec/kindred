@@ -37,6 +37,7 @@ const {server,token}=require('./fixtures/desktop.cjs');const {chromium,webkit}=r
   await p.reload();const tray=p.locator('#request-tray');await tray.getByRole('heading',{name:'Update Piper’s instructions',exact:true}).waitFor();
   assert.equal(await p.locator('#content .instruction-review:not(.compact-receipt)').count(),0,'Instruction approval only appears at composer');
   await tray.getByRole('button',{name:'Minimize pending requests'}).click();await tray.getByText('Update Piper’s instructions',{exact:true}).waitFor();await tray.getByRole('button',{name:'1 pending request',exact:true}).click();
+  assert.equal(await tray.locator('.instruction-review').evaluate(n=>getComputedStyle(n).borderTopWidth),'0px','No nested legacy panel in the tray');
   await tray.screenshot({path:path.join(out,engine+'-'+id+'-tray.png')});
   await tray.getByRole('button',{name:approved?'Allow':'Decline',exact:true}).click();await tray.waitFor({state:'hidden'});
   const receipt=p.locator('[data-receipt-key="approval:'+id+'"]');await receipt.locator('.compact-receipt-mark').waitFor();

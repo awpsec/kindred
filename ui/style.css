@@ -5508,7 +5508,7 @@ html[data-ios-short=true] .control-notice-copy strong {display:inline-block;max-
 .request-tray-bar .icon-button:hover{color:var(--fg);background:var(--hover)}
 .request-tray-page{font-size:calc(11px * var(--text-scale,1));font-variant-numeric:tabular-nums;white-space:nowrap;min-width:32px;text-align:center}
 .request-tray-minimize{margin-left:6px}.request-tray-minimize svg{transform:rotate(90deg)}
-.request-tray .task-card,.request-tray .question-card{border:0;background:transparent;padding:0;width:100%;max-width:100%;margin:0;box-shadow:none}
+.request-tray .task-card,.request-tray .question-card,.request-tray .instruction-review{border:0;background:transparent;padding:0;width:100%;max-width:100%;margin:0;box-shadow:none}
 .request-tray .question-context{color:var(--soft);font-size:calc(12px * var(--text-scale,1));margin-bottom:12px}
 .request-tray .question-choices{gap:8px}
 .request-tray .question-option{border-color:transparent;background:color-mix(in srgb,var(--fg) 3%,transparent);border-radius:7px;transition:background .14s ease,border-color .14s ease}
@@ -5693,3 +5693,5 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
 .workflow-notice-toggle{flex:none}.workflow-notice-disclosure[open]>summary .workflow-notice-toggle{font-size:0}.workflow-notice-disclosure[open]>summary .workflow-notice-toggle::after{content:'Close';font-size:calc(12px * var(--text-scale,1))}
 .workflow-notice .workflow-body{padding:0 15px 12px}.workflow-notice .visual-source{padding:0 15px 12px;border:0}
 .workflow-notice-description{padding:0 15px;margin:0 0 10px;font-size:calc(13px * var(--text-scale,1))}
+
+.request-tray .instruction-review>p{margin:0 0 10px;font-size:calc(12px * var(--text-scale,1))}
