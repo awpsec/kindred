@@ -5630,7 +5630,7 @@ html[data-mobile] #composer .dictation-cancel::before {
 }
 html[data-mobile] #composer .dictation-cancel > svg {width:20px;height:20px;pointer-events:none;}
 
-html[data-mobile] #composer .dictation-status {display:flex;align-items:center;}
+html[data-mobile] #composer .dictation-status {display:flex;align-items:center;gap:.35em;}
 html[data-mobile] #composer .dictation-status > :first-child {min-width:0;overflow:hidden;text-overflow:ellipsis;}
 html[data-mobile] #composer .dictation-status > [aria-hidden] {flex:none;}
 html[data-mobile] #notice .notice-action {min-height:44px;}
