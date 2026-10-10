@@ -77,7 +77,7 @@ def package(build, key_path, output, crate_path=None):
     for name in ["LICENSE", "THIRD_PARTY_NOTICES.md"]:
         files[name] = (ROOT / name).read_bytes()
     notices = [p for p in sorted((ROOT / "third-party").iterdir()) if p.is_file() and p.suffix != ".gz"]
-    notices += [ROOT / "ui/fonts/LICENSE.txt", ROOT / "ui/fonts/SOURCE.json", ROOT / "ui/fonts/Liberation-LICENSE.txt", ROOT / "ui/fonts/Liberation-SOURCE.json", ROOT / "ui/vendor.js.LEGAL.txt", ROOT / "ui/artifact-vendor.js.LEGAL.txt", ROOT / "docs/PROVIDER_MARKS_LICENSE.txt"]
+    notices += [ROOT / "ui/fonts/LICENSE.txt", ROOT / "ui/fonts/SOURCE.json", ROOT / 'ui/fonts/DMSans-LICENSE.txt', ROOT / 'ui/fonts/DMSans-SOURCE.json', ROOT / 'ui/fonts/Manrope-LICENSE.txt', ROOT / 'ui/fonts/Manrope-SOURCE.json', ROOT / "ui/fonts/Liberation-LICENSE.txt", ROOT / "ui/fonts/Liberation-SOURCE.json", ROOT / "ui/vendor.js.LEGAL.txt", ROOT / "ui/artifact-vendor.js.LEGAL.txt", ROOT / "docs/PROVIDER_MARKS_LICENSE.txt"]
     files["THIRD-PARTY-LICENSES.txt"] = b"\n\n".join(str(p.relative_to(ROOT)).encode() + b"\n" + p.read_bytes() for p in notices)
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f"kindred-windows-{version}.zip"

@@ -1,0 +1,17 @@
+{
+  "project": "https://github.com/google/fonts/tree/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/manrope",
+  "commit": "bd8f81ddb5c74d5c8897b36ad88b440266245103",
+  "license": "SIL Open Font License 1.1",
+  "files": {
+    "Manrope-Variable.ttf": {
+      "url": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/manrope/Manrope%5Bwght%5D.ttf",
+      "sha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+      "bytes": 164700
+    },
+    "Manrope-LICENSE.txt": {
+      "url": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/manrope/OFL.txt",
+      "sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
+      "bytes": 4387
+    }
+  }
+}

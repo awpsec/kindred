@@ -129,3 +129,10 @@ Automatic browser setup and consent input are disabled. Cua Spaces/FSL component
 and optional perception/model extensions are excluded. Runtime dependencies retain the licenses
 of the guest Debian packages. The driver uses the verified offline payload; its
 telemetry and update checks are disabled, and optional history is not enabled.
+
+## DM Sans and Manrope
+
+The optional desktop interface fonts DM Sans and Manrope are bundled under the
+SIL Open Font License 1.1. Full licenses and pinned source/hash receipts are in
+ui/fonts/DMSans-LICENSE.txt, ui/fonts/DMSans-SOURCE.json,
+ui/fonts/Manrope-LICENSE.txt and ui/fonts/Manrope-SOURCE.json.
