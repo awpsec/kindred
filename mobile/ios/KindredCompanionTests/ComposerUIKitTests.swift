@@ -35,6 +35,22 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         window.__KINDRED_MOBILE=true; window.__KINDRED_MOBILE_PLATFORM='ios';
         window.__composerSends=[];
         window.__composerDictationEvents=[];
+        window.__composerFocusTrace=[];
+        const focusGeometry=kind=>({kind,time:performance.now(),
+          viewport:{width:innerWidth,height:innerHeight},
+          visual:visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetTop:visualViewport.offsetTop,offsetLeft:visualViewport.offsetLeft,scale:visualViewport.scale}:null,
+          scroll:{x:scrollX,y:scrollY,top:document.scrollingElement?.scrollTop??0,left:document.scrollingElement?.scrollLeft??0,
+            height:document.scrollingElement?.scrollHeight??0,clientHeight:document.documentElement.clientHeight}});
+        const focusTrace=kind=>{const entry=focusGeometry(kind);window.__composerFocusTrace.push(entry);
+          if(window.__composerFocusTrace.length>24)window.__composerFocusTrace.shift();return entry};
+        document.addEventListener('focusin',event=>{
+          const entry=focusTrace(event.target?.id==='prompt'?'prompt-focusin':'other-focusin');
+          if(event.target?.id==='prompt'&&!window.__composerFirstPromptFocus)window.__composerFirstPromptFocus=entry;
+        },true);
+        document.addEventListener('focusout',event=>focusTrace(event.target?.id==='prompt'?'prompt-focusout':'other-focusout'),true);
+        window.addEventListener('resize',()=>focusTrace('window-resize'));
+        visualViewport?.addEventListener('resize',()=>focusTrace('visual-resize'));
+        visualViewport?.addEventListener('scroll',()=>focusTrace('visual-scroll'));
         window.addEventListener('kindred-ios-dictation',event=>{const p=event.detail;
           window.__composerDictationEvents.push({phase:p.phase,reason:p.reason??p.errorCode??null,
             sequence:p.sequence,textLength:typeof p.text==='string'?p.text.length:0});
@@ -265,6 +281,9 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
               try {sessionPresent=!!sessionStorage.getItem('kindred-token')} catch {storageReadable=false}
               return {
               visibility:document.visibilityState,documentFocused:document.hasFocus(),
+              focusTrace:window.__composerFocusTrace??[],firstPromptFocus:window.__composerFirstPromptFocus??null,
+              windowScroll:{x:scrollX,y:scrollY,top:document.scrollingElement?.scrollTop??0,left:document.scrollingElement?.scrollLeft??0,
+                height:document.scrollingElement?.scrollHeight??0,clientHeight:document.documentElement.clientHeight},
               viewport:{width:innerWidth,height:innerHeight,clientWidth:document.documentElement.clientWidth,clientHeight:document.documentElement.clientHeight,
                 visual:visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}:null},
               readyState:document.readyState,promptExists:!!p,promptVisible:!!p?.getClientRects().length,
@@ -317,6 +336,19 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             view = current.superview
         }
         let web = session.webView
+        let scroll = web.scrollView
+        let webFrame = web.convert(web.bounds, to: window)
+        let keyboardInWindow = window.convert(keyboardFrame, from: nil)
+        let intersection = webFrame.intersection(keyboardInWindow)
+        func insets(_ value: UIEdgeInsets) -> [String: Double] {
+            ["top": Double(value.top), "bottom": Double(value.bottom),
+             "left": Double(value.left), "right": Double(value.right)]
+        }
+        let contentViews: [[String: Any]] = scroll.subviews.prefix(8).map { view in
+            ["class": String(describing: type(of: view)), "bounds": rect(view.bounds),
+             "frame": rect(view.frame), "frameInFixtureWindow": rect(view.convert(view.bounds, to: window)),
+             "hidden": view.isHidden, "alpha": Double(view.alpha)]
+        }
         return ["ancestors": ancestors, "fixtureWindowKey": window.isKeyWindow,
             "fixtureWindowHidden": window.isHidden,
             "sceneActivation": window.windowScene?.activationState.rawValue ?? -1,
@@ -327,6 +359,12 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             "scrollBounds": rect(web.scrollView.bounds),
             "scrollOffset": ["x": Double(web.scrollView.contentOffset.x), "y": Double(web.scrollView.contentOffset.y)],
             "zoomScale": Double(web.scrollView.zoomScale),
+            "scrollContentSize": ["width": Double(scroll.contentSize.width), "height": Double(scroll.contentSize.height)],
+            "scrollContentInset": insets(scroll.contentInset), "scrollAdjustedContentInset": insets(scroll.adjustedContentInset),
+            "scrollEnabled": scroll.isScrollEnabled, "scrollDragging": scroll.isDragging,
+            "scrollDecelerating": scroll.isDecelerating, "scrollContentViews": contentViews,
+            "keyboardFrameInFixtureWindow": rect(keyboardInWindow),
+            "keyboardIntersectionHeight": keyboardVisible && !intersection.isNull ? Double(intersection.height) : 0,
             "keyboardVisible": keyboardVisible, "keyboardFrame": rect(keyboardFrame)]
     }
 
@@ -363,7 +401,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         const colour=document.createElement('canvas').getContext('2d');colour.fillStyle=surface.backgroundColor;colour.fillRect(0,0,1,1);const rgba=[...colour.getImageData(0,0,1,1).data];
         const primarySurface={selector:send.id==='send'?'#send':'.dictation-button',controlKind:send.id==='send'?'send':'microphone',capability:window.__KINDRED_IOS_DICTATION};
         const target=rect(send),edgeHits=[[20,0],[-20,0],[0,20],[0,-20]].map(([dx,dy])=>{const h=document.elementFromPoint(target.x+target.width/2+dx,target.y+target.height/2+dy);return h===send||send.contains(h)});
-        return {dictationState:{draftPresent:!!p.textContent.trim(),transientSpan:!!p.querySelector('.dictation-transcript'),dictating:c.classList.contains('is-dictating'),lastEvent:window.__composerDictationEvents.at(-1)??null,sendCount:window.__composerSends.length,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches},primarySurface:{...primarySurface,edgeHits,target,arrow:rect(arrow),paint:{width:parseFloat(surface.width),height:parseFloat(surface.height),left:parseFloat(surface.left),top:parseFloat(surface.top),rgba},opacity:parseFloat(style.opacity),appearance:style.appearance,theme:document.documentElement.dataset.theme,hidden:send.hidden,disabled:send.disabled,fixture:window.__sendSurfaceFixture},layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
+        return {focusTrace:window.__composerFocusTrace??[],firstPromptFocus:window.__composerFirstPromptFocus??null,windowScroll:{x:scrollX,y:scrollY,top:document.scrollingElement?.scrollTop??0,left:document.scrollingElement?.scrollLeft??0,height:document.scrollingElement?.scrollHeight??0},dictationState:{draftPresent:!!p.textContent.trim(),transientSpan:!!p.querySelector('.dictation-transcript'),dictating:c.classList.contains('is-dictating'),lastEvent:window.__composerDictationEvents.at(-1)??null,sendCount:window.__composerSends.length,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches},primarySurface:{...primarySurface,edgeHits,target,arrow:rect(arrow),paint:{width:parseFloat(surface.width),height:parseFloat(surface.height),left:parseFloat(surface.left),top:parseFloat(surface.top),rgba},opacity:parseFloat(style.opacity),appearance:style.appearance,theme:document.documentElement.dataset.theme,hidden:send.hidden,disabled:send.disabled,fixture:window.__sendSurfaceFixture},layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
         controls:[...c.querySelectorAll('#composer-actions,#send,.dictation-button,.dictation-cancel')].filter(b=>b.getClientRects().length).map(b=>{const r=rect(b),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {...r,hit:h===b||b.contains(h)}})}})()
         """
         var measured: [String: Any]?
