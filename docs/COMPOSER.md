@@ -141,3 +141,13 @@ Review to send again opens a prefilled editor and requests a fresh bot review ta
 with a new card and approval. It cannot replay the old call. The old card and its
 delivery state stay in history. This path requires the bot to prepare the new draft;
 requesting review does not mean that the new draft is ready or sent.
+
+## Native iOS dictation
+
+Supported iOS pages use Apple's on-device speech recognizer through a document-, chat- and operation-bound native bridge. The native capability controls availability; a microphone permission flag or a desktop model flag does not enable transcription. Dictation defaults on for a supported language, with a separate device preference. Opening Settings never requests microphone or speech permission.
+
+An empty draft uses the microphone as the primary control. Text or attachments keep Send primary and the microphone beside it. While recording, Stop stays in the original mic cell; a populated-start session retains the disabled Send slot. All three mic controls have a 36-pixel painted circle, 20-pixel icon and 44-pixel target. The pointerdown caret/focus is captured before native work; dictation does not open a closed keyboard.
+
+Partial text replaces only a transient span. Stop commits the preview/final as editable draft text. Explicit Cancel, Escape or chat/account departure removes only this session's span. Background, interruption and recognition errors keep the visible words. Late, duplicate, foreign-context and over-limit callbacks cannot change another draft. No dictation path sends a message. Recording stops after a minute; authorization/finalization have finite deadlines. Private HTTP origins use cryptographic random bytes for operation IDs without requiring the secure-context randomUUID API.
+
+Browser fixtures prove shared lifecycle and layout using a synthetic bridge. Apple microphone capture, permissions, recognition quality, interruptions and actual offline availability remain native/device verification facts.
