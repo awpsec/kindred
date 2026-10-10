@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
-/// Kindred alerts are generic; only the identifiers in the payload are used,
+/// Only routing identifiers in the payload are used to select a conversation,
 /// and only to choose a saved account and conversation.
 final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     weak var model: AppModel?

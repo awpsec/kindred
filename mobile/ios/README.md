@@ -250,7 +250,7 @@ answer 404 and the app says notifications aren't offered.
   registrations bound to an ended session).
 - Account metadata is excluded from device backups, so a restored phone
   never reuses another device's installation UUIDs.
-- Payloads are opaque: `{"aps":{"alert":{generic}},"account_id","profile_id","installation_uuid","chat_id","event_id"}`.
+- Payloads carry opaque routing IDs (`account_id`, `profile_id`, `installation_uuid`, `chat_id`, `event_id`). Bot updates use generic alert text; reminders include their text and scheduled time, subject to system notification-preview settings.
   Tapping one picks the saved account by installation UUID (falling back to
   the server account UUID only when that is unambiguous), switches to the
   event's workspace if needed (`POST /identity/switch`), then loads
