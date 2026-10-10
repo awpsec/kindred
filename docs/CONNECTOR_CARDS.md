@@ -1,6 +1,6 @@
 # Connector cards and email review
 
-The current, unreleased source keeps connector actions and structured results as persistent receipts. Ordinary calls appear as compact service-logo rows with the tool name and, when supplied, a target identifier. Selecting a row smoothly expands the full receipt. One to three consecutive calls stay inline; four or more calls from the same bot and run collapse under a tool count and service logos, with the active call (or latest completed call) visible underneath. Running calls show animated dots, respecting reduced-motion settings. Approvals, requested changes and uncertain outcomes remain fully visible. Grouping never crosses user messages, bot/run boundaries or the unread divider. The header identifies the service, connector route, tool and bot. Dedicated adapters cover 34 services through Kindred connections and supported Claude or Codex provider routes. They display supplied inputs and connector receipts; they do not connect accounts or grant execution permissions. The released 0.48.34 packages contain the earlier 26-service catalogue.
+The current, unreleased source keeps connector actions and structured results in chat as persistent cards. The header identifies the service, connector route, tool and bot. Dedicated adapters cover 34 services through Kindred connections and supported Claude or Codex provider routes. They display supplied inputs and connector receipts; they do not connect accounts or grant execution permissions. The released 0.48.34 packages contain the earlier 26-service catalogue.
 
 ## Supported services
 
@@ -93,3 +93,9 @@ Cards and their reviewed content survive history readback and profile transfers.
 Regression coverage includes exact edited HTTP connector payloads, no dispatch before approval, stale/double approval rejection, feedback and cancellation, per-bot/account/source email policy isolation, immediate revocation, forced review, read-only restrictions, Gmail/Outlook normalization, invoice fields, quoted context and transfer compatibility. Browser tests exercise editing, failed saves, feedback, double clicks, permission controls, safe source links and typed records in Edge and WebKit. Connector writes use controlled fixtures; this verification sends no real email and modifies no customer accounting or task records.
 
 The 34-service fixture suite exercises schema-shaped responses through backend card completion and browser rendering in Edge and WebKit. These are synthetic controlled records, not evidence of live authentication or successful real-world operations against all 34 services. Free-form responses, unsupported record variants and content omitted by the connector retain the generic fallback.
+
+## Inline call details
+
+Non-email execution receipts begin as a compact service/tool row. Expanding the row shows plain status, provider and bot context followed by the actual available fields. IDs stay in those fields. Nested values use field disclosures; long text can be expanded without widening the chat. Secret keys remain masked. “Chat about this” uses the existing reply composer and does not send a message by itself.
+
+Pending approvals and email review retain their existing controls and saved-revision checks. Grouped call stacks preserve their paging and live state. Keyboard toggles preserve focus, collapsed details are inert, and reduced-motion settings make expansion immediate.
