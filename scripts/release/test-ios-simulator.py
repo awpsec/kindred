@@ -388,6 +388,13 @@ def validate_release_ui_evidence(exports, summary, tree, attachments):
             label = metrics['rowLabel']
             records = metrics['accessibility']
             assert isinstance(label, str) and label and isinstance(records, list), 'Native accessible row missing'
+            assert metrics['accessibilityScope'] == 'required row/icon query projection', 'Wrong native accessibility projection scope'
+            assert metrics['rowHittable'] is True, 'Native queried row is not hittable'
+            forbidden = metrics['forbiddenAdministratorQuery']
+            assert isinstance(forbidden, dict) and forbidden['predicate'] == "label CONTAINS[c] 'administrator'" and forbidden['source'] == 'XCUIElementQuery matching supported NSPredicate against actual app descendants', 'Missing actual forbidden-role query provenance'
+            assert type(forbidden['count']) is int and forbidden['count'] >= 0, 'Invalid actual forbidden-role query count'
+            if expected == 'none':
+                assert forbidden['count'] == 0, 'Unexpected actual administrator accessibility query result'
             assert any(r.get('label') == label and r.get('frame') == metrics['rowFrame'] for r in records), 'Native queried row not represented in accessibility evidence'
             for key, expected_query_label in (('notificationsQuery', 'Notifications on'), ('currentAccountQuery', 'Current account')):
                 query = metrics[key]
