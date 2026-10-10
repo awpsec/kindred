@@ -27,13 +27,23 @@ export function createSheetEditor(value,onDirty=()=>{}){
  const key=()=>selected.join(':');const apply=patch=>{commit();change(()=>each((i,j)=>styles[i+':'+j]={...styles[i+':'+j],...patch}),false);};
  const font=select('Font family',fonts,fontFamily=>apply({fontFamily})),size=select('Font size',[10,12,14,16,18,20,24,28,32,40,48].map(n=>[String(n),String(n)]),n=>apply({fontSize:n+'px'}));
  bar.append(font,size,button('Bold',()=>apply({fontWeight:styles[key()]?.fontWeight==='700'?'400':'700'}),'B'),button('Italic',()=>apply({fontStyle:styles[key()]?.fontStyle==='italic'?'normal':'italic'}),'I'),select('Text alignment',[['left','Align left'],['center','Center'],['right','Align right']],textAlign=>apply({textAlign})),button('Undo',()=>restore(history,future),'↶'),button('Redo',()=>restore(future,history),'↷'));
- for(const [label,property]of [['Cell text color','color'],['Cell fill color','backgroundColor']]){const color=el('input');color.type='color';color.setAttribute('aria-label',label);color.title=label;color.onchange=()=>apply({[property]:color.value});bar.append(color);}
+ const colourControls=[];
+ for(const [label,property]of [['Cell text color','color'],['Cell fill color','backgroundColor']]){
+  const group=el('label','sheet-color-control'),glyph=el('span','sheet-color-glyph'),swatch=el('span','sheet-color-bar'),state=el('output','sheet-color-state'),color=el('input');group.title=label;glyph.setAttribute('aria-hidden','true');
+  if(property==='color')glyph.textContent='A';else{const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.6');const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d','M4 10l8-8 8 8-8 8z M4 10h16 M5 4l4 4 M20 14s-2 3-2 4a2 2 0 004 0c0-1-2-4-2-4');svg.append(path);glyph.append(svg);}
+  color.type='color';color.setAttribute('aria-label',label);color.title=label;color.onchange=()=>apply({[property]:color.value});glyph.append(swatch,color);group.append(glyph,state);bar.append(group);colourControls.push({property,color,swatch,state});
+ }
+ const removeFill=button('Remove cell fill',()=>apply({backgroundColor:''}),'No fill');bar.append(removeFill);
+ const colourCanvas=document.createElement('canvas'),colourContext=colourCanvas.getContext('2d');colourCanvas.width=colourCanvas.height=1;
+ const hex=css=>{colourContext.clearRect(0,0,1,1);colourContext.fillStyle='#000000';colourContext.fillStyle=css;colourContext.fillRect(0,0,1,1);return '#'+[...colourContext.getImageData(0,0,1,1).data].slice(0,3).map(n=>n.toString(16).padStart(2,'0')).join('');};
  const grow=(moreRows,moreCols)=>{commit();if((rows.length+moreRows)*(cols+moreCols)>10000){status.textContent='The editor supports up to 10,000 cells.';return;}change(()=>{cols+=moreCols;rows.forEach(r=>{while(r.length<cols)r.push('');});for(let i=0;i<moreRows;i++)rows.push(Array(cols).fill(''));});};
  bar.append(button('Add row',()=>grow(1,0)),button('Add column',()=>grow(0,1)),button('Clear cell',()=>{commit();change(()=>each((i,j)=>rows[i][j]=''),false);},'Clear'));
  function choose(i,j,extend=false){commit();selected=[i,j];if(!extend)anchor=[i,j];input.value=rows[i][j];updateSelection();}
  function updateSelection(){
   const [a,b,c,d]=bounds();address.textContent=letters(a===c&&b===d?selected[1]:b)+(a+1)+(a===c&&b===d?'':':'+letters(d)+(c+1));
   const st=styles[key()]||{};font.value=st.fontFamily||'Inter';size.value=String(parseFloat(st.fontSize)||16);bar.querySelector('[aria-label="Text alignment"]').value=st.textAlign||'left';
+  for(const control of colourControls){const none=control.property==='backgroundColor'&&(!st.backgroundColor||st.backgroundColor==='transparent'),current=hex(st[control.property]|| (control.property==='color'?getComputedStyle(table.querySelector(`[data-row="${selected[0]}"][data-col="${selected[1]}"] input`)).color:'#ffffff'));control.color.value=current;control.swatch.style.backgroundColor=none?'transparent':current;control.swatch.classList.toggle('no-fill',none);control.state.textContent=none?'None':current;}
+  removeFill.disabled=!st.backgroundColor||st.backgroundColor==='transparent';
   for(const [label,on]of [['Bold',st.fontWeight==='700'],['Italic',st.fontStyle==='italic']])bar.querySelector(`[aria-label="${label}"]`).setAttribute('aria-pressed',String(on));
   for(const td of table.querySelectorAll('td')){const i=Number(td.dataset.row),j=Number(td.dataset.col);td.classList.toggle('selected',i>=a&&i<=c&&j>=b&&j<=d);}
   status.textContent=`${rows.length} rows × ${cols} columns`+(a===c&&b===d?'':` · ${(c-a+1)*(d-b+1)} cells selected`);
