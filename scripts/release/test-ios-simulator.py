@@ -195,18 +195,155 @@ def validate_composer_evidence(exports, summary, tree, attachments):
     return len(required_methods)
 
 
+def _simulator_command(argv, timeout, row):
+    """Measure spawn/wait separately; clean only this command's new session."""
+    started = time.monotonic()
+    row.update(process_phase='spawn', cleanup={'kill_attempted': False, 'reaped': False})
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        try:
+            process = subprocess.Popen(argv, stdout=stdout, stderr=stderr, start_new_session=True)
+        finally:
+            row['spawn_seconds'] = round(time.monotonic() - started, 3)
+        row.update(pid=process.pid, spawn_seconds=round(time.monotonic() - started, 3), process_phase='wait')
+        waited = time.monotonic()
+        original = None
+        try:
+            remaining = timeout - (waited - started)
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(argv, timeout)
+            process.wait(timeout=remaining)
+            row['cleanup']['reaped'] = True
+        except subprocess.TimeoutExpired:
+            original = subprocess.TimeoutExpired(argv, timeout)
+            row['process_phase'] = 'cleanup'
+            row['cleanup']['kill_attempted'] = True
+            cleanup_started = time.monotonic()
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+                row['cleanup']['kill_succeeded'] = True
+            except ProcessLookupError:
+                row['cleanup']['kill_succeeded'] = False
+            except OSError as error:
+                row['cleanup']['error_type'] = type(error).__name__
+            try:
+                process.wait(timeout=2)
+                row['cleanup']['reaped'] = True
+            except Exception as error:
+                row['cleanup']['reap_error_type'] = type(error).__name__
+            row['cleanup']['elapsed_seconds'] = round(time.monotonic() - cleanup_started, 3)
+        finally:
+            row['wait_seconds'] = round(time.monotonic() - waited, 3)
+        # Regular files avoid waiting for inherited stdout/stderr pipe EOF.
+        stdout.seek(0); stderr.seek(0)
+        out = stdout.read().decode('utf-8', errors='replace')
+        err = stderr.read().decode('utf-8', errors='replace')
+        if original is not None:
+            original.output, original.stderr = out, err
+            raise original
+        result = subprocess.CompletedProcess(argv, process.returncode, out, err)
+        result.check_returncode()
+        return result
+
+
+def _reduce_motion_command(phase, argv, timeout, status, retain_output=True):
+    """Capture only selected-simulator setup/probe output, never environment."""
+    started = time.monotonic()
+    row = {'phase': phase, 'command': argv, 'deadline_seconds': timeout}
+    stdout = stderr = ''
+    def text(value):
+        return value.decode('utf-8', errors='replace') if isinstance(value, bytes) else (value or '')
+    try:
+        result = _simulator_command(argv, timeout=timeout, row=row)
+        row.update(status='success', exit_code=result.returncode)
+        stdout, stderr = text(result.stdout), text(result.stderr)
+        return result
+    except Exception as error:
+        row.update(status='timeout' if isinstance(error, subprocess.TimeoutExpired) else ('nonzero' if isinstance(error, subprocess.CalledProcessError) else 'error'),
+                   error_type=type(error).__name__, exit_code=getattr(error, 'returncode', None))
+        stdout, stderr = text(getattr(error, 'output', None)), text(getattr(error, 'stderr', None))
+        raise
+    finally:
+        row['elapsed_seconds'] = round(time.monotonic() - started, 3)
+        # Inventory is filtered to the selected device by the caller; do not
+        # retain the full list, its paths, or unrelated simulator metadata.
+        if retain_output:
+            row.update(stdout=stdout, stderr=stderr)
+        else:
+            row.update(stdout_bytes=len(stdout.encode()), stderr_bytes=len(stderr.encode()))
+        status['commands'].append(row)
+
+
+def _reduce_motion_failure_probes(device, status):
+    deadline = time.monotonic() + 15
+    prefix = ['xcrun', 'simctl']
+    probes = (
+        ('state', prefix + ['list', 'devices', '--json']),
+        ('health', prefix + ['getenv', device['udid'], 'SIMULATOR_UDID']),
+        ('preference', prefix + ['spawn', device['udid'], 'defaults', 'read', 'com.apple.Accessibility', 'ReduceMotionEnabled']),
+    )
+    status['probe_total_budget_seconds'] = 15
+    status['probes'] = {}
+    for name, argv in probes:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            status['probes'][name] = {'status': 'budget_exhausted'}
+            continue
+        try:
+            result = _reduce_motion_command('probe-' + name, argv, min(5, remaining), status, retain_output=name != 'state')
+            if name == 'state':
+                rows = [d for group in json.loads(result.stdout)['devices'].values() for d in group if d.get('udid') == device['udid']]
+                assert len(rows) == 1, 'Selected simulator not uniquely represented'
+                status['probes'][name] = {'status': 'success', 'selected_device': {k: rows[0].get(k) for k in ('udid', 'state', 'isAvailable')}}
+            elif name == 'health':
+                matches = result.stdout.strip() == device['udid']
+                status['probes'][name] = {'status': 'success' if matches else 'wrong_device', 'selected_device_responded': matches}
+            else:
+                value = result.stdout.strip()
+                status['probes'][name] = {'status': 'success' if value in ('0', '1') else 'unavailable',
+                                         'enabled': value == '1' if value in ('0', '1') else None}
+        except Exception as probe_error:
+            status['probes'][name] = {'status': 'unavailable', 'error_type': type(probe_error).__name__}
+
+
+def _record_reduce_motion_status(status, started):
+    status['elapsed_seconds'] = round(time.monotonic() - started, 3)
+    (OUT / 'reduce-motion-setup.log').write_text(''.join(
+        row['phase'] + '\nstdout:\n' + row.get('stdout', '[selected inventory filtered]') +
+        '\nstderr:\n' + row.get('stderr', '[selected inventory filtered]') + '\n'
+        for row in status['commands']))
+    record('reduce-motion-setup.json', status)
+
+
 def configure_simulator_reduce_motion(device):
-    """Set only the disposable selected simulator; native observation is mandatory."""
+    """Keep the same setup budget/gate; diagnose failure without replacing it."""
+    started = time.monotonic()
     prefix = ['xcrun', 'simctl', 'spawn', device['udid'], 'defaults']
-    with (OUT / 'reduce-motion-setup.log').open('w') as log:
-        subprocess.run(prefix + ['write', 'com.apple.Accessibility', 'ReduceMotionEnabled', '-bool', 'true'],
-                       check=True, stdout=log, stderr=subprocess.STDOUT, timeout=10)
-        observed = subprocess.check_output(prefix + ['read', 'com.apple.Accessibility', 'ReduceMotionEnabled'],
-                                           text=True, timeout=10).strip()
-    assert observed == '1', 'Selected simulator Reduce Motion preference did not read back'
-    record('reduce-motion-setup.json', {'selected_device': device['udid'], 'preference_readback': observed,
-           'requested_enabled': True, 'native_UIAccessibility_observation_required': True,
-           'preference_readback_is_native_runtime_proof': False})
+    status = {'selected_device': device['udid'], 'phase': 'write', 'passed': False, 'commands': [],
+              'requested_enabled': True, 'native_UIAccessibility_observation_required': True,
+              'preference_readback_is_native_runtime_proof': False}
+    try:
+        _reduce_motion_command('write', prefix + ['write', 'com.apple.Accessibility', 'ReduceMotionEnabled', '-bool', 'true'], 10, status)
+        status['phase'] = 'read'
+        result = _reduce_motion_command('read', prefix + ['read', 'com.apple.Accessibility', 'ReduceMotionEnabled'], 10, status)
+        observed = result.stdout.strip()
+        status['preference_readback'] = observed
+        assert observed == '1', 'Selected simulator Reduce Motion preference did not read back'
+        status['passed'] = True
+    except Exception as original_error:
+        status['error_type'] = type(original_error).__name__
+        try:
+            _reduce_motion_failure_probes(device, status)
+        except Exception as diagnostic_error:
+            status['diagnostic_error_type'] = type(diagnostic_error).__name__
+        try:
+            _record_reduce_motion_status(status, started)
+        except Exception:
+            # Receipt I/O failure must not hide the original setup failure.
+            pass
+        raise
+    else:
+        _record_reduce_motion_status(status, started)
+
 
 
 def main(scope):
