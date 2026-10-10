@@ -305,7 +305,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     const selection=getSelection();if(!selection?.rangeCount)return;
     const range=selection.getRangeAt(0);if(session?.span?.isConnected&&range.intersectsNode(session.span))endIOS('cancel',false,false);
   });
-  document.addEventListener('visibilitychange',()=>{if(document.hidden&&iosOperation)endIOS('cancel');});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&iosOperation){endIOS('cancel');notice('Dictation stopped. The words so far were kept.');}});
   composer.addEventListener('submit',event=>{if(phase!=='idle'){event.preventDefault();event.stopImmediatePropagation();}},true);
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&phase!=='idle'){event.preventDefault();void cancel();}});
   window.addEventListener('pagehide',()=>{void cancel();clearInterval(poll);if(available())void nativeInvoke('configure_dictation',{enabled:false,modelName:''}).catch(()=>{});});
