@@ -100,7 +100,16 @@ pub(crate) fn show_system_notification(
         };
         return send().map_err(|e| e.to_string());
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let sound = crate::macos_notification::prepare_sound(
+            crate::notification_sound::allow(test),
+            crate::notification_sound::name(),
+            || crate::notification_sound::file(app).map(|_| ()),
+        );
+        return crate::macos_notification::send(title, body, portrait, sound);
+    }
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     {
         let mut notification = notify_rust::Notification::new();
         notification.summary(title).body(body).appname("Kindred");
@@ -109,10 +118,6 @@ pub(crate) fn show_system_notification(
         } else {
             None
         };
-        #[cfg(target_os = "macos")]
-        if sound.is_some() {
-            notification.sound_name(crate::notification_sound::name());
-        }
         #[cfg(target_os = "linux")]
         let daemon_sound = notify_rust::get_capabilities()
             .map(|caps| caps.iter().any(|cap| cap == "sound")).unwrap_or(true);

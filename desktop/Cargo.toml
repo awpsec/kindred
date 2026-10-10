@@ -27,6 +27,7 @@ winreg = "0.55"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_LibraryLoader", "Win32_Security", "Win32_Security_Cryptography", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_Media_Audio"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+mac-notification-sys = "=0.6.15"
 objc2 = "0.6"
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebViewConfiguration"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSWindow", "NSView", "NSScreen", "NSResponder", "NSTextCheckingClient", "objc2-core-foundation"] }
