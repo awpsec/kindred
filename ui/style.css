@@ -5533,9 +5533,11 @@ html[data-motion=off] .request-tray .question-choices{gap:8px}
 .queued-edit-prompt .row-actions{flex-wrap:wrap}.queued-edit-prompt p{margin:0 0 8px}.decision-receipt[data-receipt-tone=denied] .decision-receipt-outcome{color:var(--danger,#c73b4b)}
 
 /* Compact notices preserve their individual records and touch/keyboard actions. */
-.planning-card.reminder-card{border-radius:6px;background:color-mix(in srgb,var(--fg) 3%,var(--bg));padding:10px 12px;text-align:left;border:1px solid var(--line)}
+/* Match the approved notice surface: tint alone separates it from the chat. */
+.planning-card.reminder-card{max-width:560px;border:0;border-radius:3px;box-shadow:none;background:color-mix(in srgb,var(--fg) 3%,var(--bg));padding:12px 15px;text-align:left}
+.reminder-card .reminder-schedule{font-size:calc(12px * var(--text-scale,1))}.reminder-card .reminder-time{font-weight:500}
 .notice-excerpt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}.notice-details summary{font-size:calc(12px * var(--text-scale,1));color:var(--muted);cursor:pointer}.notice-details[open] p{white-space:pre-wrap}
-.reminder-batch{max-width:720px;width:100%}.notice-pager{display:flex;align-items:center;gap:8px;margin-bottom:4px}.notice-pager button:first-child{transform:rotate(180deg)}
+.reminder-batch{max-width:560px;width:100%}.notice-pager{display:flex;align-items:center;gap:8px;margin-bottom:4px}.notice-pager button:first-child{transform:rotate(180deg)}
 @media(hover:hover) and (pointer:fine){.reminder-actions{opacity:0}.reminder-card:hover .reminder-actions,.reminder-card:focus-within .reminder-actions{opacity:1}}
 
 .summary-progress{margin:10px 0 12px 20px;border-top:1px solid var(--line);padding-top:10px;max-width:calc(100% - 20px);font-size:calc(13px * var(--text-scale,1))}.summary-progress-heading{display:flex;flex-wrap:wrap;gap:5px 10px;cursor:pointer;list-style:none}.summary-progress-task{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.summary-progress-heading>.muted{flex-basis:100%}.summary-progress-body{padding-top:8px}.summary-progress-update{padding:5px 0;overflow-wrap:anywhere}.summary-progress-update p{margin:4px 0}.summary-progress-disclosure:not([open]) .summary-progress-body{display:none}
