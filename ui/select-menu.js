@@ -48,9 +48,9 @@ export function installThemedSelects(root=document) {
     list=menu;
     if(select.dataset.searchable==='true'){
       menu.setAttribute('role','presentation');
-      search=document.createElement('input');search.type='search';search.className='themed-select-search';search.placeholder='Search models…';search.setAttribute('aria-label','Search models');search.setAttribute('role','combobox');search.setAttribute('aria-autocomplete','list');search.setAttribute('aria-expanded','true');search.autocomplete='off';
+      search=document.createElement('input');search.type='search';search.className='themed-select-search';search.placeholder=select.dataset.searchPlaceholder||'Search models…';search.setAttribute('aria-label',select.dataset.searchPlaceholder?.replace(/[…]+$/,'')||'Search models');search.setAttribute('role','combobox');search.setAttribute('aria-autocomplete','list');search.setAttribute('aria-expanded','true');search.autocomplete='off';
       list=document.createElement('div');list.id=menu.id+'-options';list.setAttribute('role','listbox');list.setAttribute('aria-label',menu.getAttribute('aria-label'));search.setAttribute('aria-controls',list.id);select.setAttribute('aria-controls',list.id);
-      empty=document.createElement('div');empty.className='themed-select-empty';empty.setAttribute('role','status');empty.textContent='No matching models';empty.hidden=true;menu.append(search,list,empty);
+      empty=document.createElement('div');empty.className='themed-select-empty';empty.setAttribute('role','status');empty.textContent=select.dataset.searchEmpty||'No matching models';empty.hidden=true;menu.append(search,list,empty);
       search.oninput=filter;
       search.onkeydown=event=>{
         if(event.isComposing)return;
