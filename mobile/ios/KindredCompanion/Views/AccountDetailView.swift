@@ -101,7 +101,7 @@ struct AccountDetailView: View {
         .alert(item: $forcePrompt) { prompt in
             Alert(
                 title: Text("Notifications Weren't Removed"),
-                message: Text("\(prompt.message)\n\nThe server may keep sending generic alerts to this device until the registration ends there. Continue anyway?"),
+                message: Text("\(prompt.message)\n\nThe server may keep sending alerts to this device until the registration ends there. Continue anyway?"),
                 primaryButton: .destructive(Text(prompt.action == .remove ? "Remove Anyway" : "Sign Out Anyway")) {
                     perform(prompt.action, force: true)
                 },
@@ -136,7 +136,7 @@ struct AccountDetailView: View {
         } header: {
             Text("Notifications")
         } footer: {
-            Text("Alerts show only a generic message. Tapping one opens the conversation in Kindred.")
+            Text("Bot updates show a generic message. Reminders include their text and time. Tapping an alert opens the conversation.")
         }
     }
 

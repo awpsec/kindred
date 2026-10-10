@@ -15,13 +15,13 @@ const {server,token}=require('./fixtures/desktop.cjs'),assert=require('node:asse
  const refresh=account.getByRole('button',{name:'Refresh Codex connectors',exact:true});await refresh.click();assert(await refresh.isDisabled());await account.getByRole('heading',{name:'Gmail (via Codex)',exact:true}).waitFor();assert((await account.innerText()).includes('Each call needs review'));assert((await account.innerText()).includes('Unavailable'));
  mode='empty';await refresh.click();await account.getByText('No connectors were returned', {exact:false}).waitFor();assert.equal(await account.getByRole('heading',{name:'Gmail (via Codex)',exact:true}).count(),0);
  mode='error';await refresh.click();await account.getByText('Connector refresh failed',{exact:false}).waitFor();assert.equal(await refresh.isDisabled(),false);assert.equal(calls,3);
- const status=account.locator('.provider-catalog [role="status"]');
+ const status=account.locator('.provider-catalog:not(.decisions-connection) [role="status"]');
  mode='challenge';await refresh.click();await status.filter({hasText:'browser security check (HTTP 403)'}).waitFor();assert((await status.innerText()).length<250);assert.equal(await refresh.isDisabled(),false);
  assert(!(await account.innerText()).includes('fixture-challenge-token'));assert(!(await account.innerText()).includes('<html>'));assert.equal(await account.locator('.connector-setting-row').count(),0);
  assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  mode='long';await refresh.click();await status.filter({hasText:'Request details'}).waitFor();assert((await status.innerText()).length<=480);
  mode='degraded';await refresh.click();await status.filter({hasText:'unavailable until a refresh succeeds'}).waitFor();await account.getByRole('heading',{name:'Gmail (via Codex)',exact:true}).waitFor();assert.equal(await account.locator('.connector-setting-row').getByText('Unavailable',{exact:true}).count(),1);assert((await status.getAttribute('class')).includes('run-error'));
- mode='connected';await refresh.click();await status.filter({hasText:'Available through'}).waitFor();assert(!(await status.getAttribute('class')).includes('run-error'));assert.equal(await refresh.isDisabled(),false);assert.equal(calls,7);
+ mode='connected';await refresh.click();await status.waitFor({state:'hidden'});await account.getByRole('heading',{name:'Calendar (via Codex)',exact:true}).waitFor();assert(!(await status.getAttribute('class')).includes('run-error'));assert.equal(await refresh.isDisabled(),false);assert.equal(calls,7);
  assert.equal(await p.getByRole('button',{name:'Refresh Claude connectors',exact:true,includeHidden:true}).count(),1);
  console.log('Account connector panel: populated, unavailable, empty, bounded HTML/long errors, blocked metadata, successful recovery and Claude parity passed');
 }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});

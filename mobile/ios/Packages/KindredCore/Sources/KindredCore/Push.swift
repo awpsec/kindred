@@ -31,7 +31,7 @@ public enum APNsToken {
 }
 
 /// A tapped notification. Kindred payloads carry identifiers only; the alert
-/// text is generic and the content is fetched by the web UI after unlock.
+/// text is not used for routing; chat content is fetched by the web UI after unlock.
 public struct PushRoute: Equatable, Sendable {
     /// The server-side account UUID the alert is for.
     public let serverAccountID: String

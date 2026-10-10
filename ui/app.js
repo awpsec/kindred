@@ -2533,7 +2533,7 @@ async function settingsConnections(revision) {
       if(provider===openCodePlans[0])openCodeAccount(ai,openCodePlans);
       continue;
     }
-    const row=accountCard(provider);ai.append(row.card);
+    const row=accountCard(provider);row.card.dataset.provider=provider.id;ai.append(row.card);
     if(provider.kind==='subscription') {
       const message=node('p','muted small','Checking account…'), actions=node('div','row-actions');row.body.append(message,actions);
       let revision=0,signingIn=false;
@@ -2566,7 +2566,7 @@ async function settingsConnections(revision) {
       }));
       if(['claude-code','codex'].includes(provider.id)) {
         const codex=provider.id==='codex',source=codex?'Codex':'Claude';
-        const inherited=node('div','provider-catalog'),status=node('p','muted small',codex?'Refresh to check connected apps.':source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
+        const inherited=node('div','provider-catalog connection-section'),status=node('p','muted small',codex?'Refresh to check connected apps.':source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
         status.setAttribute('role','status');
         const refreshConnectors=async()=>{
           refresh.disabled=true;status.hidden=false;status.classList.remove('run-error');status.textContent='Checking '+source+' account connectors…';items.replaceChildren();
@@ -2581,7 +2581,8 @@ async function settingsConnections(revision) {
           finally{refresh.disabled=false;}
         };
         const refresh=button('Refresh '+source+' connectors',refreshConnectors);
-        inherited.append(node('strong','',source+' account connectors'),status,items,refresh);
+        const heading=node('div','connection-section-heading');heading.append(node('strong','',source+' account connectors'),refresh);
+        inherited.append(heading,status,items);
         if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Each connector call requires review.'));
         else{const manage=node('a','outline-button','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';inherited.append(manage);}
         row.body.append(inherited);
@@ -4565,7 +4566,7 @@ function planningError(message,feedback){
   if(feedback?.closest('dialog[open],.artifact-library')){feedback.textContent=message;feedback.hidden=false;}
   else notice(message,true);
 }
-async function planningPatch(kind,record,patch,feedback){
+async function planningPatch(kind,record,patch,feedback,beforeRefresh){
   if(planningPending.has(record.id))return null;
   if(feedback)feedback.hidden=true;
   planningPending.add(record.id);let saved=null;
@@ -4573,6 +4574,7 @@ async function planningPatch(kind,record,patch,feedback){
     saved=await api(`/chats/${encodeURIComponent(record.chat_id)}/${kind}/${encodeURIComponent(record.id)}`,'PATCH',{expected_revision:record.revision,...patch});
   }catch(e){planningError(e.message,feedback);}
   finally{planningPending.delete(record.id);}
+  if(saved&&beforeRefresh)await beforeRefresh(saved);
   if(saved)document.querySelector('.artifact-library-record[data-artifact-id="'+CSS.escape(saved.id)+'"] .artifact-record-body')?.dispatchEvent(new CustomEvent('kindred-planning-saved',{detail:saved}));
   // A confirmed save remains successful even if refreshing the conversation fails.
   state.chatKey='';
@@ -4702,11 +4704,37 @@ function reminderBatch(messages,entry){
   const first=messages[0],records=first.planning_batch||messages.map(m=>m.planning),key=first.planning.batch_id;
   entry.reminderPages??=new Map();const remembered=entry.reminderPages.get(key),index=Math.max(0,records.findIndex(r=>r.id===remembered)),root=node('section','reminder-batch'),slot=node('div');
   const bar=node('div','notice-pager'),page=node('span','muted small');let current=index;
-  const paint=()=>{const focus=bar.contains(document.activeElement)?document.activeElement:null;const r=records[current];entry.reminderPages.set(key,r.id);page.textContent=(current+1)+' / '+records.length;const card=reminderCard(r);card.querySelector('.reminder-schedule')?.append(bar);slot.replaceChildren(card);focus?.focus({preventScroll:true});};
+  const paint=()=>{const focus=bar.contains(document.activeElement)?document.activeElement:null;const r=records[current];entry.reminderPages.set(key,r.id);page.textContent=(current+1)+' / '+records.length;const card=reminderCard(r);(card.querySelector('.reminder-schedule')||card).append(bar);slot.replaceChildren(card);focus?.focus({preventScroll:true});};
   const step=delta=>{current=(current+delta+records.length)%records.length;paint();};
   bar.append(iconButton('chevron','Previous reminder',()=>step(-1)),page,iconButton('chevron','Next reminder',()=>step(1)));root.append(slot);paint();return root;
 }
+async function dismissReminder(reminder,feedback){
+  await planningPatch('reminders',reminder,{dismiss:true},feedback,async saved=>{
+    const animations=[];
+    for(const previous of document.querySelectorAll('.reminder-card[data-reminder="'+CSS.escape(reminder.id)+'"]')){
+      const height=previous.getBoundingClientRect().height,focused=previous.contains(document.activeElement),next=reminderCard(saved);
+      const pager=previous.querySelector('.notice-pager');if(pager)next.append(pager);
+      previous.replaceWith(next);
+      if(focused){next.tabIndex=-1;next.focus({preventScroll:true});}
+      const end=next.getBoundingClientRect().height;
+      if(motionAllowed()&&height>end){
+        next.style.overflow='hidden';
+        const motion=next.animate([{height:height+'px'},{height:end+'px'}],{duration:240,easing:'cubic-bezier(.22,1,.36,1)'});
+        animations.push(motion.finished.catch(()=>{}).finally(()=>{next.style.overflow='';}));
+      }
+    }
+    await Promise.all(animations);
+  });
+}
 function reminderCard(reminder,delivered=false){
+  if(reminder.dismissed_at){
+    const card=node('section','planning-card reminder-card reminder-dismissed'),when=reminderWhen(reminder);
+    card.dataset.reminder=reminder.id;card.dataset.status='dismissed';
+    card.setAttribute('aria-label','Dismissed reminder: '+reminder.message+', '+when.full);
+    const text=node('span','reminder-dismissed-text',reminder.message),time=node('time','reminder-dismissed-time',when.label);
+    text.title=reminder.message;time.dateTime=new Date(reminder.run_at*1000).toISOString();time.title=when.full;
+    card.append(icon('check',13),text,time);return card;
+  }
   const card=node('section','planning-card reminder-card'),feedback=planningFeedback(),when=reminderWhen(reminder);card.dataset.reminder=reminder.id;card.dataset.status=reminder.status;
   const title=delivered?'Reminder':reminder.status==='pending'?'Reminder set':`Reminder ${reminder.status}`;
   card.setAttribute('aria-label',title+', '+when.label);
@@ -4716,7 +4744,13 @@ function reminderCard(reminder,delivered=false){
   if(when.zone){const zone=node('span','reminder-zone',when.zone);zone.title=reminder.timezone;schedule.append(zone);}
   if(delivered||reminder.status!=='pending')schedule.append(node('span','reminder-status',delivered||reminder.status==='delivered'?'Delivered':reminder.status==='cancelled'?'Cancelled':reminder.status==='paused'?'Paused':reminder.status));
   meta.append(schedule);
-  if(!delivered&&reminder.status!=='delivered'){
+  if(delivered||reminder.status==='delivered'){
+    const actions=node('div','reminder-actions'),dismiss=button('Dismiss',async()=>{
+      dismiss.disabled=true;
+      try{await dismissReminder(reminder,feedback);}finally{dismiss.disabled=false;}
+    },'subtle-button small-button');
+    actions.append(dismiss);meta.append(actions);
+  }else{
     const actions=node('div','reminder-actions');actions.append(button(reminder.status==='cancelled'?'Reschedule':'Edit',()=>editReminder(reminder),'subtle-button small-button'));
     if(reminder.status!=='cancelled')actions.append(button('Cancel',async()=>{await planningPatch('reminders',reminder,{cancel:true},feedback);},'subtle-button small-button'));
     meta.append(actions);
@@ -8034,8 +8068,7 @@ function desktopNotificationControl() {
           catch(e){notchToggle.input.checked=notchEnabled;notice(e.message||String(e),true);}
           finally{notchToggle.input.disabled=false;}
         };
-        const help=node('p','muted small settings-device-status','Replaces system banners and appears even during macOS Focus.');
-        root.append(notchToggle.label,help);
+        root.append(notchToggle.label);
       }
 
       if(window.__KINDRED_DESKTOP?.platform==='macos'&&!value.notch?.supported&&!root.querySelector('.notch-update-required'))root.append(node('p','muted small notch-update-required','Notch notifications require Mac client 0.51.0 or newer. Desktop app on this device: '+(installedClientVersion()||'Unknown')+'. Update the client to enable them.'));
@@ -8308,7 +8341,8 @@ function workflowOptions(chatId,panel){return {
 function animateWorkflowDetails(root){for(const details of root.querySelectorAll('.workflow-details')){const body=node('div','chat-disclosure-body');for(const child of [...details.children])if(child.tagName!=='SUMMARY')body.append(child);details.append(body);animateChatDisclosure(details,body);}}
 
 async function decisionsConnection() {
-  const root=node('div','provider-catalog decisions-connection');root.append(node('h3','','Decisions API (optional)'));
+  const root=node('div','provider-catalog connection-section decisions-connection'),heading=node('div','connection-section-heading');
+  heading.append(node('strong','','Decisions API'),node('span','muted small','Optional'));root.append(heading);
   const status=node('p','muted small');status.setAttribute('role','status');
   const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'Paste your OpenAI API key'}),actions=node('div','row-actions');
   key.input.spellcheck=false;key.input.autocapitalize='off';
