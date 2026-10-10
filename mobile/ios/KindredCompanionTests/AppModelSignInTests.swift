@@ -94,6 +94,63 @@ final class AppModelSignInTests: XCTestCase {
         XCTAssertTrue(model.accounts.isEmpty)
     }
 
+    func testRenamedUsernameReSignInReusesImmutableAccountAndInstallation() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("kindred.example.com")
+        try await model.signIn(origin: origin, login: "ada", password: "password")
+        let saved = try XCTUnwrap(model.accounts.first)
+        let nextToken = String(repeating: "b2", count: 32)
+        let account = serverAccount
+        StubProtocol.handler = { request in
+            switch request.url?.path {
+            case "/identity/meta": return (200, Data(#"{"profiles":true}"#.utf8))
+            case "/identity/login": return (200, Data(#"{"token":"\#(nextToken)","profile_id":"p-1"}"#.utf8))
+            case "/identity/profiles":
+                return (200, Data(#"{"active":"p-1","account_id":"\#(account)","username":"new-name","profiles":[{"id":"p-1","name":"Ada's Studio","active":true}]}"#.utf8))
+            case "/identity/logout": return (200, Data("{}".utf8))
+            default: return (404, Data())
+            }
+        }
+        try await model.signIn(origin: origin, login: "new-name", password: "password")
+        XCTAssertEqual(model.accounts.count, 1)
+        let refreshed = try XCTUnwrap(model.accounts.first)
+        XCTAssertEqual(refreshed.id, saved.id)
+        XCTAssertEqual(refreshed.push.installationID, saved.push.installationID)
+        XCTAssertEqual(refreshed.serverAccountID, saved.serverAccountID)
+        XCTAssertEqual(refreshed.login, "new-name")
+        XCTAssertEqual(model.activeAccountID, saved.id)
+        XCTAssertEqual(try secrets.token(for: saved.id), nextToken)
+    }
+
+    func testSameSessionAccountSaveRefreshesNameWithoutReplacingSession() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("kindred.example.com")
+        try await model.signIn(origin: origin, login: "ada", password: "password")
+        let saved = try XCTUnwrap(model.accounts.first)
+        let session = model.session(for: saved)
+        session.webView.stopLoading()
+        defer { session.tearDown() }
+        let account = serverAccount
+        StubProtocol.handler = { request in
+            guard request.url?.path == "/identity/profiles" else { return (404, Data()) }
+            return (200, Data(#"{"active":"p-1","account_id":"\#(account)","username":"changed-name","admin":true,"role":"owner","owner_resolved":true,"profiles":[{"id":"p-1","name":"Ada's Studio","active":true}]}"#.utf8))
+        }
+        model.webSession(session, didReceive: .session(token: token, profileID: "p-1"))
+        let deadline = Date().addingTimeInterval(2)
+        while model.account(saved.id)?.login != "changed-name", Date() < deadline {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let refreshed = try XCTUnwrap(model.account(saved.id))
+        XCTAssertEqual(refreshed.login, "changed-name")
+        XCTAssertEqual(refreshed.id, saved.id)
+        XCTAssertEqual(refreshed.push.installationID, saved.push.installationID)
+        XCTAssertEqual(refreshed.serverAccountID, saved.serverAccountID)
+        XCTAssertEqual(refreshed.administrativeRole, .owner)
+        XCTAssertTrue(model.session(for: refreshed) === session)
+        XCTAssertEqual(try secrets.token(for: saved.id), token)
+        XCTAssertEqual(model.accounts.count, 1)
+    }
+
     func testSignInKeepsTheTokenOutOfMetadata() async throws {
         serveKindred()
         let origin = try ServerAddress.normalize("kindred.example.com")
