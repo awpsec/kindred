@@ -10,12 +10,15 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test
   p.on('pageerror',e=>errors.push(e.message));
   const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper'],archived:false};
   const messages=[{seq:1,sender:'user',text:'Please review the report and highlight anything that needs my attention.',kind:'message',created:now-60},
-    {seq:2,sender:'piper',text:'I have the report ready. I’ll check the findings against the supporting evidence next.',kind:'assistant',created:now-55}];
+    {seq:2,sender:'piper',text:'I have the report ready. The browser needs a quick verification before I can check the supporting evidence.',run_id:'takeover-run',kind:'assistant',created:now-55}];
   await context.route(origin+'/api/**',async route=>{
    const request=route.request(),name=new URL(request.url()).pathname.slice(4),send=json=>route.fulfill({json});
    if(request.method()!=='GET')writes.push(name);
    if(name==='/chats/'+chat.id)return send({chat,messages});
-   if(name==='/runs')return send([]);if(name==='/activity')return send({});
+   if(name==='/runs')return send([{id:'takeover-run',bot_id:'piper',chat_id:chat.id,status:'awaiting_user',created:now-55,prompt:messages[0].text,output:'',error:''}]);
+   if(name==='/runs/takeover-run')return send({run:{id:'takeover-run',bot_id:'piper',chat_id:chat.id,status:'awaiting_user',created:now-55},events:[],approvals:[],attachments:[]});
+   if(name==='/user-tasks')return send([{id:'takeover-step',run_id:'takeover-run',bot_id:'piper',title:'Complete browser verification',instructions:'Complete the verification in the browser, then return control.',status:'pending',created:now-50}]);
+   if(name==='/activity')return send({});
    return route.continue();
   });
   await context.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);await p.goto(origin);
@@ -25,6 +28,7 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test
   const row=p.locator('.model-change-notice');await row.waitFor();
   assert.match((await row.innerText()).replace(/\s+/g,' '),/Model changed from Opus 5.5 to Luna 6/);
   assert.equal(await row.locator('.model-change-mark').count(),2);assert.equal(await row.locator('.provider-symbol[data-provider="claude-code"]').count(),1);
+  assert(await row.evaluate(el=>{const r=el.getBoundingClientRect(),c=el.querySelector('.model-change-copy').getBoundingClientRect();return Math.abs((r.left+r.right)-(c.left+c.right))<2&&getComputedStyle(el,'::before').height==='1px'&&getComputedStyle(el,'::after').height==='1px';}),'System notice is centered between two separator lines');
   assert.equal(await row.locator('button').count(),0);assert.equal(await row.locator('.bubble,.task-card').count(),0);
   for(const theme of ['dark','light']){
    await p.evaluate(t=>document.documentElement.dataset.theme=t,theme);
