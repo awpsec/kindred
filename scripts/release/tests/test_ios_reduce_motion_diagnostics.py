@@ -97,7 +97,8 @@ class ReduceMotionDiagnosticsTests(unittest.TestCase):
   with patch.object(m,'ROOT',root),patch.object(m,'OUT',out),patch.dict(m.os.environ,EXPECTED_SOURCE=source),patch.object(m,'_simulator_command',side_effect=run),patch.object(m.subprocess,'run',side_effect=run),patch.object(m.subprocess,'check_output',side_effect=output),patch.object(m.subprocess,'Popen',side_effect=popen),patch.object(m.ssl,'create_default_context'),patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps({'origin':'https://localhost:8765','ui_sha256':{}}).encode())):
    with self.assertRaises(SystemExit):m.main('composer')
   self.assertEqual(len(captured),2);self.assertEqual(captured[-1][0],'xcodebuild')
-  self.assertIn('CODE_SIGNING_ALLOWED=NO',captured[-1]);self.assertIn('-only-testing:KindredCompanionTests/ComposerUIKitTests',captured[-1])
+  self.assertIn('CODE_SIGNING_ALLOWED=NO',captured[-1]);self.assertNotIn('-only-testing:KindredCompanionTests/ComposerUIKitTests',captured[-1])
+  self.assertEqual(sorted(x for x in captured[-1] if x.startswith('-only-testing:KindredCompanionTests/ComposerUIKitTests/')), sorted('-only-testing:KindredCompanionTests/'+name.removesuffix('()') for name in m.COMPOSER_PHASES))
   self.assertEqual(native.wait.call_args.kwargs['timeout'],720)
   row=json.loads((out/'test-receipt.json').read_text());self.assertFalse(row['passed']);self.assertNotIn('native_test_count',row)
   self.assertFalse(row['real_Apple_recognition_selected']);self.assertEqual(row['required_native_phases'],53)
