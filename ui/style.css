@@ -5842,6 +5842,10 @@ html .shell>:is(.details-panel,.computer-panel).pane-layout-frame{
 .connection-section>p{line-height:1.5}
 .connection-section>label{display:grid;gap:7px}.connection-section>label>input{margin-top:0}
 .connection-section>.row-actions{padding-top:2px}
-.ai-account-body .connection-section .connector-setting-row{padding:8px 0}
-.ai-account-body .connection-section .connector-setting-row p{margin:3px 0 0}
+.ai-account-body .connection-section .account-connector-row{padding:5px 0;border:0;min-height:30px;box-sizing:border-box}
+.account-connector-row .connector-heading{gap:8px}
+.account-connector-row .connector-heading strong{font-size:calc(13px * var(--text-scale,1));font-weight:500;line-height:20px}
+.account-connector-row .connector-logo{width:20px;height:20px;flex:0 0 20px;border-radius:4px;background:transparent;color:var(--muted);box-shadow:none}
+.account-connector-row .connector-logo svg{width:16px;height:16px}
+.ai-account-body .connection-section .account-connector-row p{margin:3px 0 0 28px;font-size:calc(12px * var(--text-scale,1));line-height:1.5}
 @media(max-width:480px){.reminder-dismissed-time{max-width:40%;overflow:hidden;text-overflow:ellipsis}.connection-section-heading{gap:8px}.connection-section-heading>button{min-height:36px}}

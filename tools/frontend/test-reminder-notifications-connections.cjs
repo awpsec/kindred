@@ -16,8 +16,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await p.route(origin+'/api/codex/account',r=>r.fulfill({json:{account:{type:'chatgpt',email:'you@example.com'}}}));
   await p.route(origin+'/api/provider-cli/claude-code/account',r=>r.fulfill({json:{connected:true,message:'you@example.com'}}));
   await p.route(origin+'/api/connections/decisions',r=>r.fulfill({json:{configured:true,source:'saved'}}));
-  await p.route(origin+'/api/codex/connectors',r=>r.fulfill({json:{connections:[{display_name:'Calendar',status:'connected'}]}}));
-  await p.route(origin+'/api/provider-cli/claude-code/connectors',r=>r.fulfill({json:{data:[{display_name:'Calendar',status:'connected'}]}}));
+  await p.route(origin+'/api/codex/connectors',r=>r.fulfill({json:{connections:[{display_name:'Gmail',status:'connected'},{display_name:'Google Calendar',status:'connected'},{display_name:'Calendar',status:'connected'},{display_name:'Custom service',status:'needs-auth'}]}}));
+  await p.route(origin+'/api/provider-cli/claude-code/connectors',r=>r.fulfill({json:{data:[{display_name:'Gmail',status:'connected'},{display_name:'Google Calendar',status:'connected'},{display_name:'Calendar',status:'connected'},{display_name:'Custom service',status:'needs-auth'}]}}));
   await p.route(origin+'/api/composio',r=>r.fulfill({json:{configured:false,apps:[]}}));
   await p.goto(origin);await p.locator('#prompt').waitFor();await p.bringToFront();
   const card=p.locator('.reminder-card').first();await card.waitFor();
@@ -49,6 +49,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    const account=p.locator('.ai-account[data-provider="'+provider+'"]');await account.locator('summary').click();await account.getByText('you@example.com',{exact:true}).waitFor();
    const section=account.locator('.connection-section').first();assert.equal(await section.locator('.catalog-model-list').evaluate(n=>getComputedStyle(n).display),'none');
    await section.getByRole('button',{name:/Refresh .* connectors/}).click();await section.getByText('Calendar',{exact:false}).first().waitFor();
+   const rows=section.locator('.account-connector-row');assert.equal(await rows.count(),4);
+   const copy=await rows.allTextContents();assert.deepEqual(copy.slice(0,3),['Gmail','Google Calendar','Calendar']);assert(!copy.join(' ').includes('(via '));assert(copy[3].includes('Reconnect in '+(provider==='codex'?'Codex':'Claude')));
+   assert.equal(await rows.locator('.connector-logo svg').count(),4);
+   assert(await rows.first().evaluate(n=>n.getBoundingClientRect().height<=32));
+   assert(await rows.first().locator('strong').evaluate(n=>parseFloat(getComputedStyle(n).fontSize)<=13));
+   assert(await rows.first().locator('.connector-logo').evaluate(n=>n.getBoundingClientRect().width===20));
+
    for(const width of [1180,390]){await p.setViewportSize({width,height:850});assert(await section.evaluate(n=>n.scrollWidth<=n.clientWidth+1));}
    await p.setViewportSize({width:1180,height:850});
    await p.evaluate(()=>document.documentElement.dataset.theme='dark');await p.waitForTimeout(250);await p.screenshot({path:path.join(out,engine+'-'+provider+'-connections-dark.png')});

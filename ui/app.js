@@ -2574,9 +2574,18 @@ async function settingsConnections(revision) {
             const result=await api(codex?'/codex/connectors':'/provider-cli/claude-code/connectors','POST',{});
             if(!inherited.isConnected)return;
             const rows=(codex?result.connections:result.data)||[];
-            status.hidden=codex&&rows.length>0&&!result.warning;status.textContent=rows.length?(codex?'':'Available through this workspace’s '+source+' sign-in. Kindred-connected apps remain available to all providers.'):'No connectors were returned by this '+source+' account. Connect an app in '+source+', then refresh.';
+            status.hidden=rows.length>0&&!result.warning;status.textContent=rows.length?(codex?'':'Available through this workspace’s '+source+' sign-in. Kindred-connected apps remain available to all providers.'):'No connectors were returned by this '+source+' account. Connect an app in '+source+', then refresh.';
             if(result.warning){status.textContent=connectorRefreshMessage(result.warning,source);status.classList.add('run-error');}
-            for(const connection of rows){const item=node('div','connector-setting-row'),info=node('div');info.append(connectorHeading(connection.display_name,source),node('p','muted small',connection.status==='connected'?'Connected':connection.status==='needs-auth'?'Reconnect in '+source:'Unavailable'));if(codex&&connection.availability_message)info.append(node('p','muted small',connection.availability_message));item.append(info);items.append(item);}
+            for(const connection of rows){
+              const item=node('div','connector-setting-row account-connector-row'),info=node('div'),brand=connectorBrand(connection.display_name||''),heading=connectorHeading(connection.display_name||'','');
+              if(!CONNECTOR_ICONS[brand.key])heading.querySelector('.connector-logo').replaceChildren(icon(brand.key==='calendar'?'calendar':'link',16));
+              info.append(heading);
+              if(connection.status!=='connected'){
+                info.append(node('p','muted small',connection.status==='needs-auth'?'Reconnect in '+source:'Unavailable'));
+                if(connection.availability_message)info.append(node('p','muted small',connection.availability_message));
+              }
+              item.append(info);items.append(item);
+            }
           }catch(e){if(inherited.isConnected){status.textContent=connectorRefreshMessage(e,source);status.classList.add('run-error');}}
           finally{refresh.disabled=false;}
         };
@@ -7816,7 +7825,7 @@ function connectorLogo(brand) {
   return box;
 }
 function connectorHeading(name,source,tool='') {
-  const brand=connectorBrand(name,tool),row=node('div','connector-heading'),heading=node('strong','',`${brand.name} (via ${source})`);heading.setAttribute('role','heading');heading.setAttribute('aria-level','4');row.append(connectorLogo(brand),heading);return row;
+  const brand=connectorBrand(name,tool),row=node('div','connector-heading'),heading=node('strong','',source?`${brand.name} (via ${source})`:brand.name);heading.setAttribute('role','heading');heading.setAttribute('aria-level','4');row.append(connectorLogo(brand),heading);return row;
 }
 function connectorSourceLabel(source='') {
   const key=String(source).toLowerCase();

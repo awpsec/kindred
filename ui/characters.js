@@ -1081,6 +1081,7 @@ function delivery(box) {
   animateCharacter(box);
 }
 const iconPaths = {
+  calendar: "M8 3v4M16 3v4M3 10h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z",
   chat: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-3 3V11.5A8.5 8.5 0 0 1 9.5 3h3a8.5 8.5 0 0 1 8.5 8.5Z",
   list: "M4 6h.01M4 12h.01M4 18h.01M9 6h12M9 12h12M9 18h12",
   reply: "M9 5 4 10l5 5M4 10h10a6 6 0 0 1 0 12",
