@@ -209,13 +209,13 @@ export function artifactStudio({api,markdown,baseUrl,chats=[],initialChatId,onEx
   dialog.oncancel=e=>{if(folderBusy)e.preventDefault();};dialog.showModal();if(!remove){input.focus();input.select();}
  }
  function folderActions(name,anchor){
-  closeContext();context=el('div','artifact-context-menu');context.setAttribute('role','menu');
+  closeContext();context=el('div','artifact-context-menu artifact-folder-context-menu');context.setAttribute('role','menu');
   for(const [label,remove]of [['Rename folder',false],['Remove empty folder',true]]){
    const action=btn(label,()=>{closeContext();editFolder(name,remove);});action.setAttribute('role','menuitem');
    action.disabled=remove&&items.some(v=>v.folder===name);context.append(action);
   }
   root.append(context);const rect=anchor.getBoundingClientRect(),box=context.getBoundingClientRect();context.style.left=Math.max(8,Math.min(rect.left,innerWidth-box.width-8))+'px';context.style.top=Math.max(8,Math.min(rect.bottom,innerHeight-box.height-8))+'px';context.querySelector('button').focus();
-  context.onkeydown=e=>{if(e.key==='Escape'){closeContext();anchor.focus();}else if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();const buttons=[...context.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement);buttons[(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus();}};
+  context.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeContext();anchor.focus();}else if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();const buttons=[...context.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement);buttons[(index+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus();}};
  }
  async function duplicateArtifact(item){
   if(!await flushTitle()||!canLeave())return;
