@@ -5119,7 +5119,7 @@ function connectorMessage(m,id){
   const body=node('div','chat-disclosure-body');body.append(receipt);body.inert=!disclosure.open;body.id='connector-details-'+encodeURIComponent(card.id);summary.setAttribute('aria-controls',body.id);summary.setAttribute('aria-expanded',String(disclosure.open));
   disclosure.append(summary,body);animateChatDisclosure(disclosure,body);group.append(disclosure);return group;
 }
-const simpleApprovalTools=new Set(['guest_exec','computer_open_url','computer_click','computer_type','computer_key','computer_scroll','computer_browser_task','routine_create','routine_update','routine_control','inbox_monitor_save','share_file']);
+const simpleApprovalTools=new Set(['bot_instructions_update','guest_exec','computer_open_url','computer_click','computer_type','computer_key','computer_scroll','computer_browser_task','routine_create','routine_update','routine_control','inbox_monitor_save','share_file']);
 function simpleApproval(a){return simpleApprovalTools.has(a.tool)&&!a.args?.artifact_id&&!a.connector_artifact;}
 const trayState=new Map(),queueEditBusy=new Set();
 function approvalChat(run){const source=state.chats.find(c=>c.id===run?.chat_id);return source&&!source.bot_only&&!source.archived?source.id:run?'dm-'+run.bot_id:'';}
@@ -5149,7 +5149,7 @@ function renderRequestTray(chat,entry){
   tray.dataset.chat=chat.id;
   const item=requests[index],card=item.q?questionCard(item.q):approvalCard(item.a,item.run);
   card.classList.add('in-request-tray');card.querySelector('.task-card-title')?.remove();
-  const heading=card.querySelector('.question-title,.task-description');
+  const heading=card.querySelector('.question-title,.task-description,h3');
   const title=heading?.textContent||'Review request';
   tray.classList.toggle('is-minimized',model.minimized);
   if(model.minimized){
@@ -7666,7 +7666,7 @@ function instructionApprovalCard(a,run){
     receipt.append(node('span','',a.status==='approved'?'Allowed for this change':a.status==='denied'?'Declined':a.status));
     card.append(receipt);
   }
-  return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+target+'’s instructions',outcome:a.status==='approved'?'Allowed':a.status==='denied'?'Declined':'Expired',terminal:a.status!=='pending'});
+  return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+target+'’s instructions',outcome:a.status==='approved'?'Approved':a.status==='denied'?'Denied':'Expired',terminal:a.status!=='pending',compact:true});
 }
 function chatEditApprovalCard(a,run){
   const card=node('section','approval-card instruction-review chat-edit-review'),before=a.args.before||{},after=a.args.after||{};
