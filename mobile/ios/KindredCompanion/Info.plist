@@ -74,6 +74,8 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Kindred uses on-device speech recognition when you choose to dictate a draft. Dictation never sends your message automatically.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Kindred uses the microphone when you choose to dictate or record audio in a conversation.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

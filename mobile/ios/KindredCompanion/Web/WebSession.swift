@@ -26,10 +26,16 @@ final class WebSession: NSObject {
     static let sessionHandler = "kindredSession"
     static let accountsHandler = "kindredAccounts"
     static let navigationHandler = "kindredNavigation"
+    static let dictationHandler = "kindredDictation"
     let loadState = WebLoadState()
     private var edgeBack: EdgeBackGesture?
     private var geometry: String?
     private var nativeNavigationBlocked = false
+    let dictation = NativeDictation()
+    private var dictationDocumentGeneration: UInt64 = 0
+    private var dictationDocumentID: String?
+    private var dictationChatID: String?
+    private var dictationCommands = DictationCommandQueue()
     static var downloadsFolder: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("Downloads", isDirectory: true)
     }
@@ -70,6 +76,9 @@ final class WebSession: NSObject {
         controller.add(proxy, contentWorld: .page, name: WebSession.sessionHandler)
         controller.add(proxy, contentWorld: .page, name: WebSession.accountsHandler)
         controller.add(proxy, contentWorld: .page, name: WebSession.navigationHandler)
+        controller.add(proxy, contentWorld: .page, name: WebSession.dictationHandler)
+        dictation.emit = { [weak self] payload in self?.emitDictation(payload) }
+        dictation.availabilityChanged = { [weak self] in self?.publishDictationCapability() }
         edgeBack = EdgeBackGesture(session: self)
         installBootstrap(token: token)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshSystemTextSize),
@@ -100,21 +109,26 @@ final class WebSession: NSObject {
 
     @objc private func suspendEdgeBack() { edgeBack?.cancel() }
 
-    func detachVisibleHost() { edgeBack?.cancel() }
+    func detachVisibleHost() {
+        edgeBack?.cancel()
+        invalidateDictationContext(reason: "account-changed")
+    }
 
     func setNativeNavigationBlocked(_ blocked: Bool) {
         nativeNavigationBlocked = blocked
-        if blocked { edgeBack?.cancel() }
+        if blocked { edgeBack?.cancel(); invalidateDictationContext(reason: "context-changed") }
     }
 
     /// Replaces the document-start script so the next load (reload, crash
     /// recovery, notification route) starts from the latest persisted token.
     func updateToken(_ token: String?) {
+        if token != latestToken { invalidateDictationContext(reason: "account-changed") }
         latestToken = token
         installBootstrap(token: token)
     }
 
     func updateProfile(_ profile: String) {
+        if profile != profileID { invalidateDictationContext(reason: "account-changed") }
         profileID = profile
         installBootstrap(token: latestToken)
     }
@@ -124,6 +138,7 @@ final class WebSession: NSObject {
         controller.removeAllUserScripts()
         let source = WebBootstrap.documentStartScript(origin: origin, token: token, profileID: profileID)
             + "\n" + WebTextSize.script(origin: origin, scale: systemTextScale)
+            + "\n" + WebDictation.bootstrap(origin: origin)
         controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
     }
 
@@ -180,6 +195,9 @@ final class WebSession: NSObject {
     }
 
     func tearDown() {
+        dictationDocumentGeneration &+= 1
+        dictationCommands.invalidate()
+        dictation.tearDown()
         edgeBack?.detach()
         NotificationCenter.default.removeObserver(self)
         webView.stopLoading()
@@ -234,7 +252,18 @@ final class WebSession: NSObject {
               origin.matches(webView.url) else { return }
         switch message.name {
         case WebSession.sessionHandler:
-            if let parsed = SessionMessage(body: message.body) { host?.webSession(self, didReceive: parsed) }
+            if let parsed = SessionMessage(body: message.body) {
+                switch parsed {
+                case .signedOut: invalidateDictationContext(reason: "account-changed")
+                case .session(let token, let profile):
+                    if token != latestToken || (profile != nil && profile != profileID) {
+                        invalidateDictationContext(reason: "account-changed")
+                    }
+                }
+                host?.webSession(self, didReceive: parsed)
+            }
+        case WebSession.dictationHandler:
+            if let command = DictationCommand(body: message.body) { receiveDictation(command) }
         case WebSession.navigationHandler:
             edgeBack?.setNavigation(WebNavigation(body: message.body))
         case WebSession.accountsHandler:
@@ -245,6 +274,92 @@ final class WebSession: NSObject {
         default:
             break
         }
+    }
+
+    private func invalidateDictationContext(reason: String) {
+        dictationDocumentGeneration &+= 1
+        dictationCommands.invalidate()
+        dictation.cancel(reason: reason)
+        dictationChatID = nil
+    }
+
+    private func receiveDictation(_ command: DictationCommand) {
+        // These operations only stop the already verified local utterance. They
+        // must release audio even if the page's JS process is temporarily stalled.
+        if command.documentID == dictationDocumentID {
+            if command.action == .context, command.chatID != dictationChatID {
+                dictation.cancel(reason: "context-changed")
+            }
+            if let operation = dictation.operation, operation.documentID == command.documentID,
+               operation.operationID == command.operationID, operation.chatID == command.chatID {
+                if command.action == .cancel { dictation.cancel(); return }
+                if command.action == .stop { dictation.stop(operationID: operation.operationID, chatID: operation.chatID); return }
+            }
+        }
+        guard let ticket = dictationCommands.enqueue(command) else { return }
+        let generation = dictationDocumentGeneration
+        let script = """
+        return window.top===window.self && location.origin===\(WebBootstrap.javaScriptString(origin.serialized))
+          && window.__KINDRED_IOS_DICTATION?.documentID===documentID;
+        """
+        let timeout = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { return }
+            guard let self, generation == self.dictationDocumentGeneration else { return }
+            for command in self.dictationCommands.complete(ticket, valid: false) { self.applyVerifiedDictation(command) }
+        }
+        webView.callAsyncJavaScript(script, arguments: ["documentID": command.documentID], in: nil, in: .page) { [weak self] result in
+            timeout.cancel()
+            guard let self, self.dictationDocumentGeneration == generation, self.origin.matches(self.webView.url) else { return }
+            let valid: Bool
+            if case .success(let value) = result { valid = value as? Bool == true } else { valid = false }
+            for command in self.dictationCommands.complete(ticket, valid: valid) { self.applyVerifiedDictation(command) }
+        }
+    }
+
+    private func applyVerifiedDictation(_ command: DictationCommand) {
+        self.dictationDocumentID = command.documentID
+        switch command.action {
+        case .status:
+            self.publishDictationCapability()
+        case .context:
+            if command.chatID != self.dictationChatID { self.dictation.cancel(reason: "context-changed") }
+            self.dictationChatID = command.chatID
+            if self.dictation.operation == nil { self.dictation.selectLocale(command.locale) }
+            self.publishDictationCapability()
+        case .start:
+            guard let operationID = command.operationID, let chatID = command.chatID,
+                  chatID == self.dictationChatID, !self.nativeNavigationBlocked,
+                  self.webView.window != nil, !self.webView.isLoading,
+                  UIApplication.shared.applicationState == .active else { return }
+            self.dictation.start(documentID: command.documentID, operationID: operationID, chatID: chatID, locale: command.locale)
+        case .stop:
+            if let operation = self.dictation.operation, operation.documentID == command.documentID,
+               operation.operationID == command.operationID, operation.chatID == command.chatID {
+                self.dictation.stop(operationID: operation.operationID, chatID: operation.chatID)
+            }
+        case .cancel:
+            if let operation = self.dictation.operation, operation.documentID == command.documentID,
+               operation.operationID == command.operationID, operation.chatID == command.chatID {
+                self.dictation.cancel()
+            }
+        case .settings:
+            guard self.webView.window != nil, UIApplication.shared.applicationState == .active,
+                  let url = URL(string: UIApplication.openSettingsURLString) else { return }
+            UIApplication.shared.open(url)
+        }
+    }
+
+    private func publishDictationCapability() {
+        guard let documentID = dictationDocumentID, origin.matches(webView.url) else { return }
+        let payload: [String: Any] = ["supported": true, "protocolVersion": 1, "engine": "apple-on-device", "onDeviceOnly": true,
+            "onDeviceAvailable": dictation.onDeviceAvailable, "recognizerAvailable": dictation.recognizerAvailable,
+            "locale": dictation.locale, "documentID": documentID]
+        webView.callAsyncJavaScript(WebDictation.capabilityScript(origin: origin), arguments: ["payload": payload], in: nil, in: .page) { _ in }
+    }
+
+    private func emitDictation(_ payload: [String: Any]) {
+        guard origin.matches(webView.url), payload["documentID"] as? String == dictationDocumentID else { return }
+        webView.callAsyncJavaScript(WebDictation.eventScript(origin: origin), arguments: ["payload": payload], in: nil, in: .page) { _ in }
     }
 
     private func isTrusted(_ securityOrigin: WKSecurityOrigin) -> Bool {
@@ -291,6 +406,10 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
 
 extension WebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        dictation.cancel(reason: "navigation")
+        dictationDocumentGeneration &+= 1
+        dictationCommands.invalidate()
+        dictationDocumentID = nil; dictationChatID = nil
         edgeBack?.setNavigation(nil)
         loadState.failure = nil
     }
