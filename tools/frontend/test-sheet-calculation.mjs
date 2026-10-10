@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {calculateSheet} from '../../ui/sheet-calculation.js';
+assert.deepEqual(calculateSheet([['2','3','=SUM(A1:B1)','=AVERAGE(A1:B1)','=MAX(A1:B1)-MIN(A1:B1)']])[0].slice(2),[5,2.5,1]);
+assert.equal(calculateSheet([['=IF(1=1,ROUND(1.255,2),1/0)']])[0][0],1.26);
+assert.equal(calculateSheet([['=2+3*4^2']])[0][0],50);
+assert.equal(calculateSheet([['=SUM(A1:A2)'],['=A1']])[0][0],'#CYCLE!');
+assert.deepEqual(calculateSheet([['=1/0','=SUM(A1:B1)','=window.alert(1)','=SUM(A1:XFD1048576)']])[0],['#DIV/0!','#DIV/0!','#ERROR!','#REF!']);
+assert.equal(calculateSheet([['=IF(FALSE,1/0,"done")']])[0][0],'done');
+assert.equal(calculateSheet([['=SUM($A$2:A3)'],['2'],['4']])[0][0],6);
+assert.equal(calculateSheet([['=COUNT(A2:C2)'],['1','text','2']])[0][0],2);
+assert.equal(calculateSheet([['=ABS(-3)+50%']])[0][0],3.5);
+assert.equal(calculateSheet([["'=SUM(A1:A5)"]])[0][0],'=SUM(A1:A5)');
+assert.equal(calculateSheet([['='.concat('('.repeat(150),'1',')'.repeat(150))]])[0][0],'#ERROR!');
+assert.equal(calculateSheet([['0012',"'4",'2','=SUM(A1:C1)']])[0][3],2);
+const expensive=Array.from({length:1000},()=>['1','=SUM(A1:A1000)']);assert(calculateSheet(expensive).some(row=>row[1]==='#LIMIT!'));
+console.log('PASS spreadsheet arithmetic, ranges, dependencies, cycles, lazy IF, error propagation, resource bounds, no script evaluation');
