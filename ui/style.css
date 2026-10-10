@@ -5851,3 +5851,21 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
 .notice-primary:disabled{opacity:.55;cursor:default}
 @media(pointer:coarse){.notice-primary{min-height:44px}}
 @media(forced-colors:active){.notice-primary{border:1px solid ButtonText}}
+/* Quiet activity sweep, confined to the saved task name. No layout movement. */
+.summary-progress-name.is-working {
+  color:transparent;
+  background:linear-gradient(105deg,var(--muted) 0%,var(--muted) 40%,var(--fg) 50%,var(--muted) 60%,var(--muted) 100%);
+  background-size:250% 100%;
+  background-clip:text;
+  -webkit-background-clip:text;
+  animation:summary-task-shimmer 6s linear infinite;
+}
+@keyframes summary-task-shimmer {
+  0%,65% {background-position:150% 0}
+  95%,100% {background-position:-100% 0}
+}
+:root[data-page-hidden] .summary-progress-name.is-working {animation-play-state:paused}
+:root[data-motion="off"] .summary-progress-name.is-working {animation:none;background:none;color:var(--muted)}
+@media(prefers-reduced-motion:reduce) {
+  .summary-progress-name.is-working {animation:none;background:none;color:var(--muted)}
+}
