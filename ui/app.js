@@ -2288,6 +2288,13 @@ async function settingsGeneral(revision) {
   const motion=settingSwitch('Reduce motion',state.general.reduced_motion),activity=settingSwitch('Show activity in chats',state.general.show_activity===true);
   const separateBots=settingSwitch('Separate bot conversations',state.general.separate_bot_chats!==false);
   appearance.body.append(settingRow('Theme',theme),motion.label);
+  const interfaceFont=window.KindredInterfaceFont;
+  if(interfaceFont&&!interfaceFont.systemManaged){
+    const font=select([['inter','Inter'],['dm-sans','DM Sans'],['manrope','Manrope']],interfaceFont.get());
+    font.setAttribute('aria-label','Interface font');font.onchange=()=>interfaceFont.set(font.value);
+    const fontRow=settingRow('Interface font',font);fontRow.dataset.devicePreference='true';appearance.body.append(fontRow);
+  }
+
   const conversations=settingsPane('Conversations'),delivery=select([['steer','Steer'],['queue','Queue']],state.general.message_delivery||'steer');
   delivery.setAttribute('aria-label','While a bot is working');
   conversations.body.append(settingRow('While a bot is working',delivery),activity.label,separateBots.label);
@@ -3940,6 +3947,7 @@ const composerLayout=new ResizeObserver(()=>{
 });
 new MutationObserver(updateComposerLayout).observe($('composer'),{attributes:true,attributeFilter:['class']});
 composerLayout.observe($('composer'));document.fonts.ready.then(resizeComposer);
+window.addEventListener('kindred-interface-font-change',()=>requestAnimationFrame(()=>{$('composer').classList.remove('is-multiline');resizeComposer();}));
 // The composer remains a floating surface. Animate its reserved space instead
 // of message transforms, so working avatars and collaboration waits move together.
 const composerSpace={height:null,target:0,frame:0};
