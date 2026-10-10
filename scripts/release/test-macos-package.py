@@ -7,6 +7,25 @@ use accounts, or publish. A passing launch is separate from Gatekeeper approval.
 from pathlib import Path
 import argparse,hashlib,json,os,platform,plistlib,signal,subprocess,tempfile,time,urllib.request,zipfile
 
+def validate_paste_receipt(expected,native,actual,reads=1,native_error=False):
+ assert actual['text']==expected and actual['submits']==0,actual
+ assert actual['enterDown']==expected.count('\n'),actual
+ assert native['browserClipboardCalls']==0 and native['manualDialogOpen'] is False,native
+ assert len(native['nativeCalls'])==reads,native
+ assert all(call['command']=='read_clipboard_text' and call['completed'] is True and call['error'] is native_error for call in native['nativeCalls']),native
+ if native_error:assert reads==1 and '16,000' in native['nativeCalls'][0]['errorMessage'],native
+ keys=[]
+ for character in expected:
+  point=ord(character);key=0xff0d if character=='\n' else 0xff09 if character=='\t' else point if point<=255 else 0x01000000|point
+  keys.extend([(key,True),(key,False)])
+ assert actual['receivedSequence']==actual['processedSequence']==len(actual['events']),actual
+ assert actual['inputSequence']==actual['processedInputSequence'],actual
+ events=actual['events']
+ assert actual['keyEvents']==len(keys)==len(events),actual
+ assert [(event['key'],event['down']) for event in events]==keys,actual
+ assert all(event['sequence']==i+1 and event['processed'] is not None and event['outcome']=='browser-dispatched' for i,event in enumerate(events)),actual
+ assert len({event['connectionID'] for event in events})<=1,actual
+
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--directory',type=Path,required=True);p.add_argument('--source',type=Path,required=True)
 p.add_argument('--version',required=True);p.add_argument('--source-commit',required=True)
@@ -136,8 +155,9 @@ try:
   before_marker=(data/'standalone-preservation-marker').read_bytes()
   fixture=out/'fixture';fixture.mkdir()
   with (out/'fixture-server.log').open('w') as server_log,(out/'connected-process.log').open('w') as app_log:
-   server=subprocess.Popen(['node',str(tools/'native-smoke-server.cjs'),str(a.source.resolve()),str(fixture)],stdout=server_log,stderr=subprocess.STDOUT,start_new_session=True)
-   for _ in range(100):
+   paste_selected=os.environ.get('KINDRED_TEST_MAC_PASTE_SELECTED')=='1'
+   server=subprocess.Popen(['node',str(tools/'native-smoke-server.cjs'),str(a.source.resolve()),str(fixture)],env=os.environ.copy(),stdout=server_log,stderr=subprocess.STDOUT,start_new_session=True)
+   for _ in range(300 if paste_selected else 100):
     if (fixture/'fixture.json').exists():break
     assert server.poll() is None,'Fixture server exited';time.sleep(.1)
    url=json.loads((fixture/'fixture.json').read_text())['url']
@@ -155,6 +175,46 @@ try:
    # Its image can scroll that response out of view; OCR of a tiny sidebar preview
    # is not a reliable second text assertion. Verify the native chat shell here.
    capture(child,'chat',['Piper','Message Piper'])
+   if paste_selected:
+    assert json.loads((fixture/'fixture.json').read_text())['pasteDestination'] is True
+    writer=out/'clipboard-fixture'
+    command(['swiftc',tools/'mac-paste-smoke/clipboard-fixture.swift','-o',writer],'clipboard-compile.log',timeout=60)
+    def paste_phase(phase):
+     request=urllib.request.Request(url+'/fixture/phase',data=json.dumps({'phase':phase}).encode(),headers={'Content-Type':'application/json'},method='POST')
+     with urllib.request.urlopen(request,timeout=5) as response:response.read()
+     return wait_report(fixture,phase,child)
+    def paste_oracle(action,**body):
+     request=urllib.request.Request(url+'/fixture/mac-paste/oracle/'+action,data=json.dumps(body).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer native-test-token-only'},method='POST')
+     with urllib.request.urlopen(request,timeout=15) as response:result=json.load(response)
+     if action=='snapshot':
+      binding=result['sourceBinding']
+      assert binding=={'sourceCommit':a.source_commit,'appSha256':hashlib.sha256((a.source/'ui/app.js').read_bytes()).hexdigest(),'vendorSha256':hashlib.sha256((a.source/'ui/vendor.js').read_bytes()).hexdigest(),'adapterSha256':hashlib.sha256((tools/'mac-paste-smoke/rfb-browser.cjs').read_bytes()).hexdigest(),'dependencyLockSha256':hashlib.sha256((tools/'mac-paste-smoke/package-lock.json').read_bytes()).hexdigest()},binding
+     return result
+    paste_phase('mac-paste-open')
+    observations=[]
+    for mode,expected in [('text','Aé中😀\nZ'),('empty',''),('nontext',''),('oversized','')]:
+     paste_oracle('clear')
+     command([writer,mode],'clipboard-'+mode+'.log',input=expected,timeout=10)
+     phase='mac-paste-'+mode
+     native=paste_phase(phase)
+     actual=paste_oracle('snapshot',label=phase)
+     validate_paste_receipt(expected,native,actual,native_error=mode=='oversized')
+     capture(child,phase,['Bot computer'])
+     observations.append({'phase':phase,'native':native,'destination':actual})
+    for phase in ['mac-paste-reconnect','mac-paste-control-loss']:
+     paste_oracle('clear')
+     command([writer,'text'],phase+'-clipboard.log',input='Aé中😀\nZ',timeout=10)
+     native=paste_phase(phase);actual=paste_oracle('snapshot',label=phase)
+     assert native['uiCancellationAfterNativeRead'] is True
+     validate_paste_receipt('',native,actual)
+     observations.append({'phase':phase,'native':native,'destination':actual,'scope':'UI cancellation after a completed native read'})
+    paste_oracle('clear')
+    command([writer,'text'],'clipboard-no-control.log',input='Aé中😀\nZ',timeout=10)
+    native=paste_phase('mac-paste-no-control');actual=paste_oracle('snapshot',label='mac-paste-no-control')
+    validate_paste_receipt('',native,actual,reads=0)
+    observations.append({'phase':'mac-paste-no-control','native':native,'destination':actual})
+    proof['native_paste_smoke']={'passed':True,'native_executable_sha256':hashlib.sha256(executable.read_bytes()).hexdigest(),'fixture_sha256':hashlib.sha256((tools/'native-smoke-server.cjs').read_bytes()).hexdigest(),'adapter_hashes':{name:hashlib.sha256((tools/'mac-paste-smoke'/name).read_bytes()).hexdigest() for name in ['package.json','package-lock.json','rfb-browser.cjs','clipboard-fixture.swift']},'tools_source_commit':subprocess.check_output(['git','-C',str(tools),'rev-parse','HEAD'],text=True).strip(),'cases':observations,'destination':'synthetic loopback RFB to actual Chromium textarea','physical_mouse_verified':False,'installed_guest_vnc_verified':False,'pending_native_read_races_verified':False,'os_privacy_prompts_verified':False,'sound_audibility_verified':False}
+    paste_phase('mac-paste-close')
    if tuple(map(int,a.version.split('.'))) >= (0,59,0):
     frames=[]
     for mode in ['light','dark','maximize','restore','fullscreen','windowed','local-access']:
