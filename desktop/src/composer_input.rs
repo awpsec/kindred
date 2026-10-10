@@ -154,6 +154,44 @@ pub async fn read_clipboard_image(
     #[cfg(not(target_os = "linux"))]
     Ok(None)
 }
+/// Read text for an explicit Paste button action without WebKit's paste menu.
+#[tauri::command]
+pub async fn read_clipboard_text(window: Surface, app: tauri::AppHandle) -> Result<String, String> {
+    desktop::trusted(&window, &app.state::<Desktop>())?;
+    #[cfg(target_os = "macos")]
+    {
+        let session = scope(&app);
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+            let result = match NSPasteboard::generalPasteboard()
+                .stringForType(unsafe { NSPasteboardTypeString })
+            {
+                // NSString length and the web editor both count UTF-16 units.
+                Some(text) if text.length() > 16_000 => {
+                    Err("Paste up to 16,000 characters at a time.".to_string())
+                }
+                Some(text) => Ok(text.to_string()),
+                None => Ok(String::new()),
+            };
+            let _ = tx.send(result);
+        })
+        .map_err(|e| e.to_string())?;
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            rx.recv_timeout(Duration::from_secs(5))
+                .map_err(|_| "Clipboard did not respond. Copy the text and try again.".to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        desktop::trusted(&window, &app.state::<Desktop>())?;
+        if session != scope(&app) {
+            return Err("The account changed during paste.".into());
+        }
+        return result;
+    }
+    #[cfg(not(target_os = "macos"))]
+    Err("Native text paste is not available on this platform.".into())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
