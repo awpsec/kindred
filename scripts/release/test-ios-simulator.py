@@ -104,6 +104,14 @@ APPEARANCE_PHASES = {
 }
 
 
+KEYBOARD_OWNERSHIP_CASES = {
+    'ComposerUIKitTests/testKeyboardOwnership' + host_name + focus_name + 'Focus()':
+        ('keyboard-ownership-' + host + '-' + focus, host, focus)
+    for host_name, host in (('Contracted', 'contracted'), ('FullHeight', 'full-height'))
+    for focus_name, focus in (('Ordinary', 'ordinary'), ('PreventScroll', 'prevent-scroll'))
+}
+
+
 def validate_composer_evidence(exports, summary, tree, attachments, additional_methods=()):
     assert all(exports[k] == 0 for k in ('summary', 'tests', 'attachments')), 'Native result/attachment export failed'
     required_methods = set(COMPOSER_PHASES) | DICTATION_METHODS | set(additional_methods)
@@ -423,6 +431,96 @@ def validate_release_ui_evidence(exports, summary, tree, attachments):
     return count
 
 
+def validate_keyboard_ownership_evidence(exports, summary, tree, attachments):
+    """Validate diagnostic completeness; zero viewports/hit failures are outcomes."""
+    assert all(exports[k] == 0 for k in ('summary', 'tests', 'attachments')), 'Diagnostic exports failed'
+    assert summary['totalTestCount'] == 4 and summary['passedTests'] == 4 and summary['failedTests'] == 0 and summary.get('skippedTests', 0) == 0, 'All four exact diagnostic methods must complete'
+    tree = json.loads(tree) if isinstance(tree, str) else tree
+    cases = []
+    def visit(nodes):
+        for node in nodes:
+            if node.get('nodeType') == 'Test Case': cases.append(node)
+            visit(node.get('children', []))
+    visit(tree['testNodes'])
+    assert len(cases) == 4 and {n['nodeIdentifier'] for n in cases} == set(KEYBOARD_OWNERSHIP_CASES) and all(n['result'] == 'Passed' for n in cases), 'Missing/duplicate/skipped diagnostic method'
+    manifest = json.loads((attachments / 'manifest.json').read_text())
+    expected_ui = {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in (ROOT / 'ui').iterdir() if f.suffix in ('.js', '.css', '.html', '.txt')}
+    assert all(name in expected_ui for name in ('app.js', 'style.css', 'dictation.js')), 'Required diagnostic UI files missing'
+    def number(v):
+        assert type(v) in (int, float) and math.isfinite(v), 'Nonfinite diagnostic measurement'
+        return v
+    def fields(box, keys):
+        assert isinstance(box, dict), 'Missing diagnostic geometry'
+        for key in keys: number(box[key])
+    for method, (phase, host, focus) in KEYBOARD_OWNERSHIP_CASES.items():
+        groups = [g for g in manifest if g.get('testIdentifier') == method]
+        assert len(groups) == 1, 'Missing/duplicate diagnostic attachment group'
+        rows = groups[0]['attachments']
+        def attached(label, suffix):
+            found = [r for r in rows if re.match(r'^' + re.escape(label) + r'(?:[._]|$)', r['suggestedHumanReadableName']) and Path(r['exportedFileName']).suffix.lower() == suffix]
+            assert len(found) == 1, 'Missing/duplicate diagnostic attachment'
+            path = (attachments / found[0]['exportedFileName']).resolve()
+            assert path.is_relative_to(attachments.resolve()) and path.is_file() and path.stat().st_size > 0, 'Unsafe/empty diagnostic attachment'
+            return path
+        image = attached(phase + '-screenshot', '.png')
+        assert image.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'), 'Invalid diagnostic PNG'
+        decoded = subprocess.check_output(['sips', '-g', 'pixelWidth', '-g', 'pixelHeight', str(image)], text=True, timeout=10)
+        dimensions = [int(line.split(':', 1)[1]) for line in decoded.splitlines() if line.strip().startswith(('pixelWidth:', 'pixelHeight:'))]
+        assert len(dimensions) == 2 and min(dimensions) > 0, 'Diagnostic PNG did not decode'
+        d = json.loads(attached(phase + '-geometry', '.json').read_text())
+        assert d['schemaVersion'] == 1 and d['diagnosticOnly'] is True and d['phase'] == phase and d['methodIdentifier'] == method, 'Wrong diagnostic binding'
+        assert isinstance(d['method'], str) and method.split('/', 1)[1].removesuffix('()') in d['method'], 'Actual XCTest method name mismatch'
+        assert d['intent'] == {'hostContract': host, 'focusMode': focus}, 'Wrong diagnostic condition'
+        assert d['proofScope'] == 'four-condition diagnostic only; not original Composer release acceptance', 'Wrong diagnostic scope'
+        shot = d['screenshot']
+        assert shot['captured'] is True and shot['source'] == 'fixture UIWindow.drawHierarchy; system keyboard window may be excluded' and min(number(shot['width']), number(shot['height'])) > 0, 'Diagnostic screenshot capture missing'
+        focus_at = number(d['focusStartedAt'])
+        assert number(d['observationEnd']) == focus_at + 8, 'Wrong diagnostic observation deadline'
+        assert d['focusResult']['page']['focused'] is True, 'Actual prompt focus missing'
+        assert d['keyboardVisible'] is True and type(d['keyboardShows']) is int and d['keyboardShows'] >= 1 and type(d['keyboardHides']) is int and d['keyboardHides'] >= 0, 'Actual keyboard evidence missing'
+        events = d['keyboardEvents']
+        assert isinstance(events, list), 'Missing keyboard event records'
+        for event in events:
+            number(event['time'])
+            if event['event'] == 'keyboardDidShow':
+                fields(event['frame'], ('x', 'y', 'width', 'height'))
+                assert event['frame']['width'] > 0 and event['frame']['height'] > 0, 'Missing actual keyboard frame'
+        assert any(e['event'] == 'keyboardDidShow' and focus_at <= number(e['time']) <= focus_at + 12 for e in events), 'No keyboard show within focus deadline'
+        samples = d['samples']
+        assert isinstance(samples, list) and len(samples) >= 2, 'Missing chronological diagnostic samples'
+        sequence = [d['beforeFocus']] + samples + [d['after']]
+        prior_time = prior_elapsed = -1
+        for index, sample in enumerate(sequence):
+            request, returned, taken = (number(sample[k]) for k in ('pageRequestedAt', 'pageReturnedAt', 'nativeTakenAt'))
+            elapsed = number(sample['elapsed'])
+            assert prior_time <= request <= returned <= taken and elapsed >= prior_elapsed and 0 < number(sample['pageTimeoutSeconds']) <= 2, 'Invalid diagnostic timing/bound'
+            prior_time, prior_elapsed = taken, elapsed
+            if index == 0: assert taken <= focus_at, 'Before-focus sample is not before focus'
+            elif index <= len(samples): assert focus_at <= request <= focus_at + 8, 'Sample requested outside observation budget'
+            native = sample['native']
+            assert native['webInFixtureWindow'] is True and native['fixtureWindowKey'] is True and native['fixtureWindowHidden'] is False, 'Diagnostic WK host detached/hidden'
+            assert type(native['keyboardVisible']) is bool, 'Native keyboard observation missing'
+            if index == 0: assert native['keyboardVisible'] is False, 'Before-focus keyboard already visible'
+            for key in ('webFrameInFixtureWindow', 'scrollBounds', 'keyboardFrameInFixtureWindow', 'keyboardFrame'):
+                fields(native[key], ('x', 'y', 'width', 'height'))
+            fields(native['scrollOffset'], ('x', 'y'))
+            fields(native['scrollContentSize'], ('width', 'height'))
+            for key in ('scrollContentInset', 'scrollAdjustedContentInset'): fields(native[key], ('top', 'bottom', 'left', 'right'))
+            number(native['keyboardIntersectionHeight'])
+            page = sample['javascript']['page']
+            assert page['uiMatches'] is True and page['uiManifest'] == expected_ui and page['draftMatches'] is True and type(page['sendCount']) is int and page['sendCount'] == 0, 'Wrong UI/draft/send diagnostic evidence'
+            for key in ('viewport', 'client'): fields(page[key], ('width', 'height'))
+            if page['visual'] is not None: fields(page['visual'], ('width', 'height', 'offsetTop', 'offsetLeft', 'scale'))
+            fields(page['shell'], ('x', 'y', 'width', 'height'));fields(page['windowScroll'], ('x', 'y', 'top'))
+            assert type(page['resizing']) is bool and isinstance(page['focusTrace'], list) and len(page['focusTrace']) <= 24, 'Missing bounded focus/layout observations'
+            assert page['firstPromptFocus'] is None or isinstance(page['firstPromptFocus'], dict), 'Invalid first focus observation'
+            assert isinstance(page['controls'], list) and page['controls'], 'Control observations missing'
+            for control in page['controls']:
+                fields(control, ('x', 'y', 'width', 'height'));assert type(control['hit']) is bool, 'Control hit observation missing'
+        assert number(d['focusToEndSeconds']) >= 0, 'Invalid focus elapsed'
+    return 4
+
+
 def wait_for_simulator_transport(device):
     """One bounded selected-device response after boot; no sleep or retry."""
     status = {'selected_device': device['udid'], 'passed': False, 'commands': [],
@@ -495,11 +593,16 @@ def main(scope):
     if scope == 'release-ui':
         assert (ROOT / 'mobile/ios/KindredCompanionUITests/AccountsAppearanceUIKitTests.swift').is_file(), 'Reviewed native appearance tests missing'
         command += ['-only-testing:KindredCompanionUITests/AccountsAppearanceUIKitTests']
+    if scope == 'keyboard-ownership':
+        assert (ROOT / 'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').is_file(), 'Reviewed keyboard diagnostics missing'
+        command += ['-only-testing:KindredCompanionTests/' + name.removesuffix('()') for name in sorted(KEYBOARD_OWNERSHIP_CASES)]
     receipt = {'source_commit': source, 'scope': scope, 'runtime': runtime, 'device': device, 'destination': destination, 'command': command, 'full_scheme_includes_AppModelSignInTests': scope == 'full', 'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'automatic_retry': False, 'passed': False}
     if scope in ('composer', 'release-ui'):
         receipt.update(required_methods=sorted(set(COMPOSER_PHASES) | DICTATION_METHODS), required_native_phases=53, real_Apple_recognition_selected=False, real_audio_test_excluded=True, injectable_lifecycle_is_recognition_proof=False)
     if scope == 'release-ui':
         receipt.update(required_methods=sorted(set(COMPOSER_PHASES) | DICTATION_METHODS | set(APPEARANCE_PHASES)), required_native_phases=77, required_appearance_pairs=24, visual_bitmap_acceptance_requires_independent_review=True)
+    if scope == 'keyboard-ownership':
+        receipt.update(diagnostic_only=True, release_passed=False, required_methods=sorted(KEYBOARD_OWNERSHIP_CASES), required_native_phases=4, native_command_seconds=480, real_Apple_recognition_selected=False)
     record('test-receipt.json', receipt)
     fixture = None
     old_keyboard = None
@@ -507,7 +610,7 @@ def main(scope):
     started = time.monotonic()
     try:
         with tempfile.TemporaryDirectory(prefix='kindred-ios-fixture-') as private:
-            if scope in ('composer', 'release-ui'):
+            if scope in ('composer', 'release-ui', 'keyboard-ownership'):
                 private = Path(private)
                 config = private / 'openssl.cnf'
                 config.write_text('[req]\nprompt=no\ndistinguished_name=dn\nx509_extensions=ext\n[dn]\nCN=localhost\n[ext]\nsubjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:TRUE\n')
@@ -546,7 +649,7 @@ def main(scope):
             with (OUT / 'xcodebuild.log').open('w') as log:
                 process = subprocess.Popen(command, cwd=ROOT / 'mobile/ios', stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
                 try:
-                    receipt['exit_code'] = process.wait(timeout=850 if scope == 'full' else 720)
+                    receipt['exit_code'] = process.wait(timeout=850 if scope == 'full' else (480 if scope == 'keyboard-ownership' else 720))
                 except subprocess.TimeoutExpired:
                     receipt['timed_out'] = True
                     os.killpg(process.pid, signal.SIGTERM)
@@ -555,12 +658,12 @@ def main(scope):
                 receipt['passed'] = receipt.get('exit_code') == 0
             if bundle.is_dir():
                 exports = export_results(bundle)
-                if scope in ('composer', 'release-ui'):
+                if scope in ('composer', 'release-ui', 'keyboard-ownership'):
                     summary = json.loads((OUT / 'xcresult-summary.log').read_text())
                     tree = (OUT / 'xcresult-tests.log').read_text()
-                    validator = validate_release_ui_evidence if scope == 'release-ui' else validate_composer_evidence
+                    validator = validate_keyboard_ownership_evidence if scope == 'keyboard-ownership' else (validate_release_ui_evidence if scope == 'release-ui' else validate_composer_evidence)
                     receipt['native_test_count'] = validator(exports, summary, tree, OUT / 'attachments')
-            elif scope in ('composer', 'release-ui'):
+            elif scope in ('composer', 'release-ui', 'keyboard-ownership'):
                 raise RuntimeError('Composer result bundle missing')
     except Exception as error:
         receipt['passed'] = False
@@ -590,5 +693,5 @@ def main(scope):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--scope', choices=['full', 'composer', 'release-ui'], required=True)
+    parser.add_argument('--scope', choices=['full', 'composer', 'release-ui', 'keyboard-ownership'], required=True)
     main(parser.parse_args().scope)
