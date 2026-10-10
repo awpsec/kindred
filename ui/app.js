@@ -310,7 +310,6 @@ function foldLongMessage(bubble, key, entry) {
   text.append(...bubble.childNodes);viewport.append(text);bubble.append(viewport);
   entry.expandedMessages ||= new Set();
   const toggle=button('Show more',()=>{
-    chatScroll.follow=false;captureChatAnchor();
     if(entry.expandedMessages.has(key))entry.expandedMessages.delete(key);else entry.expandedMessages.add(key);
     update();
   },'message-expand');
@@ -5841,9 +5840,6 @@ function animateChatDisclosure(history,body,falling=false){
   summary.onclick=e=>{
     e.preventDefault();
     expanded=motion?!expanded:!history.open;
-    // Opening older diagnostics is a reading gesture, not new chat activity.
-    // Disable bottom-follow before ResizeObserver sees the changing height.
-    chatScroll.follow=false;captureChatAnchor();
     const start=history.open?body.getBoundingClientRect().height:0;
     const starts=falling?[...body.children].map(n=>({opacity:getComputedStyle(n).opacity,transform:getComputedStyle(n).transform})):[];
     motion?.cancel();motion=null;cards.forEach(a=>a.cancel());cards=[];
@@ -7392,7 +7388,7 @@ function saveAvatarChoice(bot,patch){
 }
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.avatar-menu'))document.querySelectorAll('.avatar-menu.menu-open').forEach(n=>n.classList.remove('menu-open'));});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelectorAll('.avatar-menu.menu-open').forEach(n=>n.classList.remove('menu-open'));$('new-menu').hidden=true;}});
-const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0};
+const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0,disclosure:null};
 function captureChatAnchor(){
   const area=$('content'),top=area.getBoundingClientRect().top;
   const visible=[...area.querySelectorAll(':scope > [data-message], :scope > [data-run]')].filter(n=>n.getBoundingClientRect().bottom>top+1).slice(0,3);
@@ -7434,6 +7430,7 @@ function beginChatRender(view){
   messageActionFocus=chatScroll.view===view && focused?.dataset.messageFocus && focused.closest('[data-message]') ? {seq:focused.closest('[data-message]').dataset.message,control:focused.dataset.messageFocus}:null;
   questionFocus=focused?.closest('.question-card') && chatScroll.view===view?{id:focused.closest('.question-card').dataset.questionId,target:focused.dataset.questionFocus,start:focused.selectionStart,end:focused.selectionEnd}:null;
   if(chatScroll.view!==view){
+    chatScroll.disclosure=null;
     const saved=chatHistory.get(view)?.scroll;
     chatScroll.view=view;chatScroll.follow=saved?.follow??true;chatScroll.anchor=saved?.anchor??null;chatScroll.top=saved?.top??0;
   }
@@ -7470,6 +7467,10 @@ function followChatLatest(){
 $('content').addEventListener('scroll',()=>{
   if(chatOpening||chatScroll.rendering)return;
   const area=$('content');
+  // Measuring a collapsed disclosure can temporarily clamp scrollTop before
+  // its height animation is attached. That browser adjustment is not a user
+  // scroll; keep following the finite animation until a real gesture cancels it.
+  if(chatScroll.follow&&chatScroll.disclosure?.getAnimations({subtree:true}).some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))){restoreChatPosition();return;}
   if(Math.abs(area.scrollTop-chatScroll.top)<1)return;
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
   const entry=chatHistory.get(currentConversationId());
@@ -7485,10 +7486,22 @@ function readingGesture(e){
   if(chatOpening)return;
   if(e.type==='wheel'&&e.deltaY===0)return;
   if(e.type==='keydown'&&(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(e.key)||e.target.closest('input,textarea,[contenteditable=true]')))return;
-  chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
+  chatScroll.disclosure=null;chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
 }
 for(const name of ['wheel','touchstart','pointerdown','keydown'])$('content').addEventListener(name,readingGesture,{passive:true});
+// Capture the position before a disclosure changes layout. Pointer/keyboard
+// focus is a reading gesture above, but expanding at the bottom should keep
+// following. ResizeObserver then moves the viewport with each animation frame;
+// wheel/touch input can still cancel it immediately.
+$('content').addEventListener('click',e=>{
+  if(chatOpening||!e.target.closest('summary,button[aria-expanded]'))return;
+  const area=$('content');
+  chatScroll.follow=!chatHistory.get(currentConversationId())?.hasAfter&&area.scrollHeight-area.scrollTop-area.clientHeight<80;
+  chatScroll.disclosure=chatScroll.follow?e.target.closest('[data-message],[data-run]'):null;
+  if(chatScroll.follow)chatScroll.anchor=null;else captureChatAnchor();
+},true);
+
 const jumpLatest=button('Latest messages',async()=>{followChatLatest();await renderChat(true);$('prompt').focus({preventScroll:true});},'jump-latest','chevron');jumpLatest.hidden=true;$('composer-area').append(jumpLatest);
 function updateJumpLatest(){const area=$('content');jumpLatest.hidden=!chatHistory.get(currentConversationId())?.hasAfter && area.scrollHeight-area.scrollTop-area.clientHeight<150;}
 $('content').addEventListener('scroll',updateJumpLatest,{passive:true});new MutationObserver(updateJumpLatest).observe($('content'),{childList:true,subtree:true});
