@@ -4726,12 +4726,62 @@ function reminderCard(reminder,delivered=false){
   card.append(feedback);return card;
 }
 function editReminder(reminder){
-  const d=modal('Edit reminder','planning-dialog'),form=node('form','planning-form');
-  const message=field('Reminder',reminder.message,'textarea',{required:true,maxLength:2000}),time=field('Date and time',reminder.local_time,'input',{type:'datetime-local',required:true}),zone=field('Time zone',reminder.timezone,'input',{required:true});
-  const save=button('Save',()=>{},'primary');save.onclick=null;save.type='submit';
-  const feedback=planningFeedback();form.append(message.label,time.label,zone.label,feedback,save);d.append(form);
-  form.onsubmit=async e=>{e.preventDefault();if(!form.reportValidity())return;save.disabled=true;const saved=await planningPatch('reminders',reminder,{message:message.input.value,local_time:time.input.value,timezone:zone.input.value},feedback);if(saved)d.close();else save.disabled=false;};
+  const resuming=['cancelled','paused'].includes(reminder.status),d=modal(resuming?'Reschedule reminder':'Edit reminder','planning-dialog reminder-edit-dialog'),form=node('form','reminder-edit-form');
+  const heading=d.querySelector('h2');heading.prepend(icon('bell',16));
+  const message=field('Remind me to',reminder.message,'textarea',{required:true,maxLength:2000,rows:1,placeholder:'What would you like to remember?'});
+  message.label.className='reminder-edit-message';message.input.setAttribute('aria-label','Remind me to');
+  const when=node('section','reminder-edit-when'),label=node('h3','','When'),quick=node('div','reminder-date-shortcuts');quick.setAttribute('aria-label','Quick dates');
+  const [initialDate,initialTime]=(reminder.local_time||localDateInput(new Date(),reminder.timezone)).split('T');
+  const date=field('Date',initialDate,'input',{type:'date',required:true}),time=field('Time',initialTime?.slice(0,5)||'09:00','input',{type:'time',required:true,step:60});
+  const timing=node('div','reminder-edit-timing');timing.append(date.label,time.label);
+  const zones=[...new Set([reminder.timezone,'UTC',...(Intl.supportedValuesOf?.('timeZone')||['America/New_York','Europe/London','Asia/Tokyo'])])].filter(Boolean);
+  const zoneName=z=>z==='UTC'?'UTC':z.split('/').at(-1).replaceAll('_',' ')+' · '+z.split('/').slice(0,-1).join(' / ').replaceAll('_',' ');
+  const zone=select(zones.map(z=>[z,zoneName(z)]),reminder.timezone);zone.setAttribute('aria-label','Time zone');zone.dataset.searchable='true';zone.dataset.searchPlaceholder='Search time zones…';zone.dataset.searchEmpty='No matching time zones';
+  const zoneRow=node('label','reminder-edit-zone','Time zone');zoneRow.append(zone);zoneRow.hidden=true;
+  const zoneInfo=node('div','reminder-zone-info'),zoneText=node('span'),changeZone=button('Change',()=>{zoneRow.hidden=!zoneRow.hidden;changeZone.setAttribute('aria-expanded',String(!zoneRow.hidden));if(!zoneRow.hidden)zone.focus({preventScroll:true});},'subtle-button');changeZone.setAttribute('aria-label','Change time zone');changeZone.setAttribute('aria-expanded','false');zoneInfo.append(zoneText,changeZone);
+  const preview=node('p','reminder-edit-preview');preview.setAttribute('aria-live','polite');
+  const feedback=planningFeedback(),actions=node('div','reminder-edit-actions'),cancel=button('Cancel',()=>d.close(),'subtle-button'),save=button(resuming?'Reschedule':'Save reminder',()=>{},'primary');save.onclick=null;save.type='submit';
+  actions.append(cancel,save);if(reminder.status==='paused')when.append(node('p','reminder-edit-preview','Paused after transfer. Choose a time to resume.'));when.append(label,quick,timing,preview,zoneInfo,zoneRow);form.append(message.label,when,feedback,actions);d.append(form);
+  // Calendar shortcuts use the selected zone's civil date, never a 24-hour
+  // duration: crossing a daylight-saving boundary must not change the day.
+  const quickDate=days=>{const today=localDateInput(new Date(),zone.value).slice(0,10),civil=new Date(today+'T12:00:00Z');civil.setUTCDate(civil.getUTCDate()+days);return civil.toISOString().slice(0,10);};
+  for(const [text,days] of [['Today',0],['Tomorrow',1],['Next week',7]]){const b=button(text,()=>{date.input.value=quickDate(days);feedback.hidden=true;update();},'subtle-button');b.dataset.days=days;quick.append(b);}
+  // Resolve only a unique local minute for the preview. The server remains
+  // authoritative and rejects nonexistent or ambiguous daylight-saving times.
+  function scheduledInstant(){
+    const local=date.input.value+'T'+time.input.value,civil=Date.parse(local+':00Z');if(!Number.isFinite(civil))return null;
+    const offsets=[-36,0,36].map(hours=>{const sample=civil+hours*3600000;return Date.parse(localDateInput(new Date(sample),zone.value)+':00Z')-sample;});
+    const matches=[...new Set(offsets)].map(offset=>new Date(civil-offset)).filter(instant=>localDateInput(instant,zone.value)===local);
+    return matches.length===1?matches[0]:null;
+  }
+  function update(){
+    message.input.setCustomValidity(message.input.value.trim()?'':'Enter a reminder.');
+    for(const b of quick.children)b.setAttribute('aria-pressed',String(date.input.value===quickDate(Number(b.dataset.days))));
+    const instant=scheduledInstant(),past=instant&&instant.getTime()<=Date.now(),invalid=!instant;
+    save.disabled=past||invalid;
+    const abbreviation=new Intl.DateTimeFormat([],{timeZone:zone.value,timeZoneName:'short'}).formatToParts(instant||new Date()).find(p=>p.type==='timeZoneName')?.value||'';
+    zoneText.textContent='Time zone: '+zoneName(zone.value).split(' · ')[0]+(abbreviation&&abbreviation!==zoneName(zone.value)?' ('+abbreviation+')':'');
+    preview.classList.toggle('is-warning',!!past||invalid);
+    if(past)preview.textContent='That time has already passed. Choose a future time.';
+    else if(invalid)preview.textContent=date.input.value&&time.input.value?'This time is skipped or repeated by the clock change. Choose another time.':'Choose a date and time.';
+    else{preview.textContent=instant.toLocaleString([],{timeZone:zone.value,weekday:'short',month:'short',day:'numeric',...(date.input.value.slice(0,4)!==localDateInput(new Date(),zone.value).slice(0,4)?{year:'numeric'}:{}),hour:'numeric',minute:'2-digit'});if(zone.value!==deviceTimezone())preview.textContent+=' · '+instant.toLocaleString([],{timeZone:deviceTimezone(),weekday:'short',hour:'numeric',minute:'2-digit'})+' your time';}
+  }
+  const resize=()=>{message.input.style.height='auto';message.input.style.height=message.input.scrollHeight+'px';};
+  form.addEventListener('input',()=>{feedback.hidden=true;update();resize();});zone.addEventListener('change',update);
+  update();resize();let width=message.input.clientWidth;
+  const observer=new ResizeObserver(()=>{if(message.input.clientWidth!==width){width=message.input.clientWidth;resize();}});observer.observe(message.input);d.addEventListener('close',()=>observer.disconnect(),{once:true});
+  if(resuming)date.input.focus({preventScroll:true});else{message.input.focus({preventScroll:true});message.input.setSelectionRange(message.input.value.length,message.input.value.length);}
+  form.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();if(!save.disabled)form.requestSubmit();}});
+  let saving=false;d.addEventListener('cancel',e=>{if(saving)e.preventDefault();});
+  form.onsubmit=async e=>{
+    e.preventDefault();if(saving)return;update();if(save.disabled||!form.reportValidity())return;
+    const patch={message:message.input.value.trim(),local_time:date.input.value+'T'+time.input.value,timezone:zone.value};
+    saving=true;form.setAttribute('aria-busy','true');const controls=[...d.querySelectorAll('button,input,textarea,select')];controls.forEach(control=>control.disabled=true);save.textContent='Saving…';
+    try{const saved=await planningPatch('reminders',reminder,patch,feedback);if(saved)d.close();}
+    finally{saving=false;form.removeAttribute('aria-busy');controls.forEach(control=>control.disabled=false);save.textContent=resuming?'Reschedule':'Save reminder';update();}
+  };
 }
+
 async function openArtifacts(){
   const bot=state.bot;if(!bot)return;state.view='artifacts';state.panelKey='';
   showPane($('details-panel'));hidePane($('computer-panel'));disconnectDesktop();

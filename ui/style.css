@@ -5798,3 +5798,41 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
 .email-notice-recipient{margin:0 0 5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .email-notice-excerpt{margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;line-height:1.5}
 .email-notice-edit{margin:6px 0 0;padding:3px 0;font-size:inherit}
+
+/* A reminder is a note with a schedule, rather than a generic settings form. */
+.reminder-edit-dialog{width:min(480px,calc(100vw - 28px));padding:22px;max-height:calc(100dvh - 32px);border-radius:16px}
+.reminder-edit-dialog .dialog-header{margin:0 0 22px;gap:12px}
+.reminder-edit-dialog .dialog-header h2{display:flex;align-items:center;gap:9px;font-size:calc(15px * var(--text-scale,1))}
+.reminder-edit-dialog .dialog-header h2 .icon{color:var(--muted);flex:none}
+.reminder-edit-dialog .dialog-header>button{width:36px;height:36px;flex:none}
+.reminder-edit-form{display:flex;flex-direction:column;gap:20px}
+.reminder-edit-message{display:flex;flex-direction:column;gap:8px;font-size:calc(12px * var(--text-scale,1));color:var(--muted)}
+.reminder-edit-message textarea{border:0;border-radius:0;border-bottom:1px solid var(--line);background:transparent;box-shadow:none;outline:none;padding:4px 0 14px;resize:none;min-height:58px;max-height:180px;width:100%;font:inherit;font-size:calc(18px * var(--text-scale,1));line-height:1.45;color:var(--fg)}
+.reminder-edit-message textarea:focus{outline:none;border-bottom-color:var(--muted)}
+.reminder-edit-when{display:flex;flex-direction:column;gap:12px;min-width:0}
+.reminder-edit-when h3{margin:0;font-size:calc(12px * var(--text-scale,1));font-weight:500;color:var(--muted)}
+.reminder-date-shortcuts{display:flex;gap:6px;flex-wrap:wrap}
+.reminder-date-shortcuts button{font-size:calc(12px * var(--text-scale,1));min-height:34px;padding:6px 11px;border-radius:7px;background:var(--surface);border:1px solid transparent}
+.reminder-date-shortcuts button[aria-pressed=true]{background:color-mix(in srgb,var(--fg) 9%,var(--panel));border-color:var(--line);color:var(--fg)}
+.reminder-edit-timing{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(145px * var(--text-scale,1))),1fr));gap:12px}
+.reminder-edit-timing label{display:flex;flex-direction:column;gap:6px;font-size:calc(12px * var(--text-scale,1));color:var(--muted);min-width:0}
+.reminder-edit-timing input{width:100%;min-width:0;min-height:42px;padding:9px 10px;background:var(--surface);border:1px solid var(--line);border-radius:8px;font:inherit;font-size:calc(14px * var(--text-scale,1));color:var(--fg)}
+.reminder-edit-zone{display:flex;align-items:center;gap:12px;min-width:0;color:var(--muted);font-size:calc(12px * var(--text-scale,1))}
+.reminder-edit-zone select{flex:1;min-width:0;max-width:100%;padding:9px 28px 9px 10px;min-height:40px;border:0;background-color:transparent;font:inherit;color:var(--fg);text-overflow:ellipsis}
+.reminder-edit-preview{margin:0;font-size:calc(12px * var(--text-scale,1));line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.reminder-edit-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding-top:14px;border-top:1px solid var(--line)}
+.reminder-edit-actions button{min-height:38px;padding:8px 14px;font-size:calc(13px * var(--text-scale,1))}
+.reminder-edit-form .run-error{margin:0;line-height:1.5}
+@media(max-width:520px){.reminder-edit-dialog{padding:18px}.reminder-edit-dialog .dialog-header{margin-bottom:16px}.reminder-edit-form{gap:16px}.reminder-edit-timing{gap:8px}.reminder-edit-timing input{font-size:16px;padding:8px 6px}.reminder-edit-message textarea{font-size:max(16px,calc(18px * var(--text-scale,1)))}}
+@media(pointer:coarse){.reminder-edit-dialog button,.reminder-edit-dialog select,.reminder-edit-dialog input{min-height:44px}.reminder-edit-dialog .dialog-header>button{min-width:44px}}
+@media(forced-colors:active){.reminder-edit-message textarea:focus{outline:2px solid Highlight}.reminder-date-shortcuts button[aria-pressed=true]{border-color:Highlight}}
+
+.reminder-edit-zone[hidden]{display:none}
+.reminder-zone-info{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:calc(12px * var(--text-scale,1));color:var(--muted)}
+.reminder-zone-info button{padding:4px;font-size:inherit;text-decoration:underline;text-underline-offset:3px}
+.reminder-edit-preview.is-warning{color:var(--danger,#d88585)}
+.reminder-edit-actions .primary{min-width:120px}
+@media(max-width:360px){.reminder-edit-timing{grid-template-columns:1fr}}
+
+.reminder-edit-form label{margin:0}
+.reminder-edit-form label :is(input,textarea,select){margin-top:0}
