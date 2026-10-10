@@ -1,6 +1,6 @@
 [package]
 name = "kindred-desktop"
-version = "0.85.13"
+version = "0.85.14"
 edition = "2024"
 license = "MIT"
 description = "Native desktop window for a personal Kindred server"
