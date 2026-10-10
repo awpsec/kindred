@@ -2016,6 +2016,7 @@ dependencies = [
  "gtk",
  "libc",
  "libloading",
+ "mac-notification-sys",
  "notify-rust",
  "objc2",
  "objc2-app-kit",

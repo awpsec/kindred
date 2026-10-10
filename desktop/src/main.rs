@@ -21,6 +21,8 @@ mod network_interfaces;
 mod network_plan;
 mod tailnet_access;
 mod mac_update;
+#[cfg(target_os = "macos")]
+mod macos_notification;
 mod managed_process;
 #[cfg(target_os = "linux")]
 mod microphone_grants;
