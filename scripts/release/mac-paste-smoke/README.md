@@ -4,13 +4,15 @@ This test-only package provides an actual Chromium textarea behind a local RFB3.
 
 Install from this directory with `npm ci --ignore-scripts`, then install the matching Chromium with `npx playwright install chromium`. The lock pins Playwright1.63.0, ws8.18.3 and pngjs7.0.0. Browser setup time on macos-26 arm64 within the existing15-minute build cap is unverified. Keep installation logs; do not silently skip the destination or replace it with an invoke/key-count mock.
 
-Builder owns native-smoke-server.cjs, test-macos-package.py and workflow wiring. Dev owns only these six files. Attach after the existing fixture server starts listening:
+Builder owns native-smoke-server.cjs, test-macos-package.py and workflow wiring. Dev owns only these six files. Attach after the existing fixture server starts listening. Source HEAD must equal sourceCommit; receipts bind that commit, app/vendor hashes, adapter hash and dependency-lock hash:
 
 ```js
 const {attach}=require('./mac-paste-smoke/rfb-browser.cjs');
 const destination=await attach(server,{
   output: evidenceFolder,
   token: 'native-test-token-only',
+  source: exactPinnedSourceDirectory,
+  sourceCommit: exactPinnedSourceCommit,
   executablePath: exactInstalledChromiumPath // optional if Playwright cache is set
 });
 ```
@@ -21,7 +23,7 @@ The destination starts empty and focused once. A real RFB handshake and raw fram
 
 Methods:
 
-- `snapshot(label)`: waits for input queue completion and three unchanged50ms event samples within a3-second queue observation deadline; throws on transport/input errors. Saves actual destination PNG and JSON with text, input/Enter/submission counts, complete received/processed event sequence, connection IDs and browser version. Browser key dispatch has its own5-second deadline. An operation timeout is failure, never success.
+- `snapshot(label)`: drains the queue before and after three quiet50ms intervals, then checks received/processed key and pointer sequences around the DOM read and PNG capture under one3-second deadline. A late event restarts observation; a pending/outcome-null event or timed-out DOM/PNG operation cannot produce a receipt. Throws on transport/input errors. Saves actual destination PNG and JSON with text, input/Enter/submission counts, complete received/processed event sequence, connection IDs and browser version. Browser key dispatch has its own5-second deadline. An operation timeout is failure, never success.
 - `clear()`: test setup only. Clears the textarea/counters and focuses it before the next action; does not type expected text.
 - `disconnect()`: closes all current destination sockets. Use real UI Reconnect to acquire another actual RFB connection.
 - `close()`: closes only this adapter's sockets/browser and restores original server listeners. Always call from the existing fixture cleanup boundary.
@@ -40,4 +42,4 @@ KINDRED_PASTE_SMOKE_OUTPUT=/disposable/proof \
 node test-rfb-browser.cjs
 ```
 
-It uses the pinned production vendor.js noVNC class, verifies Aé中😀 plus internal newlineZ through actual browser input,12down/up events,6input events, one intended Return, no submit, stale-disconnect refusal, distinct fresh connection and wrong-ticket rejection. `KINDRED_PASTE_UNFOCUSED=1` deliberately blurs the initial destination; the same exact-text assertion must fail with empty actual text. That negative proves the oracle does not fabricate or auto-fill the expected result. Local transport proof is not native clipboard or packaged application proof.
+It uses the pinned production vendor.js noVNC class, verifies Aé中😀 plus internal newlineZ through actual browser input,12down/up events,6input events, one intended Return, no submit, stale-disconnect refusal, distinct fresh connection and wrong-ticket rejection. `KINDRED_PASTE_UNFOCUSED=1` deliberately blurs the initial destination; the same exact-text assertion must fail with empty actual text. That negative proves the oracle does not fabricate or auto-fill the expected result. The test also extracts the actual snapshot implementation and injects late held inputs during the final sleep, DOM read and screenshot; each must drain and re-observe the actual resulting text before returning. A held DOM read must time out; extracted pointer dispatch must refuse after control loss/disconnect and dispatch once while still controlled. Source-commit mismatch must reject before browser launch. Local transport proof is not native clipboard or packaged application proof.
