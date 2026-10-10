@@ -224,7 +224,9 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     }
 
     private func js(_ source: String) async throws -> Any? {
-        try await session.webView.evaluateJavaScript(source)
+        // A WK page retains its global lexical environment between evaluations.
+        // A block isolates const/let while preserving expression/Promise results.
+        try await session.webView.evaluateJavaScript("{\n\(source)\n}")
     }
     private func boolean(_ source: String) async throws -> Bool { try await js(source) as? Bool == true }
     private func waitFor(_ label: String, timeout: TimeInterval = 12, predicate: () async throws -> Bool) async throws {
@@ -253,6 +255,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             "webViewLoading": session?.webView.isLoading ?? false,
             "estimatedProgress": session?.webView.estimatedProgress ?? 0]
         if !layoutEvidence.isEmpty { evidence["layoutTransition"] = layoutEvidence }
+        evidence["nativeAttachment"] = nativeAttachmentEvidence()
         if let url = session?.webView.url {
             evidence["url"] = ["scheme": url.scheme ?? "", "host": url.host ?? "",
                 "port": url.port ?? 0, "path": url.path] as [String: Any]
@@ -261,6 +264,9 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             (()=>{const p=document.querySelector('#prompt');let sessionPresent=null,storageReadable=true;
               try {sessionPresent=!!sessionStorage.getItem('kindred-token')} catch {storageReadable=false}
               return {
+              visibility:document.visibilityState,documentFocused:document.hasFocus(),
+              viewport:{width:innerWidth,height:innerHeight,clientWidth:document.documentElement.clientWidth,clientHeight:document.documentElement.clientHeight,
+                visual:visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}:null},
               readyState:document.readyState,promptExists:!!p,promptVisible:!!p?.getClientRects().length,
               replyExists:!!document.querySelector('[data-message="1"] [data-message-action="reply"]'),
               geometry:window.__KINDRED_NATIVE_GEOMETRY??null,
@@ -291,6 +297,37 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+    }
+
+    /// Read-only geometry and attachment diagnostics. No view/input text,
+    /// URLs, credentials or private UIKit child descriptions are serialized.
+    private func nativeAttachmentEvidence() -> [String: Any] {
+        func rect(_ value: CGRect) -> [String: Double] {
+            ["x": Double(value.minX), "y": Double(value.minY),
+             "width": Double(value.width), "height": Double(value.height)]
+        }
+        var ancestors: [[String: Any]] = []
+        var view: UIView? = session.webView
+        while let current = view, ancestors.count < 12 {
+            ancestors.append(["class": String(describing: type(of: current)),
+                "bounds": rect(current.bounds), "frame": rect(current.frame),
+                "hidden": current.isHidden, "alpha": Double(current.alpha),
+                "hasWindow": current.window != nil,
+                "inFixtureWindow": current.window === window])
+            view = current.superview
+        }
+        let web = session.webView
+        return ["ancestors": ancestors, "fixtureWindowKey": window.isKeyWindow,
+            "fixtureWindowHidden": window.isHidden,
+            "sceneActivation": window.windowScene?.activationState.rawValue ?? -1,
+            "applicationState": UIApplication.shared.applicationState.rawValue,
+            "webInFixtureWindow": web.window === window,
+            "webHasSuperview": web.superview != nil,
+            "webFrameInFixtureWindow": rect(web.convert(web.bounds, to: window)),
+            "scrollBounds": rect(web.scrollView.bounds),
+            "scrollOffset": ["x": Double(web.scrollView.contentOffset.x), "y": Double(web.scrollView.contentOffset.y)],
+            "zoomScale": Double(web.scrollView.zoomScale),
+            "keyboardVisible": keyboardVisible, "keyboardFrame": rect(keyboardFrame)]
     }
 
     private func boundedFailurePage(_ source: String) async -> [String: Any] {
@@ -345,6 +382,8 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             self.layoutEvidence["samples"] = sampleCount
             self.layoutEvidence["elapsedSeconds"] = Date().timeIntervalSince(started)
             self.layoutEvidence["liveHost"] = ["width": host.width, "height": host.height]
+            self.layoutEvidence["latestNativeAttachment"] = self.nativeAttachmentEvidence()
+            if self.layoutEvidence["firstNativeAttachment"] == nil { self.layoutEvidence["firstNativeAttachment"] = self.layoutEvidence["latestNativeAttachment"] }
             self.layoutEvidence["latest"] = sample
             if self.layoutEvidence["first"] == nil { self.layoutEvidence["first"] = sample }
             let stable = stamp != nil && stamp == previousStamp
