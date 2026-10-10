@@ -316,7 +316,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             "methodIdentifier": "ComposerUIKitTests/testKeyboardOwnership\(fullHeight ? "FullHeight" : "Contracted")\(preventScroll ? "PreventScroll" : "Ordinary")Focus()",
             "intent": ["hostContract": fullHeight ? "full-height" : "contracted",
                 "focusMode": preventScroll ? "prevent-scroll" : "ordinary"],
-            "beforeFocus": before, "focusStartedAt": focusStarted,
+            "beforeFocus": before, "focusStartedAt": focusStarted, "observationEnd": observationEnd,
             "focusResult": focus, "samples": samples, "after": after,
             "keyboardEvents": keyboardOwnershipEvents, "keyboardVisible": keyboardVisible,
             "keyboardShows": keyboardShows, "keyboardHides": keyboardHides,
