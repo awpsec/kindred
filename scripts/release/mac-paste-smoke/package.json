@@ -1,0 +1,1 @@
+{"name":"kindred-mac-paste-smoke","version":"1.0.0","private":true,"engines":{"node":">=24"},"dependencies":{"playwright":"1.63.0","ws":"8.18.3","pngjs":"7.0.0"},"scripts":{"test":"node test-rfb-browser.cjs"}}
