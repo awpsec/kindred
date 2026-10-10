@@ -5634,3 +5634,34 @@ html[data-mobile] #composer .dictation-status {display:flex;align-items:center;g
 html[data-mobile] #composer .dictation-status > :first-child {min-width:0;overflow:hidden;text-overflow:ellipsis;}
 html[data-mobile] #composer .dictation-status > [aria-hidden] {flex:none;}
 html[data-mobile] #notice .notice-action {min-height:44px;}
+
+/* Approved borderless connector receipt: real data and existing actions inline. */
+.connector-call-summary {gap:8px;padding:4px 0;min-height:28px;border-radius:0;}
+.connector-call-summary:hover {background:transparent;}
+.connector-call-summary>.connector-logo {width:18px;height:18px;border:0;background:transparent;}
+.connector-call-summary>.connector-logo svg {width:18px;height:18px;}
+.connector-call-summary>.icon {width:13px;height:13px;transition:transform 240ms cubic-bezier(.2,.7,.2,1);}
+.connector-call>.chat-disclosure-body>.connector-inline {
+  margin:4px 0 2px 26px;width:calc(100% - 26px);border:0;border-radius:0;
+  background:transparent;overflow:visible;font-size:calc(12px * var(--text-scale,1));line-height:1.55;
+}
+.connector-inline-meta {display:flex;align-items:center;flex-wrap:wrap;gap:4px;color:var(--muted);margin-bottom:8px;}
+.connector-inline .connector-card-status {border:0;background:transparent;padding:0;border-radius:0;font-size:inherit;text-align:left;max-width:none;white-space:nowrap;}
+.connector-inline .connector-card-status.status-completed {color:var(--success);}
+.connector-inline .connector-card-status:is(.status-failed,.status-denied) {color:var(--danger);}
+.connector-inline .connector-artifact-content {padding:0;max-height:none;overflow:visible;scrollbar-gutter:auto;}
+.connector-inline .connector-record-fields {grid-template-columns:calc(68px * var(--text-scale,1)) minmax(0,1fr);gap:3px 12px;max-width:360px;margin:0;font-size:inherit;}
+.connector-inline .connector-record-fields dd {overflow-wrap:anywhere;min-width:0;}
+.connector-inline .connector-record-fields .connector-field-id {font-family:var(--mono,ui-monospace,monospace);font-size:calc(11px * var(--text-scale,1));}
+.connector-inline .connector-record {border:0;border-radius:0;background:transparent;padding:0;}
+.connector-inline .connector-field-more {font-size:inherit;min-width:0;}
+.connector-inline .connector-field-more summary {font-size:inherit;overflow-wrap:anywhere;}
+.connector-inline .connector-field-more pre {white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:6px 0;}
+.connector-call .connector-inline>footer {border:0;padding:4px 0;margin-top:6px;}
+.connector-inline .connector-inline-discuss {display:inline-flex;gap:6px;padding:4px 0;border:0;background:transparent;font-size:inherit;color:var(--muted);}
+.connector-inline-discuss .icon {width:13px;height:13px;}
+@media(pointer:coarse) {.connector-call-summary,.connector-inline-discuss {min-height:44px;}}
+@media(prefers-reduced-motion:reduce) {.connector-call-summary>.icon {transition:none;}}
+.connector-inline .connector-outcome-warning {border:0;padding:0;background:transparent;color:var(--danger);font-size:inherit;margin:8px 0;}
+.connector-inline .connector-field-more>summary {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+.connector-inline .connector-field-more .connector-record-fields {grid-template-columns:minmax(0,auto) minmax(0,1fr);margin:4px 0;gap:3px 8px;}
