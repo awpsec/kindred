@@ -90,7 +90,7 @@ class AppearanceEvidenceTests(unittest.TestCase):
   def popen(command,**kwargs):
    if command[:2]==['xcrun','simctl']:
     process=MagicMock();process.pid=12345;process.returncode=0;process.wait.return_value=0
-    kwargs['stdout'].write(b'1\n' if 'read' in command else b'');kwargs['stdout'].flush()
+    kwargs['stdout'].write(b'selected-only\n' if command[2]=='getenv' else (b'1\n' if 'read' in command else b''));kwargs['stdout'].flush()
     setup_processes.append((command,process));return process
    captured.append(command);return fixture if command[0]=='node' else native
   def output(command,**kwargs):
@@ -104,10 +104,12 @@ class AppearanceEvidenceTests(unittest.TestCase):
   with patch.object(m,'ROOT',root),patch.object(m,'OUT',out),patch.dict(m.os.environ,EXPECTED_SOURCE=source),patch.object(m.subprocess,'run',side_effect=run),patch.object(m.subprocess,'check_output',side_effect=output),patch.object(m.subprocess,'Popen',side_effect=popen),patch.object(m.ssl,'create_default_context'),patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps({'origin':'https://localhost:8765','ui_sha256':{}}).encode())):
    with self.assertRaises(SystemExit):m.main('release-ui')
   if hasattr(m,'_simulator_command'):
-   self.assertEqual(len(setup_processes),2)
-   self.assertEqual([command[4] for command,process in setup_processes],['defaults','defaults'])
-   self.assertEqual([command[5] for command,process in setup_processes],['write','read'])
-   self.assertTrue(all(0 < process.wait.call_args.kwargs['timeout'] <= 10 for command,process in setup_processes))
+   self.assertEqual(len(setup_processes),3)
+   self.assertEqual(setup_processes[0][0],['xcrun','simctl','getenv','selected-only','SIMULATOR_UDID'])
+   self.assertTrue(0 < setup_processes[0][1].wait.call_args.kwargs['timeout'] <= 60)
+   self.assertEqual([command[4] for command,process in setup_processes[1:]],['defaults','defaults'])
+   self.assertEqual([command[5] for command,process in setup_processes[1:]],['write','read'])
+   self.assertTrue(all(0 < process.wait.call_args.kwargs['timeout'] <= 10 for command,process in setup_processes[1:]))
   self.assertEqual(len(captured),2);self.assertEqual(captured[-1][0],'xcodebuild')
   self.assertIn('CODE_SIGNING_ALLOWED=NO',captured[-1]);self.assertIn('-only-testing:KindredCompanionTests/ComposerUIKitTests',captured[-1])
   self.assertEqual(native.wait.call_args.kwargs['timeout'],720)
