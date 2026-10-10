@@ -1,9 +1,15 @@
-/* Bundled fonts: identical families and weights on every platform. */
+/* Offline desktop choices; mobile interfaces retain the platform font. */
 @font-face{font-family:Inter;src:url('./fonts/InterVariable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}
 @font-face{font-family:Inter;src:url('./fonts/InterVariable-Italic.woff2') format('woff2');font-weight:100 900;font-style:italic;font-display:swap}
 @font-face{font-family:'Liberation Mono';src:url('./fonts/LiberationMono-Regular.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
 @font-face{font-family:'Liberation Mono';src:url('./fonts/LiberationMono-Bold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap}
 @font-face{font-family:'Liberation Mono';src:url('./fonts/LiberationMono-Italic.ttf') format('truetype');font-weight:400;font-style:italic;font-display:swap}
 @font-face{font-family:'Liberation Mono';src:url('./fonts/LiberationMono-BoldItalic.ttf') format('truetype');font-weight:700;font-style:italic;font-display:swap}
-:root{--font-sans:Inter,system-ui,sans-serif;--font-mono:"Liberation Mono",monospace}
+@font-face{font-family:'DM Sans';src:url('./fonts/DMSans-Variable.ttf') format('truetype');font-weight:100 1000;font-style:normal;font-display:swap}
+@font-face{font-family:'DM Sans';src:url('./fonts/DMSans-VariableItalic.ttf') format('truetype');font-weight:100 1000;font-style:italic;font-display:swap}
+@font-face{font-family:Manrope;src:url('./fonts/Manrope-Variable.ttf') format('truetype');font-weight:200 800;font-style:normal;font-display:swap}
+:root[data-interface-font="dm-sans"]{--font-sans:'DM Sans',Inter,system-ui,sans-serif}
+:root[data-interface-font="manrope"]{--font-sans:Manrope,Inter,system-ui,sans-serif}
+:root[data-interface-font="system"]{--font-sans:-apple-system,system-ui,sans-serif}
+:root{--font-document:Inter,system-ui,sans-serif;--font-sans:Inter,system-ui,sans-serif;--font-mono:"Liberation Mono",monospace}
 code,pre,kbd,samp{font-family:var(--font-mono)}

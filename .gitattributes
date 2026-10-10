@@ -15,3 +15,6 @@
 # Bundled grammars contain significant whitespace inside template literals.
 ui/vendor.js whitespace=-blank-at-eol
 ui/artifact-vendor.js whitespace=-blank-at-eol
+
+# Keep the upstream license bytes identical to the pinned provenance receipt.
+ui/fonts/DMSans-LICENSE.txt -text

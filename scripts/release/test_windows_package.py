@@ -26,7 +26,7 @@ class WindowsPackage(unittest.TestCase):
             for name in ["desktop/windows", "ui/fonts", "third-party", "docs", "build"]:
                 (root / name).mkdir(parents=True)
             for name in ["LICENSE", "THIRD_PARTY_NOTICES.md", "third-party/WebView2-LICENSE.txt",
-                         "ui/fonts/LICENSE.txt", "ui/fonts/SOURCE.json", "ui/fonts/Liberation-LICENSE.txt", "ui/fonts/Liberation-SOURCE.json", "ui/vendor.js.LEGAL.txt",
+                         "ui/fonts/LICENSE.txt", "ui/fonts/SOURCE.json", 'ui/fonts/DMSans-LICENSE.txt', 'ui/fonts/DMSans-SOURCE.json', 'ui/fonts/Manrope-LICENSE.txt', 'ui/fonts/Manrope-SOURCE.json', "ui/fonts/Liberation-LICENSE.txt", "ui/fonts/Liberation-SOURCE.json", "ui/vendor.js.LEGAL.txt",
                          "ui/artifact-vendor.js.LEGAL.txt", "docs/PROVIDER_MARKS_LICENSE.txt", "desktop/windows/Launch.ps1"]:
                 (root / name).write_text("Fixture notice or script")
             version, source = "1.2.3", "a" * 40

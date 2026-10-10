@@ -1,0 +1,22 @@
+{
+  "project": "https://github.com/google/fonts/tree/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/dmsans",
+  "commit": "bd8f81ddb5c74d5c8897b36ad88b440266245103",
+  "license": "SIL Open Font License 1.1",
+  "files": {
+    "DMSans-Variable.ttf": {
+      "url": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/dmsans/DMSans%5Bopsz%2Cwght%5D.ttf",
+      "sha256": "8cd08d97e89c24d0aa92edd2f0f4c8ee6195eee9b7c9f154865a58b02f0c1c0d",
+      "bytes": 240164
+    },
+    "DMSans-VariableItalic.ttf": {
+      "url": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/dmsans/DMSans-Italic%5Bopsz%2Cwght%5D.ttf",
+      "sha256": "22259c0cc8237221b80f44c76ba8d36e6bce3cda72779f5b2773643d499720ae",
+      "bytes": 285040
+    },
+    "DMSans-LICENSE.txt": {
+      "url": "https://raw.githubusercontent.com/google/fonts/bd8f81ddb5c74d5c8897b36ad88b440266245103/ofl/dmsans/OFL.txt",
+      "sha256": "9af36190332437f5ecd09974de43c1f7c77a310a996cdd8ceb25628b458840e1",
+      "bytes": 4482
+    }
+  }
+}
