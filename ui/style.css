@@ -5684,3 +5684,5 @@ html[data-mobile] #notice .notice-action {min-height:44px;}
 @media(min-width:761px){.artifact-page-options>summary{display:none}}
 @media(max-width:760px){.artifact-page-options[open]{flex-basis:100%}.artifact-page-options>summary{display:flex;align-items:center;box-sizing:border-box;min-height:44px;padding:6px 9px;font:14px var(--font-sans);border:1px solid transparent;border-radius:7px}.artifact-page-options .artifact-document-layout{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));box-sizing:border-box;width:100%;padding:6px;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:8px}.artifact-page-options .artifact-document-layout select{width:100%;min-width:0;max-width:100%;min-height:44px}}
 @media(pointer:coarse){.artifact-folder-actions{width:44px;height:44px;opacity:1;top:0}.artifact-studio .artifact-folder:has(.artifact-folder-actions)>.artifact-folder-heading{padding-right:48px;min-height:44px}.artifact-folder-context-menu button{min-height:44px}}
+
+@media(max-width:760px){.sheet-color-control{margin:0}.sheet-color-state{display:none}}
