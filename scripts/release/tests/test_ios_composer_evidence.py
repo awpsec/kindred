@@ -70,13 +70,17 @@ class ComposerEvidenceTests(unittest.TestCase):
         p=self.root/'dictation-dark-150-open-empty-actual-UIKit-geometry.json';d=json.loads(p.read_text());d['layout']['textScale']=1;p.write_text(json.dumps(d))
         with self.assertRaises(AssertionError):self.validate()
     def test_reduce_motion_setup_requires_preference_readback(self):
-        with patch.object(m,'OUT',self.root),patch.object(m.subprocess,'run') as run,patch.object(m.subprocess,'check_output',return_value='1'):
+        import subprocess
+        replies=[subprocess.CompletedProcess([],0,'',''),subprocess.CompletedProcess([],0,'1','')]
+        with patch.object(m,'OUT',self.root),patch.object(m.subprocess,'run',side_effect=replies) as run:
             m.configure_simulator_reduce_motion({'udid':'selected-only'})
-            self.assertEqual(run.call_args.args[0],['xcrun','simctl','spawn','selected-only','defaults','write','com.apple.Accessibility','ReduceMotionEnabled','-bool','true'])
-            self.assertEqual(run.call_args.kwargs['timeout'],10)
-            self.assertTrue(run.call_args.kwargs['check'])
-        with patch.object(m,'OUT',self.root),patch.object(m.subprocess,'run'),patch.object(m.subprocess,'check_output',return_value='0'):
+            self.assertEqual(run.call_args_list[0].args[0],['xcrun','simctl','spawn','selected-only','defaults','write','com.apple.Accessibility','ReduceMotionEnabled','-bool','true'])
+            self.assertEqual(run.call_args_list[0].kwargs['timeout'],10)
+            self.assertTrue(run.call_args_list[0].kwargs['check'])
+        replies=[subprocess.CompletedProcess([],0,'',''),subprocess.CompletedProcess([],0,'0','')]+[OSError('probe')]*3
+        with patch.object(m,'OUT',self.root),patch.object(m.subprocess,'run',side_effect=replies):
             with self.assertRaises(AssertionError):m.configure_simulator_reduce_motion({'udid':'selected-only'})
+
     def test_wrong_measured_dictation_state(self):
         p=self.root/'dictation-dark-100-open-dictating-actual-UIKit-geometry.json';d=json.loads(p.read_text());d['nativeSpeechOperationActive']=False;p.write_text(json.dumps(d))
         with self.assertRaises(AssertionError):self.validate()

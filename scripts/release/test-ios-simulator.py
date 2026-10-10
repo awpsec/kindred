@@ -195,18 +195,105 @@ def validate_composer_evidence(exports, summary, tree, attachments):
     return len(required_methods)
 
 
+def _reduce_motion_command(phase, argv, timeout, status, retain_output=True):
+    """Capture only selected-simulator setup/probe output, never environment."""
+    started = time.monotonic()
+    row = {'phase': phase, 'command': argv, 'deadline_seconds': timeout}
+    stdout = stderr = ''
+    def text(value):
+        return value.decode('utf-8', errors='replace') if isinstance(value, bytes) else (value or '')
+    try:
+        result = subprocess.run(argv, check=True, capture_output=True, text=True, timeout=timeout)
+        row.update(status='success', exit_code=result.returncode)
+        stdout, stderr = text(result.stdout), text(result.stderr)
+        return result
+    except Exception as error:
+        row.update(status='timeout' if isinstance(error, subprocess.TimeoutExpired) else ('nonzero' if isinstance(error, subprocess.CalledProcessError) else 'error'),
+                   error_type=type(error).__name__, exit_code=getattr(error, 'returncode', None))
+        stdout, stderr = text(getattr(error, 'output', None)), text(getattr(error, 'stderr', None))
+        raise
+    finally:
+        row['elapsed_seconds'] = round(time.monotonic() - started, 3)
+        # Inventory is filtered to the selected device by the caller; do not
+        # retain the full list, its paths, or unrelated simulator metadata.
+        if retain_output:
+            row.update(stdout=stdout, stderr=stderr)
+        else:
+            row.update(stdout_bytes=len(stdout.encode()), stderr_bytes=len(stderr.encode()))
+        status['commands'].append(row)
+
+
+def _reduce_motion_failure_probes(device, status):
+    deadline = time.monotonic() + 15
+    prefix = ['xcrun', 'simctl']
+    probes = (
+        ('state', prefix + ['list', 'devices', '--json']),
+        ('health', prefix + ['getenv', device['udid'], 'SIMULATOR_UDID']),
+        ('preference', prefix + ['spawn', device['udid'], 'defaults', 'read', 'com.apple.Accessibility', 'ReduceMotionEnabled']),
+    )
+    status['probe_total_budget_seconds'] = 15
+    status['probes'] = {}
+    for name, argv in probes:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            status['probes'][name] = {'status': 'budget_exhausted'}
+            continue
+        try:
+            result = _reduce_motion_command('probe-' + name, argv, min(5, remaining), status, retain_output=name != 'state')
+            if name == 'state':
+                rows = [d for group in json.loads(result.stdout)['devices'].values() for d in group if d.get('udid') == device['udid']]
+                assert len(rows) == 1, 'Selected simulator not uniquely represented'
+                status['probes'][name] = {'status': 'success', 'selected_device': {k: rows[0].get(k) for k in ('udid', 'state', 'isAvailable')}}
+            elif name == 'health':
+                matches = result.stdout.strip() == device['udid']
+                status['probes'][name] = {'status': 'success' if matches else 'wrong_device', 'selected_device_responded': matches}
+            else:
+                value = result.stdout.strip()
+                status['probes'][name] = {'status': 'success' if value in ('0', '1') else 'unavailable',
+                                         'enabled': value == '1' if value in ('0', '1') else None}
+        except Exception as probe_error:
+            status['probes'][name] = {'status': 'unavailable', 'error_type': type(probe_error).__name__}
+
+
+def _record_reduce_motion_status(status, started):
+    status['elapsed_seconds'] = round(time.monotonic() - started, 3)
+    (OUT / 'reduce-motion-setup.log').write_text(''.join(
+        row['phase'] + '\nstdout:\n' + row.get('stdout', '[selected inventory filtered]') +
+        '\nstderr:\n' + row.get('stderr', '[selected inventory filtered]') + '\n'
+        for row in status['commands']))
+    record('reduce-motion-setup.json', status)
+
+
 def configure_simulator_reduce_motion(device):
-    """Set only the disposable selected simulator; native observation is mandatory."""
+    """Keep the same setup budget/gate; diagnose failure without replacing it."""
+    started = time.monotonic()
     prefix = ['xcrun', 'simctl', 'spawn', device['udid'], 'defaults']
-    with (OUT / 'reduce-motion-setup.log').open('w') as log:
-        subprocess.run(prefix + ['write', 'com.apple.Accessibility', 'ReduceMotionEnabled', '-bool', 'true'],
-                       check=True, stdout=log, stderr=subprocess.STDOUT, timeout=10)
-        observed = subprocess.check_output(prefix + ['read', 'com.apple.Accessibility', 'ReduceMotionEnabled'],
-                                           text=True, timeout=10).strip()
-    assert observed == '1', 'Selected simulator Reduce Motion preference did not read back'
-    record('reduce-motion-setup.json', {'selected_device': device['udid'], 'preference_readback': observed,
-           'requested_enabled': True, 'native_UIAccessibility_observation_required': True,
-           'preference_readback_is_native_runtime_proof': False})
+    status = {'selected_device': device['udid'], 'phase': 'write', 'passed': False, 'commands': [],
+              'requested_enabled': True, 'native_UIAccessibility_observation_required': True,
+              'preference_readback_is_native_runtime_proof': False}
+    try:
+        _reduce_motion_command('write', prefix + ['write', 'com.apple.Accessibility', 'ReduceMotionEnabled', '-bool', 'true'], 10, status)
+        status['phase'] = 'read'
+        result = _reduce_motion_command('read', prefix + ['read', 'com.apple.Accessibility', 'ReduceMotionEnabled'], 10, status)
+        observed = result.stdout.strip()
+        status['preference_readback'] = observed
+        assert observed == '1', 'Selected simulator Reduce Motion preference did not read back'
+        status['passed'] = True
+    except Exception as original_error:
+        status['error_type'] = type(original_error).__name__
+        try:
+            _reduce_motion_failure_probes(device, status)
+        except Exception as diagnostic_error:
+            status['diagnostic_error_type'] = type(diagnostic_error).__name__
+        try:
+            _record_reduce_motion_status(status, started)
+        except Exception:
+            # Receipt I/O failure must not hide the original setup failure.
+            pass
+        raise
+    else:
+        _record_reduce_motion_status(status, started)
+
 
 
 def main(scope):
