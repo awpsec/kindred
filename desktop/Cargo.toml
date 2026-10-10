@@ -29,7 +29,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebViewConfiguration"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSWindow", "NSView", "NSScreen", "NSResponder", "NSTextCheckingClient", "objc2-core-foundation"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSPasteboard", "NSWindow", "NSView", "NSScreen", "NSResponder", "NSTextCheckingClient", "objc2-core-foundation"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSGeometry"] }
 
 [target.'cfg(unix)'.dependencies]

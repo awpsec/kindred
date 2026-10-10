@@ -197,7 +197,7 @@ fn main() {
         .manage(local_access::Bridge::default())
         .invoke_handler(tauri::generate_handler![
             chat_files::save_chat_file,chat_files::reveal_chat_file,
-            composer_input::read_dropped_files,composer_input::read_clipboard_image,
+            composer_input::read_dropped_files,composer_input::read_clipboard_image,composer_input::read_clipboard_text,
             external_links::open_external_url,
             dictation::start_native_dictation,dictation::microphone_permission,dictation::decide_microphone_permission,dictation::configure_dictation,dictation::dictation_status,dictation::download_dictation_model,dictation::cancel_dictation_download,dictation::transcribe_dictation,dictation::cancel_dictation,
             connection::connection_ready,
@@ -257,7 +257,7 @@ fn main() {
                 "allow-start-native-dictation", "allow-microphone-permission", "allow-decide-microphone-permission", "allow-download-dictation-model", "allow-cancel-dictation-download", "allow-configure-dictation", "allow-dictation-status", "allow-transcribe-dictation", "allow-cancel-dictation",
                 "allow-connection-ready",
                 "allow-open-external-url",
-                "allow-save-chat-file", "allow-reveal-chat-file", "allow-read-dropped-files", "allow-read-clipboard-image",
+                "allow-save-chat-file", "allow-reveal-chat-file", "allow-read-dropped-files", "allow-read-clipboard-image", "allow-read-clipboard-text",
                 "allow-open-profile-home", "allow-open-profile-transfer",
                 "allow-position-profile-home",
                 "allow-remember-profile",
@@ -337,6 +337,7 @@ fn main() {
             .initialization_script(format!("if(window.top===window){{{}}}",connection::READY_SCRIPT))
             .initialization_script("if(window.top===window){window.__KINDRED_FILE_DELIVERY=true;window.__KINDRED_ARTIFACT_FRAME=true;}")
             .initialization_script("if(window.top===window){window.__KINDRED_EXTERNAL_LINKS=true;}")
+            .initialization_script(format!("if(window.top===window){{window.__KINDRED_NATIVE_CLIPBOARD_TEXT={};}}",cfg!(target_os = "macos")))
             .enable_clipboard_access()
             .initialization_script("if(window.top===window){window.__KINDRED_NATIVE_ATTACHMENTS=true;}")
             .inner_size(1320.0, 860.0)

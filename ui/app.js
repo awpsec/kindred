@@ -3838,12 +3838,18 @@ async function pasteIntoComputer(value) {
   }
 }
 $("desktop-paste").onclick = async () => {await perform(async () => {
+  if(!state.rfb||!state.desktopConnected||!state.status.takeover||!state.desktopControlRequested)throw new Error("Take control of the computer first.");
   if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
   const expectedRFB=state.rfb;
   let value;
   try {
-    value = await navigator.clipboard.readText();
-  } catch {
+    value = window.__KINDRED_NATIVE_CLIPBOARD_TEXT
+      ? await window.__TAURI__.core.invoke('read_clipboard_text')
+      : await navigator.clipboard.readText();
+  } catch (error) {
+    // Native paste is already the user's explicit action. Do not route native
+    // failures through WebKit's second Paste prompt or the manual browser form.
+    if(window.__KINDRED_NATIVE_CLIPBOARD_TEXT)throw error;
     if(state.rfb!==expectedRFB)throw new Error("The computer connection changed. Check the current computer before trying Paste again.");
     if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
     // Some browsers deny clipboard reads. Keep a direct paste target outside chat.

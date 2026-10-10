@@ -38,6 +38,7 @@ fn main() {
             "open_external_url",
             "read_dropped_files",
             "read_clipboard_image",
+            "read_clipboard_text",
             "save_chat_file",
             "reveal_chat_file",
             "open_profile_home",
