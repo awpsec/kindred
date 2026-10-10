@@ -24,7 +24,10 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   emailSenderLabel({from:{text:'me'}},'Work'),
  ];});
  assert.deepEqual(senders,['casey@example.invalid','Connected account','casey@example.invalid','Casey <casey@example.invalid>','Connected account']);
- const view=page.locator('[data-connector-artifact="email-review"]');await view.getByText('Email draft · Not sent',{exact:true}).waitFor();await view.getByRole('button',{name:'Review',exact:true}).click();assert.equal(await view.getByText('<sender.user>',{exact:true}).count(),0);assert.equal(await view.getByText('casey@example.invalid',{exact:true}).count(),1);
+ const view=page.locator('[data-connector-artifact="email-review"]');await view.getByText('Email draft · Not sent',{exact:true}).waitFor();assert.equal(await view.locator('.email-notice-recipient').textContent(),'To jordan@example.invalid · 1 attachment');
+ await view.locator('.email-notice-preview .email-notice-edit').click();await view.getByRole('form',{name:'Edit email draft'}).getByRole('button',{name:'Close',exact:true}).click();
+ assert.equal(await view.locator('.connector-email-subject').count(),0,'Subject appears once in the email header');assert.equal(actions.length,0,'Opening and closing the editor does not save or send');
+ await view.getByRole('button',{name:'Close',exact:true}).click();await view.getByRole('button',{name:'Review',exact:true}).click();assert.equal(await view.getByText('<sender.user>',{exact:true}).count(),0);assert.equal(await view.getByText('casey@example.invalid',{exact:true}).count(),1);
  assert.equal(await page.locator('[data-approval="approval-email"]').count(),1,'Only the email card owns this approval');
  const output=process.env.KINDRED_TEST_ARTIFACTS||'/opt/kindred/testing/email-review';fs.mkdirSync(output,{recursive:true});
  for(const theme of ['dark','light']){await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);await view.screenshot({path:path.join(output,'email-draft-'+theme+'.png')});}

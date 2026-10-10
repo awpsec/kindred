@@ -5721,3 +5721,10 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
 .email-draft-editor>p{margin:12px 0}.email-draft-editor>.connector-card-actions{margin-top:4px}
 @media(max-width:480px){.email-draft-editor .recipient-row{grid-template-columns:48px minmax(0,1fr) auto;column-gap:8px}.email-draft-editor>label.email-field-subject{grid-template-columns:48px minmax(0,1fr);gap:8px}.email-draft-editor .recipient-toggle{padding-inline:4px}}
 @media(forced-colors:active){.email-draft-editor .recipient-row:focus-within,.email-draft-editor>label.email-field-subject:focus-within{border-bottom-color:Highlight}.email-draft-editor>label.email-field-body textarea:focus{outline:1px solid Highlight}}
+
+/* The collapsed email remains readable without opening a form. */
+.email-notice-preview{padding:0 15px 12px;font-size:calc(13px * var(--text-scale,1))}
+.email-notice-preview[hidden]{display:none}
+.email-notice-recipient{margin:0 0 5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.email-notice-excerpt{margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;line-height:1.5}
+.email-notice-edit{margin:6px 0 0;padding:3px 0;font-size:inherit}
