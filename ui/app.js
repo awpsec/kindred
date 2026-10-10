@@ -8267,7 +8267,7 @@ dictationUI=createDictationUI({editor:$("prompt"),send:$("send"),composer:$("com
 
 function workflowOptions(chatId,panel){return {
  onReady:animateWorkflowDetails,
- onRespond:async input=>{const saved=await api('/chats/'+encodeURIComponent(chatId)+'/panels/'+encodeURIComponent(panel.id)+'/respond','POST',input);void refresh();return saved;},
+ onRespond:async input=>{const saved=await api('/chats/'+encodeURIComponent(chatId)+'/panels/'+encodeURIComponent(panel.id)+'/respond','POST',input);void perform(()=>refresh());return saved;},
  avatar:(id,name)=>{const b=state.bots.find(b=>b.id===id);return b?buddy(b,22):node('span','workflow-initial',name.slice(0,1));},
  onChat:async id=>{const c=state.chats.find(c=>c.id===id);if(c)await chooseChat(c);else notice('This conversation is no longer available.');},
  onMonitor:()=>openSettings('routines'),
