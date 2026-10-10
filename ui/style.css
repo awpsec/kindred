@@ -5937,3 +5937,6 @@ html .shell>:is(.details-panel,.computer-panel).pane-layout-frame{
 
 .reminder-edit-form label{margin:0}
 .reminder-edit-form label :is(input,textarea,select){margin-top:0}
+
+.reminder-zone-info[hidden]{display:none}
+@media(max-width:360px){.reminder-date-shortcuts{gap:4px}.reminder-date-shortcuts button{padding-inline:9px}}
