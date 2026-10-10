@@ -1,5 +1,5 @@
 """Run one unsigned simulator attempt; keep scoped composer evidence separate."""
-import argparse, hashlib, json, os, re, signal, ssl, subprocess, tempfile, time, urllib.request
+import argparse, hashlib, json, math, os, re, signal, ssl, subprocess, tempfile, time, urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -73,15 +73,32 @@ def export_results(bundle):
 
 COMPOSER_PHASES = {
     'ComposerUIKitTests/testKeyboardOpenClosePreservesDraftAndToolbarAboveKeyboard()':
-        ('keyboard-open', 'keyboard-reply-attachment', 'keyboard-closed'),
+        ('keyboard-open', 'keyboard-reply-attachment', 'keyboard-closed') + tuple(
+            'send-' + theme + '-' + draft + '-' + keyboard
+            for theme in ('dark', 'light') for draft in ('empty', 'populated') for keyboard in ('closed', 'open')),
     'ComposerUIKitTests/testOrientationSafeAreaAndTextSizePreserveDraft()':
         ('landscape-150', 'portrait-150'),
+    'ComposerUIKitTests/testNativeDictationComposerStatesKeepDraftAndKeyboard()': tuple(
+        'dictation-' + theme + '-' + scale + '-' + keyboard + '-' + state
+        for theme in ('dark', 'light') for scale in ('100', '150')
+        for keyboard in ('closed', 'open') for state in ('empty', 'typing', 'dictating', 'stopped', 'cancelled')),
+}
+
+DICTATION_METHODS = {
+    'NativeDictationTests/' + name + '()' for name in (
+        'testCumulativePartialsFinalAndDuplicateFinal',
+        'testPermissionDenialAndUnsupportedDoNotCapture',
+        'testCancelledPermissionCannotStartOrEnterNewChat',
+        'testStopFallbackAndBackgroundPreserveLastPreview',
+        'testErrorLimitAndAudioFailureNeverReplay')
+
 }
 
 
 def validate_composer_evidence(exports, summary, tree, attachments):
     assert all(exports[k] == 0 for k in ('summary', 'tests', 'attachments')), 'Native result/attachment export failed'
-    assert summary['totalTestCount'] == 2 and summary['passedTests'] == 2 and summary['failedTests'] == 0, 'Both exact composer tests must execute and pass'
+    required_methods = set(COMPOSER_PHASES) | DICTATION_METHODS
+    assert summary['totalTestCount'] == len(required_methods) and summary['passedTests'] == len(required_methods) and summary['failedTests'] == 0, 'All exact composer and injected lifecycle tests must execute and pass'
     tree = json.loads(tree) if isinstance(tree, str) else tree
     cases = []
     def visit(nodes):
@@ -89,7 +106,7 @@ def validate_composer_evidence(exports, summary, tree, attachments):
             if node.get('nodeType') == 'Test Case': cases.append(node)
             visit(node.get('children', []))
     visit(tree['testNodes'])
-    assert len(cases) == 2 and {n['nodeIdentifier'] for n in cases} == set(COMPOSER_PHASES), 'Missing, duplicate or renamed composer method'
+    assert len(cases) == len(required_methods) and {n['nodeIdentifier'] for n in cases} == required_methods, 'Missing, duplicate or renamed composer method'
     assert all(n['result'] == 'Passed' for n in cases), 'Skipped or failed composer method'
     manifest = json.loads((attachments / 'manifest.json').read_text())
     assert isinstance(manifest, list), 'Unknown attachment manifest schema'
@@ -121,9 +138,60 @@ def validate_composer_evidence(exports, summary, tree, attachments):
             if phase.startswith('keyboard-'):
                 assert metrics['keyboardNotifications']['shows'] > 0 and metrics['keyboardFrame']['height'] > 100, 'Missing actual keyboard show evidence'
                 if phase == 'keyboard-closed': assert metrics['keyboardNotifications']['hides'] > 0, 'Missing actual keyboard hide evidence'
+            if phase.startswith(('send-', 'dictation-')):
+                assert metrics['keyboardVisible'] is ('-open' in phase), 'Wrong observed native keyboard state'
+                assert metrics['nativeReduceMotion'] is True, 'Observed OS Reduce Motion was not enabled'
+                if '-open' in phase:
+                    assert metrics['keyboardNotifications']['shows'] > 0 and metrics['keyboardFrame']['height'] > 100, 'Missing actual matrix keyboard show evidence'
+            if phase.startswith('dictation-'):
+                assert metrics['sendSurface']['theme'] == phase.split('-')[1], 'Wrong dictation theme'
+                assert abs(metrics['layout']['textScale'] - (1.5 if '-150-' in phase else 1)) <= .01, 'Wrong dictation text scale'
+            if phase.startswith('send-'):
+                paint = json.loads(exported(phase + '-painted-Send', ('.json',)).read_text())
+                surface = paint['sendSurface']
+                assert surface == metrics['sendSurface'], 'Paint and geometry describe different Send surfaces'
+                assert surface['theme'] == phase.split('-')[1] and surface['hidden'] is False and surface['appearance'] == 'none', 'Incorrect Send appearance state'
+                assert surface['edgeHits'] == [True] * 4, 'Missing outer Send target hits'
+                def number(value):
+                    assert type(value) in (int, float) and math.isfinite(value), 'Invalid native paint number'
+                    return value
+                target, arrow, circle = surface['target'], surface['arrow'], surface['paint']
+                for key in ('width', 'height'):
+                    assert abs(number(target[key]) - 44) <= .5 and abs(number(arrow[key]) - 20) <= .5 and abs(number(circle[key]) - 36) <= .5, 'Wrong Send target/arrow/paint size'
+                for key in ('left', 'top'):
+                    assert abs(number(circle[key]) - 4) <= .5, 'Uncentered painted circle'
+                for key in ('x', 'y'):
+                    assert abs(number(arrow[key]) + 10 - number(target[key]) - 22) <= .5, 'Uncentered Send arrow'
+                rgba = circle['rgba']; opacity = number(surface['opacity'])
+                assert len(rgba) == 4 and rgba[3] == 255 and all(0 <= number(c) <= 255 for c in rgba) and 0 <= opacity <= 1, 'Invalid Send colour/opacity'
+                probes = paint['nativeBitmapProbes']
+                assert len(probes) == 4 and {tuple(p['direction']) for p in probes} == {(1,0),(-1,0),(0,1),(0,-1)}, 'Missing cardinal native bitmap probes'
+                for probe in probes:
+                    inside, outside, expected = probe['inside'], probe['outside'], probe['expected']
+                    assert len(inside) >= 3 and len(outside) >= 3 and len(expected) == 3, 'Missing bitmap colour components'
+                    computed = [opacity * number(rgba[i]) + (1-opacity) * number(outside[i]) for i in range(3)]
+                    assert all(abs(number(expected[i]) - computed[i]) <= .01 for i in range(3)), 'Incorrect bitmap compositing evidence'
+                    assert max(abs(computed[i] - number(outside[i])) for i in range(3)) > 12, 'Paint indistinguishable from surrounding bitmap'
+                    assert max(abs(number(inside[i]) - computed[i]) for i in range(3)) <= 12, 'Native bitmap does not show Send paint'
+                if phase.endswith('-open'):
+                    assert metrics['keyboardNotifications']['shows'] > 0 and metrics['keyboardFrame']['height'] > 100, 'Missing Send matrix keyboard show evidence'
             if phase == 'landscape-150': assert native['windowWidth'] > native['windowHeight'], 'Missing native landscape geometry'
             if phase == 'portrait-150': assert native['windowHeight'] > native['windowWidth'], 'Missing native portrait geometry'
-    return 2
+    return len(required_methods)
+
+
+def configure_simulator_reduce_motion(device):
+    """Set only the disposable selected simulator; native observation is mandatory."""
+    prefix = ['xcrun', 'simctl', 'spawn', device['udid'], 'defaults']
+    with (OUT / 'reduce-motion-setup.log').open('w') as log:
+        subprocess.run(prefix + ['write', 'com.apple.Accessibility', 'ReduceMotionEnabled', '-bool', 'true'],
+                       check=True, stdout=log, stderr=subprocess.STDOUT, timeout=10)
+        observed = subprocess.check_output(prefix + ['read', 'com.apple.Accessibility', 'ReduceMotionEnabled'],
+                                           text=True, timeout=10).strip()
+    assert observed == '1', 'Selected simulator Reduce Motion preference did not read back'
+    record('reduce-motion-setup.json', {'selected_device': device['udid'], 'preference_readback': observed,
+           'requested_enabled': True, 'native_UIAccessibility_observation_required': True,
+           'preference_readback_is_native_runtime_proof': False})
 
 
 def main(scope):
@@ -140,8 +208,12 @@ def main(scope):
     command = ['xcodebuild', 'test', '-project', 'KindredCompanion.xcodeproj', '-scheme', 'KindredCompanion', '-destination', destination, '-destination-timeout', '90', '-parallel-testing-enabled', 'NO', '-maximum-concurrent-test-simulator-destinations', '1', '-resultBundlePath', str(bundle), 'CODE_SIGNING_ALLOWED=NO']
     if scope == 'composer':
         assert (ROOT / 'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').is_file(), 'Reviewed composer tests missing'
-        command += ['-only-testing:KindredCompanionTests/ComposerUIKitTests']
+        command += ['-only-testing:KindredCompanionTests/ComposerUIKitTests'] + [
+            '-only-testing:KindredCompanionTests/' + name.removesuffix('()')
+            for name in sorted(DICTATION_METHODS)]
     receipt = {'source_commit': source, 'scope': scope, 'runtime': runtime, 'device': device, 'destination': destination, 'command': command, 'full_scheme_includes_AppModelSignInTests': scope == 'full', 'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'automatic_retry': False, 'passed': False}
+    if scope == 'composer':
+        receipt.update(required_methods=sorted(set(COMPOSER_PHASES) | DICTATION_METHODS), required_native_phases=53, real_Apple_recognition_selected=False, real_audio_test_excluded=True, injectable_lifecycle_is_recognition_proof=False)
     record('test-receipt.json', receipt)
     fixture = None
     old_keyboard = None
@@ -182,6 +254,7 @@ def main(scope):
                 assert actual == '0', 'Simulator keyboard preference did not apply'
                 record('keyboard-setup.json', {'hardware_keyboard_connected': False, 'previous_preference': old_keyboard, 'native_keyboard_visibility_requires_test_evidence': True})
                 boot_simulator(device)
+                configure_simulator_reduce_motion(device)
                 run(['open', '-a', 'Simulator', '--args', '-CurrentDeviceUDID', device['udid']])
             with (OUT / 'xcodebuild.log').open('w') as log:
                 process = subprocess.Popen(command, cwd=ROOT / 'mobile/ios', stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
