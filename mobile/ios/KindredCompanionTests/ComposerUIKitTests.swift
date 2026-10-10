@@ -161,7 +161,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
 
     func testKeyboardOpenClosePreservesDraftAndToolbarAboveKeyboard() async throws {
         let draft = "Native draft\nSecond line\nThird line"
-        _ = try await js("const p=document.querySelector('#prompt');p.textContent='Native draft\\nSecond line\\nThird line';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.focus();true")
+        _ = try await js("const p=document.querySelector('#prompt');p.textContent='Native draft\\nSecond line\\nThird line';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.focus({preventScroll:true});true")
         try await waitFor("actual UIKit software keyboard didShow") { self.keyboardShows > 0 && self.keyboardFrame.height > 100 }
         try await waitFor("SwiftUI host above actual keyboard") {
             self.session.webView.convert(self.session.webView.bounds, to: self.window).maxY <= self.window.convert(self.keyboardFrame, from: nil).minY + 2
@@ -171,7 +171,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         try await waitFor("real reply and attachment rows") {
             try await self.boolean("!!document.querySelector('[aria-label=\"Remove notes.txt\"]') && document.querySelector('#composer-reply').getClientRects().length>0")
         }
-        _ = try await js("document.querySelector('#prompt').focus();true")
+        _ = try await js("document.querySelector('#prompt').focus({preventScroll:true});true")
         try await checkComposer(label: "keyboard-reply-attachment")
         let retainedDraft = try await js("document.querySelector('#prompt').textContent") as? String
         XCTAssertEqual(retainedDraft, draft)
@@ -218,7 +218,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             for scale in [1.0, 1.5] {
                 for keyboard in [false, true] {
                     let prefix = "dictation-" + theme + (scale == 1 ? "-100" : "-150") + (keyboard ? "-open" : "-closed")
-                    _ = try await js("document.documentElement.dataset.theme='\(theme)';window.__KINDRED_SYSTEM_TEXT_SCALE=\(scale);window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:\(scale)}}));const p=document.querySelector('#prompt');p.textContent='';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.\(keyboard ? "focus" : "blur")();true")
+                    _ = try await js("document.documentElement.dataset.theme='\(theme)';window.__KINDRED_SYSTEM_TEXT_SCALE=\(scale);window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:\(scale)}}));const p=document.querySelector('#prompt');p.textContent='';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.\(keyboard ? "focus({preventScroll:true})" : "blur()");true")
                     if !keyboard { window.endEditing(true) }
                     try await waitFor("native keyboard state " + prefix) { self.keyboardVisible == keyboard }
                     try await waitFor("native capability reconciled") {
@@ -615,7 +615,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                 for keyboard in [false, true] {
                     let label = "send-" + theme + (populated ? "-populated" : "-empty") + (keyboard ? "-open" : "-closed")
                     let draft = populated ? "Send surface fixture" : ""
-                    _ = try await js("document.documentElement.dataset.theme='\(theme)';const p=document.querySelector('#prompt');p.textContent='\(draft)';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.\(keyboard ? "focus" : "blur")();true")
+                    _ = try await js("document.documentElement.dataset.theme='\(theme)';const p=document.querySelector('#prompt');p.textContent='\(draft)';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.\(keyboard ? "focus({preventScroll:true})" : "blur()");true")
                     if !keyboard { window.endEditing(true) }
                     try await waitFor("actual keyboard state for " + label) { self.keyboardVisible == keyboard }
                     let observed = try await checkComposer(label: label)
