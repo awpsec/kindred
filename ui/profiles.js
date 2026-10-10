@@ -101,10 +101,11 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const directory=await nativeInvoke('profile_home_state',{});
     nativeProfiles=directory.entries||[];nativeLast=directory.last;paint();
   }
+  let refreshRevision=0;
   async function refresh() {
-    if(!enabled||!getToken()||polling)return;polling=true;
+    if(!enabled||!getToken()||polling)return;polling=true;const session=getToken(),revision=++refreshRevision;
     try{await Promise.allSettled([
-      api('profiles').then(value=>{projection=value;paint();}),
+      api('profiles').then(value=>{if(session===getToken()&&revision===refreshRevision){projection=value;paint();}}),
       refreshNativeAccounts(),
       window.__KINDRED_PROFILE_HOST?nativeInvoke('profile_activity',{}).then(value=>{nativeCounts=value;paint();}):Promise.resolve()
     ]);}finally{polling=false;}
@@ -178,9 +179,33 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   async function profileSettings(){
     const current=projection?.profiles?.find(p=>p.active);if(!current)return;
     const d=dialog('Account settings'),form=el('form','profile-auth');d.append(form);
+    const accountID=projection.account_id,session=getToken(),profileID=current.id;let expectedUsername=projection.username||'',savedName=current.name;
+    const username=fieldSet(form,'Username','text',expectedUsername,'username');username.maxLength=80;username.disabled=projection.account_management!==true;
+    form.append(el('p','muted',"You'll use this to sign in. Your bots, chats and files stay the same."));
+    const usernameError=el('output','profile-form-error');usernameError.setAttribute('role','alert');form.append(usernameError);
     const name=fieldSet(form,'Profile name','text',current.name,'off');name.maxLength=80;
     form.append(el('p','muted','Server · '+location.origin));const save=el('button','primary','Save changes');save.type='submit';form.append(save);
-    form.onsubmit=e=>{e.preventDefault();run(async()=>{await api('profile',{name:name.value});await connected();d.close();location.reload();},save);};
+    const sameAccount=()=>getToken()===session&&projection?.account_id===accountID&&projection?.active===profileID;
+    let saving=false;const normalized=()=>username.value.trim().toLowerCase();
+    const changed=()=>!username.disabled&&normalized()!==expectedUsername;
+    function updateSave(){save.disabled=saving||!name.value.trim()||(!username.disabled&&!normalized())||(!changed()&&name.value.trim()===savedName);}
+    username.addEventListener('input',updateSave);name.addEventListener('input',updateSave);updateSave();
+    form.onsubmit=async e=>{e.preventDefault();if(save.disabled)return;usernameError.textContent='';saving=true;updateSave();let renamed=false;
+      try{
+        if(!sameAccount())throw new Error('Your account changed elsewhere. Reload and try again.');
+        if(changed()){
+          if(!/^[A-Za-z0-9._@-]{1,80}$/.test(username.value.trim()))throw new Error('Use letters, numbers, dots, hyphens or an email address for your username');
+          const value=await api('account',{account_id:accountID,expected_username:expectedUsername,username:username.value});
+          if(!sameAccount()||!d.isConnected)return;
+          if(value.account_id!==accountID||typeof value.username!=='string')throw new Error('The server could not confirm the username change. Reload and check your account.');
+          expectedUsername=value.username;projection.username=value.username;username.value=value.username;renamed=true;notice('Username changed.');
+        }
+        if(name.value.trim()!==savedName){await api('profile',{name:name.value});if(!sameAccount()||!d.isConnected)return;savedName=name.value.trim();}
+        if(!sameAccount()||!d.isConnected)return;
+        await connected();if(!sameAccount()||!d.isConnected)return;d.close();if(savedName!==current.name)location.reload();
+      }catch(e){if(sameAccount()&&d.isConnected)usernameError.textContent=renamed?'Username changed. The remaining changes could not be saved. Try again.':(e.message||'The changes could not be saved. Try again.');}
+      finally{saving=false;updateSave();}
+    };
     {
       const existing=el('details','account-workspaces');existing.append(el('summary','','Profiles'));
       existing.append(el('p','muted','These workspaces share this account’s username and password.'));
@@ -278,10 +303,30 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     check.onchange=()=>run(async()=>{try{await api('admin',{action:'registration',open:check.checked});}catch(e){check.checked=!check.checked;throw e;}},check);
     const invite=el('input','profile-invite');invite.readOnly=true;invite.setAttribute('aria-label','One-use invitation link');invite.hidden=true;
     users.append(button('Create invitation link',async()=>{const value=await api('admin',{action:'invite'});const url=new URL(location.origin);url.hash='invite='+encodeURIComponent(value.invite);invite.value=url.href;invite.hidden=false;invite.select();}),invite);
+    if(!data.can_manage_roles)users.append(el('p','muted',data.owner_resolved?"Only the Owner can change roles.":"Role changes are unavailable until this server's Owner is confirmed on the host."));
     const table=el('div','server-user-table');table.setAttribute('role','table');table.setAttribute('aria-label','Server users');users.append(table);
     for(const user of [...data.users].sort((a,b)=>Number(!!a.disabled)-Number(!!b.disabled))){
-      const row=el('div','server-user-row');row.classList.toggle('is-disabled',!!user.disabled);row.setAttribute('role','row');const copy=el('div','server-user-copy'),actions=el('div','row-actions');copy.setAttribute('role','cell');actions.setAttribute('role','cell');copy.append(el('strong','',user.username),el('span','muted',user.profile_count+' '+(user.profile_count===1?'profile':'profiles')));if(user.disabled)copy.append(el('span','muted','Disabled'));row.append(copy,actions);
-      if(user.id!==projection.account_id){
+      const row=el('div','server-user-row');row.classList.toggle('is-disabled',!!user.disabled);row.setAttribute('role','row');const copy=el('div','server-user-copy'),actions=el('div','row-actions');copy.setAttribute('role','cell');actions.setAttribute('role','cell');copy.append(el('strong','',user.username));const count=el('span','server-user-count muted',user.profile_count+' '+(user.profile_count===1?'profile':'profiles'));count.setAttribute('role','cell');if(user.disabled)copy.append(el('span','muted','Disabled'));      const role=el('div','server-user-role');role.setAttribute('role','cell');
+      const currentRole=user.role|| (user.admin?'admin':'user');
+      if(data.can_manage_roles&&currentRole!=='owner'){
+        const select=el('select');select.setAttribute('aria-label','Role for '+user.username);for(const [value,title] of [['user','User'],['admin','Admin']]){const option=el('option','',title);option.value=value;select.append(option);}select.value=currentRole;
+        const error=el('output','profile-form-error');error.setAttribute('role','alert');role.append(select,error);
+        select.onchange=async()=>{
+          const chosen=select.value,session=getToken(),accountID=projection.account_id;error.textContent='';select.disabled=true;
+          const current=()=>d.isConnected&&session===getToken()&&projection?.account_id===accountID;
+          try{
+            if(chosen==='admin'){
+              const confirmed=await new Promise(resolve=>{const prompt=dialog('Make '+user.username+' an admin?');prompt.append(el('p','','Admins can manage users, password resets, computers and server settings. Only you can change roles.'));const controls=el('div','row-actions');let accepted=false;controls.append(button('Cancel',()=>prompt.close(),'outline-button'),button('Make admin',()=>{accepted=true;prompt.close();},'primary'));prompt.append(controls);prompt.addEventListener('close',()=>resolve(accepted),{once:true});controls.firstChild.focus();});
+              if(!confirmed||!current()){select.value=currentRole;return;}
+            }
+            await api('admin',{action:'role',user_id:user.id,role:chosen,expected_role:currentRole});if(!current())return;
+            notice(user.username+' is now '+(chosen==='admin'?'an Admin.':'a User.'));d.close();await admin('Users');
+          }catch(e){if(current()){select.value=currentRole;error.textContent=e.message||'The role could not be saved. Try again.';}}
+          finally{select.disabled=false;}
+        };
+      }else role.append(el('span','',currentRole==='owner'?'Owner':currentRole==='admin'?'Admin':'User'));
+      row.append(copy,role,count,actions);
+      if(user.id!==projection.account_id&&currentRole!=='owner'&&(data.owner_resolved||!user.admin||user.disabled)){
         const toggle=button('',()=>{const confirm=dialog((user.disabled?'Enable ':'Disable ')+user.username+'?');confirm.append(el('p','',user.disabled?'Allow this user to sign in again.':'This signs them out and stops their bots. Their profiles and files are kept.'));const error=el('p','profile-form-error');error.setAttribute('role','alert');confirm.append(error);const controls=el('div','row-actions'),cancel=button('Cancel',()=>confirm.close(),'outline-button'),go=button('Confirm',async()=>{cancel.disabled=true;go.disabled=true;try{await api('admin',{action:'disable',user_id:user.id,disabled:!user.disabled});confirm.close();d.close();await admin();}catch(e){error.textContent=e.message;}finally{go.disabled=false;cancel.disabled=false;}},'primary');controls.append(cancel,go);confirm.append(controls);cancel.focus();},'icon-button');toggle.append(menuIcon(user.disabled?'M5 12l4 4L19 6':'M6 6l12 12 M18 6L6 18'));toggle.setAttribute('aria-label',(user.disabled?'Enable ':'Disable ')+user.username);toggle.title=(user.disabled?'Enable ':'Disable ')+user.username;actions.append(toggle);
       }table.append(row);
     }
