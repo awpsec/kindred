@@ -5540,7 +5540,7 @@ html[data-motion=off] .request-tray .question-choices{gap:8px}
 .reminder-batch{max-width:560px;width:100%}.notice-pager{display:flex;align-items:center;gap:8px;margin-bottom:4px}.notice-pager button:first-child{transform:rotate(180deg)}
 @media(hover:hover) and (pointer:fine){.reminder-actions{opacity:0}.reminder-card:hover .reminder-actions,.reminder-card:focus-within .reminder-actions{opacity:1}}
 
-.summary-progress{margin:10px 0 12px 20px;border-top:1px solid var(--line);padding-top:10px;max-width:calc(100% - 20px);font-size:calc(13px * var(--text-scale,1))}.summary-progress-heading{display:flex;flex-wrap:wrap;gap:5px 10px;cursor:pointer;list-style:none}.summary-progress-task{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.summary-progress-heading>.muted{flex-basis:100%}.summary-progress-body{padding-top:8px}.summary-progress-update{padding:5px 0;overflow-wrap:anywhere}.summary-progress-update p{margin:4px 0}.summary-progress-disclosure:not([open]) .summary-progress-body{display:none}
+.summary-progress{margin:10px 20px 12px;border-top:0;padding-top:0;max-width:calc(100% - 40px);font-size:calc(13px * var(--text-scale,1))}.summary-progress-heading{display:flex;flex-wrap:wrap;gap:5px 10px;cursor:pointer;list-style:none}.summary-progress-task{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.summary-progress-heading>.muted{flex-basis:100%}.summary-progress-body{padding-top:8px}.summary-progress-update{padding:5px 0;overflow-wrap:anywhere}.summary-progress-update p{margin:4px 0}.summary-progress-disclosure:not([open]) .summary-progress-body{display:none}
 
 .connector-artifact.email-notice{background:color-mix(in srgb,var(--fg) 3%,var(--bg));border:0;box-shadow:none;border-radius:3px;max-width:720px;width:100%;text-align:left}.email-notice .connector-artifact-header{display:flex;align-items:center;flex-wrap:wrap;gap:6px}.email-notice-title{overflow-wrap:anywhere}.email-notice .connector-card-status{flex:1;white-space:normal}.email-notice .connector-card-actions[hidden],.email-notice .connector-artifact-content[hidden]{display:none}.email-notice .connector-card-actions{flex-wrap:wrap}.email-notice .email-review-close{margin-right:auto}.email-notice .connector-card-editor .connector-card-actions>button:last-child{margin-left:auto}.email-retry-confirm{display:flex;gap:8px;align-items:flex-start}.email-retry-confirm input{width:18px;height:18px;flex:none}.email-notice:not(.email-review-open) .connector-card-editor{display:none}
 
@@ -5695,3 +5695,29 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
 .workflow-notice-description{padding:0 15px;margin:0 0 10px;font-size:calc(13px * var(--text-scale,1))}
 
 .request-tray .instruction-review>p{margin:0 0 10px;font-size:calc(12px * var(--text-scale,1))}
+
+.summary-progress-heading{align-items:center;padding-bottom:8px;border-bottom:1px solid var(--line)}
+
+/* Email composition uses flat header rows, with only one quiet divider per row. */
+.email-draft-editor .email-recipients{gap:0}
+.email-draft-editor .recipient-row{grid-template-columns:48px minmax(0,1fr) auto;gap:0 10px;align-items:center;min-height:44px;border-bottom:1px solid color-mix(in srgb,var(--fg) 12%,transparent);transition:border-color .15s}
+.email-draft-editor .recipient-row:focus-within{border-bottom-color:color-mix(in srgb,var(--fg) 35%,transparent)}
+.email-draft-editor .recipient-head{display:contents}
+.email-draft-editor .recipient-head>label{grid-column:1;grid-row:1;align-self:start;padding:12px 0}
+.email-draft-editor .recipient-toggles{grid-column:3;grid-row:1;align-self:start;padding-top:7px}
+.email-draft-editor .recipient-box{grid-column:2;grid-row:1;min-height:44px;padding:6px 0;border:0;border-radius:0;background:transparent;box-shadow:none}
+.email-draft-editor .recipient-box:focus-within{border:0;outline:0;box-shadow:none}
+.email-draft-editor .recipient-box.is-drop-target{background:color-mix(in srgb,var(--fg) 5%,transparent)}
+.email-draft-editor .recipient-box.is-invalid{border-bottom:1px solid var(--danger)}
+.email-draft-editor .recipient-note{grid-column:2/-1;margin:0 0 6px}
+.email-draft-editor .recipient-chip{border-color:transparent;background:color-mix(in srgb,var(--fg) 7%,transparent);border-radius:6px}
+.email-draft-editor .recipient-chip:focus-visible{outline:1px solid var(--muted);outline-offset:1px}
+.email-notice .email-draft-editor{gap:0}
+.email-draft-editor>label.email-field-subject{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:10px;min-height:44px;border-bottom:1px solid color-mix(in srgb,var(--fg) 12%,transparent)}
+.email-draft-editor>label.email-field-subject:focus-within{border-bottom-color:color-mix(in srgb,var(--fg) 35%,transparent)}
+.email-draft-editor>label.email-field-subject input,.email-draft-editor>label.email-field-subject input:focus{padding:10px 0;border:0;border-radius:0;background:transparent;outline:0;box-shadow:none}
+.email-draft-editor>label.email-field-body{display:block;font-size:0;margin-top:12px}
+.email-draft-editor>label.email-field-body textarea,.email-draft-editor>label.email-field-body textarea:focus{padding:4px 0 10px;border:0;border-radius:0;background:transparent;outline:0;box-shadow:none;font-size:calc(13px * var(--text-scale,1))}
+.email-draft-editor>p{margin:12px 0}.email-draft-editor>.connector-card-actions{margin-top:4px}
+@media(max-width:480px){.email-draft-editor .recipient-row{grid-template-columns:48px minmax(0,1fr) auto;column-gap:8px}.email-draft-editor>label.email-field-subject{grid-template-columns:48px minmax(0,1fr);gap:8px}.email-draft-editor .recipient-toggle{padding-inline:4px}}
+@media(forced-colors:active){.email-draft-editor .recipient-row:focus-within,.email-draft-editor>label.email-field-subject:focus-within{border-bottom-color:Highlight}.email-draft-editor>label.email-field-body textarea:focus{outline:1px solid Highlight}}
