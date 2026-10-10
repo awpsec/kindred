@@ -26,11 +26,19 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let origin = try XCTUnwrap(ServerOrigin(url: URL(string: "https://localhost:8765/")!))
         session = WebSession(account: Account(origin: origin, login: "composer-fixture"), token: "native-test-token-only", host: self)
         session.webView.stopLoading()
+        // Actual WebSession/bridge/UIKit, injected speech lifecycle only. This
+        // never grants permission or records audio and is not recognition proof.
+        session.dictation.testHooks = NativeDictation.TestHooks()
         delegate = LocalFixtureDelegate(session: session)
         session.webView.navigationDelegate = delegate
         session.webView.configuration.userContentController.addUserScript(WKUserScript(source: """
         window.__KINDRED_MOBILE=true; window.__KINDRED_MOBILE_PLATFORM='ios';
         window.__composerSends=[];
+        window.__composerDictationEvents=[];
+        window.addEventListener('kindred-ios-dictation',event=>{const p=event.detail;
+          window.__composerDictationEvents.push({phase:p.phase,reason:p.reason??p.errorCode??null,
+            sequence:p.sequence,textLength:typeof p.text==='string'?p.text.length:0});
+        });
         const fixtureFetch=window.fetch.bind(window);
         window.fetch=(input,options={})=>{
           const url=new URL(typeof input==='string'?input:input.url,location.href);
@@ -80,7 +88,10 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // Bind the fixture's exact shared candidate, not a stale connected UI.
         _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
         try await waitFor("exact Send candidate UI manifest") {
-            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='d671527d986778cbfb9b2549de4d8fc6f60b4830623c18ba07aaaf4012d70424' && window.__sendSurfaceFixture?.['app.js']==='68dac6db2dc2562759ed718c9beab36fa77a94a0e4bff97efc22c0e82cc16c7f'")
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='0b42853de5ce031edfcc59b14b9892670006bcd01702831443629efed5c6ba7b' && window.__sendSurfaceFixture?.['app.js']==='61c1df22561001d18ce474bd93737cc83c62140a6d8e2efe262e9187cffadfcf' && window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c'")
+        }
+        try await waitFor("injected native capability reconciles through bridge") {
+            try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && window.__KINDRED_IOS_DICTATION?.recognizerAvailable===true")
         }
     }
 
@@ -160,6 +171,56 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         try await checkComposer(label: "portrait-150")
         let sends = try await js("window.__composerSends.length") as? Int
         XCTAssertEqual(sends, 0)
+    }
+
+    func testNativeDictationComposerStatesKeepDraftAndKeyboard() async throws {
+        for theme in ["dark", "light"] {
+            for scale in [1.0, 1.5] {
+                for keyboard in [false, true] {
+                    let prefix = "dictation-" + theme + (scale == 1 ? "-100" : "-150") + (keyboard ? "-open" : "-closed")
+                    _ = try await js("document.documentElement.dataset.theme='\(theme)';window.__KINDRED_SYSTEM_TEXT_SCALE=\(scale);window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:\(scale)}}));const p=document.querySelector('#prompt');p.textContent='';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.\(keyboard ? "focus" : "blur")();true")
+                    if !keyboard { window.endEditing(true) }
+                    try await waitFor("native keyboard state " + prefix) { self.keyboardVisible == keyboard }
+                    try await waitFor("native capability reconciled") {
+                        try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && !!document.querySelector('.dictation-button')?.getClientRects().length")
+                    }
+                    _ = try await checkComposer(label: prefix + "-empty")
+                    _ = try await js("const p=document.querySelector('#prompt');p.textContent='Left Right';p.dispatchEvent(new InputEvent('input',{bubbles:true}));const r=document.createRange();r.setStart(p.firstChild,5);r.collapse(true);getSelection().removeAllRanges();getSelection().addRange(r);true")
+                    _ = try await checkComposer(label: prefix + "-typing")
+                    _ = try await js("const m=document.querySelector('.dictation-button');m.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerType:'touch'}));m.click();true")
+                    try await waitFor("native injected recording") { self.session.dictation.phase == "recording" }
+                    let operation = try XCTUnwrap(session.dictation.operation)
+                    session.dictation.acceptRecognition(text: "spoken words", final: false, failed: false, operation: operation)
+                    try await waitFor("live native partial in current draft") {
+                        try await self.boolean("document.querySelector('#prompt').textContent==='Left spoken words Right'")
+                    }
+                    XCTAssertEqual(keyboardVisible, keyboard, "Dictation must not change keyboard visibility")
+                    _ = try await checkComposer(label: prefix + "-dictating")
+                    _ = try await js("document.querySelector('.dictation-button').click();true")
+                    try await waitFor("native stop received") { self.session.dictation.phase == "finishing" }
+                    session.dictation.acceptRecognition(text: "spoken words", final: true, failed: false, operation: operation)
+                    try await waitFor("final committed once and editable") {
+                        try await self.boolean("!document.querySelector('#prompt .dictation-transcript') && document.querySelector('#prompt').textContent==='Left spoken words Right'")
+                    }
+                    XCTAssertEqual(keyboardVisible, keyboard)
+                    _ = try await checkComposer(label: prefix + "-stopped")
+                    _ = try await js("const m=document.querySelector('.dictation-button');m.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerType:'touch'}));m.click();true")
+                    try await waitFor("second native operation") { self.session.dictation.phase == "recording" }
+                    let cancelled = try XCTUnwrap(session.dictation.operation)
+                    session.dictation.acceptRecognition(text: "discard words", final: false, failed: false, operation: cancelled)
+                    try await waitFor("second native partial") { try await self.boolean("document.querySelector('#prompt').textContent.includes('discard words')") }
+                    _ = try await js("document.querySelector('.dictation-cancel').click();true")
+                    try await waitFor("cancel removes only current span") {
+                        try await self.boolean("!document.querySelector('#prompt .dictation-transcript') && document.querySelector('#prompt').textContent==='Left spoken words Right'")
+                    }
+                    session.dictation.acceptRecognition(text: "late words", final: true, failed: false, operation: cancelled)
+                    XCTAssertEqual(keyboardVisible, keyboard)
+                    _ = try await checkComposer(label: prefix + "-cancelled")
+                    let sendCount = try await js("window.__composerSends.length") as? Int
+                    XCTAssertEqual(sendCount, 0, "Dictation never sends")
+                }
+            }
+        }
     }
 
     private func js(_ source: String) async throws -> Any? {
@@ -261,10 +322,11 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         (()=>{const rect=e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}};
         const c=document.querySelector('#composer'),p=document.querySelector('#prompt');
         const reply=document.querySelector('#composer-reply'),files=document.querySelector('.composer-files');
-        const send=document.querySelector('#send'),surface=getComputedStyle(send,'::before'),arrow=send.querySelector('svg'),style=getComputedStyle(send);
+        const send=document.querySelector('#send')?.getClientRects().length?document.querySelector('#send'):document.querySelector('.dictation-button'),surface=getComputedStyle(send,'::before'),arrow=send.querySelector('svg'),style=getComputedStyle(send);
         const colour=document.createElement('canvas').getContext('2d');colour.fillStyle=surface.backgroundColor;colour.fillRect(0,0,1,1);const rgba=[...colour.getImageData(0,0,1,1).data];
+        const primarySurface={selector:send.id==='send'?'#send':'.dictation-button',controlKind:send.id==='send'?'send':'microphone',capability:window.__KINDRED_IOS_DICTATION};
         const target=rect(send),edgeHits=[[20,0],[-20,0],[0,20],[0,-20]].map(([dx,dy])=>{const h=document.elementFromPoint(target.x+target.width/2+dx,target.y+target.height/2+dy);return h===send||send.contains(h)});
-        return {sendSurface:{edgeHits,target,arrow:rect(arrow),paint:{width:parseFloat(surface.width),height:parseFloat(surface.height),left:parseFloat(surface.left),top:parseFloat(surface.top),rgba},opacity:parseFloat(style.opacity),appearance:style.appearance,theme:document.documentElement.dataset.theme,hidden:send.hidden,disabled:send.disabled,fixture:window.__sendSurfaceFixture},layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
+        return {dictationState:{draftPresent:!!p.textContent.trim(),transientSpan:!!p.querySelector('.dictation-transcript'),dictating:c.classList.contains('is-dictating'),lastEvent:window.__composerDictationEvents.at(-1)??null,sendCount:window.__composerSends.length,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches},primarySurface:{...primarySurface,edgeHits,target,arrow:rect(arrow),paint:{width:parseFloat(surface.width),height:parseFloat(surface.height),left:parseFloat(surface.left),top:parseFloat(surface.top),rgba},opacity:parseFloat(style.opacity),appearance:style.appearance,theme:document.documentElement.dataset.theme,hidden:send.hidden,disabled:send.disabled,fixture:window.__sendSurfaceFixture},layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
         controls:[...c.querySelectorAll('#composer-actions,#send,.dictation-button,.dictation-cancel')].filter(b=>b.getClientRects().length).map(b=>{const r=rect(b),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {...r,hit:h===b||b.contains(h)}})}})()
         """
         var measured: [String: Any]?
@@ -292,6 +354,11 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         }
         var metrics = try XCTUnwrap(measured)
         metrics["layoutTransition"] = layoutEvidence
+        metrics["recognitionSource"] = "injected native coordinator; not actual speech"
+        metrics["nativeReduceMotion"] = UIAccessibility.isReduceMotionEnabled
+        metrics["keyboardVisible"] = keyboardVisible
+        metrics["nativeSpeechPhase"] = session.dictation.phase
+        metrics["nativeSpeechOperationActive"] = session.dictation.operation != nil
         metrics["keyboardNotifications"] = ["shows": keyboardShows, "hides": keyboardHides]
         metrics["keyboardFrame"] = ["x": keyboardFrame.minX, "y": keyboardFrame.minY, "width": keyboardFrame.width, "height": keyboardFrame.height]
         let c = try XCTUnwrap(metrics["composer"] as? [String: Double])
@@ -354,13 +421,20 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     }
 
     private func checkPaintedSend(_ metrics: [String: Any], image: UIImage, theme: String, label: String) throws {
-        let send = try XCTUnwrap(metrics["sendSurface"] as? [String: Any])
+        let send = try XCTUnwrap(metrics["primarySurface"] as? [String: Any])
+        let empty = label.contains("-empty-")
+        XCTAssertEqual(send["selector"] as? String, empty ? ".dictation-button" : "#send")
+        XCTAssertEqual(send["controlKind"] as? String, empty ? "microphone" : "send")
+        let capability = try XCTUnwrap(send["capability"] as? [String: Any])
+        XCTAssertEqual(capability["supported"] as? Bool, true)
+        XCTAssertEqual(capability["onDeviceAvailable"] as? Bool, true)
+        XCTAssertEqual(capability["engine"] as? String, "apple-on-device")
         XCTAssertEqual(send["theme"] as? String, theme)
         XCTAssertEqual(send["hidden"] as? Bool, false)
         XCTAssertEqual(send["appearance"] as? String, "none")
         let edgeHits = try XCTUnwrap(send["edgeHits"] as? [Bool])
         XCTAssertEqual(edgeHits.count, 4)
-        XCTAssertTrue(edgeHits.allSatisfy { $0 }, "Outer target must hit Send beyond the painted circle")
+        XCTAssertTrue(edgeHits.allSatisfy { $0 }, "Outer target must hit the primary control beyond the painted circle")
         let target = try XCTUnwrap(send["target"] as? [String: Double])
         let arrow = try XCTUnwrap(send["arrow"] as? [String: Double])
         let paint = try XCTUnwrap(send["paint"] as? [String: Any])
@@ -390,10 +464,10 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             XCTAssertLessThanOrEqual(Self.colourDistance(innerPixel, expected), 12, "Native bitmap must paint through radius17")
             probes.append(["direction": [dx, dy], "inside": innerPixel, "outside": outerPixel, "expected": expected])
         }
-        let evidence: [String: Any] = ["sendSurface": send, "nativeBitmapProbes": probes]
+        let evidence: [String: Any] = ["primarySurface": send, "nativeBitmapProbes": probes]
         let data = try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys])
         let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
-        attachment.name = label + "-painted-Send"
+        attachment.name = label + "-painted-primarySurface"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
