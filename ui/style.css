@@ -5463,8 +5463,8 @@ html[data-ios-layout=regular] .sidebar {display:flex;position:relative;inset:aut
 html[data-ios-layout=compact] .sidebar {display:none;position:absolute;inset:0;z-index:5;width:100%;box-shadow:none;}
 html[data-ios-layout=compact] .sidebar-open .sidebar,html[data-ios-layout=compact] .ios-edge-preview[data-edge-target=chat-list] .sidebar {display:flex;}
 html[data-ios-layout=compact] .ios-edge-preview[data-edge-target=chat-list] .conversation {position:relative;z-index:6;}
-html[data-ios-computer=overlay] .computer-panel:not([hidden]) {position:absolute!important;inset:0!important;width:100%!important;max-width:none!important;height:100%!important;z-index:8;}
-html[data-ios-computer=side] .computer-panel:not([hidden]) {position:relative!important;inset:auto!important;flex:0 1 42%;width:42%!important;max-width:none!important;min-width:360px;height:100%!important;}
+html[data-ios-computer=overlay] .computer-panel:not([hidden]):not(.pane-layout-frame) {position:absolute!important;inset:0!important;width:100%!important;max-width:none!important;height:100%!important;z-index:8;}
+html[data-ios-computer=side] .computer-panel:not([hidden]):not(.pane-layout-frame) {position:relative!important;inset:auto!important;flex:0 1 42%;width:42%!important;max-width:none!important;min-width:360px;height:100%!important;}
 html[data-ios-layout] .computer-panel #desktop {min-height:0;}
 html[data-ios-short=true] .conversation-header {min-height:40px;padding-block:4px;}
 html[data-ios-short=true] #prompt {max-height:calc(3lh + 12px);overflow-y:auto;}
@@ -5482,7 +5482,7 @@ html[data-native-safe-area=host] .artifact-editor-footer {padding-bottom:10px;}
 
 .access-choice>input:focus-visible {outline:2px solid var(--fg);outline-offset:4px;}
 
-html[data-ios-layout] .computer-panel.expanded:not([hidden]) {position:absolute!important;inset:0!important;flex:none;width:100%!important;max-width:none!important;height:100%!important;z-index:8;}
+html[data-ios-layout] .computer-panel.expanded:not([hidden]):not(.pane-layout-frame) {position:absolute!important;inset:0!important;flex:none;width:100%!important;max-width:none!important;height:100%!important;z-index:8;}
 
 /* Chat may scroll behind its floating composer, but status text remains opaque. */
 html[data-ios-layout] .conversation>.composer-area {background:var(--bg);}
@@ -5817,4 +5817,12 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
 :root[data-motion="off"] .summary-progress-name.is-working {animation:none;background:none;color:var(--muted)}
 @media(prefers-reduced-motion:reduce) {
   .summary-progress-name.is-working {animation:none;background:none;color:var(--muted)}
+}
+
+/* Temporary pane frames slide while their flex reservation resizes the chat. */
+.pane-layout-reservation{flex:none;min-width:0;pointer-events:none}
+html .shell>:is(.details-panel,.computer-panel).pane-layout-frame{
+  position:fixed!important;right:auto!important;bottom:auto!important;
+  min-width:0!important;max-width:none!important;flex:none!important;z-index:20;
+  overflow:hidden;transition:none!important;
 }

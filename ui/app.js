@@ -6724,7 +6724,7 @@ addEventListener('pageshow',e=>{invalidateNavigationRecovery();pageHidden=false;
 // Every finite UI effect must settle even if a webview drops its finish event.
 // Cancellation for a new interaction discards the old destination; cancellation
 // by the browser, reduced motion or backgrounding settles the current destination.
-const motionPreference=matchMedia('(prefers-reduced-motion: reduce)'),activeMotion=new Set(),paneMotion=new WeakMap();
+const motionPreference=matchMedia('(prefers-reduced-motion: reduce)'),activeMotion=new Set();
 function motionAllowed() { return !document.hidden && document.hasFocus() && !state.general.reduced_motion && document.documentElement.dataset.motion!=='off' && !motionPreference.matches; }
 function trackMotion(animation,duration,settled=()=>{}) {
   let timer,done=false;
@@ -6749,49 +6749,78 @@ motionPreference.addEventListener('change',settleMotion);
 document.addEventListener('visibilitychange',settleMotion);
 window.addEventListener('blur',()=>{for(const motion of [...activeMotion])motion.finish();});
 new MutationObserver(settleMotion).observe(document.documentElement,{attributes:true,attributeFilter:['data-motion']});
-function panePose(panel){const style=getComputedStyle(panel);return {opacity:style.opacity,transform:style.transform};}
-function showPane(panel) {
-  const prior=paneMotion.get(panel),start=panel.hidden?{opacity:0,transform:'translateX(24px)'}:panePose(panel);
-  const animate=panel.hidden||!!prior;prior?.cancel();panel.hidden=false;panel.inert=false;
-  if(animate&&motionAllowed())paneMotion.set(panel,trackMotion(panel.animate([start,{opacity:1,transform:'translateX(0)'}],{duration:240,easing:'cubic-bezier(.2,.8,.2,1)'}),240,()=>paneMotion.delete(panel)));
+// Animate the space beside the conversation along with the actual pane. The
+// header and composer stay in normal layout; neither is scaled or snap-positioned.
+let paneLayoutMotion=null;
+const rightPanes=()=>[$('details-panel'),$('computer-panel')];
+function paneLayoutSnapshot(){
+  const shell=$('app'),chat=shell.querySelector('.conversation'),sidebar=shell.querySelector('.sidebar');
+  return {shell:shell.getBoundingClientRect(),sidebar:sidebar.getBoundingClientRect(),chat:chat.getBoundingClientRect(),panels:rightPanes().map(panel=>({panel,visible:!panel.hidden,rect:panel.getBoundingClientRect()})),screen:$('desktop').getBoundingClientRect()};
 }
-function hidePane(panel) {
-  if(panel.id==='computer-panel')finishComputerTransition();
-  if(panel.id==='details-panel'&&state.view==='artifacts'){$('details-content').replaceChildren();state.view='details';state.panelKey='';}
-  const start=panePose(panel);paneMotion.get(panel)?.cancel();
-  if(panel.hidden) return;
-  if(panel.contains(document.activeElement))$(panel.id==='computer-panel'?'show-computer':'bot-details')?.focus({preventScroll:true});
-  panel.inert=true;
-  if(!motionAllowed()) {panel.hidden=true;return;}
-  paneMotion.set(panel,trackMotion(panel.animate([start,{opacity:0,transform:'translateX(24px)'}],{duration:170,easing:'ease-in'}),170,complete=>{paneMotion.delete(panel);if(complete)panel.hidden=true;}));
-}
-let computerTransition=null;
 function refitComputer(){if(state.rfb)state.rfb.scaleViewport=true;}
-function finishComputerTransition(){computerTransition?.();refitComputer();}
+function finishComputerTransition(){paneLayoutMotion?.finish();refitComputer();}
 window.addEventListener('resize',finishComputerTransition);
-function setComputerExpanded(expanded) {
-  const panel=$('computer-panel'),screen=$('desktop'),before=panel.getBoundingClientRect(),screenBefore=screen.getBoundingClientRect(),changed=panel.classList.contains('expanded')!==expanded;
-  finishComputerTransition();
-  if(changed)panel.getAnimations().forEach(a=>a.cancel());
-  panel.classList.toggle('expanded',expanded);
-  const after=panel.getBoundingClientRect(),screenAfter=screen.getBoundingClientRect();
-  if(changed&&before.width&&after.width&&motionAllowed()){
-    // Animate real dimensions: scaling the ancestor makes noVNC apply the scale
-    // again when it measures the canvas, causing a shrunken frame and a flash.
-    const panelStyle=panel.style.cssText,screenStyle=screen.style.cssText;
-    let spacer=null;
-    if(['static','relative'].includes(getComputedStyle(panel).position)){
-      spacer=node('div');spacer.setAttribute('aria-hidden','true');spacer.style.cssText=`flex:none;width:${after.width}px;`;panel.before(spacer);
-    }
-    Object.assign(panel.style,{position:'fixed',inset:'auto',left:after.x+'px',top:after.y+'px',width:after.width+'px',height:after.height+'px',minWidth:'0',maxWidth:'none',zIndex:'20',overflow:'hidden'});
-    Object.assign(screen.style,{flex:'none',height:screenAfter.height+'px',minHeight:'0'});
-    const timing={duration:320,easing:'cubic-bezier(.22,1,.36,1)'},rect=r=>({left:r.x+'px',top:r.y+'px',width:r.width+'px',height:r.height+'px'});
-    const animation=panel.animate([rect(before),rect(after)],timing),screenAnimation=screen.animate([{height:screenBefore.height+'px'},{height:screenAfter.height+'px'}],timing);
-    let frame;
-    const fit=()=>{refitComputer();frame=requestAnimationFrame(fit);};frame=requestAnimationFrame(fit);
-    const cleanup=()=>{computerTransition=null;cancelAnimationFrame(frame);screenAnimation.cancel();panel.style.cssText=panelStyle;screen.style.cssText=screenStyle;spacer?.remove();refitComputer();layoutPanes();};
-    computerTransition=trackMotion(animation,timing.duration,cleanup).finish;
-  }else refitComputer();
+function transitionPaneLayout(change){
+  const before=paneLayoutSnapshot();
+  paneLayoutMotion?.cancel();
+  change();layoutPanes();
+  const after=paneLayoutSnapshot();
+  if(!motionAllowed()||$('app').hidden){for(const panel of rightPanes())if(panel.hidden&&panel.dataset.clearPaneOnClose){$('details-content').replaceChildren();delete panel.dataset.clearPaneOnClose;}refitComputer();return;}
+  const moving=after.panels.filter((p,i)=>p.visible||before.panels[i].visible);
+  if(!moving.length)return;
+  const shell=$('app'),sidebar=shell.querySelector('.sidebar'),screen=$('desktop');
+  const reserve=node('div','pane-layout-reservation');reserve.setAttribute('aria-hidden','true');
+  shell.querySelector('.conversation').after(reserve);
+  const timing={duration:320,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'},animations=[],restores=[];
+  const reserved=shot=>Math.max(0,shot.shell.right-shot.chat.right);
+  reserve.style.width=reserved(after)+'px';
+  animations.push(reserve.animate([{width:reserved(before)+'px'},{width:reserved(after)+'px'}],timing));
+  animations.push(sidebar.animate([{width:before.sidebar.width+'px'},{width:after.sidebar.width+'px'}],timing));
+  for(const target of moving){
+    const prior=before.panels.find(p=>p.panel===target.panel),panel=target.panel;
+    const end=target.visible?target.rect:{...prior.rect.toJSON(),x:after.shell.right},start=prior.visible?prior.rect:{...target.rect.toJSON(),x:before.shell.right};
+    const style=panel.style.cssText,hidden=panel.hidden,inert=panel.inert;
+    restores.push(()=>{const externallyHidden=panel.hidden;panel.style.cssText=style;panel.classList.remove('pane-layout-frame');panel.hidden=hidden||externallyHidden;panel.inert=inert||externallyHidden;if(panel.hidden&&panel.dataset.clearPaneOnClose){$('details-content').replaceChildren();delete panel.dataset.clearPaneOnClose;}});
+    panel.hidden=false;panel.classList.add('pane-layout-frame');
+    // Frame geometry also overrides native mobile's overlay positioning. The
+    // slide uses translation, never scale, so screen input coordinates stay sane.
+    Object.assign(panel.style,{left:end.x+'px',top:end.y+'px',width:end.width+'px',height:end.height+'px'});
+    const frames=[{transform:`translate(${start.x-end.x}px,${start.y-end.y}px)`,width:start.width+'px',height:start.height+'px'},{transform:'translate(0,0)',width:end.width+'px',height:end.height+'px'}];
+    animations.push(panel.animate(frames,timing));
+  }
+  const screenStyle=screen.style.cssText;
+  if(before.panels[1].visible&&after.panels[1].visible&&Math.abs(before.screen.height-after.screen.height)>1){
+    Object.assign(screen.style,{flex:'none',minHeight:'0',height:after.screen.height+'px'});
+    animations.push(screen.animate([{height:before.screen.height+'px'},{height:after.screen.height+'px'}],timing));
+    restores.push(()=>{screen.style.cssText=screenStyle;});
+  }
+  let frame,control;
+  const fit=()=>{refitComputer();frame=requestAnimationFrame(fit);};frame=requestAnimationFrame(fit);
+  const cleanup=()=>{
+    cancelAnimationFrame(frame);
+    for(const animation of animations){animation.oncancel=null;animation.cancel();}
+    for(const restore of restores)restore();reserve.remove();paneLayoutMotion=null;
+    layoutPanes();refitComputer();
+  };
+  control=trackMotion(animations[0],timing.duration,cleanup);paneLayoutMotion=control;
+  // External cancellation (including webview lifecycle) settles every sibling.
+  for(const animation of animations.slice(1))animation.oncancel=()=>control.finish();
+}
+function showPane(panel){
+  if(!panel.hidden&&!panel.inert)return;
+  transitionPaneLayout(()=>{panel.hidden=false;panel.inert=false;});
+}
+function hidePane(panel){
+  if(panel.hidden||panel.inert)return;
+  if(panel.contains(document.activeElement))$(panel.id==='computer-panel'?'show-computer':'bot-details')?.focus({preventScroll:true});
+  transitionPaneLayout(()=>{
+    panel.hidden=true;panel.inert=true;
+    if(panel.id==='details-panel'&&state.view==='artifacts'){panel.dataset.clearPaneOnClose='true';state.view='details';state.panelKey='';}
+  });
+}
+function setComputerExpanded(expanded){
+  const panel=$('computer-panel');
+  if(panel.classList.contains('expanded')!==expanded)transitionPaneLayout(()=>panel.classList.toggle('expanded',expanded));
   $('computer-expand').setAttribute('aria-label',expanded?'Collapse computer':'Expand computer');
   $('computer-expand').title=expanded?'Collapse computer':'Expand computer';
   $('computer-expand').replaceChildren(icon(expanded?'chevrons-right':'expand'));
@@ -6826,9 +6855,9 @@ function setPaneWidth(panel,width,natural){
   else{panel.removeAttribute('data-pane-sized');panel.style.removeProperty('--pane-width');}
 }
 function layoutPanes(){
+  if(paneLayoutMotion)return;
   const shell=$('app');if(window.__KINDRED_MOBILE_PLATFORM==='ios'){setSidebarWidth(null);for(const id of ['details-panel','computer-panel'])setPaneWidth($(id),0,0);return;}if(paneDrag||shell.hidden||!shell.clientWidth)return;
   const panels=[$('details-panel'),$('computer-panel')];
-  if(computerTransition)return;
   for(const panel of panels)panel.classList.remove('pane-overlay');
   if(!wideLayout.matches){setSidebarWidth(null);for(const panel of panels)setPaneWidth(panel,0,0);updateSeparators();return;}
   const total=shell.clientWidth,pane=openRightPane(),natural=pane?naturalPaneWidth(pane):0,rail=railWidth();
@@ -6930,7 +6959,7 @@ function paneSeparator(kind){
 }
 function beginPaneDrag(event,kind,handle){
   if(event.button!==0||!event.isPrimary||!wideLayout.matches||paneDrag)return;
-  event.preventDefault();
+  event.preventDefault();finishComputerTransition();
   const spec=paneSpecs[kind],limits=spec.measure(),origin=event.clientX,root=document.documentElement;
   let raw=limits.start,frame=0,ended=false;
   clearTimeout(paneSettle);$('app').classList.remove('pane-settling');

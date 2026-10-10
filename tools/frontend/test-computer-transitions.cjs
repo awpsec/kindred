@@ -35,7 +35,7 @@ export class RFB extends EventTarget {
   const preview=p.getByRole('button',{name:'Open computer screen',exact:true});
   await preview.hover();await p.waitForTimeout(220);
   assert.equal(await preview.evaluate(n=>getComputedStyle(n).cursor),'pointer');
-  assert.equal(await preview.locator('span').evaluate(n=>getComputedStyle(n).opacity),'1','Open is visible over the live screen');
+  assert.equal(await preview.locator(':scope > span').evaluate(n=>getComputedStyle(n).opacity),'1','Open is visible over the live screen');
   assert.equal(await p.locator('#desktop .desktop-canvas canvas').evaluate(n=>getComputedStyle(n).cursor),'pointer');
   await preview.click();await p.waitForFunction(()=>document.querySelector('#computer-panel').classList.contains('expanded'));
   assert.equal(await p.evaluate(()=>window.remoteClicks||0),0,'Opening the preview does not click the remote desktop');
