@@ -5542,7 +5542,7 @@ html[data-motion=off] .request-tray .question-choices{gap:8px}
 
 .summary-progress{margin:10px 0 12px 20px;border-top:1px solid var(--line);padding-top:10px;max-width:calc(100% - 20px);font-size:calc(13px * var(--text-scale,1))}.summary-progress-heading{display:flex;flex-wrap:wrap;gap:5px 10px;cursor:pointer;list-style:none}.summary-progress-task{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.summary-progress-heading>.muted{flex-basis:100%}.summary-progress-body{padding-top:8px}.summary-progress-update{padding:5px 0;overflow-wrap:anywhere}.summary-progress-update p{margin:4px 0}.summary-progress-disclosure:not([open]) .summary-progress-body{display:none}
 
-.email-notice{background:color-mix(in srgb,var(--fg) 3%,var(--bg));border-radius:6px;max-width:720px;width:100%;text-align:left}.email-notice .connector-artifact-header{display:flex;align-items:center;flex-wrap:wrap;gap:6px}.email-notice-title{overflow-wrap:anywhere}.email-notice .connector-card-status{flex:1;white-space:normal}.email-notice .connector-card-actions[hidden],.email-notice .connector-artifact-content[hidden]{display:none}.email-notice .connector-card-actions{flex-wrap:wrap}.email-notice .email-review-close{margin-right:auto}.email-notice .connector-card-editor .connector-card-actions>button:last-child{margin-left:auto}.email-retry-confirm{display:flex;gap:8px;align-items:flex-start}.email-retry-confirm input{width:18px;height:18px;flex:none}.email-notice:not(.email-review-open) .connector-card-editor{display:none}
+.connector-artifact.email-notice{background:color-mix(in srgb,var(--fg) 3%,var(--bg));border:0;box-shadow:none;border-radius:3px;max-width:720px;width:100%;text-align:left}.email-notice .connector-artifact-header{display:flex;align-items:center;flex-wrap:wrap;gap:6px}.email-notice-title{overflow-wrap:anywhere}.email-notice .connector-card-status{flex:1;white-space:normal}.email-notice .connector-card-actions[hidden],.email-notice .connector-artifact-content[hidden]{display:none}.email-notice .connector-card-actions{flex-wrap:wrap}.email-notice .email-review-close{margin-right:auto}.email-notice .connector-card-editor .connector-card-actions>button:last-child{margin-left:auto}.email-retry-confirm{display:flex;gap:8px;align-items:flex-start}.email-retry-confirm input{width:18px;height:18px;flex:none}.email-notice:not(.email-review-open) .connector-card-editor{display:none}
 
 /* Plain terminal decision lines retain the original request position. */
 .compact-receipt.decision-receipt,.compact-receipt.receipt-collapsed{border:0;background:transparent;box-shadow:none;border-radius:0;width:auto;max-width:100%}
@@ -5667,3 +5667,18 @@ html[data-mobile] #notice .notice-action {min-height:44px;}
 .connector-inline .connector-outcome-warning {border:0;padding:0;background:transparent;color:var(--danger);font-size:inherit;margin:8px 0;}
 .connector-inline .connector-field-more>summary {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .connector-inline .connector-field-more .connector-record-fields {grid-template-columns:minmax(0,auto) minmax(0,1fr);margin:4px 0;gap:3px 8px;}
+
+/* Email notices share the quiet reminder surface, including non-send approvals. */
+.email-notice>.connector-artifact-header{padding:12px 15px;border:0;font-size:calc(13px * var(--text-scale,1))}
+.email-notice>.connector-artifact-content{padding:0 15px 12px}
+.email-notice .connector-email-subject{font-size:calc(15px * var(--text-scale,1));margin-bottom:12px}
+.email-notice .connector-email-addresses{margin-bottom:12px}
+.email-notice .connector-email-body{border:0;padding-top:8px}
+.email-notice>footer{border:0;padding:10px 15px 12px}
+.email-notice .email-draft-editor{padding:0 15px 12px;background:transparent;gap:12px}
+.email-notice .email-draft-editor input,.email-notice .email-draft-editor textarea{border-radius:6px;padding:8px 10px;box-shadow:none}
+.email-notice .email-draft-editor textarea{min-height:120px;max-height:min(340px,40vh)}
+.email-notice .email-draft-editor .recipient-input{padding:4px;border:0}
+.email-notice .email-recipients{gap:10px}
+
+.email-notice.connector-editing>footer.email-review-footer{display:none}

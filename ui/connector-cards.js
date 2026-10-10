@@ -42,6 +42,8 @@ const cardSignatures=new WeakMap();
 export function connectorCardSignature(root){return cardSignatures.get(root)??root.outerHTML;}
 export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botName,sanitizeHtml,inline=false}){
  inline=inline&&!card.email_send&&!['pending','changes_requested'].includes(card.status);
+ // Presentation follows the email content; sending authority stays on email_send.
+ const emailNotice=card.email_send||(!inline&&card.kind==='email');
  const root=el('section','connector-artifact connector-kind-'+card.kind);if(inline)root.classList.add('connector-inline');root.dataset.connectorArtifact=card.id;if(card.approval_id)root.dataset.approval=card.approval_id;root.setAttribute('aria-label',`${card.connection||card.connector}: ${card.title}`);cardSignatures.set(root,JSON.stringify([card,botName,inline]));
  const previewMissing=card.email_send&&!(card.email?.to?.text&&card.email?.body);
  const header=el('header','connector-artifact-header');header.append(heading(card.connection||card.connector,card.source,card.tool));
@@ -121,7 +123,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   if(descriptors.length)footer.append(button(retry?'Review to send again':card.kind==='email'?'Edit draft':'Edit fields',()=>{
    clearPanel();const form=el('form','connector-card-editor'),inputs={};form.setAttribute('aria-label',card.kind==='email'?'Edit email draft':'Edit connector fields');
    const recipientFields=descriptors.filter(f=>f.recipients),recipients=recipientFields.length?emailRecipients({fields:recipientFields,api:path=>api(path)}):null;if(recipients)form.append(recipients.element);form.addEventListener('input',()=>form.querySelector('[role=alert]')?.remove());
-   for(const field of descriptors){if(field.recipients)continue;const label=el('label','',field.label),type=field.type==='textarea'?'textarea':'input',input=el(type);input.value=field.text;input.maxLength=field.type==='textarea'?100000:8000;input.name=field.key;input.dataset.editLabel=field.label;if(type==='textarea')input.rows=10;input.autocomplete='off';input.spellcheck=field.key==='body'||field.key==='subject';label.append(input);form.append(label);inputs[field.label]=input;}
+   for(const field of descriptors){if(field.recipients)continue;const label=el('label','',field.label),type=field.type==='textarea'?'textarea':'input',input=el(type);input.value=field.text;input.maxLength=field.type==='textarea'?100000:8000;input.name=field.key;input.dataset.editLabel=field.label;if(type==='textarea')input.rows=card.kind==='email'?5:10;input.autocomplete='off';input.spellcheck=field.key==='body'||field.key==='subject';label.append(input);form.append(label);inputs[field.label]=input;}
    const controls=el('div','connector-card-actions');const save=button(retry?'Request new review':card.kind==='email'?'Save edits':'Save field changes',()=>{},'primary small-button');save.type='submit';controls.append(button('Close',clearPanel,'subtle-button'),save);form.append(el('p','muted small',card.kind==='email'?'Saving changes keeps this email here for review. It does not send it.':'Saving changes keeps this action here for review.'),controls);
    const unknown=retry&&card.delivery_state!=='not_sent';let confirmUnknown=null;
    if(unknown){const warning=el('label','email-retry-confirm');confirmUnknown=el('input');confirmUnknown.type='checkbox';confirmUnknown.required=true;warning.append(confirmUnknown,document.createTextNode('This may already have been sent. I checked my Sent folder and want a new review.'));controls.before(warning);}
@@ -136,18 +138,24 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   if(pending&&card.email_send&&!card.forced&&!previewMissing){const more=el('details','connector-send-policy');more.append(el('summary','','Sending permissions'),el('p','',`Allow ${botName||'this bot'} to send future emails through this same connection without asking. Other connector actions keep their existing permissions.`),button('Approve & allow future emails',()=>act('approve',{choice:'always_allow_email'}),'outline-button'));content.append(more);}
  }else footer.append(button('Chat about this',()=>onDiscuss(card),inline?'subtle-button connector-inline-discuss':'outline-button',inline?'reply':undefined));
  root.append(footer);
- if(card.email_send){
+ if(emailNotice){
   if(card.review_requested){for(const b of footer.querySelectorAll('button'))if(b.textContent==='Review to send again'){b.disabled=true;b.dataset.reviewRequested='true';}content.append(el('p','muted small','A new review was requested. The earlier email is unchanged.'));}
   const model=emailReviewStates.get(card.id)||{open:false,revision:card.revision,requestId:card.id,status:card.status};emailReviewStates.set(card.id,model);
   if(model.status!=='completed'&&card.status==='completed')model.open=false;model.status=card.status;
   root.classList.add('email-notice');header.firstChild?.remove();header.prepend(el('strong','email-notice-title',card.title));
   const toggle=button(card.status==='completed'?'Details':'Review',()=>{model.open=!model.open;paint();if(model.open)content.focus({preventScroll:true});},'subtle-button');header.append(toggle);
   const close=button('Close',()=>{model.open=false;paint();toggle.focus({preventScroll:true});},'subtle-button');close.classList.add('email-review-close');footer.prepend(close);
-  const send=[...footer.children].find(b=>b.textContent==='Send email'),secondary=el('div','connector-card-actions email-review-secondary'),final=el('div','email-review-final');
+  const send=[...footer.children].find(b=>b.classList.contains('primary')),secondary=el('div','connector-card-actions email-review-secondary'),final=el('div','email-review-final');
   for(const action of [...footer.children])if(action!==close&&action!==send)secondary.append(action);
   final.append(close);if(send)final.append(send);footer.replaceChildren(secondary,final);footer.classList.add('email-review-footer');
   if(card.retry_unknown){const warning=el('p','connector-outcome-warning','This may already have been sent. Check your Sent folder before sending again.');footer.before(warning);}
-  function paint(){content.hidden=!model.open;footer.hidden=!model.open;root.classList.toggle('email-review-open',model.open);toggle.textContent=model.open?'Hide details':card.status==='completed'?'Details':'Review';toggle.setAttribute('aria-expanded',String(model.open));}
+  let disclosureMotion=null;
+  function paint(){
+   const before=root.isConnected?root.getBoundingClientRect().height:0;disclosureMotion?.cancel();
+   content.hidden=!model.open;footer.hidden=!model.open;root.classList.toggle('email-review-open',model.open);toggle.textContent=model.open?'Hide details':card.status==='completed'?'Details':'Review';toggle.setAttribute('aria-expanded',String(model.open));
+   const after=root.getBoundingClientRect().height;
+   if(before&&before!==after&&document.documentElement.dataset.motion!=='off'&&!matchMedia('(prefers-reduced-motion: reduce)').matches)disclosureMotion=root.animate([{height:before+'px'},{height:after+'px'}],{duration:180,easing:'cubic-bezier(.2,.7,.2,1)'});
+  }
   paint();return root;
  }
  if(!inline&&(card.approval_id||card.email_send||['pending','denied'].includes(card.status)))return decisionReceipt(root,{key:'connector:'+card.id,title:card.title,outcome:status,terminal:['approved','executing','completed','denied'].includes(card.status)});return root;

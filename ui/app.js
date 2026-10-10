@@ -1214,7 +1214,7 @@ function renderHeader() {
   const tray=$("request-tray");if(tray&&tray.dataset.chat!==(state.chat?.id||(b?`dm-${b.id}`:''))){tray.hidden=true;delete tray.dataset.signature;}
   $("show-computer").hidden=!!state.chat?.shared&&!chatScreenBots().length;
   $("composer-actions").hidden=false;
-  const pause = pausedScreens().find(p=>p.bot_id===b?.id), thisBotPaused=!!pause;
+  const pause = pausedScreens().find(p=>p.bot_id===b?.id);
   const queueChatId = state.chat?.id || (b ? `dm-${b.id}` : '');
   const queued = queueChatId ? [...new Set(state.allRuns.filter(r=>r.chat_id===queueChatId).map(r=>r.bot_id))].reduce((count,id)=>count+queuedWork(id,queueChatId).waiting,0) : 0;
   $('queue-status').hidden = !queued && !pause;
@@ -1245,10 +1245,8 @@ function renderHeader() {
       hint.append(mark);
     }
   }
-  $("composer-caption").textContent = thisBotPaused
-    ? "This computer is paused for manual control. Return control to let the bot continue."
-    : b&&state.allRuns.some(r=>r.bot_id===b.id&&r.chat_id===queueChatId&&r.status==='running')
-      ? (state.general.message_delivery==='queue'?`Queued for ${b.name}\'s next task`:`Sends to ${b.name}\'s current task`) : "";
+  // Delivery and manual-control status already have dedicated controls above the composer.
+  $("composer-caption").textContent = "";
   renderVersions();
   renderUpdateNotice();
 }
