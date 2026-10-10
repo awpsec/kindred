@@ -7,7 +7,7 @@ import { decisionReceipt } from './decision-receipts.js';
 import {installThemedSelects} from "./select-menu.js";
 import {enhanceMarkdown,fileCard,artifactPreview,inlineShard} from "./artifacts.js";
 import {connectorCatalog} from "./connector-catalog.js";
-import {connectorCard} from "./connector-cards.js";
+import {connectorCard,connectorCardSignature} from "./connector-cards.js";
 installThemedSelects();
 import {createDictationUI} from "./dictation.js";
 import {createProfileUI} from "./profiles.js";
@@ -5100,7 +5100,7 @@ function connectorBatches(messages,_boundary,runs=[]){
 }
 function connectorMessage(m,id){
   const group=node('article','message-group connector-message');group.dataset.message=String(m.seq);group.tabIndex=-1;
-  const receipt=connectorCard(m.connector_artifact,{heading:connectorHeading,button,api,onChange:async()=>{await refresh(true);},onDiscuss:()=>startMessageReply(id,m),botName:state.bots.find(b=>b.id===m.connector_artifact.bot_id)?.name,
+  const receipt=connectorCard(m.connector_artifact,{inline:true,heading:connectorHeading,button,api,onChange:async()=>{await refresh(true);},onDiscuss:()=>startMessageReply(id,m),botName:state.bots.find(b=>b.id===m.connector_artifact.bot_id)?.name,
     sanitizeHtml:text=>{const fragment=DOMPurify.sanitize(text,{RETURN_DOM_FRAGMENT:true,ALLOWED_TAGS:['p','br','div','span','strong','em','b','i','u','ul','ol','li','blockquote','table','thead','tbody','tr','td','th','a'],ALLOWED_ATTR:['href','title']});for(const a of fragment.querySelectorAll('a')){try{const url=new URL(a.getAttribute('href'));if(!['https:','http:','mailto:'].includes(url.protocol)||url.username||url.password)a.removeAttribute('href');else{a.target='_blank';a.rel='noopener noreferrer';}}catch{a.removeAttribute('href');}}return fragment;}});
   const card=m.connector_artifact;
   // Only requests for a user decision expand automatically; execution receipts
@@ -5109,8 +5109,8 @@ function connectorMessage(m,id){
   const disclosure=node('details','connector-call'),summary=connectorCallSummary(card);
   const entry=conversationHistory(id);entry.openConnectorCalls??=new Set();
   disclosure.open=entry.openConnectorCalls.has(card.id);
-  disclosure.ontoggle=()=>{if(disclosure.isConnected)disclosure.open?entry.openConnectorCalls.add(card.id):entry.openConnectorCalls.delete(card.id);};
-  const body=node('div','chat-disclosure-body');body.append(receipt);
+  disclosure.ontoggle=()=>{if(disclosure.isConnected){const open=disclosure.open&&!disclosure.classList.contains('is-collapsing');open?entry.openConnectorCalls.add(card.id):entry.openConnectorCalls.delete(card.id);summary.setAttribute('aria-expanded',String(open));body.inert=!open;}};
+  const body=node('div','chat-disclosure-body');body.append(receipt);body.inert=!disclosure.open;body.id='connector-details-'+encodeURIComponent(card.id);summary.setAttribute('aria-controls',body.id);summary.setAttribute('aria-expanded',String(disclosure.open));
   disclosure.append(summary,body);animateChatDisclosure(disclosure,body);group.append(disclosure);return group;
 }
 const simpleApprovalTools=new Set(['guest_exec','computer_open_url','computer_click','computer_type','computer_key','computer_scroll','computer_browser_task','routine_create','routine_update','routine_control','inbox_monitor_save','share_file']);
@@ -5226,16 +5226,13 @@ function connectorCallSummary(card){
   const brand=connectorBrand(card.connection||card.connector,card.tool),summary=node('summary','connector-call-summary');
   const verbs={preparing:'Preparing',approved:'Queued',ready:'Queued',executing:'Calling',completed:card.email_send?'Sent via':'Called',denied:'Declined',interrupted:'Interrupted',failed:'Failed'};
   const tool=String(card.tool||'').split('__').at(-1);
-  // Only known identifier fields belong in the compact receipt, never arbitrary
-  // bodies, query contents, credentials or nested connector payloads.
-  const target=Object.entries(card.input||{}).find(([key,value])=>/^(id|channel_?id|channel|page_?id|file_?id|document_?id|item_?id|issueIdOrKey|spreadsheet_?id)$/i.test(key)&&['string','number'].includes(typeof value));
-  const label=`${verbs[card.status]||card.status} ${brand.name} (${tool}${target?' · ID '+String(target[1]).slice(0,120):''})`;
+  const label=`${verbs[card.status]||card.status} ${brand.name} (${tool})`;
   summary.title=`${label} · ${card.source||'Connector'} · ${state.bots.find(b=>b.id===card.bot_id)?.name||'Your bot'}`;
   summary.append(connectorLogo(brand),node('span','connector-call-label',label));
   if(['preparing','executing'].includes(card.status)){
     const dots=node('span','connector-call-dots');dots.setAttribute('aria-hidden','true');for(let i=0;i<3;i++)dots.append(node('span','','.'));summary.append(dots);
   }
-  summary.append(icon('chevron',12));return summary;
+  summary.append(icon('chevron',13));return summary;
 }
 function connectorStack(messages,entry){
   const first=messages[0],last=messages.at(-1),key=String(first.seq),group=node('article','connector-stack-group');group.dataset.message=key;group.dataset.scrollMessages=messages.map(m=>m.seq).join(' ');
@@ -5677,14 +5674,15 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
 const conversationRenderSignatures=new WeakMap();
 function conversationSignature(node){
   if(node.classList.contains("group-activity"))return node.dataset.activitySignature;
-  if(!node.querySelector('.connector-call,[data-file-signature],[data-visual-signature],[data-decision-signature],[data-shard-signature]'))return node.outerHTML;
-  const copy=node.cloneNode(true);for(const receipt of copy.querySelectorAll('[data-decision-signature]')){const marker=document.createElement('span');marker.dataset.decisionSignature=receipt.dataset.decisionSignature;receipt.replaceWith(marker);}for(const call of copy.querySelectorAll('.connector-call'))call.removeAttribute('open');
+  if(!node.querySelector('[data-connector-artifact],.connector-call,[data-file-signature],[data-visual-signature],[data-decision-signature],[data-shard-signature]'))return node.outerHTML;
+  const connectors=[...node.querySelectorAll('[data-connector-artifact]')].map(connectorCardSignature);
+  const copy=node.cloneNode(true);for(const card of copy.querySelectorAll('[data-connector-artifact]')){const marker=document.createElement('span');marker.dataset.connectorArtifact=card.dataset.connectorArtifact;card.replaceWith(marker);}for(const receipt of copy.querySelectorAll('[data-decision-signature]')){const marker=document.createElement('span');marker.dataset.decisionSignature=receipt.dataset.decisionSignature;receipt.replaceWith(marker);}for(const call of copy.querySelectorAll('.connector-call')){call.removeAttribute('open');call.classList.remove('is-collapsing');call.querySelector(':scope>summary')?.removeAttribute('aria-expanded');call.querySelector(':scope>.chat-disclosure-body')?.removeAttribute('inert');}
   // Saved/download progress is local UI state, not a changed chat message.
   // Keep its card and any open preview mounted when incoming messages render.
   for(const panel of copy.querySelectorAll('[data-visual-signature]')){const marker=document.createElement('span');marker.dataset.visualSignature=panel.dataset.visualSignature;panel.replaceWith(marker);}
   for(const file of copy.querySelectorAll('[data-file-signature]')){const marker=document.createElement('span');marker.dataset.fileSignature=file.dataset.fileSignature;file.replaceWith(marker);}
   for(const shard of copy.querySelectorAll('[data-shard-signature]')){const marker=document.createElement('span');marker.dataset.shardSignature=shard.dataset.shardSignature;shard.replaceWith(marker);}
-  return copy.outerHTML;
+  return JSON.stringify([copy.outerHTML,connectors]);
 }
 function preserveShardMessage(previous,next){
   const before=previous.querySelector('.message-bubble'),after=next.querySelector('.message-bubble');
@@ -5785,6 +5783,7 @@ function reconcileConversation(target,desired,animate=true){
 }
 function animateChatDisclosure(history,body,falling=false){
   const summary=history.querySelector(':scope>summary');
+  const inline=history.classList.contains('connector-call');
   let motion=null,expanded=false,cards=[];
   summary.onclick=e=>{
     e.preventDefault();
@@ -5795,15 +5794,16 @@ function animateChatDisclosure(history,body,falling=false){
     const start=history.open?body.getBoundingClientRect().height:0;
     const starts=falling?[...body.children].map(n=>({opacity:getComputedStyle(n).opacity,transform:getComputedStyle(n).transform})):[];
     motion?.cancel();motion=null;cards.forEach(a=>a.cancel());cards=[];
-    if(falling){if(!expanded&&body.contains(document.activeElement))summary.focus({preventScroll:true});body.inert=!expanded;}
+    if(falling||inline){if(!expanded&&body.contains(document.activeElement))summary.focus({preventScroll:true});body.inert=!expanded;}if(inline)summary.setAttribute('aria-expanded',String(expanded));
     history.classList.toggle('is-collapsing',!expanded);
     history.open=true;
     const finish=()=>{
       history.open=expanded;history.classList.remove('is-collapsing');motion=null;cards.forEach(a=>a.cancel());cards=[];
     };
     if(!motionAllowed()){finish();return;}
+    if(inline)cards.push(body.firstElementChild.animate([{opacity:start?getComputedStyle(body.firstElementChild).opacity:0,transform:start?getComputedStyle(body.firstElementChild).transform:'translateY(-5px)'},{opacity:expanded?1:0,transform:expanded?'translateY(0)':'translateY(-5px)'}],{duration:260,easing:'cubic-bezier(.2,.7,.2,1)',fill:'both'}));
     if(falling)for(const [i,card] of [...body.children].entries()){const from=start?starts[i]:{opacity:0,transform:'translateY(-12px)'};cards.push(card.animate([from,{opacity:expanded?1:0,transform:expanded?'translateY(0)':'translateY(-12px)'}],{duration:220,delay:Math.min(expanded?i:body.children.length-1-i,6)*22,easing:'cubic-bezier(.2,.8,.2,1)',fill:'both'}));}
-    const duration=falling?380:200,easing=falling&&!expanded?'cubic-bezier(.8,0,.8,.2)':'cubic-bezier(.2,.8,.2,1)';
+    const duration=falling?380:inline?280:200,easing=falling&&!expanded?'cubic-bezier(.8,0,.8,.2)':'cubic-bezier(.2,.8,.2,1)';
     const animation=body.animate([{height:start+'px'},{height:(expanded?body.scrollHeight:0)+'px'}],{duration,easing,fill:'both'});
     motion=trackMotion(animation,duration,complete=>{if(complete)finish();});
   };

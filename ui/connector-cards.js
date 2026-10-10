@@ -8,7 +8,22 @@ const safeLink=value=>{try{const u=new URL(value);return ['https:','http:'].incl
 function readable(value){if(value===null||value===undefined)return '';if(typeof value==='string')return value;if(typeof value==='number'||typeof value==='boolean')return String(value);if(Array.isArray(value))return value.map(readable).filter(Boolean).join(', ');return value.name||value.filename||value.file_name||value.displayName||value.value||value.text||JSON.stringify(value);}
 function safeRelated(value){if(Array.isArray(value))return value.map(safeRelated);if(!value||typeof value!=='object')return value;return Object.fromEntries(Object.entries(value).filter(([k])=>!/contentBytes|authorization|token|secret|password|credential|^data$/i.test(k)).map(([k,v])=>[k,safeRelated(v)]));}
 function sourceTime(service,key,text){const millis=service==='clickup'&&key==='Due',seconds=service==='stripe'&&key==='Created';if(!(millis||seconds)||! /^-?\d+$/.test(text))return null;const raw=Number(text),value=raw*(millis?1:1000);if(!Number.isSafeInteger(raw)||!Number.isSafeInteger(value))return null;const date=new Date(value);if(!Number.isFinite(date.getTime()))return null;const iso=date.toISOString();return {iso,text:iso.replace('T',' ').replace('.000Z',' UTC').replace('Z',' UTC'),source:`Source timestamp: ${text} (${millis?'milliseconds':'seconds'})`};}
-function details(value,service){const box=el('dl','connector-record-fields');for(const[k,v]of Object.entries(value||{})){if(/token|secret|password|credential|authorization/i.test(k))continue;const text=readable(v);if(!text)continue;box.append(el('dt','',({CustomerRef:'Customer',TotalAmt:'Total',Balance:'Balance due',CurrencyRef:'Currency',DueDate:'Due date',DocNumber:'Number'}[k]||k.replace(/([a-z])([A-Z])/g,'$1 $2').replaceAll('_',' '))));const dd=el('dd');const href=/^(url|webUrl|web_url|Open source|Open form|Join meeting)$/i.test(k)?safeLink(text):null;if(href){const a=el('a','',/^(Open |Join )/.test(k)?k:'Open source');a.href=href;a.target='_blank';a.rel='noopener noreferrer';dd.append(a);}else{const time=sourceTime(service,k,text);if(time){const n=el('time','',time.text);n.dateTime=time.iso;n.title=time.source;dd.append(n);}else dd.textContent=text;}box.append(dd);}return box;}
+function details(value,service,inline=false){
+ const box=el('dl','connector-record-fields');
+ for(const[k,v]of Object.entries(value||{})){
+  if(/token|secret|password|credential|authorization/i.test(k))continue;
+  const clean=inline?safeRelated(v):v,nested=inline&&clean&&typeof clean==='object',text=readable(clean);
+  if(!nested&&!text)continue;
+  const label=({CustomerRef:'Customer',TotalAmt:'Total',Balance:'Balance due',CurrencyRef:'Currency',DueDate:'Due date',DocNumber:'Number'}[k]||k.replace(/([a-z])([A-Z])/g,'$1 $2').replaceAll('_',' ')).replace(/\b(id|url|api)\b/gi,w=>w.toUpperCase()).replace(/^./,c=>c.toUpperCase());
+  box.append(el('dt','',label));const dd=el('dd');
+  const href=/^(url|webUrl|web_url|Open source|Open form|Join meeting)$/i.test(k)?safeLink(text):null;
+  if(nested){const more=el('details','connector-field-more'),count=Object.keys(clean).length;more.append(el('summary','',`${count} ${count===1?'field':'fields'}`),details(clean,service,true));dd.append(more);}
+  else if(href){const a=el('a','',/^(Open |Join )/.test(k)?k:'Open source');a.href=href;a.target='_blank';a.rel='noopener noreferrer';dd.append(a);}
+  else{const time=sourceTime(service,k,text);if(time){const n=el('time','',time.text);n.dateTime=time.iso;n.title=time.source;dd.append(n);}else if(inline&&text.length>600){const more=el('details','connector-field-more');more.append(el('summary','',text.slice(0,180)+'…'),el('pre','',text));dd.append(more);}else dd.textContent=text;}
+  if(inline&&/(^id$|id$|_id$)/i.test(k))dd.classList.add('connector-field-id');box.append(dd);
+ }
+ return box;
+}
 // Provider aliases ("me", template expressions, account IDs) are not sender
 // addresses. Never invent an address when the connector has not supplied one.
 export function emailSenderLabel(email,account){
@@ -22,13 +37,17 @@ export function emailSenderLabel(email,account){
  return address(email?.from?.text)||address(account)||'Connected account';
 }
 const emailReviewStates=new Map();
-export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botName,sanitizeHtml}){
- const root=el('section','connector-artifact connector-kind-'+card.kind);root.dataset.connectorArtifact=card.id;if(card.approval_id)root.dataset.approval=card.approval_id;root.setAttribute('aria-label',`${card.connection||card.connector}: ${card.title}`);
+// Keep local editors mounted without exposing receipt payloads in DOM attributes.
+const cardSignatures=new WeakMap();
+export function connectorCardSignature(root){return cardSignatures.get(root)??root.outerHTML;}
+export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botName,sanitizeHtml,inline=false}){
+ inline=inline&&!card.email_send&&!['pending','changes_requested'].includes(card.status);
+ const root=el('section','connector-artifact connector-kind-'+card.kind);if(inline)root.classList.add('connector-inline');root.dataset.connectorArtifact=card.id;if(card.approval_id)root.dataset.approval=card.approval_id;root.setAttribute('aria-label',`${card.connection||card.connector}: ${card.title}`);cardSignatures.set(root,JSON.stringify([card,botName,inline]));
  const previewMissing=card.email_send&&!(card.email?.to?.text&&card.email?.body);
  const header=el('header','connector-artifact-header');header.append(heading(card.connection||card.connector,card.source,card.tool));
  const status=card.email_send? (card.status==='completed'?'Email sent':card.status==='failed'&&card.delivery_state==='not_sent'?'Not sent: the call did not dispatch':['failed','interrupted'].includes(card.status)?'Delivery unknown. Check your Sent folder before sending again.':['approved','ready','executing'].includes(card.status)?'Sending…':'Email draft · Not sent'):card.status==='pending'&&card.email_send?'Draft · not sent':card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
- const stateLabel=el('span','connector-card-status status-'+card.status,status);stateLabel.setAttribute('role','status');header.append(stateLabel);root.append(header);
- const operation=el('div','connector-operation');operation.append(el('span','connector-call-name',card.tool.split('__').at(-1)),el('span','',`By ${botName||'your bot'}`));if(card.kind!=='email')root.append(operation);
+ const stateLabel=el('span','connector-card-status status-'+card.status,status);stateLabel.setAttribute('role','status');if(inline){const meta=el('div','connector-inline-meta');stateLabel.prepend(document.createTextNode(card.status==='completed'?'✓ ':card.status==='denied'?'✗ ':''));meta.append(stateLabel,document.createTextNode(' · via '+(card.source||'Connector')+' · By '+(botName||'your bot')));root.append(meta);}else{header.append(stateLabel);root.append(header);}
+ const operation=el('div','connector-operation');operation.append(el('span','connector-call-name',card.tool.split('__').at(-1)),el('span','',`By ${botName||'your bot'}`));if(card.kind!=='email'&&!inline)root.append(operation);
  const proposed=!card.records?.length&&card.preview_records?.length&&card.status!=='completed';const shown=card.records?.length?card.records:(proposed?card.preview_records:[]);
  const content=el('div','connector-artifact-content');content.tabIndex=0;content.setAttribute('role','region');content.setAttribute('aria-label','Connector contents');root.append(content);const email=card.email||{},pending=card.status==='pending',retry=card.email_send&&['failed','interrupted'].includes(card.status);
  if(card.kind==='email'&&(email.body||email.subject||email.to)){
@@ -48,8 +67,8 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  }else if(previewMissing){
   content.append(el('h3','','Email preview unavailable'),el('p','muted','The connector supplied a draft reference without the recipients or message. Ask your bot to load the draft before sending.'));
  }else{
-  content.append(el('h3','',shown.length===1?shown[0].title:card.title));
-  if(!shown.length){content.append(details(card.input));if(!content.querySelector('dd'))content.append(el('p','muted','This tool provides no displayable item fields.'));
+  if(!inline||shown.length===1&&shown[0].title!==card.title)content.append(el('h3','',shown.length===1?shown[0].title:card.title));
+  if(!shown.length){content.append(details(card.input,undefined,inline));if(!content.querySelector('dd'))content.append(el('p','muted','This tool provides no displayable item fields.'));
   }
  }
  if(shown.length){
@@ -57,7 +76,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   const records=el('div','connector-records');let expanded=false;
   const renderRecord=record=>{
    const item=el(shown.length>1?'details':'div','connector-record');if(shown.length>1)item.append(el('summary','',record.title));
-   const fill=()=>{if(item.dataset.loaded)return;item.dataset.loaded='true';item.append(details(record.fields,card.connector));
+   const fill=()=>{if(item.dataset.loaded)return;item.dataset.loaded='true';item.append(details(record.fields,card.connector,inline));
    if(record.email){const meta=el('dl','connector-email-addresses');for(const k of ['from','to','cc','bcc'])if(record.email[k]?.text)meta.append(el('dt','',fieldNames[k]),el('dd','',record.email[k].text));item.append(meta);if(record.email.body){const body=el('div','connector-email-body');if(record.email.body.format==='html'||record.email.body.key.includes('html')){body.classList.add('is-html');body.append(sanitizeHtml(record.email.body.text));}else body.textContent=record.email.body.text;item.append(body);}}
 
    if(record.excerpt){const text=el('div','connector-record-excerpt');if(record.excerpt_html)text.append(sanitizeHtml(record.excerpt));else text.textContent=record.excerpt;item.append(text);}
@@ -115,7 +134,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   },'outline-button'));
   if(!retry)footer.append(button('Decline',()=>act('deny'),'subtle-button'));
   if(pending&&card.email_send&&!card.forced&&!previewMissing){const more=el('details','connector-send-policy');more.append(el('summary','','Sending permissions'),el('p','',`Allow ${botName||'this bot'} to send future emails through this same connection without asking. Other connector actions keep their existing permissions.`),button('Approve & allow future emails',()=>act('approve',{choice:'always_allow_email'}),'outline-button'));content.append(more);}
- }else footer.append(button('Chat about this',()=>onDiscuss(card),'outline-button'));
+ }else footer.append(button('Chat about this',()=>onDiscuss(card),inline?'subtle-button connector-inline-discuss':'outline-button',inline?'reply':undefined));
  root.append(footer);
  if(card.email_send){
   if(card.review_requested){for(const b of footer.querySelectorAll('button'))if(b.textContent==='Review to send again'){b.disabled=true;b.dataset.reviewRequested='true';}content.append(el('p','muted small','A new review was requested. The earlier email is unchanged.'));}
@@ -131,5 +150,5 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   function paint(){content.hidden=!model.open;footer.hidden=!model.open;root.classList.toggle('email-review-open',model.open);toggle.textContent=model.open?'Hide details':card.status==='completed'?'Details':'Review';toggle.setAttribute('aria-expanded',String(model.open));}
   paint();return root;
  }
- if(card.approval_id||card.email_send||['pending','denied'].includes(card.status))return decisionReceipt(root,{key:'connector:'+card.id,title:card.title,outcome:status,terminal:['approved','executing','completed','denied'].includes(card.status)});return root;
+ if(!inline&&(card.approval_id||card.email_send||['pending','denied'].includes(card.status)))return decisionReceipt(root,{key:'connector:'+card.id,title:card.title,outcome:status,terminal:['approved','executing','completed','denied'].includes(card.status)});return root;
 }

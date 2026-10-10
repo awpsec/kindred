@@ -18,8 +18,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await page.goto(origin);await page.locator('.connector-call').nth(1).waitFor();
   assert.equal(await page.locator('.connector-stack').count(),0);
   assert.equal(await page.locator('.connector-call-summary:visible').count(),2);
-  assert.match(await page.locator('.connector-call-summary').last().innerText(),/Calling Confluence.*confluence_read_page.*123123123/);
-  assert.equal(await page.locator('.connector-call-dots').count(),1);assert.equal(await page.locator('.connector-call-summary').first().locator('.connector-logo svg').count(),1);
+  assert.match(await page.locator('.connector-call-summary').last().innerText(),/Calling Confluence.*confluence_read_page/);
+  assert(!(await page.locator('.connector-call-summary').last().innerText()).includes('123123123'));assert.equal(await page.locator('.connector-call-dots').count(),1);assert.equal(await page.locator('.connector-call-summary').first().locator('.connector-logo svg').count(),1);
   for(const row of await page.locator('.connector-call').all())assert((await row.boundingBox()).height<40);
   assert(!(await page.locator('.connector-call-summary').allTextContents()).join('').includes('never show this'));
   await page.screenshot({path:path.join(out,engine+'-two-calls.png')});
@@ -45,7 +45,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   }
   messages.at(-1).connector_artifact.status='executing';await refresh();await page.emulateMedia({reducedMotion:'reduce'});await page.waitForFunction(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);
   assert.equal(await page.locator('.connector-call-dots>span').first().evaluate(n=>getComputedStyle(n).animationName),'none');
-  messages.at(-1).connector_artifact.status='failed';await refresh();const failed=page.locator('[data-connector-artifact="call-16"]');await failed.getByText('Check outcome',{exact:true}).waitFor();assert(await failed.getByText(/final external state is unconfirmed/).isVisible());
+  messages.at(-1).connector_artifact.status='failed';await refresh();const failed=page.locator('[data-connector-artifact="call-16"]'),failedCall=page.locator('.connector-call').filter({has:failed});await failedCall.locator(':scope>summary').filter({hasText:'Failed Slack'}).waitFor();assert.match(await failedCall.locator(':scope>summary').innerText(),/Failed Slack/);await failedCall.locator(':scope>summary').click();await failed.getByText('Check outcome',{exact:true}).waitFor();assert(await failed.getByText(/final external state is unconfirmed/).isVisible());
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,twoInlineRows:true,seventeenCallsCollapsed:true,latestCallVisible:true,receiptAccess:true,liveStatus:true,reducedMotion:true,mobile:true}));
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});
