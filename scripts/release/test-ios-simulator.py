@@ -14,6 +14,46 @@ def record(name, value):
     (OUT / name).write_text(json.dumps(value, indent=2) + '\n')
 
 
+def boot_simulator(device):
+    """Allow bounded cold migration, and require terminal boot readiness."""
+    started = time.monotonic()
+    status = {'device_udid': device['udid'], 'deadline_seconds': 180,
+              'boot_command_deadline_seconds': 90,
+              'phase': 'boot', 'passed': False}
+    try:
+        with (OUT / 'simulator-boot.log').open('w') as log:
+            if device['state'] != 'Booted':
+                run(['xcrun', 'simctl', 'boot', device['udid']], stdout=log, stderr=subprocess.STDOUT)
+            status['phase'] = 'bootstatus'
+            subprocess.run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'],
+                           check=True, timeout=180, stdout=log, stderr=subprocess.STDOUT)
+        status['passed'] = True
+    except Exception as error:
+        status['error_type'] = type(error).__name__
+        status['timed_out'] = isinstance(error, subprocess.TimeoutExpired)
+        # Read only this disposable runner's selected device. Neither probe
+        # changes simulator state or makes a failed boot acceptable.
+        try:
+            inventory = subprocess.run(['xcrun', 'simctl', 'list', 'devices', '--json'],
+                                       capture_output=True, text=True, timeout=10, check=True)
+            devices = json.loads(inventory.stdout)['devices']
+            current = next(d for group in devices.values() for d in group if d['udid'] == device['udid'])
+            status['fresh_device'] = {key: current.get(key) for key in ['udid', 'state', 'isAvailable']}
+        except Exception as probe_error:
+            status['state_probe_error_type'] = type(probe_error).__name__
+        try:
+            health = subprocess.run(['xcrun', 'simctl', 'getenv', device['udid'], 'SIMULATOR_UDID'],
+                                    capture_output=True, text=True, timeout=10)
+            status['health_probe'] = {'exit_code': health.returncode,
+                                     'selected_device_responded': health.returncode == 0 and health.stdout.strip() == device['udid']}
+        except Exception as probe_error:
+            status['health_probe_error_type'] = type(probe_error).__name__
+        raise
+    finally:
+        status['elapsed_seconds'] = round(time.monotonic() - started, 2)
+        record('simulator-boot.json', status)
+
+
 def export_results(bundle):
     # Keep raw CLI schema/results, diagnostics, and attachments even on test failure.
     status = {}
@@ -141,8 +181,7 @@ def main(scope):
                 actual = subprocess.check_output(['defaults', 'read', 'com.apple.iphonesimulator', 'ConnectHardwareKeyboard'], text=True).strip()
                 assert actual == '0', 'Simulator keyboard preference did not apply'
                 record('keyboard-setup.json', {'hardware_keyboard_connected': False, 'previous_preference': old_keyboard, 'native_keyboard_visibility_requires_test_evidence': True})
-                if device['state'] != 'Booted': run(['xcrun', 'simctl', 'boot', device['udid']])
-                run(['xcrun', 'simctl', 'bootstatus', device['udid'], '-b'])
+                boot_simulator(device)
                 run(['open', '-a', 'Simulator', '--args', '-CurrentDeviceUDID', device['udid']])
             with (OUT / 'xcodebuild.log').open('w') as log:
                 process = subprocess.Popen(command, cwd=ROOT / 'mobile/ios', stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
