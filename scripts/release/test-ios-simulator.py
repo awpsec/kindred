@@ -393,6 +393,26 @@ def validate_release_ui_evidence(exports, summary, tree, attachments):
     return count
 
 
+def wait_for_simulator_transport(device):
+    """One bounded selected-device response after boot; no sleep or retry."""
+    status = {'selected_device': device['udid'], 'passed': False, 'commands': [],
+              'deadline_seconds': 60, 'response_is_native_effect_proof': False}
+    try:
+        result = _reduce_motion_command('readiness',
+            ['xcrun', 'simctl', 'getenv', device['udid'], 'SIMULATOR_UDID'], 60, status)
+        assert result.stdout.strip() == device['udid'], 'Selected simulator transport returned wrong identity'
+        status['passed'] = True
+    except Exception as error:
+        status['error_type'] = type(error).__name__
+        try:
+            record('simulator-transport-readiness.json', status)
+        except Exception:
+            pass
+        raise
+    else:
+        record('simulator-transport-readiness.json', status)
+
+
 def configure_simulator_reduce_motion(device):
     """Keep the same setup budget/gate; diagnose failure without replacing it."""
     started = time.monotonic()
@@ -490,6 +510,7 @@ def main(scope):
                 assert actual == '0', 'Simulator keyboard preference did not apply'
                 record('keyboard-setup.json', {'hardware_keyboard_connected': False, 'previous_preference': old_keyboard, 'native_keyboard_visibility_requires_test_evidence': True})
                 boot_simulator(device)
+                wait_for_simulator_transport(device)
                 configure_simulator_reduce_motion(device)
                 run(['open', '-a', 'Simulator', '--args', '-CurrentDeviceUDID', device['udid']])
             with (OUT / 'xcodebuild.log').open('w') as log:
