@@ -130,7 +130,7 @@ function iconButton(symbol, label, action) {
 function notice(text, error = false, action = null) {
   $("notice").classList.remove("continuation-confirmation");
   $("notice").textContent = text;
-  if(action){const control=document.createElement('button');control.type='button';control.className='subtle-button';control.textContent=action.label;control.onpointerdown=event=>event.preventDefault();control.onclick=action.run;$("notice").append(' ',control);}
+  if(action){const control=document.createElement('button');control.type='button';control.className='subtle-button notice-action';control.textContent=action.label;control.onpointerdown=event=>event.preventDefault();control.onclick=action.run;$("notice").append(' ',control);}
   $("notice").classList.toggle("error", error);
   $("notice").hidden = false;
   positionNotice();
