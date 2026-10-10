@@ -276,7 +276,13 @@ final class AppModel {
         let result = try await api.login(origin: origin, login: login, password: password, profileID: saved?.profileID)
         let identity = try? await api.identity(origin: origin, token: result.token)
 
-        let existing = AccountGrouping.existing(in: accounts, origin: origin, login: identity?.username ?? login)
+        let existing: Account?
+        if let accountID = identity?.serverAccountID {
+            existing = AccountGrouping.existing(in: accounts, origin: origin, serverAccountID: accountID,
+                                                login: identity?.username ?? login)
+        } else {
+            existing = AccountGrouping.existing(in: accounts, origin: origin, login: identity?.username ?? login)
+        }
         try await adopt(token: result.token, origin: origin, login: identity?.username ?? login,
                         profileID: identity?.activeProfileID ?? result.profileID, identity: identity, replacing: existing)
     }
@@ -446,7 +452,13 @@ final class AppModel {
         switch message {
         case .session(let newToken, let profileID):
             let profileChanged = profileID != nil && profileID != account.profileID
-            guard newToken != self.storedToken(id) || profileChanged else { return }
+            guard newToken != self.storedToken(id) || profileChanged else {
+                // Account settings can rename the verified identity without
+                // rotating its session. Refresh metadata through the existing
+                // account/origin/token-generation/request fences.
+                Task { [weak self] in await self?.refreshIdentity(id, resyncPush: false) }
+                return
+            }
             do {
                 try storeToken(newToken, for: id)
             } catch {
