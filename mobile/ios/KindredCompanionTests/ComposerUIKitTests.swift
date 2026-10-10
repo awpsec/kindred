@@ -263,7 +263,8 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         const reply=document.querySelector('#composer-reply'),files=document.querySelector('.composer-files');
         const send=document.querySelector('#send'),surface=getComputedStyle(send,'::before'),arrow=send.querySelector('svg'),style=getComputedStyle(send);
         const colour=document.createElement('canvas').getContext('2d');colour.fillStyle=surface.backgroundColor;colour.fillRect(0,0,1,1);const rgba=[...colour.getImageData(0,0,1,1).data];
-        return {sendSurface:{target:rect(send),arrow:rect(arrow),paint:{width:parseFloat(surface.width),height:parseFloat(surface.height),left:parseFloat(surface.left),top:parseFloat(surface.top),rgba},opacity:parseFloat(style.opacity),appearance:style.appearance,theme:document.documentElement.dataset.theme,hidden:send.hidden,disabled:send.disabled,fixture:window.__sendSurfaceFixture},layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
+        const target=rect(send),edgeHits=[[20,0],[-20,0],[0,20],[0,-20]].map(([dx,dy])=>{const h=document.elementFromPoint(target.x+target.width/2+dx,target.y+target.height/2+dy);return h===send||send.contains(h)});
+        return {sendSurface:{edgeHits,target,arrow:rect(arrow),paint:{width:parseFloat(surface.width),height:parseFloat(surface.height),left:parseFloat(surface.left),top:parseFloat(surface.top),rgba},opacity:parseFloat(style.opacity),appearance:style.appearance,theme:document.documentElement.dataset.theme,hidden:send.hidden,disabled:send.disabled,fixture:window.__sendSurfaceFixture},layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
         controls:[...c.querySelectorAll('#composer-actions,#send,.dictation-button,.dictation-cancel')].filter(b=>b.getClientRects().length).map(b=>{const r=rect(b),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {...r,hit:h===b||b.contains(h)}})}})()
         """
         var measured: [String: Any]?
@@ -357,6 +358,9 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         XCTAssertEqual(send["theme"] as? String, theme)
         XCTAssertEqual(send["hidden"] as? Bool, false)
         XCTAssertEqual(send["appearance"] as? String, "none")
+        let edgeHits = try XCTUnwrap(send["edgeHits"] as? [Bool])
+        XCTAssertEqual(edgeHits.count, 4)
+        XCTAssertTrue(edgeHits.allSatisfy { $0 }, "Outer target must hit Send beyond the painted circle")
         let target = try XCTUnwrap(send["target"] as? [String: Double])
         let arrow = try XCTUnwrap(send["arrow"] as? [String: Double])
         let paint = try XCTUnwrap(send["paint"] as? [String: Any])
