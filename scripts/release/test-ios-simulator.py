@@ -195,6 +195,56 @@ def validate_composer_evidence(exports, summary, tree, attachments):
     return len(required_methods)
 
 
+def _simulator_command(argv, timeout, row):
+    """Measure spawn/wait separately; clean only this command's new session."""
+    started = time.monotonic()
+    row.update(process_phase='spawn', cleanup={'kill_attempted': False, 'reaped': False})
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        try:
+            process = subprocess.Popen(argv, stdout=stdout, stderr=stderr, start_new_session=True)
+        finally:
+            row['spawn_seconds'] = round(time.monotonic() - started, 3)
+        row.update(pid=process.pid, spawn_seconds=round(time.monotonic() - started, 3), process_phase='wait')
+        waited = time.monotonic()
+        original = None
+        try:
+            remaining = timeout - (waited - started)
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(argv, timeout)
+            process.wait(timeout=remaining)
+            row['cleanup']['reaped'] = True
+        except subprocess.TimeoutExpired:
+            original = subprocess.TimeoutExpired(argv, timeout)
+            row['process_phase'] = 'cleanup'
+            row['cleanup']['kill_attempted'] = True
+            cleanup_started = time.monotonic()
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+                row['cleanup']['kill_succeeded'] = True
+            except ProcessLookupError:
+                row['cleanup']['kill_succeeded'] = False
+            except OSError as error:
+                row['cleanup']['error_type'] = type(error).__name__
+            try:
+                process.wait(timeout=2)
+                row['cleanup']['reaped'] = True
+            except Exception as error:
+                row['cleanup']['reap_error_type'] = type(error).__name__
+            row['cleanup']['elapsed_seconds'] = round(time.monotonic() - cleanup_started, 3)
+        finally:
+            row['wait_seconds'] = round(time.monotonic() - waited, 3)
+        # Regular files avoid waiting for inherited stdout/stderr pipe EOF.
+        stdout.seek(0); stderr.seek(0)
+        out = stdout.read().decode('utf-8', errors='replace')
+        err = stderr.read().decode('utf-8', errors='replace')
+        if original is not None:
+            original.output, original.stderr = out, err
+            raise original
+        result = subprocess.CompletedProcess(argv, process.returncode, out, err)
+        result.check_returncode()
+        return result
+
+
 def _reduce_motion_command(phase, argv, timeout, status, retain_output=True):
     """Capture only selected-simulator setup/probe output, never environment."""
     started = time.monotonic()
@@ -203,7 +253,7 @@ def _reduce_motion_command(phase, argv, timeout, status, retain_output=True):
     def text(value):
         return value.decode('utf-8', errors='replace') if isinstance(value, bytes) else (value or '')
     try:
-        result = subprocess.run(argv, check=True, capture_output=True, text=True, timeout=timeout)
+        result = _simulator_command(argv, timeout=timeout, row=row)
         row.update(status='success', exit_code=result.returncode)
         stdout, stderr = text(result.stdout), text(result.stderr)
         return result
