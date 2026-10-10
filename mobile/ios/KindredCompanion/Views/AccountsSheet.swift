@@ -1,5 +1,6 @@
 import KindredCore
 import SwiftUI
+import UIKit
 
 /// Saved accounts grouped by server, with the current account at the top.
 /// Adding an account always opens the separate native sign-in sheet.
@@ -161,6 +162,9 @@ private struct ServerHeader: View {
 
 @MainActor
 private struct AccountRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .body) private var titleCapHeight: CGFloat = UIFont.preferredFont(
+        forTextStyle: .body, compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)).capHeight
     let account: Account
     let isActive: Bool
     let isSignedIn: Bool
@@ -168,6 +172,14 @@ private struct AccountRow: View {
     let details: () -> Void
 
     var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            accessibilityRow
+        } else {
+            standardRow
+        }
+    }
+
+    private var standardRow: some View {
         HStack(spacing: 12) {
             Button(action: select) {
                 HStack(spacing: 12) {
@@ -217,6 +229,72 @@ private struct AccountRow: View {
             .buttonStyle(.borderless)
             .foregroundStyle(Theme.accent)
             .accessibilityLabel("Details for \(account.title)")
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// At accessibility sizes the status and Details controls get their own
+    /// line, leaving the account name the full available text width.
+    private var accessibilityRow: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button(action: select) {
+                HStack(alignment: .top, spacing: 12) {
+                    AccountAvatar(account: account, size: 36)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(account.title)
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
+                            if isSignedIn, account.administrativeRole != nil {
+                                AdministratorBadge()
+                                    .accessibilityHidden(true)
+                                    .fixedSize()
+                                    .alignmentGuide(.firstTextBaseline) { dimensions in
+                                        // Centre the capped badge on the title's first
+                                        // capital line, rather than the whole wrapped title.
+                                        dimensions.height / 2 + titleCapHeight / 2
+                                    }
+                            }
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(account.title + (isSignedIn ? account.administrativeRole.map { ", " + $0.accessibilityLabel } ?? "" : ""))
+                        Text(subtitle)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            HStack(spacing: 16) {
+                if case .registered = account.push.state {
+                    Image(systemName: "bell.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Notifications on")
+                }
+                if isActive {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
+                        .accessibilityLabel("Current account")
+                }
+                Spacer(minLength: 8)
+                Button(action: details) {
+                    Image(systemName: "info.circle")
+                        .font(.title3)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Theme.accent)
+                .accessibilityLabel("Details for \(account.title)")
+            }
         }
         .padding(.vertical, 2)
     }
