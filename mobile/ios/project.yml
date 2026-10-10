@@ -67,12 +67,26 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(KINDRED_BUNDLE_IDENTIFIER).tests
         DEVELOPMENT_TEAM: $(KINDRED_DEVELOPMENT_TEAM)
+  KindredCompanionUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: KindredCompanionUITests
+    dependencies:
+      - target: KindredCompanion
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(KINDRED_BUNDLE_IDENTIFIER).uitests
+        TEST_TARGET_NAME: KindredCompanion
+        DEVELOPMENT_TEAM: $(KINDRED_DEVELOPMENT_TEAM)
 schemes:
   KindredCompanion:
     build:
       targets:
         KindredCompanion: all
         KindredCompanionTests: [test]
+        KindredCompanionUITests: [test]
     run:
       config: Debug
     test:
@@ -80,5 +94,6 @@ schemes:
       gatherCoverageData: true
       targets:
         - KindredCompanionTests
+        - KindredCompanionUITests
     archive:
       config: Release

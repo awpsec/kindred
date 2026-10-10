@@ -4,11 +4,18 @@ import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    #if DEBUG
+    let model = AccountsAppearanceFixture.active?.model ?? AppModel()
+    #else
     let model = AppModel()
+    #endif
     private let notificationDelegate = NotificationDelegate()
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        #if DEBUG
+        if AccountsAppearanceFixture.active != nil { return true }
+        #endif
         // Set before launch finishes so a tap that launched the app is delivered.
         notificationDelegate.model = model
         UNUserNotificationCenter.current().delegate = notificationDelegate
