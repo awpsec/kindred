@@ -142,7 +142,9 @@ class AppearanceEvidenceTests(unittest.TestCase):
  def test_wrong_observed_role(self):
   self.mutate('role','owner')
   with self.assertRaises(AssertionError):self.validate()
- def test_release_ui_main_selects10methods_and_fails_without_xcresult(self):
+ def test_release_ui_main_selects10methods_and_fails_without_xcresult(self):self.check_main_scope('release-ui')
+ def test_keyboard_diagnostic_main_selects_only4_and480(self):self.check_main_scope('keyboard-ownership')
+ def check_main_scope(self,scope):
   self.device={'udid':'selected-only','state':'Booted'}; root=self.root/'repo';(root/'mobile/ios/KindredCompanionTests').mkdir(parents=True)
   (root/'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').write_text('test fixture')
   (root/'mobile/ios/KindredCompanionUITests').mkdir()
@@ -166,7 +168,7 @@ class AppearanceEvidenceTests(unittest.TestCase):
    if command[0]=='openssl':Path(command[command.index('-keyout')+1]).write_text('test-only')
    return subprocess.CompletedProcess([],0,'1' if 'ReduceMotionEnabled' in command and 'read' in command else '0','')
   with patch.object(m,'ROOT',root),patch.object(m,'OUT',out),patch.dict(m.os.environ,EXPECTED_SOURCE=source),patch.object(m.subprocess,'run',side_effect=run),patch.object(m.subprocess,'check_output',side_effect=output),patch.object(m.subprocess,'Popen',side_effect=popen),patch.object(m.ssl,'create_default_context'),patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps({'origin':'https://localhost:8765','ui_sha256':{}}).encode())):
-   with self.assertRaises(SystemExit):m.main('release-ui')
+   with self.assertRaises(SystemExit):m.main(scope)
   if hasattr(m,'_simulator_command'):
    self.assertEqual(len(setup_processes),3)
    self.assertEqual(setup_processes[0][0],['xcrun','simctl','getenv','selected-only','SIMULATOR_UDID'])
@@ -176,9 +178,11 @@ class AppearanceEvidenceTests(unittest.TestCase):
    self.assertTrue(all(0 < process.wait.call_args.kwargs['timeout'] <= 10 for command,process in setup_processes[1:]))
   self.assertEqual(len(captured),2);self.assertEqual(captured[-1][0],'xcodebuild')
   self.assertIn('CODE_SIGNING_ALLOWED=NO',captured[-1]);self.assertNotIn('-only-testing:KindredCompanionTests/ComposerUIKitTests',captured[-1])
-  self.assertEqual(sorted(x for x in captured[-1] if x.startswith('-only-testing:KindredCompanionTests/ComposerUIKitTests/')), sorted('-only-testing:KindredCompanionTests/'+name.removesuffix('()') for name in m.COMPOSER_PHASES))
-  self.assertEqual(native.wait.call_args.kwargs['timeout'],720)
+  self.assertEqual(sorted(x for x in captured[-1] if x.startswith('-only-testing:KindredCompanionTests/ComposerUIKitTests/')), sorted('-only-testing:KindredCompanionTests/'+name.removesuffix('()') for name in (m.KEYBOARD_OWNERSHIP_CASES if scope=='keyboard-ownership' else m.COMPOSER_PHASES)))
+  self.assertEqual(native.wait.call_args.kwargs['timeout'],480 if scope=='keyboard-ownership' else 720)
   row=json.loads((out/'test-receipt.json').read_text());self.assertFalse(row['passed']);self.assertNotIn('native_test_count',row)
+  if scope=='keyboard-ownership':
+   self.assertTrue(row['diagnostic_only']);self.assertFalse(row['release_passed']);self.assertEqual(row['required_native_phases'],4);self.assertEqual(len(row['required_methods']),4);self.assertEqual(len([x for x in captured[-1] if x.startswith('-only-testing:')]),4);return
   self.assertFalse(row['real_Apple_recognition_selected']);self.assertEqual(row['required_native_phases'],77);self.assertEqual(len(row['required_methods']),10);self.assertEqual(row['required_appearance_pairs'],24)
   self.assertIn('-only-testing:KindredCompanionUITests/AccountsAppearanceUIKitTests',captured[-1])
 

@@ -11,7 +11,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [full, composer, release-ui]
+        options: [full, composer, release-ui, keyboard-ownership]
       approve_runner_usage:
         description: 'Approve this one unsigned simulator job, maximum 20 minutes; no automatic retry.'
         required: true
@@ -56,7 +56,7 @@ jobs:
           cd mobile/ios
           xcodegen generate
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        if: ${{ inputs.validation_scope == 'composer' || inputs.validation_scope == 'release-ui' }}
+        if: ${{ inputs.validation_scope == 'composer' || inputs.validation_scope == 'release-ui' || inputs.validation_scope == 'keyboard-ownership' }}
         with:
           node-version: '22'
       - name: Run real UIKit app-hosted simulator tests once
