@@ -5578,6 +5578,20 @@ html[data-mobile] #composer :is(#composer-actions,#send,.dictation-button,.dicta
 }
 html[data-mobile] #composer #composer-actions {padding:10px;background:transparent;}
 html[data-mobile] #composer :is(#send,.dictation-button,.dictation-cancel) {border:6px solid transparent;background-clip:padding-box;padding:4px;}
+/* Paint the send surface separately from its 44px hit target. Native button
+   appearance and transparent borders must not shrink the visible circle. */
+html[data-mobile] #composer #send {
+  position:relative;isolation:isolate;appearance:none;-webkit-appearance:none;
+  border:0;padding:0;background:transparent;box-shadow:none;
+}
+html[data-mobile] #composer #send::before {
+  content:"";position:absolute;inset:4px;border-radius:50%;
+  background:var(--button);z-index:-1;pointer-events:none;
+}
+html[data-mobile] #composer #send > svg {
+  display:block;width:20px;height:20px;flex:none;pointer-events:none;
+}
+
 html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating) {
   grid-template-rows:auto auto minmax(28px,auto) 44px;
   min-height:96px;padding:8px 10px 5px;align-content:end;border-radius:24px;
