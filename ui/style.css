@@ -5665,3 +5665,11 @@ html[data-mobile] #notice .notice-action {min-height:44px;}
 .connector-inline .connector-outcome-warning {border:0;padding:0;background:transparent;color:var(--danger);font-size:inherit;margin:8px 0;}
 .connector-inline .connector-field-more>summary {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .connector-inline .connector-field-more .connector-record-fields {grid-template-columns:minmax(0,auto) minmax(0,1fr);margin:4px 0;gap:3px 8px;}
+
+/* Owner-controlled roles stay visible outside hover-only row actions. */
+.server-user-role{min-width:0;display:flex;flex-direction:column;gap:6px;margin-left:auto;margin-right:12px}
+.server-user-role select{min-height:44px;min-width:94px;max-width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.server-user-role .profile-form-error{max-width:18em;white-space:normal}
+@media(max-width:600px){.server-user-row{flex-wrap:wrap}.server-user-copy{flex:1 1 100%}.server-user-role{margin-left:0;flex:1}.server-user-row .row-actions{opacity:1;pointer-events:auto}}
+
+.server-user-count{white-space:nowrap;font-size:calc(12px * var(--text-scale,1));flex:none}
