@@ -278,6 +278,35 @@ const clock = (t) =>
   });
 const providerName = (b) =>
   (state.providerAccounts || []).find(p=>p.id===b?.provider)?.name || ({codex:"Codex",openrouter:"OpenRouter","claude-code":"Claude Code","kimi-code":"Kimi Code"}[b?.provider]) || "Custom provider";
+// Historical configuration changes are ordinary chat events, not a toast or a card.
+function modelChangeNotice(message) {
+  const row=node('div','model-change-notice');row.dataset.message=String(message.seq);
+  row.title='Saved model setting · '+new Date(message.created*1000).toLocaleString();
+  const change=message.model_change;
+  if(!change?.from||!change?.to){row.textContent=message.text;return row;}
+  const modelPart=value=>{
+    const part=node('span','model-change-model'),raw=String(value.model||''),provider=String(value.provider||'');
+    const known=state.providerAccounts?.find(p=>p.id===provider)?.models?.find(m=>m.model===raw);
+    let label=known?.display_name||known?.displayName||raw||'Default model';
+    if(!known){
+      const named=raw.match(/^(?:openai\/)?gpt-([\d.]+)-(luna|sol|astra)$/i);
+      const claude=raw.match(/^(?:anthropic\/)?claude-(opus|sonnet|haiku)-(\d+)-(\d+)(.*)$/i);
+      if(named)label=named[2][0].toUpperCase()+named[2].slice(1)+' '+named[1];
+      else if(claude)label=claude[1][0].toUpperCase()+claude[1].slice(1)+' '+claude[2]+'.'+claude[3]+claude[4];
+      else if(/^(opus|sonnet|haiku)$/.test(raw))label=raw[0].toUpperCase()+raw.slice(1);
+      else if(/^(?:openai\/)?gpt-/i.test(raw))label=raw.replace(/^openai\//,'').replace(/^gpt-/i,'GPT-');
+    }
+    part.append(node('span','',label));part.title=(raw||'Default model')+' · '+providerName({provider});
+    const brand=/^(?:anthropic\/)?claude-|^(opus|sonnet|haiku)$/.test(raw)?'claude-code':/^(?:openai\/)?gpt-|^o[134](?:-|$)/.test(raw)?'codex':provider;
+    const mark=node('span','model-change-mark');mark.setAttribute('aria-hidden','true');
+    if(brand==='codex')for(const color of ['white','black']){const img=node('img','openai-logo openai-'+color);img.src='/openai-'+color+'.svg';img.alt='';mark.append(img);}
+    else if(['claude-code','openrouter','kimi-code'].includes(brand)){const symbol=node('span','provider-symbol');symbol.dataset.provider=brand;mark.append(symbol);}
+    else mark.append(icon('network',12));
+    part.append(mark);return part;
+  };
+  row.append(document.createTextNode('Model changed from '),modelPart(change.from),document.createTextNode(' to '),modelPart(change.to));
+  return row;
+}
 function profile(b) {
   return { ...defaultProfile, ...b?.profile };
 }
@@ -5413,6 +5442,9 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       area.append(group);previousSender=null;continue;
     }
     if(m.workspace_artifact){const group=node('article','message-group');group.dataset.message=String(m.seq);group.append(workspaceArtifactCard(m.workspace_artifact,{api,markdown,baseUrl:state.status.public_url||location.origin}));area.append(group);previousSender=null;continue;}
+    if(m.kind==='model_change'){
+      area.append(modelChangeNotice(m));previousSender=null;sequenceAvatar=null;continue;
+    }
     if(m.connector_artifact){
       const batch=batches.get(m.seq);if(batch)for(const item of batch)stacked.add(item.seq);
       area.append(batch?connectorStack(batch,entry):connectorMessage(m,id));previousSender=null;continue;
