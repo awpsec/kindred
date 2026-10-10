@@ -27,6 +27,11 @@ on:
         description: 'Optional exact source commit to reuse verified packages from the same build.'
         required: false
         type: string
+      mac_paste_smoke:
+        description: 'Run the reviewed disposable native clipboard/RFB smoke on Mac.'
+        required: false
+        default: false
+        type: boolean
       platforms:
         description: 'Reuse verified outputs and build only the necessary platforms.'
         required: true
@@ -101,6 +106,41 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24.14.0'
+      - name: Reuse selected Mac Paste browser cache
+        if: runner.os == 'macOS' && inputs.mac_paste_smoke
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/kindred-paste-browsers
+          key: kindred-paste-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.release-tools/scripts/release/mac-paste-smoke/package-lock.json') }}
+      - name: Install selected disposable Mac Paste dependencies
+        if: runner.os == 'macOS' && inputs.mac_paste_smoke
+        shell: bash
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/kindred-paste-browsers
+        run: |
+          mkdir -p mac-validation
+          python - <<'PYPASTE'
+          from pathlib import Path
+          import subprocess, time, json
+          root = Path('.release-tools/scripts/release/mac-paste-smoke').resolve()
+          receipts = []
+          try:
+              for name, args, limit in [('npm-ci', ['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], 120), ('chromium-install', ['npx', '--no-install', 'playwright', 'install', 'chromium'], 180)]:
+                  started = time.monotonic()
+                  entry = {'stage': name, 'command': args, 'timeout_seconds': limit}
+                  try:
+                      with (Path('mac-validation') / (name + '.log')).open('w') as log:
+                          result = subprocess.run(args, cwd=root, stdout=log, stderr=subprocess.STDOUT, timeout=limit, check=True)
+                      entry['exit'] = result.returncode
+                  except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
+                      entry.update(error=type(error).__name__, exit=getattr(error, 'returncode', None))
+                      raise
+                  finally:
+                      entry['elapsed_seconds'] = time.monotonic()-started
+                      receipts.append(entry)
+          finally:
+              Path('mac-validation/paste-dependency-setup.json').write_text(json.dumps(receipts, indent=2))
+          PYPASTE
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           targets: ${{ matrix.target }}
@@ -190,6 +230,9 @@ jobs:
         run: python .release-tools/scripts/release/collect-packages.py --target ${{ matrix.target }} --output package-artifacts
       - name: Launch and validate the packaged Mac app on its native architecture
         if: runner.os == 'macOS'
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/kindred-paste-browsers
+          KINDRED_TEST_MAC_PASTE_SELECTED: ${{ inputs.mac_paste_smoke && '1' || '0' }}
         run: python .release-tools/scripts/release/test-macos-package.py --directory package-artifacts --source . --version "$RELEASE_VERSION" --source-commit "$(git rev-parse HEAD)" --target ${{ matrix.target }} --output mac-validation
       - name: Upload verified packages without publishing
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

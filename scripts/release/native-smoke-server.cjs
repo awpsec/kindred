@@ -5,6 +5,7 @@ const [source,folder]=process.argv.slice(2);
 const {server}=require(path.resolve(source,'tools/frontend/fixtures/desktop.cjs'));
 const original=server.listeners('request')[0];server.removeAllListeners('request');
 let phase='chat';const reports=[],feedRequests=[];
+let pasteDestination=null;
 const probe=`<script type="module">
 const errors=[];window.addEventListener('error',e=>errors.push(e.message));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -27,6 +28,70 @@ try {
  const framePhases=new Set();
  for(let n=0;n<300;n++){
   const data=await(await fetch('/fixture/phase')).json();
+  if(data.phase.startsWith('mac-paste-')&&!framePhases.has(data.phase)){
+   if(!window.__KINDRED_NATIVE_CLIPBOARD_TEXT)throw Error('Native clipboard capability missing');
+   const paste=document.querySelector('#desktop-paste'),control=document.querySelector('#take-control');
+   if(data.phase==='mac-paste-close'){
+    document.querySelector('#computer-close').click();
+    await report({phase:data.phase,passed:true});
+   }else if(data.phase==='mac-paste-open'){
+    document.querySelector('#show-computer').click();
+    for(let i=0;i<100&&(control.hidden||control.disabled);i++)await sleep(100);
+    if(control.hidden||control.disabled)throw Error('Visible Take control not ready');
+    control.click();
+    for(let i=0;i<150&&(paste.disabled||!paste.getClientRects().length);i++)await sleep(100);
+    if(paste.disabled||!paste.getClientRects().length)throw Error('Visible Paste not ready');
+    window.__pasteNativeCalls=[];window.__pasteBrowserCalls=0;
+    const invoke=window.__TAURI__.core.invoke.bind(window.__TAURI__.core);
+    window.__TAURI__.core.invoke=async(command,args)=>{
+     if(command!=='read_clipboard_text')return invoke(command,args);
+     const event={command,completed:false,error:false};window.__pasteNativeCalls.push(event);
+     try{const value=await invoke(command,args);event.completed=true;if(window.__pasteUIBarrier)await window.__pasteUIBarrier;return value;}
+     catch(error){event.completed=true;event.error=true;event.errorMessage=String(error);throw error;}
+    };
+    if(navigator.clipboard){const read=navigator.clipboard.readText.bind(navigator.clipboard);navigator.clipboard.readText=()=>{window.__pasteBrowserCalls++;return read();};}
+    await report({phase:data.phase,passed:true,programmaticVisibleControl:true});
+   }else{
+    const before=window.__pasteNativeCalls.length;
+    if(!paste.getClientRects().length)throw Error('Paste control not visible');
+    if(data.phase==='mac-paste-no-control'){
+     if(!paste.disabled){
+      if(control.hidden||control.disabled)throw Error('Return control not available');
+      await control.onclick();for(let i=0;i<100&&!paste.disabled;i++)await sleep(100);
+     }
+     if(!paste.disabled)throw Error('Paste must be disabled without control');
+     paste.click(); // Real disabled control must refuse before native read.
+    }else{
+     let releaseUI;const cancellation=['mac-paste-reconnect','mac-paste-control-loss'].includes(data.phase);
+     if(cancellation)window.__pasteUIBarrier=new Promise(resolve=>{releaseUI=resolve;});
+     for(let i=0;i<150&&paste.disabled;i++)await sleep(100);
+     if(paste.disabled)throw Error('Paste control disabled');
+     paste.click();
+     if(cancellation){
+      try{
+       for(let i=0;i<100&&(window.__pasteNativeCalls.length===before||!window.__pasteNativeCalls.at(-1).completed);i++)await sleep(100);
+       if(window.__pasteNativeCalls.length!==before+1||!window.__pasteNativeCalls.at(-1).completed||window.__pasteNativeCalls.at(-1).error)throw Error('Real native read did not complete before UI cancellation');
+       if(data.phase==='mac-paste-reconnect'){
+        await document.querySelector('#desktop-reconnect').onclick();
+       }else{
+        await control.onclick();
+        if(!paste.disabled)throw Error('Control loss did not disable Paste');
+       }
+      }finally{window.__pasteUIBarrier=null;releaseUI();}
+     }
+     for(let i=0;i<150&&(window.__pasteNativeCalls.length===before||!window.__pasteNativeCalls.at(-1).completed||paste.dataset.pending==='true');i++)await sleep(100);
+     if(window.__pasteNativeCalls.length!==before+1||!window.__pasteNativeCalls.at(-1).completed||paste.dataset.pending==='true')throw Error('Expected exactly one completed real native read and settled UI handler');
+    }
+    if(errors.length)throw Error('Application window errors: '+JSON.stringify(errors));
+    if(window.__pasteBrowserCalls!==0)throw Error('Browser clipboard fallback invoked');
+    if(document.querySelector('dialog[open]'))throw Error('Unexpected open manual dialog');
+    const calls=window.__pasteNativeCalls.slice(before);
+    if(data.phase==='mac-paste-text'&&calls.some(call=>call.error))throw Error('Real native read failed');
+    if(data.phase==='mac-paste-no-control'&&calls.length)throw Error('Native read without control');
+    await report({phase:data.phase,passed:true,uiCancellationAfterNativeRead:['mac-paste-reconnect','mac-paste-control-loss'].includes(data.phase),nativeCalls:calls,browserClipboardCalls:window.__pasteBrowserCalls,manualDialogOpen:false,programmaticVisibleControl:true});
+   }
+   framePhases.add(data.phase);
+  }
   if(data.phase.startsWith('frame-')&&!framePhases.has(data.phase)){
    if(!window.__KINDRED_MAC_OVERLAY||document.querySelector('.window-controls button'))throw Error('Expected native Mac traffic lights without duplicate HTML controls');
    const mode=data.phase.slice(6);
@@ -116,4 +181,30 @@ server.on('request',async(req,res)=>{
  if(route in extras)return send(extras[route]);
  return original(req,res);
 });
-server.listen(0,'127.0.0.1',()=>fs.writeFileSync(path.join(folder,'fixture.json'),JSON.stringify({url:'http://127.0.0.1:'+server.address().port})));
+server.listen(0,'127.0.0.1',async()=>{
+ try{
+  if(process.env.KINDRED_TEST_MAC_PASTE_SELECTED==='1'){
+   pasteDestination=await require('./mac-paste-smoke/rfb-browser.cjs').attach(server,{output:path.join(folder,'mac-paste'),token:'native-test-token-only',source,sourceCommit:require('node:child_process').execFileSync('git',['-C',source,'rev-parse','HEAD'],{encoding:'utf8',timeout:5000}).trim()});
+   const listeners=server.listeners('request');server.removeAllListeners('request');
+   server.on('request',async(req,res)=>{
+    const route=new URL(req.url,'http://127.0.0.1').pathname;
+    if(route.startsWith('/fixture/mac-paste/oracle/')){
+     if(req.headers.authorization!=='Bearer native-test-token-only'){res.writeHead(401);res.end();return;}
+     try{
+      let result;const action=route.slice('/fixture/mac-paste/oracle/'.length);
+      if(req.method!=='POST')throw Error('Require POST');
+      if(action==='clear'){await pasteDestination.clear();result={cleared:true};}
+      else if(action==='snapshot'){let body='';for await(const chunk of req){body+=chunk;if(body.length>1024)throw Error('Oversized label');}result=await pasteDestination.snapshot(JSON.parse(body).label);}
+      else throw Error('Unknown oracle action');
+      res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(result));
+     }catch(error){res.writeHead(500);res.end(JSON.stringify({error:String(error)}));}
+     return;
+    }
+    for(const listener of listeners)listener.call(server,req,res);
+   });
+  }
+  fs.writeFileSync(path.join(folder,'fixture.json'),JSON.stringify({url:'http://127.0.0.1:'+server.address().port,pasteDestination:!!pasteDestination}));
+ }catch(error){console.error(error);process.exitCode=1;server.close();}
+});
+async function closeFixture(){try{if(pasteDestination)await pasteDestination.close();}finally{server.close(()=>process.exit(0));}}
+process.once('SIGTERM',closeFixture);process.once('SIGINT',closeFixture);
