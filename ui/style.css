@@ -5801,7 +5801,9 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
 
 /* Model changes stay in the transcript without borrowing a message bubble. */
 .model-change-notice { color:var(--muted); font-size:calc(12px * var(--text-scale, 1)); line-height:1.65; padding:3px 12px; max-width:100%; overflow-wrap:anywhere; }
-.model-change-model { display:inline; color:var(--fg); }
-.model-change-mark { display:inline-flex; align-items:center; justify-content:center; vertical-align:-2px; margin-inline:4px 2px; width:12px; height:12px; opacity:.7; }
+.model-change-model { display:inline-flex; align-items:center; max-width:min(28ch,100%); color:var(--fg); vertical-align:baseline; }
+.model-change-model > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.model-change-mark { display:flex; align-items:center; justify-content:center; flex:none; margin-inline:4px 2px; width:12px; height:12px; opacity:.7; }
 .model-change-mark .openai-logo,.model-change-mark .provider-symbol { width:12px; height:12px; }
-.model-change-mark .openai-logo { width:22px; height:22px; flex:none; }
+/* The existing OpenAI SVG has 33% internal whitespace: 18px gives a 12px visible mark. */
+.model-change-mark .openai-logo { width:18px; height:18px; flex:none; }
