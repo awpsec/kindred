@@ -17,4 +17,5 @@ ui/vendor.js whitespace=-blank-at-eol
 ui/artifact-vendor.js whitespace=-blank-at-eol
 
 # Keep the upstream license bytes identical to the pinned provenance receipt.
-ui/fonts/DMSans-LICENSE.txt -text
+ui/fonts/DMSans-LICENSE.txt -text whitespace=-blank-at-eol
+ui/fonts/Manrope-LICENSE.txt -text whitespace=-blank-at-eol
