@@ -5,8 +5,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const origin='http://127.0.0.1:'+server.address().port;
- const engine=process.env.WEBKIT?'webkit':'edge';
- const browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true,channel:'msedge'});
+ const engine=process.env.WEBKIT?'webkit':process.env.KINDRED_TEST_CHROMIUM?'chromium':'edge';
+ const browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true,...(process.env.KINDRED_TEST_CHROMIUM?{}:{channel:'msedge'})});
  const folder=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test-results/workflow-ui-v107');fs.mkdirSync(folder,{recursive:true});
  try{
   const page=await browser.newPage({viewport:{width:390,height:900}});page.setDefaultTimeout(15000);
@@ -21,7 +21,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const messages=()=>[
    {seq:1,sender:'piper',kind:'connector_artifact',text:'First receipt',run_id:'run-a',created:now,connector_artifact:cards['receipt-1']},
    {seq:2,sender:'piper',kind:'connector_artifact',text:'Second receipt',run_id:'run-a',created:now+1,connector_artifact:cards['receipt-2']},
-   {seq:3,sender:'piper',kind:'connector_artifact',text:'Review draft',run_id:'run-a',created:now+2,connector_artifact:cards[pending.id]}
+   ...[3,4].map(seq=>({seq,sender:'piper',kind:'connector_artifact',text:'Additional receipt',run_id:'run-a',created:now+seq,connector_artifact:{...cards['receipt-2'],id:'receipt-'+seq}})),
+   {seq:5,sender:'piper',kind:'connector_artifact',text:'Review draft',run_id:'run-a',created:now+5,connector_artifact:cards[pending.id]}
   ];
   await page.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
   await page.route(origin+'/api/**',async route=>{
@@ -32,33 +33,34 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    if(name.startsWith('/connector-artifacts/')){writes.push(request.postDataJSON());return send(cards[pending.id]);}
    return route.continue();
   });
-  await page.goto(origin);const stack=page.locator('.connector-call').first();await stack.waitFor();
-  assert.equal(await stack.count(),1);assert.equal(await page.locator('.connector-call').count(),2);
+  if(process.env.KINDRED_TEST_CONNECTOR_BASELINE)for(const name of ['app.js','connector-cards.js'])await page.route(origin+'/'+name,r=>r.fulfill({contentType:'text/javascript',body:require('node:child_process').execFileSync('git',['show',process.env.KINDRED_TEST_CONNECTOR_BASELINE+':ui/'+name])}));
+  await page.goto(origin);const stack=page.locator('.connector-stack');await stack.waitFor();
+  assert.equal(await stack.count(),1);assert.equal(await stack.locator('.connector-message').count(),3);
   // Keyboard interaction must expand the stack and expose every receipt.
-  await stack.locator('summary').focus();await page.keyboard.press('Enter');await page.locator('[data-connector-artifact="receipt-1"]').waitFor({state:'visible'});
+  await stack.locator(':scope > summary').focus();await page.keyboard.press('Enter');await stack.locator('.connector-call > summary').first().click();await page.locator('[data-connector-artifact="receipt-1"]').waitFor({state:'visible'});
   assert.notEqual(await stack.getAttribute('open'),null);
   // A completed receipt corrected live to FAILED must expose the state and warning.
   cards['receipt-1'].status='failed';cards['receipt-1'].error='Connector timed out';
   await page.waitForFunction(()=>document.querySelector('[data-connector-artifact="receipt-1"] .status-failed'));
   const failed=page.locator('[data-connector-artifact="receipt-1"]');assert.match(await failed.innerText(),/Check outcome/);assert.match(await failed.innerText(),/final external state is unconfirmed/i);
   // Keep an open editor and its focused draft while a sibling receipt completes.
-  const draft=page.locator('[data-connector-artifact="pending-edit"]');await draft.getByRole('button',{name:'Edit draft'}).click();const form=draft.getByRole('form',{name:'Edit email draft'});const body=form.getByLabel('Message',{exact:true});await body.fill('A longer draft retained during refresh.');await body.focus();
+  const draft=page.locator('[data-connector-artifact="pending-edit"]');await draft.getByRole('button',{name:'Review',exact:true}).click();await draft.getByRole('button',{name:'Edit draft'}).click();const form=draft.getByRole('form',{name:'Edit email draft'});const body=form.getByLabel('Message',{exact:true});await body.fill('A longer draft retained during refresh.');await body.focus();
   cards['receipt-2'].status='failed';cards['receipt-2'].error='Sibling correction';
   await page.waitForFunction(()=>document.querySelector('[data-connector-artifact="receipt-2"] .status-failed'));
   assert.equal(await body.inputValue(),'A longer draft retained during refresh.');assert(await form.isVisible());
   assert.equal(await body.evaluate(e=>document.activeElement===e),true,'live sibling receipt update steals editor focus');
   cards['receipt-1'].status='completed';cards['receipt-2'].status='completed';
-  await page.waitForFunction(()=>document.querySelector('.connector-call'));
-  const activeStack=page.locator('.connector-call').first();
+  await page.waitForFunction(()=>document.querySelector('.connector-stack'));
+  const activeStack=page.locator('.connector-stack');
   // Text scaling and narrow layouts must remain usable and free of page overflow.
   for(const width of [320,390,900])for(const scale of [1.4,1.6]){
    await page.setViewportSize({width,height:900});await page.evaluate(s=>document.documentElement.style.setProperty('--text-scale',String(s)),scale);await page.waitForTimeout(150);
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'page overflow at '+width+'px scale '+scale);
-   const rect=await activeStack.locator('summary').evaluate(s=>{const r=s.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,viewport:innerWidth};});
+   const rect=await activeStack.locator(':scope > summary').evaluate(s=>{const r=s.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,viewport:innerWidth};});
    assert(rect.left>=0&&rect.right<=rect.viewport,'summary escapes viewport at '+width+'px scale '+scale);
-   await activeStack.locator('summary').scrollIntoViewIfNeeded();
+   await activeStack.locator(':scope > summary').scrollIntoViewIfNeeded();
    await page.screenshot({path:path.join(folder,`${engine}-connector-stack-${width}-scale-${String(scale).replace('.','')}.png`)});
-   const save=form.getByRole('button',{name:'Save draft changes',exact:true});await save.scrollIntoViewIfNeeded();
+   const save=form.getByRole('button',{name:'Save edits',exact:true});await save.scrollIntoViewIfNeeded();
    const controls=await form.locator('.connector-card-actions button').evaluateAll(buttons=>buttons.map(b=>{const r=b.getBoundingClientRect();return{left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:innerWidth};}));
    assert(controls.every(r=>r.left>=0&&r.right<=r.width),'editor actions fit the viewport');
    assert(controls[0].right<=controls[1].left||controls[0].bottom<=controls[1].top,'editor actions do not overlap');
