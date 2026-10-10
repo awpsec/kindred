@@ -5602,3 +5602,30 @@ html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-fil
 html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating) #composer-hint {display:flex;justify-content:center;}
 html[data-mobile] #composer.is-dictating #composer-hint {display:none;}
 html[data-mobile] .composer-area {padding:8px 10px;}
+
+/* iOS dictation uses the same visible circle and independent hit target as Send. */
+html[data-mobile] #composer .dictation-button {
+  position:relative;isolation:isolate;appearance:none;-webkit-appearance:none;
+  border:0;padding:0;background:transparent;box-shadow:none;
+}
+html[data-mobile] #composer .dictation-button::before {
+  content:"";position:absolute;inset:4px;border-radius:50%;background:var(--hover);
+  z-index:-1;pointer-events:none;
+}
+html[data-mobile] #composer .dictation-button.is-primary::before {background:var(--button);}
+html[data-mobile] #composer .dictation-button.is-recording::before {background:#ac4e49;}
+html[data-mobile] #composer .dictation-button > svg {width:20px;height:20px;pointer-events:none;}
+html[data-mobile] #composer .dictation-button:hover {transform:none;}
+html[data-mobile] #composer .dictation-button:active {opacity:.8;}
+
+html[data-mobile] #composer.is-dictating.ios-dictation-content {grid-template-columns:44px minmax(0,1fr) 44px 44px 44px;}
+html[data-mobile] #composer .dictation-status {font-size:calc(13px * var(--text-scale,1));}
+html[data-mobile] #composer .dictation-cancel {
+  position:relative;isolation:isolate;appearance:none;-webkit-appearance:none;
+  border:0;padding:0;background:transparent;box-shadow:none;
+}
+html[data-mobile] #composer .dictation-cancel::before {
+  content:"";position:absolute;inset:4px;border-radius:50%;background:var(--hover);
+  z-index:-1;pointer-events:none;
+}
+html[data-mobile] #composer .dictation-cancel > svg {width:20px;height:20px;pointer-events:none;}

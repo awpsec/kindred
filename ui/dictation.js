@@ -1,10 +1,14 @@
 // Device-local preferences. Recording begins only after an explicit microphone click.
 export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasFiles,notice,icon}) {
   const nativeAvailable=()=>window.__KINDRED_NATIVE_DICTATION===true&&window.__KINDRED_DESKTOP?.platform==='macos';
-  const key='kindred-dictation-v1';let preferences={enabled:false,model:'',microphone:'default'};
+  const iosCapability=()=>window.__KINDRED_IOS_DICTATION;
+  const iosAvailable=()=>iosCapability()?.supported===true&&iosCapability()?.protocolVersion===1&&iosCapability()?.engine==='apple-on-device'&&iosCapability()?.onDeviceOnly===true&&typeof iosCapability()?.documentID==='string'&&iosCapability().documentID.length>0&&iosCapability().documentID.length<=128&&!!window.webkit?.messageHandlers?.kindredDictation;
+  const key=iosAvailable()?'kindred-ios-dictation-v1':'kindred-dictation-v1';let preferences={enabled:iosAvailable(),model:iosAvailable()?'ios':'',microphone:'default'};
   try {const saved=JSON.parse(localStorage.getItem(key)||'null');if(saved&&typeof saved.enabled==='boolean'&&typeof saved.model==='string')preferences={...preferences,...saved};}catch{}
+  if(iosAvailable())preferences.model='ios';
   if(typeof preferences.microphone!=='string'||preferences.microphone.length>512)preferences.microphone='default';
-  if(preferences.model && !preferences.model.startsWith('local:') && !(preferences.model==='native'&&nativeAvailable())){preferences.enabled=false;preferences.model='';}
+  if(preferences.model && !preferences.model.startsWith('local:') && !(preferences.model==='native'&&nativeAvailable()) && !(preferences.model==='ios'&&iosAvailable())){preferences.enabled=false;preferences.model='';}
+  const usesIOS=()=>preferences.model==='ios'&&iosAvailable();
   const usesNative=()=>preferences.model==='native'&&nativeAvailable();
   const available=()=>window.__KINDRED_DICTATION_MODELS===true;
   const modelCatalogue=[['whistle','Whistle',16919407],['base','Base',59707625],['small','Small',190085487],['medium','Medium',539212467],['large-v3-turbo','Large v3 Turbo',574041195],['large-v3','Large v3',1081140203]];
@@ -17,22 +21,86 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   const pauseSeconds=.8,padSeconds=.3;
   const mic=document.createElement('button');mic.type='button';mic.className='dictation-button';mic.hidden=true;send.before(mic);
   const status=document.createElement('span');status.className='dictation-status';status.setAttribute('role','status');status.hidden=true;mic.before(status);
+  const statusLabel=document.createElement('span'),elapsed=document.createElement('span');elapsed.setAttribute('aria-hidden','true');elapsed.hidden=true;status.append(statusLabel,elapsed);
   const cancelButton=document.createElement('button');cancelButton.type='button';cancelButton.className='icon-button dictation-cancel';cancelButton.title='Cancel dictation';cancelButton.setAttribute('aria-label','Cancel dictation');cancelButton.append(icon('close'));cancelButton.hidden=true;mic.before(cancelButton);
   const save=()=>localStorage.setItem(key,JSON.stringify(preferences));
+  let iosOperation=null,iosDeadline=null,iosTick=null,iosCaret=null,writingTranscript=false;
+  const iosErrors={
+    'on-device-unavailable':'On-device dictation is unavailable for this language.',
+    'speech-denied':'Kindred needs microphone and speech recognition access to dictate. You can allow it in Settings.',
+    'microphone-denied':'Kindred needs microphone and speech recognition access to dictate. You can allow it in Settings.',
+    'speech-restricted':'Dictation is restricted on this iPhone.',
+    'speech-timeout':'Speech permission did not respond. Try again.',
+    'microphone-timeout':'Microphone permission did not respond. Try again.',
+    'not-foreground':'Open Kindred to dictate.',
+    'audio-start-failed':'The microphone could not start. Try again.',
+    'recognizer-unavailable':'Dictation is temporarily unavailable. Try again in a moment.',
+    'recognition-failed':'Dictation stopped. The words so far were kept.',
+    'transcript-limit':'Dictation reached its text limit. The words so far were kept.',
+    'audio-interrupted':'Dictation stopped. The words so far were kept.',
+    timeout:'Transcription took too long. The words already shown have been kept.'
+  };
+  function iosOperationID(){
+    // getRandomValues is available on supported private HTTP WKWebView origins.
+    const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+    const hex=[...bytes].map(b=>b.toString(16).padStart(2,'0')).join('');
+    return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+  }
+  function iosMessage(action,operation=iosOperation){
+    if(!iosAvailable())return false;
+    const chat=operation?.chat||chatId();
+    window.webkit.messageHandlers.kindredDictation.postMessage({action,...(operation?.id?{operationID:operation.id}:{}),...(chat?{chatID:chat}:{}),documentID:operation?.document||iosCapability().documentID});return true;
+  }
+  function iosWait(milliseconds){clearTimeout(iosDeadline);iosDeadline=setTimeout(()=>{if(iosOperation){if(phase==='recording'){void stop();notice('Dictation stops after 1 minute. Tap the microphone to continue.');}else{endIOS('cancel');notice(iosErrors.timeout,true);}}},milliseconds);}
+  function endIOS(action,discard=false,restoreFocus=true){
+    const operation=iosOperation;iosOperation=null;clearTimeout(iosDeadline);iosDeadline=null;clearInterval(iosTick);iosTick=null;
+    if(operation&&action)iosMessage(action,operation);
+    // Explicit Cancel removes this span; interruption commits the visible preview.
+    if(discard&&session?.span?.isConnected){session.span.remove();session=null;editor.dispatchEvent(new Event('input',{bubbles:true}));}
+    else if(session?.span?.isConnected)finishTranscript(false,restoreFocus&&operation?.focused===true);else session=null;
+    generation++;phase='idle';render();
+  }
+  function iosEvent(event){
+    const value=event.detail,operation=iosOperation;
+    if(!operation||!value||value.operationID!==operation.id||value.documentID!==operation.document||value.chatID!==operation.chat||chatId()!==operation.chat||iosCapability()?.documentID!==operation.document)return;
+    if(!Number.isSafeInteger(value.sequence)||value.sequence<=operation.sequence)return;
+    if(!['authorizing','recording','finishing','partial','final','stopped','cancelled','error'].includes(value.phase))return;
+    if(value.text!==undefined&&(typeof value.text!=='string'||new TextEncoder().encode(value.text).length>16384))return;
+    operation.sequence=value.sequence;
+    if(!session?.span?.isConnected||session.span.textContent!==(session.text?session.leading+session.text+session.trailing:'')){endIOS('cancel');return;}
+    if(['partial','final','stopped','error','cancelled'].includes(value.phase)&&typeof value.text==='string')showTranscript(value.text||'',operation.generation);
+    if(value.phase==='authorizing')phase='starting';
+    if(value.phase==='recording'){phase='recording';operation.started=Date.now();elapsed.textContent=' 0:00';iosWait(60000);clearInterval(iosTick);iosTick=setInterval(()=>{const seconds=Math.floor((Date.now()-operation.started)/1000);elapsed.textContent=` ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;},1000);}
+    if(value.phase==='finishing'){phase='finishing';iosWait(10000);if(value.errorCode==='duration-limit')notice('Dictation stops after 1 minute. Tap the microphone to continue.');}
+    if(['final','stopped','cancelled','error'].includes(value.phase)){
+      if(['final','stopped'].includes(value.phase)&&!session.text)notice('No speech detected. Try again.');
+      if(value.phase==='cancelled'&&value.reason==='background')notice('Dictation stopped. The words so far were kept.');
+      if(value.errorCode==='finalization-timeout')notice('Transcription took too long. The words already shown have been kept.',true);
+      endIOS(null,value.phase==='cancelled'&&['cancelled','context-changed','account-changed','session-ended','navigation'].includes(value.reason||value.errorCode));if(value.phase==='error')notice(iosErrors[value.errorCode]||'Dictation stopped. The words already shown have been kept.',true,['speech-denied','microphone-denied'].includes(value.errorCode)?{label:'Open Settings',run:()=>iosMessage('settings')}:null);
+    }else render();
+  }
+  window.addEventListener('kindred-ios-dictation',iosEvent);
+  window.addEventListener('kindred-ios-dictation-capability',()=>{
+    if(iosOperation&&(!iosAvailable()||iosOperation.document!==iosCapability()?.documentID||iosCapability()?.onDeviceAvailable!==true))endIOS('cancel',iosOperation.document!==iosCapability()?.documentID);
+    renderedComposerState=null;render();
+  });
+  let iosChat=null;
   let renderedComposerState;
   function render(){
-    const active=phase!=='idle',text=!!editor.value?.trim()||hasFiles(),primary=preferences.enabled&&!text;
-    const renderKey=JSON.stringify([preferences.enabled,text,phase,!!inflight]);
+    if(iosOperation&&iosOperation.chat!==chatId())endIOS('cancel',true);
+    if(usesIOS()&&iosChat!==chatId()){iosChat=chatId();iosMessage('context');}
+    const active=phase!=='idle',text=!!editor.value?.trim()||hasFiles(),enabled=preferences.enabled&&(preferences.model!=='ios'||iosAvailable()&&iosCapability().onDeviceAvailable===true),primary=enabled&&!(iosOperation?iosOperation.content:text);
+    const renderKey=JSON.stringify([enabled,text,phase,!!inflight,!!iosOperation?.content]);
     if(renderKey===renderedComposerState){if(settings?.isConnected)renderSettingsStatus();return;}
     renderedComposerState=renderKey;
-    composer.classList.toggle('dictation-enabled',preferences.enabled);composer.classList.toggle('dictation-empty',primary);composer.classList.toggle('is-dictating',active);
-    mic.hidden=!preferences.enabled;send.hidden=primary||active;mic.classList.toggle('is-primary',primary);mic.classList.toggle('is-recording',phase==='recording');
-    mic.disabled=phase==='starting'||phase==='finishing';send.disabled=active;
-    const label=phase==='recording'?'Stop dictating':'Dictate';mic.title=label;mic.setAttribute('aria-label',label);mic.setAttribute('aria-pressed',String(phase==='recording'));
-    const stopping=phase==='recording';
+    composer.classList.toggle('dictation-enabled',enabled);composer.classList.toggle('ios-dictation-content',!!iosOperation?.content);composer.classList.toggle('dictation-empty',primary);composer.classList.toggle('is-dictating',active);
+    mic.hidden=!enabled;send.hidden=iosOperation?!iosOperation.content:primary||active;mic.classList.toggle('is-primary',primary);mic.classList.toggle('is-recording',phase==='recording'||!!iosOperation&&phase==='finishing');
+    mic.disabled=phase==='starting'||phase==='finishing';send.disabled=active;send.setAttribute('aria-disabled',String(active));
+    const label=phase==='recording'?'Stop dictating':usesIOS()&&iosCapability().onDeviceAvailable!==true?'On-device dictation unavailable':'Dictate';mic.title=label;mic.setAttribute('aria-label',label);mic.setAttribute('aria-pressed',String(phase==='recording'));
+    const stopping=phase==='recording'||!!iosOperation&&phase==='finishing';
     // Status polling must not replace the SVG between pointer-down and pointer-up.
     if(renderedStop!==stopping){mic.replaceChildren(microphone(stopping));renderedStop=stopping;}
-    status.hidden=!active;status.textContent=phase==='recording'?(inflight?'Listening · transcribing speech…':'Listening · live dictation'):phase==='starting'?'Opening microphone…':phase==='finishing'?'Finishing transcription…':'';cancelButton.hidden=!active;
+    status.hidden=!active;statusLabel.textContent=phase==='recording'?(usesIOS()?'Listening':inflight?'Listening · transcribing speech…':'Listening · live dictation'):phase==='starting'?'Opening microphone…':phase==='finishing'?(usesIOS()?'Finishing…':'Finishing transcription…'):'';elapsed.hidden=!iosOperation||phase!=='recording';cancelButton.hidden=!active;
     if(settings?.isConnected)renderSettingsStatus();
   }
   function microphone(stop=false){
@@ -44,17 +112,18 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     const closing=context;context=null;if(closing&&closing.state!=='closed')await deviceReply(closing.close(),'Audio cleanup timed out.',1500).catch(()=>{});
   }
   async function cancel(){
+    if(iosOperation){endIOS('cancel',true);return;}
     generation++;phase='idle';chunks=[];samples=0;clearTimeout(liveTimer);liveTimer=null;
     if(session?.span?.isConnected){session.span.remove();editor.dispatchEvent(new Event('input',{bubbles:true}));}
     session=null;inflight=null;lastDecodedSpeech=0;lastAudibleSample=0;resetSegments();
     const closing=release(),stopping=available()?deviceReply(nativeInvoke('cancel_dictation'),'Cancellation timed out.',2000).catch(()=>{}):Promise.resolve();render();await Promise.all([closing,stopping]);
   }
   function resetSegments(){utteranceStart=0;decodedStart=0;decodedEnd=0;decodedText='';pauses=[];}
-  function beginTranscript(conversation,thisGeneration){
+  function beginTranscript(conversation,thisGeneration,capturedRange=null){
     // Empty contenteditables often contain a leftover <br> or <div><br></div>.
     // Clear only an empty draft so these placeholders cannot become a blank line.
     if(!editor.value?.trim())editor.replaceChildren();
-    const selection=getSelection(),range=selection?.rangeCount?selection.getRangeAt(0).cloneRange():document.createRange();
+    const selection=getSelection(),range=capturedRange|| (selection?.rangeCount?selection.getRangeAt(0).cloneRange():document.createRange());
     if(!editor.contains(range.commonAncestorContainer)){range.selectNodeContents(editor);range.collapse(false);}else range.collapse(false);
     const before=range.cloneRange();before.selectNodeContents(editor);before.setEnd(range.startContainer,range.startOffset);
     const after=range.cloneRange();after.selectNodeContents(editor);after.setStart(range.endContainer,range.endOffset);
@@ -64,7 +133,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   function showTranscript(text,thisGeneration){
     if(thisGeneration!==generation||session?.generation!==thisGeneration||session.conversation!==chatId()||!preferences.enabled||!session.span.isConnected)return;
     text=(text||'').trim();if(!text||text===session.current)return;
-    session.current=text;text=session.text=[session.committed,text].filter(Boolean).join(' ');session.span.textContent=session.leading+text+session.trailing;editor.dispatchEvent(new Event('input',{bubbles:true}));
+    session.current=text;text=session.text=[session.committed,text].filter(Boolean).join(' ');writingTranscript=true;session.span.textContent=session.leading+text+session.trailing;editor.dispatchEvent(new Event('input',{bubbles:true}));writingTranscript=false;
     // Follow the dictated words inside the editor, including WebKit's scrollable
     // contenteditable. Do not scroll the chat or steal the user's selection.
     const range=document.createRange();range.selectNodeContents(session.span.firstChild);range.collapse(false);
@@ -72,12 +141,12 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     if(end.height&&end.bottom>box.bottom)editor.scrollTop+=end.bottom-box.bottom;
     else if(end.height&&end.top<box.top)editor.scrollTop-=box.top-end.top;
   }
-  function finishTranscript(showEmptyNotice=true){
+  function finishTranscript(showEmptyNotice=true,restoreFocus=true){
     if(!session)return;const {span,text}=session;
     if(span.isConnected){
       const node=document.createTextNode(span.textContent);span.replaceWith(node);
-      const range=document.createRange();range.setStartAfter(node);range.collapse(true);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
-      editor.dispatchEvent(new Event('input',{bubbles:true}));editor.focus({preventScroll:true});
+      const range=document.createRange();range.setStartAfter(node);range.collapse(true);const selection=getSelection();if(restoreFocus){selection.removeAllRanges();selection.addRange(range);}
+      editor.dispatchEvent(new Event('input',{bubbles:true}));if(restoreFocus)editor.focus({preventScroll:true});
     }
     session=null;if(!text&&showEmptyNotice)notice('No speech detected. Try again.');
   }
@@ -148,14 +217,22 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     }
   }
   async function configure(){
+    if(usesIOS()){await cancel();iosMessage('context');iosMessage('status');render();return;}
     await cancel();
     if(available())native=await nativeInvoke('configure_dictation',{enabled:preferences.enabled&&!usesNative(),modelName:usesNative()?'':preferences.model.replace(/^local:/,'')});
     watchNative();render();
   }
   async function start(){
     if(!preferences.enabled||!chatId()||phase!=='idle')return;
-    const thisGeneration=++generation;phase='starting';render();let stage='model';
+    const thisGeneration=++generation;phase='starting';if(!usesIOS())render();let stage='model';
     try {
+      if(usesIOS()){
+        if(iosCapability().onDeviceAvailable!==true)throw new Error(iosErrors['on-device-unavailable']);
+        if(iosCapability().recognizerAvailable===false)throw new Error('Dictation is temporarily unavailable. Try again in a moment.');
+        const capture=iosCaret;iosCaret=null;beginTranscript(chatId(),thisGeneration,capture?.range);
+        iosOperation={id:iosOperationID(),chat:chatId(),document:iosCapability().documentID,generation:thisGeneration,sequence:0,content:!!editor.value?.trim()||hasFiles(),focused:capture?.focused===true};
+        render();iosWait(30000);iosMessage('context');iosMessage('start');return;
+      }
       if(usesNative()){
         editor.focus({preventScroll:true});
         await nativeInvoke('start_native_dictation');
@@ -190,6 +267,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     }catch(e){if(thisGeneration===generation){await cancel();throw new Error(e.name==='NotAllowedError'?'Microphone access was not allowed. Try again and allow it when prompted, or check microphone permissions in your device or browser settings.':['NotFoundError','OverconstrainedError'].includes(e.name)?'The selected microphone is unavailable. Choose another microphone or System Default in General settings.':stage==='audio'?'Microphone access was allowed, but the audio engine could not start. '+(window.__KINDRED_DESKTOP?.platform==='linux'?'Check the Linux GStreamer audio plugins and your output device. ':'Check your input and output devices. ')+(e.message?'Details: '+e.message.slice(0,200):'Then retry.'):e.message||'The microphone could not start.');}}
   }
   async function stop(){
+    if(iosOperation){if(phase==='recording'){phase='finishing';iosWait(10000);iosMessage('stop');render();}return;}
     if(phase!=='recording')return;
     const thisGeneration=generation;
     // Freeze capture, then drain the in-flight result and any speech spoken
@@ -213,13 +291,30 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   }
 
   function fail(error){notice(error.message||'Dictation could not complete.',true);render();}
-  mic.addEventListener('pointerdown',event=>{if(usesNative())event.preventDefault();});
+  mic.addEventListener('pointerdown',event=>{
+    if(usesIOS()&&phase==='idle'){const selection=getSelection();iosCaret={focused:document.activeElement===editor,range:selection?.rangeCount?selection.getRangeAt(0).cloneRange():null};}
+    if(usesNative()||usesIOS())event.preventDefault();
+  });
   mic.onclick=()=>void (phase==='recording'?stop():start()).catch(fail);cancelButton.onclick=()=>void cancel();
-  editor.addEventListener('input',render);
+  editor.addEventListener('input',()=>{
+    if(iosOperation&&!writingTranscript&&(!session?.span?.isConnected||session.span.textContent!==(session.text?session.leading+session.text+session.trailing:'')))endIOS('cancel',false,false);
+    render();
+  });
+  editor.addEventListener('beforeinput',()=>{
+    if(!iosOperation)return;
+    const selection=getSelection();if(!selection?.rangeCount)return;
+    const range=selection.getRangeAt(0);if(session?.span?.isConnected&&range.intersectsNode(session.span))endIOS('cancel',false,false);
+  });
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&iosOperation)endIOS('cancel');});
   composer.addEventListener('submit',event=>{if(phase!=='idle'){event.preventDefault();event.stopImmediatePropagation();}},true);
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&phase!=='idle'){event.preventDefault();void cancel();}});
   window.addEventListener('pagehide',()=>{void cancel();clearInterval(poll);if(available())void nativeInvoke('configure_dictation',{enabled:false,modelName:''}).catch(()=>{});});
   function renderSettingsStatus(){
+    if(preferences.model==='ios'){
+      settings.querySelector('.dictation-model-row').hidden=true;settings.querySelector('.dictation-progress').hidden=true;
+      const detail=settings.querySelector('.dictation-detail');detail.hidden=!preferences.enabled;
+      detail.textContent=iosAvailable()&&iosCapability().onDeviceAvailable===true?"Speech is recognized on this iPhone. Audio isn't sent to Kindred.":`In-app dictation isn't available for ${iosCapability()?.locale||'this language'} on this iPhone. You can still use the keyboard's dictation.`;settings.querySelector('input[role=switch]').disabled=!iosAvailable()||iosCapability().onDeviceAvailable!==true;return;
+    }
     const detail=settings.querySelector('.dictation-detail'),modelRow=settings.querySelector('.dictation-model-row'),picker=settings.querySelector('.whisper-picker'),engine=settings.querySelector('.dictation-engine');
     const progress=settings.querySelector('.dictation-progress');progress.hidden=!preferences.enabled||!native.downloading;progress.value=Math.min(100,Math.max(0,native.progress||0));
     modelRow.hidden=!preferences.enabled;detail.hidden=!preferences.enabled;engine.hidden=true;
@@ -268,7 +363,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(message)),milliseconds);})]).finally(()=>clearTimeout(timer));
   }
   function microphoneControl(){
-    const row=document.createElement('div');row.className='setting-row microphone-setting';row.dataset.devicePreference='true';
+    const row=document.createElement('div');if(iosAvailable()){row.hidden=true;return row;}row.className='setting-row microphone-setting';row.dataset.devicePreference='true';
     const title=document.createElement('span');title.className='setting-label';title.textContent='Microphone';
     const control=document.createElement('div');control.className='settings-device-control';
     const input=document.createElement('select');input.setAttribute('aria-label','Microphone');

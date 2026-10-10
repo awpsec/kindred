@@ -127,9 +127,10 @@ function iconButton(symbol, label, action) {
   b.setAttribute("aria-label", label);
   return b;
 }
-function notice(text, error = false) {
+function notice(text, error = false, action = null) {
   $("notice").classList.remove("continuation-confirmation");
   $("notice").textContent = text;
+  if(action){const control=document.createElement('button');control.type='button';control.className='subtle-button';control.textContent=action.label;control.onpointerdown=event=>event.preventDefault();control.onclick=action.run;$("notice").append(' ',control);}
   $("notice").classList.toggle("error", error);
   $("notice").hidden = false;
   positionNotice();
