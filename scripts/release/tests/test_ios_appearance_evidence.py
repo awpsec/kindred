@@ -18,6 +18,7 @@ class AppearanceEvidenceTests(unittest.TestCase):
     d['schemaVersion']=2
     d.pop('renderSucceeded')
     d.update(launchID='00000000-0000-4000-8000-'+str(len(self.manifest)*12+phases.index(phase)).zfill(12),rowQueryCount=1,telemetryQueryCount=1,notificationsQueryCount=1,currentAccountQueryCount=1,appRunningForeground=True,screenshotCaptured=True,screenshotSource='XCUIApplication.screenshot of this launch; not drawHierarchy',screenshotSize=dict(width=400,height=900),accessibilityMeasurement='XCUIElementQuery; no in-process UIView traversal',hostMeasurement='DEBUG app-host telemetry; separately measured native traits/font/safeArea',coordinateSpace='XCUI row/window frames in screen coordinates; native window safeArea is edge distances')
+    d.update(accessibilityScope='required row/icon query projection',rowHittable=True,forbiddenAdministratorQuery=dict(predicate="label CONTAINS[c] 'administrator'",source='XCUIElementQuery matching supported NSPredicate against actual app descendants',count=1 if state in ('administrator','owner','longTitleOwner') else 0))
     d['expectedLaunchID']=d['launchID'];d['xcuiWindowFrame']=copy.deepcopy(d['windowBounds'])
     d['accessibility']=[dict(label=label,frame=copy.deepcopy(d['rowFrame'])),dict(label='Notifications on',frame=dict(x=10,y=40,width=20,height=20)),dict(label='Current account',frame=dict(x=30,y=40,width=20,height=20))]
     d['notificationsQuery']=[copy.deepcopy(d['accessibility'][1])];d['currentAccountQuery']=[copy.deepcopy(d['accessibility'][2])]
@@ -65,6 +66,24 @@ class AppearanceEvidenceTests(unittest.TestCase):
   with self.assertRaises(AssertionError):self.validate()
  def test_icon_label_not_in_actual_records(self):
   p=self.root/'accounts-light-default-administrator-geometry.json';d=json.loads(p.read_text());d['accessibility']=[r for r in d['accessibility'] if r['label']!='Notifications on'];p.write_text(json.dumps(d))
+  with self.assertRaises(AssertionError):self.validate()
+ def test_forbidden_role_positive_on_user(self):
+  self.mutate('forbiddenAdministratorQuery',dict(predicate="label CONTAINS[c] 'administrator'",source='XCUIElementQuery matching supported NSPredicate against actual app descendants',count=1),'accounts-light-default-user')
+  with self.assertRaises(AssertionError):self.validate()
+ def test_missing_forbidden_role_query(self):
+  p=self.root/'accounts-light-default-user-geometry.json';d=json.loads(p.read_text());del d['forbiddenAdministratorQuery'];p.write_text(json.dumps(d))
+  with self.assertRaises((AssertionError,KeyError)):self.validate()
+ def test_unhittable_row(self):
+  self.mutate('rowHittable',False)
+  with self.assertRaises(AssertionError):self.validate()
+ def test_false_full_tree_provenance(self):
+  self.mutate('accessibilityScope','full app accessibility tree')
+  with self.assertRaises(AssertionError):self.validate()
+ def test_invalid_forbidden_query_count(self):
+  self.mutate('forbiddenAdministratorQuery',dict(predicate="label CONTAINS[c] 'administrator'",source='XCUIElementQuery matching supported NSPredicate against actual app descendants',count=True))
+  with self.assertRaises(AssertionError):self.validate()
+ def test_wrong_forbidden_query_source(self):
+  self.mutate('forbiddenAdministratorQuery',dict(predicate="label CONTAINS[c] 'administrator'",source='expected test labels',count=0),'accounts-light-default-signedOut')
   with self.assertRaises(AssertionError):self.validate()
  def test_complete_77pairs_10methods(self):self.assertEqual(self.validate(),10)
  def test_missing_method(self):
