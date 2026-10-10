@@ -19,6 +19,16 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     private var keyboardVisible = false
     private var observers: [NSObjectProtocol] = []
     private var layoutEvidence: [String: Any] = [:]
+    private var keyboardOwnershipEvents: [[String: Any]] = []
+    private static let fullHeightDiagnosticMethods = [
+        "testKeyboardOwnershipFullHeightOrdinaryFocus",
+        "testKeyboardOwnershipFullHeightPreventScrollFocus",
+    ]
+    private var isFullHeightDiagnostic: Bool {
+        Self.fullHeightDiagnosticMethods.contains { method in
+            name == method || name.hasSuffix(".\(method)") || name.hasSuffix(" \(method)]")
+        }
+    }
 
     override func setUp() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -78,7 +88,13 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                 }
         }
         window = UIWindow(windowScene: scene)
-        window.rootViewController = UIHostingController(rootView: root)
+        if isFullHeightDiagnostic {
+            // Experimental test host only. Production and original tests retain
+            // SwiftUI's existing keyboard avoidance behavior.
+            window.rootViewController = UIHostingController(rootView: root.ignoresSafeArea(.keyboard))
+        } else {
+            window.rootViewController = UIHostingController(rootView: root)
+        }
         window.makeKeyAndVisible()
         observers.append(NotificationCenter.default.addObserver(forName: UIResponder.keyboardDidShowNotification, object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
@@ -86,10 +102,18 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                 self.keyboardShows += 1
                 self.keyboardVisible = true
                 self.keyboardFrame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
+                self.keyboardOwnershipEvents.append(["event": "keyboardDidShow",
+                    "time": ProcessInfo.processInfo.systemUptime,
+                    "frame": ["x": self.keyboardFrame.minX, "y": self.keyboardFrame.minY,
+                        "width": self.keyboardFrame.width, "height": self.keyboardFrame.height]])
             }
         })
         observers.append(NotificationCenter.default.addObserver(forName: UIResponder.keyboardDidHideNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.keyboardHides += 1; self?.keyboardVisible = false }
+            MainActor.assumeIsolated {
+                self?.keyboardHides += 1; self?.keyboardVisible = false
+                self?.keyboardOwnershipEvents.append(["event": "keyboardDidHide",
+                    "time": ProcessInfo.processInfo.systemUptime])
+            }
         })
         // The initializer's load was stopped before this delegate and fixture
         // script were installed. Its pending URL is not a committed document
@@ -239,6 +263,116 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         }
     }
 
+    func testKeyboardOwnershipContractedOrdinaryFocus() async throws {
+        try await captureKeyboardOwnership(fullHeight: false, preventScroll: false)
+    }
+    func testKeyboardOwnershipFullHeightOrdinaryFocus() async throws {
+        try await captureKeyboardOwnership(fullHeight: true, preventScroll: false)
+    }
+    func testKeyboardOwnershipContractedPreventScrollFocus() async throws {
+        try await captureKeyboardOwnership(fullHeight: false, preventScroll: true)
+    }
+    func testKeyboardOwnershipFullHeightPreventScrollFocus() async throws {
+        try await captureKeyboardOwnership(fullHeight: true, preventScroll: true)
+    }
+
+    private func captureKeyboardOwnership(fullHeight: Bool, preventScroll: Bool) async throws {
+        XCTAssertEqual(isFullHeightDiagnostic, fullHeight)
+        let phase = "keyboard-ownership-\(fullHeight ? "full-height" : "contracted")-\(preventScroll ? "prevent-scroll" : "ordinary")"
+        let start = ProcessInfo.processInfo.systemUptime
+        // Fixed synthetic input only. Serialize equality, never editable text.
+        let draft = await boundedFailurePage("""
+            (()=>{const p=document.querySelector('#prompt');
+              p.textContent='Keyboard ownership fixture draft';
+              p.dispatchEvent(new InputEvent('input',{bubbles:true}));
+              return {staged:p.textContent==='Keyboard ownership fixture draft'};})()
+            """)
+        let before = await keyboardOwnershipSample(start: start)
+        let focusStarted = ProcessInfo.processInfo.systemUptime
+        let focus = await boundedFailurePage("""
+            (()=>{const p=document.querySelector('#prompt');
+              \(preventScroll ? "p.focus({preventScroll:true});" : "p.focus();")
+              return {focused:document.activeElement===p};})()
+            """)
+        var samples: [[String: Any]] = []
+        let observationEnd = focusStarted + 8
+        while ProcessInfo.processInfo.systemUptime < observationEnd {
+            let remaining = observationEnd - ProcessInfo.processInfo.systemUptime
+            samples.append(await keyboardOwnershipSample(start: start, timeoutSeconds: min(2, remaining)))
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+        // A keyboard notification is evidence, not inferred from a shorter view.
+        while !keyboardVisible && ProcessInfo.processInfo.systemUptime - focusStarted < 12 {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let after = await keyboardOwnershipSample(start: start)
+        let renderer = UIGraphicsImageRenderer(bounds: window.bounds)
+        var rendered = false
+        let image = renderer.image { _ in
+            rendered = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let evidence: [String: Any] = ["schemaVersion": 1, "diagnosticOnly": true,
+            "phase": phase, "method": name,
+            "methodIdentifier": "ComposerUIKitTests/testKeyboardOwnership\(fullHeight ? "FullHeight" : "Contracted")\(preventScroll ? "PreventScroll" : "Ordinary")Focus()",
+            "intent": ["hostContract": fullHeight ? "full-height" : "contracted",
+                "focusMode": preventScroll ? "prevent-scroll" : "ordinary"],
+            "beforeFocus": before, "focusResult": focus, "samples": samples, "after": after,
+            "keyboardEvents": keyboardOwnershipEvents, "keyboardVisible": keyboardVisible,
+            "keyboardShows": keyboardShows, "keyboardHides": keyboardHides,
+            "focusToEndSeconds": ProcessInfo.processInfo.systemUptime - focusStarted,
+            "screenshot": ["captured": rendered, "width": image.size.width, "height": image.size.height,
+                "source": "fixture UIWindow.drawHierarchy; system keyboard window may be excluded"],
+            "proofScope": "four-condition diagnostic only; not original Composer release acceptance"]
+        let png = XCTAttachment(image: image); png.name = phase + "-screenshot"; png.lifetime = .keepAlways; add(png)
+        let json = try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys])
+        let attachment = XCTAttachment(data: json, uniformTypeIdentifier: "public.json")
+        attachment.name = phase + "-geometry"; attachment.lifetime = .keepAlways; add(attachment)
+        // Observational completeness only: zero viewport/hits stay recorded.
+        XCTAssertEqual((draft["page"] as? [String: Any])?["staged"] as? Bool, true)
+        XCTAssertEqual((before["native"] as? [String: Any])?["keyboardVisible"] as? Bool, false)
+        XCTAssertTrue(rendered)
+        XCTAssertTrue(keyboardVisible)
+        XCTAssertGreaterThanOrEqual(keyboardShows, 1)
+        XCTAssertTrue(keyboardOwnershipEvents.contains { event in
+            event["event"] as? String == "keyboardDidShow" &&
+                ((event["time"] as? TimeInterval).map { $0 >= focusStarted && $0 <= focusStarted + 12 } ?? false)
+        }, "Missing keyboard notification within the focus-anchored twelve-second budget")
+        XCTAssertEqual((focus["page"] as? [String: Any])?["focused"] as? Bool, true)
+        XCTAssertGreaterThanOrEqual(samples.count, 2)
+        for sample in [before] + samples + [after] {
+            let native = try XCTUnwrap(sample["native"] as? [String: Any])
+            XCTAssertEqual(native["webInFixtureWindow"] as? Bool, true)
+            XCTAssertEqual(native["fixtureWindowKey"] as? Bool, true)
+            XCTAssertEqual(native["fixtureWindowHidden"] as? Bool, false)
+            let result = try XCTUnwrap(sample["javascript"] as? [String: Any])
+            let page = try XCTUnwrap(result["page"] as? [String: Any], "Missing bounded JS observation")
+            XCTAssertEqual(page["draftMatches"] as? Bool, true)
+            XCTAssertEqual(page["sendCount"] as? Int, 0)
+            XCTAssertEqual(page["uiMatches"] as? Bool, true)
+        }
+    }
+
+    private func keyboardOwnershipSample(start: TimeInterval, timeoutSeconds: TimeInterval = 2) async -> [String: Any] {
+        let requested = ProcessInfo.processInfo.systemUptime
+        let page = await boundedFailurePage("""
+            (()=>{const rect=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
+              const p=document.querySelector('#prompt'),shell=document.querySelector('#app'),v=visualViewport;
+              return {draftMatches:p?.textContent==='Keyboard ownership fixture draft',sendCount:window.__composerSends.length,
+                uiMatches:window.__sendSurfaceFixture?.['style.css']==='0622d73d9d4bb43e14d7ce10f466c1528c3f39764d775e94ad70f9e7041e172c'&&window.__sendSurfaceFixture?.['app.js']==='8d62214bf221ece3dcd6651add2158f8bb95afb0cbd9a312fcc75f76405a787f'&&window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c',
+                uiManifest:window.__sendSurfaceFixture,viewport:{width:innerWidth,height:innerHeight},
+                client:{width:document.documentElement.clientWidth,height:document.documentElement.clientHeight},
+                visual:v?{width:v.width,height:v.height,offsetTop:v.offsetTop,offsetLeft:v.offsetLeft,scale:v.scale}:null,
+                shell:rect(shell),resizing:shell?.dataset.mobileResizing==='true',
+                windowScroll:{x:scrollX,y:scrollY,top:document.scrollingElement?.scrollTop??0},
+                firstPromptFocus:window.__composerFirstPromptFocus??null,focusTrace:window.__composerFocusTrace,
+                controls:[...document.querySelectorAll('#composer-actions,#send,.dictation-button')].filter(e=>e.getClientRects().length).map(e=>{const r=rect(e),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {...r,hit:h===e||e.contains(h)}})};})()
+            """, timeoutSeconds: timeoutSeconds)
+        return ["elapsed": ProcessInfo.processInfo.systemUptime - start,
+            "pageRequestedAt": requested, "pageTimeoutSeconds": timeoutSeconds, "pageReturnedAt": ProcessInfo.processInfo.systemUptime,
+            "javascript": page, "nativeTakenAt": ProcessInfo.processInfo.systemUptime,
+            "native": nativeAttachmentEvidence()]
+    }
+
     private func js(_ source: String) async throws -> Any? {
         // A WK page retains its global lexical environment between evaluations.
         // A block isolates const/let while preserving expression/Promise results.
@@ -368,11 +502,11 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             "keyboardVisible": keyboardVisible, "keyboardFrame": rect(keyboardFrame)]
     }
 
-    private func boundedFailurePage(_ source: String) async -> [String: Any] {
+    private func boundedFailurePage(_ source: String, timeoutSeconds: TimeInterval = 2) async -> [String: Any] {
         await withCheckedContinuation { continuation in
             let probe = FailurePageProbe(continuation)
             let timeout = Task { @MainActor in
-                do { try await Task.sleep(nanoseconds: 2_000_000_000) }
+                do { try await Task.sleep(nanoseconds: UInt64(max(0, min(2, timeoutSeconds)) * 1_000_000_000)) }
                 catch { return }
                 probe.finish(["javascriptTimeout": true])
             }
