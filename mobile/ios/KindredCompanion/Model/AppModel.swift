@@ -96,6 +96,7 @@ final class AppModel {
     @ObservationIgnored private var retryAttempts: [UUID: Int] = [:]
     /// Bumped on every native token write so a slow page read can't overwrite a newer token.
     @ObservationIgnored private var tokenGeneration: [UUID: Int] = [:]
+    @ObservationIgnored private var identityRequestRevision: [UUID: Int] = [:]
 
     init(secrets: SessionSecretStore? = nil, repository: AccountRepository? = nil, api: KindredAPIClient = KindredAPIClient()) {
         let bundleID = Bundle.main.bundleIdentifier ?? "dev.kindred.companion"
@@ -151,11 +152,13 @@ final class AppModel {
     private func storeToken(_ token: String, for id: UUID) throws {
         tokenGeneration[id, default: 0] += 1
         try secrets.setToken(token, for: id)
+        update(id) { $0.roleMetadata = nil }
     }
 
     private func forgetToken(_ id: UUID) throws {
         tokenGeneration[id, default: 0] += 1
         try secrets.deleteToken(for: id)
+        update(id) { $0.roleMetadata = nil }
     }
 
     // MARK: Persistence
@@ -290,8 +293,8 @@ final class AppModel {
 
         var account = existing ?? Account(id: id, origin: origin, login: login.lowercased())
         account.profileID = profileID
-        if let name = identity?.activeProfileName { account.profileName = name }
-        if let serverAccountID = identity?.serverAccountID { account.serverAccountID = serverAccountID }
+        account.roleMetadata = nil
+        if let identity { account.applyIdentity(identity) }
         account.lastUsedAt = Date()
         if let index = accounts.firstIndex(where: { $0.id == id }) {
             accounts[index] = account
@@ -439,7 +442,7 @@ final class AppModel {
 
     fileprivate func receive(_ message: SessionMessage, from session: WebSession) {
         let id = session.accountID
-        guard let account = self.account(id) else { return }
+        guard sessions[id] === session, let account = self.account(id) else { return }
         switch message {
         case .session(let newToken, let profileID):
             let profileChanged = profileID != nil && profileID != account.profileID
@@ -459,26 +462,34 @@ final class AppModel {
         }
     }
 
+    /// The Accounts sheet renders immediately; reads update each exact saved identity.
+    func refreshAccountIdentities() async {
+        for id in accounts.map(\.id) where isSignedIn(id) {
+            if Task.isCancelled { return }
+            await refreshIdentity(id, resyncPush: false)
+        }
+    }
+
     private func refreshIdentity(_ id: UUID, resyncPush: Bool) async {
         guard let account = self.account(id), let token = self.storedToken(id) else { return }
-        if let identity = try? await api.identity(origin: account.origin, token: token) {
+        identityRequestRevision[id, default: 0] += 1
+        let receipt = AccountIdentityRefresh(account: account,
+            sessionGeneration: tokenGeneration[id, default: 0],
+            requestRevision: identityRequestRevision[id, default: 0])
+        let identity = try? await api.identity(origin: account.origin, token: token)
+        guard receipt.matches(self.account(id),
+            sessionGeneration: tokenGeneration[id, default: 0],
+            requestRevision: identityRequestRevision[id, default: 0]),
+            storedToken(id) == token, isSignedIn(id) else { return }
+        if let identity {
             update(id) { account in
-                if let name = identity.activeProfileName { account.profileName = name }
-                if let profile = identity.activeProfileID { account.profileID = profile }
-                if let serverAccountID = identity.serverAccountID {
-                    if let previous = account.serverAccountID, previous != serverAccountID {
-                        // Someone signed in as a different user inside this web view;
-                        // the old registration belonged to the previous user.
-                        if let username = identity.username { account.login = username.lowercased() }
-                        account.push.state = .notRegistered
-                    }
-                    account.serverAccountID = serverAccountID
+                if let previous = account.serverAccountID, let next = identity.serverAccountID, previous != next {
+                    // A newly verified identity replaces the old registration owner.
+                    account.push.state = .notRegistered
                 }
+                account.applyIdentity(identity)
             }
         }
-        // The server moves registrations to a rotated session (profile switch,
-        // password change); re-registering confirms it even if the identity
-        // read above failed, so a stale "registered" state can't linger.
         if resyncPush, self.account(id)?.push.wanted == true { await syncPush(accountID: id, force: true) }
     }
 
@@ -509,7 +520,7 @@ final class AppModel {
     }
 
     fileprivate func openAccounts(from session: WebSession) {
-        guard session.accountID == activeAccountID else { return }
+        guard session.accountID == activeAccountID, sessions[session.accountID] === session else { return }
         sheet = .accounts
     }
 
