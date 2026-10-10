@@ -489,9 +489,9 @@ def main(scope):
     command = ['xcodebuild', 'test', '-project', 'KindredCompanion.xcodeproj', '-scheme', 'KindredCompanion', '-destination', destination, '-destination-timeout', '90', '-parallel-testing-enabled', 'NO', '-maximum-concurrent-test-simulator-destinations', '1', '-resultBundlePath', str(bundle), 'CODE_SIGNING_ALLOWED=NO']
     if scope in ('composer', 'release-ui'):
         assert (ROOT / 'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').is_file(), 'Reviewed composer tests missing'
-        command += ['-only-testing:KindredCompanionTests/ComposerUIKitTests'] + [
+        command += [
             '-only-testing:KindredCompanionTests/' + name.removesuffix('()')
-            for name in sorted(DICTATION_METHODS)]
+            for name in sorted(set(COMPOSER_PHASES) | DICTATION_METHODS)]
     if scope == 'release-ui':
         assert (ROOT / 'mobile/ios/KindredCompanionUITests/AccountsAppearanceUIKitTests.swift').is_file(), 'Reviewed native appearance tests missing'
         command += ['-only-testing:KindredCompanionUITests/AccountsAppearanceUIKitTests']
