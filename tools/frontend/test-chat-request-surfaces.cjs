@@ -30,5 +30,18 @@ const {server,token}=require('./fixtures/desktop.cjs');const {chromium,webkit}=r
  const batch=p.locator('.reminder-batch');await batch.getByRole('button',{name:'Next reminder'}).click();await batch.getByRole('button',{name:'Next reminder'}).click();await batch.getByText('3 / 10',{exact:true}).waitFor();await batch.getByRole('button',{name:'Cancel',exact:true}).click();await batch.getByText('Cancelled',{exact:true}).waitFor();assert.equal(await batch.getByRole('button',{name:'Edit',exact:true}).count(),0);assert.equal(await batch.getByRole('button',{name:'Reschedule',exact:true}).count(),1);assert.equal(await batch.getByText('3 / 10',{exact:true}).count(),1,'Cancellation preserves page and record');
  for(const theme of ['dark','light']){await p.evaluate(t=>document.documentElement.dataset.theme=t,theme);for(const width of [1000,390]){await p.setViewportSize({width,height:900});await p.waitForTimeout(400);await p.screenshot({path:path.join(out,engine+'-surfaces-'+theme+'-'+width+'.png')});assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}}
  await p.reload();await p.locator('.summary-progress').waitFor();assert.equal(await p.locator('.summary-progress details').getAttribute('open'),null,'Completed history defaults to collapsed');await p.locator('.summary-progress').scrollIntoViewIfNeeded();await p.screenshot({path:path.join(out,engine+'-summary-collapsed-default.png')});
+ for(const [id,approved] of [['instruction-allow',true],['instruction-deny',false]]){
+  const run={...sumrun,id,status:'awaiting_approval'};runs.push(run);
+  const a={id,run_id:id,tool:'bot_instructions_update',args:{bot_id:'piper',bot_name:'Piper',expected_instructions:'Original rule.',instructions:'Reviewed rule.'},status:'pending',created:now+1,message_seq:40+approvals.length};approvals.push(a);
+  messages.push({seq:a.message_seq,kind:'approval',sender:'piper',text:a.tool,created:a.created,run_id:id,approval:a});
+  await p.reload();const tray=p.locator('#request-tray');await tray.getByRole('heading',{name:'Update Piper’s instructions',exact:true}).waitFor();
+  assert.equal(await p.locator('#content .instruction-review:not(.compact-receipt)').count(),0,'Instruction approval only appears at composer');
+  await tray.getByRole('button',{name:'Minimize pending requests'}).click();await tray.getByText('Update Piper’s instructions',{exact:true}).waitFor();await tray.getByRole('button',{name:'1 pending request',exact:true}).click();
+  await tray.screenshot({path:path.join(out,engine+'-'+id+'-tray.png')});
+  await tray.getByRole('button',{name:approved?'Allow':'Decline',exact:true}).click();await tray.waitFor({state:'hidden'});
+  const receipt=p.locator('[data-receipt-key="approval:'+id+'"]');await receipt.locator('.compact-receipt-mark').waitFor();
+  assert.equal(await receipt.locator('.compact-receipt-mark').textContent(),approved?'✓':'✗');assert.equal(await receipt.getAttribute('data-receipt-tone'),approved?'success':'denied');
+  assert.equal(writes.filter(w=>w.n==='/approvals/'+id).length,1);
+ }
  assert.deepEqual(errors,[]);console.log('Tray three real identities/one presentation/drafts/minimize/one decision/receipts; reminder10 page and cancel stability; durable Summary tags; both themes/widths PASS');
 }finally{await browser.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});

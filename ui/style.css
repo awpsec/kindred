@@ -5682,3 +5682,14 @@ html[data-mobile] #notice .notice-action {min-height:44px;}
 .email-notice .email-recipients{gap:10px}
 
 .email-notice.connector-editing>footer.email-review-footer{display:none}
+
+/* Report and upload reviews begin as the same bounded, borderless notice. */
+.visual-panel.workflow-notice{width:100%;max-width:560px;border:0;border-radius:3px;box-shadow:none;background:color-mix(in srgb,var(--fg) 3%,var(--bg))}
+.workflow-notice>.workflow-notice-disclosure{margin:0}
+details.workflow-notice-disclosure>summary{display:flex;align-items:center;gap:7px;padding:12px 15px;margin:0;min-height:44px;box-sizing:border-box}
+details.workflow-notice-disclosure>summary::before{position:static;flex:none;order:3;margin:0 0 0 2px;width:14px;height:14px;border:0;transform:rotate(0)}
+details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)}
+.workflow-notice-title{flex:1;color:var(--fg);font-weight:500;overflow-wrap:anywhere}
+.workflow-notice-toggle{flex:none}.workflow-notice-disclosure[open]>summary .workflow-notice-toggle{font-size:0}.workflow-notice-disclosure[open]>summary .workflow-notice-toggle::after{content:'Close';font-size:calc(12px * var(--text-scale,1))}
+.workflow-notice .workflow-body{padding:0 15px 12px}.workflow-notice .visual-source{padding:0 15px 12px;border:0}
+.workflow-notice-description{padding:0 15px;margin:0 0 10px;font-size:calc(13px * var(--text-scale,1))}
