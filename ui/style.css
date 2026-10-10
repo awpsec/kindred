@@ -5401,11 +5401,14 @@ html[data-mobile] .message-bubble pre{max-width:100%;overflow-x:auto}
 .profile-workspace-row {padding-inline-start:30px;}
 .profile-menu-actions .profile-menu-row small {display:block;font-size:.85em;margin-top:3px;}
 
-.human-request-signpost {display:flex;align-items:center;gap:1em;flex-wrap:wrap;padding:1em;border:1px solid var(--line);border-radius:12px;background:var(--panel);margin:1em 0;}
-.human-request-signpost span {flex:1;min-width:12em;}
+.human-request-signpost {display:flex;align-items:center;gap:12px;padding:4px 0;border:0;border-radius:0;background:transparent;margin:0;color:var(--muted);font-size:calc(12px * var(--text-scale,1));}
+.human-request-signpost span {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.human-request-signpost .outline-button {flex:none;min-height:28px;border:0;background:transparent;padding:4px 6px;color:var(--muted);font-size:inherit;}
+.human-request-signpost .outline-button:hover {color:var(--fg);background:color-mix(in srgb,var(--fg) 6%,transparent);}
+@media(pointer:coarse){.human-request-signpost .outline-button{min-height:44px;}}
 .notification-target {outline:2px solid var(--fg);outline-offset:4px;}
 
-.human-request-signposts {position:sticky;top:0;z-index:3;background:var(--panel);box-shadow:0 2px 8px #0002;}
+.human-request-signposts {position:sticky;top:0;z-index:3;background:var(--bg);box-shadow:none;}
 .bot-preview.needs-you,.needs-you .sidebar-activity-label {color:var(--fg);font-weight:600;}
 .needs-you .sidebar-activity-dots {color:var(--fg);opacity:1;}
 
@@ -5799,3 +5802,52 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
 .email-notice-recipient{margin:0 0 5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .email-notice-excerpt{margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;line-height:1.5}
 .email-notice-edit{margin:6px 0 0;padding:3px 0;font-size:inherit}
+
+/* Model changes stay in the transcript without borrowing a message bubble. */
+.model-change-notice { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:calc(12px * var(--text-scale, 1)); line-height:1.65; padding:10px 0; width:100%; min-width:0; overflow-wrap:anywhere; }
+.model-change-notice::before,.model-change-notice::after { content:""; height:1px; min-width:12px; flex:1 1 24px; background:color-mix(in srgb,var(--fg) 12%,transparent); }
+.model-change-copy { flex:0 1 auto; min-width:0; max-width:calc(100% - 48px); text-align:center; }
+.model-change-model { display:inline-flex; align-items:center; max-width:min(28ch,100%); color:var(--fg); vertical-align:baseline; }
+.model-change-model > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.model-change-mark { display:flex; align-items:center; justify-content:center; flex:none; margin-inline:4px 2px; width:12px; height:12px; opacity:.7; }
+.model-change-mark .openai-logo,.model-change-mark .provider-symbol { width:12px; height:12px; }
+/* The existing OpenAI SVG has 33% internal whitespace: 18px gives a 12px visible mark. */
+.model-change-mark .openai-logo { width:18px; height:18px; flex:none; }
+
+/* Takeover requests share the quiet square notice of reminders and email:
+   faint fill, no border or rail, reason first, one obvious action. */
+.task-card.human-task{width:min(100%,560px);max-width:100%;box-sizing:border-box;background:color-mix(in srgb,var(--fg) 3%,var(--bg));border:0;border-radius:3px;box-shadow:none;padding:12px 15px;text-align:left}
+.human-task .human-task-meta{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:calc(12px * var(--text-scale,1));line-height:1.4}
+.human-task .human-task-meta .icon{flex:none}
+.human-task .human-task-meta .task-badge{margin:0;font-size:inherit;color:inherit;background:none;padding:0;border-radius:0}
+.human-task .human-task-meta .task-badge::before{display:none}
+.human-task[data-status=pending] .human-task-meta .task-badge{color:var(--fg);font-weight:500}
+.human-task .task-card-title{margin:4px 0 0}
+.human-task .task-card-title>strong{font-size:calc(14px * var(--text-scale,1));font-weight:600;line-height:1.4;overflow-wrap:anywhere}
+.human-task .task-instructions{margin:4px 0 0;font-size:calc(13.5px * var(--text-scale,1));line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.human-task .task-instructions.is-clamped{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+.human-task .human-task-details{margin:2px 0 0;padding:0;border:0;background:none}
+.human-task .human-task-details>summary{display:inline-block;list-style:none;cursor:pointer;color:var(--muted);font-size:calc(12px * var(--text-scale,1));padding:2px 0;text-decoration:underline;text-underline-offset:3px}
+.human-task .human-task-details>summary::-webkit-details-marker{display:none}
+.human-task .human-task-details>summary::before{display:none}
+.human-task .human-task-details>summary:hover{color:var(--fg)}
+.human-task>p.muted.small{margin:6px 0 0}
+.human-task .verification-code-form{margin-top:10px}
+.human-task .task-card-actions{margin-top:12px;gap:6px}
+.human-task .task-card-actions button{min-height:32px;padding:6px 12px;border-radius:7px}
+.human-task .task-card-actions .subtle-button{color:var(--muted)}
+.human-task .task-card-actions .subtle-button:hover{color:var(--fg)}
+@media(pointer:coarse){.human-task .task-card-actions button,.human-task .verification-code-form button{min-height:44px}.human-task .human-task-details>summary{padding:12px 0;margin:-8px 0}}
+.human-task.compact-receipt .decision-receipt-summary{color:var(--muted)}
+.human-task.compact-receipt[data-receipt-tone=success] .decision-receipt-summary{color:light-dark(#217650,#6bc6a0)}
+.human-task.compact-receipt:not(.receipt-collapsed){padding:0 0 4px}
+.human-task.compact-receipt:not(.receipt-collapsed) .decision-receipt-body{background:color-mix(in srgb,var(--fg) 3%,var(--bg));border-radius:3px;padding:12px 15px;margin-top:4px}
+.human-task.compact-receipt.decision-receipt,.human-task.compact-receipt.receipt-collapsed{background:transparent;padding:0}
+/* The likely choice inside a quiet notice: softly favoured with a tonal fill,
+   never a solid white or black slab. Scoped; global .primary is unchanged. */
+.notice-primary{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:6px 12px;border:0;border-radius:7px;background:color-mix(in srgb,var(--fg) 11%,var(--bg));color:var(--fg);font:inherit;font-size:calc(12px * var(--text-scale,1));font-weight:500;cursor:pointer;transition:background-color .15s ease}
+.notice-primary:hover:not(:disabled){background:color-mix(in srgb,var(--fg) 17%,var(--bg))}
+.notice-primary:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.notice-primary:disabled{opacity:.55;cursor:default}
+@media(pointer:coarse){.notice-primary{min-height:44px}}
+@media(forced-colors:active){.notice-primary{border:1px solid ButtonText}}
