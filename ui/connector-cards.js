@@ -142,7 +142,12 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   if(card.review_requested){for(const b of footer.querySelectorAll('button'))if(b.textContent==='Review to send again'){b.disabled=true;b.dataset.reviewRequested='true';}content.append(el('p','muted small','A new review was requested. The earlier email is unchanged.'));}
   const model=emailReviewStates.get(card.id)||{open:false,revision:card.revision,requestId:card.id,status:card.status};emailReviewStates.set(card.id,model);
   if(model.status!=='completed'&&card.status==='completed')model.open=false;model.status=card.status;
-  root.classList.add('email-notice');header.firstChild?.remove();header.prepend(el('strong','email-notice-title',card.title));
+  root.classList.add('email-notice');header.firstChild?.remove();header.prepend(el('strong','email-notice-title',email.subject?.text||card.title));
+  content.querySelector('.connector-email-subject')?.remove();
+  const preview=el('div','email-notice-preview');header.after(preview);
+  const editAction=[...footer.querySelectorAll('button')].find(b=>b.textContent==='Edit draft');
+  const previewText=content.querySelector('.connector-email-body')?.textContent?.replace(/\s+/g,' ').trim()||'';
+  const attachmentCount=content.querySelectorAll('.connector-attachment-chip').length;
   const toggle=button(card.status==='completed'?'Details':'Review',()=>{model.open=!model.open;paint();if(model.open)content.focus({preventScroll:true});},'subtle-button');header.append(toggle);
   const close=button('Close',()=>{model.open=false;paint();toggle.focus({preventScroll:true});},'subtle-button');close.classList.add('email-review-close');footer.prepend(close);
   const send=[...footer.children].find(b=>b.classList.contains('primary')),secondary=el('div','connector-card-actions email-review-secondary'),final=el('div','email-review-final');
@@ -153,6 +158,12 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   function paint(){
    const before=root.isConnected?root.getBoundingClientRect().height:0;disclosureMotion?.cancel();
    content.hidden=!model.open;footer.hidden=!model.open;root.classList.toggle('email-review-open',model.open);toggle.textContent=model.open?'Hide details':card.status==='completed'?'Details':'Review';toggle.setAttribute('aria-expanded',String(model.open));
+   preview.replaceChildren();preview.hidden=model.open||card.status==='completed';
+   if(!preview.hidden){
+    const to=email.to?.text;if(to)preview.append(el('p','email-notice-recipient',`To ${to}${attachmentCount?' · '+attachmentCount+' '+(attachmentCount===1?'attachment':'attachments'):''}`));
+    if(previewText)preview.append(el('p','email-notice-excerpt',previewText.slice(0,360)+(previewText.length>360?'…':'')));
+    if(editAction)preview.append(button('Edit draft',()=>{model.open=true;paint();editAction.click();},'subtle-button email-notice-edit'));
+   }
    const after=root.getBoundingClientRect().height;
    if(before&&before!==after&&document.documentElement.dataset.motion!=='off'&&!matchMedia('(prefers-reduced-motion: reduce)').matches)disclosureMotion=root.animate([{height:before+'px'},{height:after+'px'}],{duration:180,easing:'cubic-bezier(.2,.7,.2,1)'});
   }

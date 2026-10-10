@@ -10,7 +10,7 @@ const {server}=require('./fixtures/desktop.cjs'),{chromium,webkit}=require(proce
  for(const theme of ['dark','light']){
   await p.evaluate(t=>document.documentElement.dataset.theme=t,theme);
   const surface=await draft.evaluate(n=>{const s=getComputedStyle(n);return [s.borderTopWidth,s.boxShadow,s.borderRadius,n.getBoundingClientRect().height];});
-  assert.deepEqual(surface.slice(0,3),['0px','none','3px']);assert(surface[3]<100,'Email notice starts compact');
+  assert.deepEqual(surface.slice(0,3),['0px','none','3px']);assert(surface[3]<190,'Email summary remains bounded with recipient and excerpt');assert(await draft.locator('.connector-artifact-content').isHidden(),'Full review is collapsed');assert.equal(await draft.locator('.email-notice-recipient').textContent(),'To review@example.invalid · 1 attachment');
   await draft.screenshot({path:path.join(out,engine+'-draft-notice-'+theme+'.png')});
   await draft.getByRole('button',{name:'Review',exact:true}).click();
   await draft.screenshot({path:path.join(out,engine+'-draft-review-'+theme+'.png')});
