@@ -44,5 +44,15 @@ const {server,token}=require('./fixtures/desktop.cjs');const {chromium,webkit}=r
   assert.equal(await receipt.locator('.compact-receipt-mark').textContent(),approved?'✓':'✗');assert.equal(await receipt.getAttribute('data-receipt-tone'),approved?'success':'denied');
   assert.equal(writes.filter(w=>w.n==='/approvals/'+id).length,1);
  }
+ sumrun.status='running';
+ const phaseKey='summary-task:later-phase';
+ for(let i=0;i<3;i++)messages.push({seq:80+i,kind:'assistant',sender:'piper',text:'Later phase update '+i,created:now-90+i,run_id:sumrun.id,progress:{run_id:sumrun.id,mode:'summaries',phase:'commentary',group_id:phaseKey}});
+ messages.push({seq:83,kind:'assistant',sender:'piper',text:'Phase outcome stays visible',created:now,run_id:sumrun.id,progress:{run_id:sumrun.id,mode:'summaries',phase:'final_answer',group_id:phaseKey}});
+ messages.push({seq:84,kind:'assistant',sender:'piper',text:'Calm update stays outside prior progress',created:now+1,run_id:sumrun.id,progress:{run_id:sumrun.id,mode:'calm',phase:'commentary',group_id:'summary-task:calm'}});
+ await p.reload();const phase=p.locator('[data-progress-group="'+phaseKey+'"]');await phase.getByText(/Phase complete/).waitFor();
+ assert.equal(await phase.locator('details').getAttribute('open'),null,'A completed phase collapses even while its run continues');
+ assert.equal(await phase.getByText('Phase outcome stays visible',{exact:true}).count(),0);
+ assert.equal(await p.locator('.summary-progress').getByText('Calm update stays outside prior progress',{exact:true}).count(),0);
+ await p.getByText('Phase outcome stays visible',{exact:true}).waitFor();await p.getByText('Calm update stays outside prior progress',{exact:true}).waitFor();
  assert.deepEqual(errors,[]);console.log('Tray three real identities/one presentation/drafts/minimize/one decision/receipts; reminder10 page and cancel stability; durable Summary tags; both themes/widths PASS');
 }finally{await browser.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1;server.close();});
