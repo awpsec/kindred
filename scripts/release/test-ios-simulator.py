@@ -144,12 +144,27 @@ def validate_composer_evidence(exports, summary, tree, attachments):
                 if '-open' in phase:
                     assert metrics['keyboardNotifications']['shows'] > 0 and metrics['keyboardFrame']['height'] > 100, 'Missing actual matrix keyboard show evidence'
             if phase.startswith('dictation-'):
-                assert metrics['sendSurface']['theme'] == phase.split('-')[1], 'Wrong dictation theme'
+                assert metrics['primarySurface']['theme'] == phase.split('-')[1], 'Wrong dictation theme'
                 assert abs(metrics['layout']['textScale'] - (1.5 if '-150-' in phase else 1)) <= .01, 'Wrong dictation text scale'
+                state = phase.rsplit('-', 1)[1]
+                measured = metrics['dictationState']
+                assert measured['sendCount'] == 0 and measured['reducedMotion'] is True, 'Dictation sent a message or lacks actual reduced motion'
+                assert measured['draftPresent'] is (state != 'empty'), 'Wrong measured dictation draft state'
+                active = state == 'dictating'
+                assert metrics['nativeSpeechOperationActive'] is active and measured['transientSpan'] is active and measured['dictating'] is active, 'Wrong measured native dictation operation/editor state'
+                assert metrics['nativeSpeechPhase'] == ('recording' if active else 'idle'), 'Wrong native speech coordinator phase'
+                if state in ('dictating', 'stopped', 'cancelled'):
+                    event = measured['lastEvent']
+                    assert event['phase'] == {'dictating':'partial','stopped':'stopped','cancelled':'cancelled'}[state], 'Missing actual typed bridge event for dictation state'
+                    assert type(event['sequence']) is int and event['sequence'] > 0 and type(event['textLength']) is int and event['textLength'] > 0, 'Missing bounded bridge event metadata'
             if phase.startswith('send-'):
-                paint = json.loads(exported(phase + '-painted-Send', ('.json',)).read_text())
-                surface = paint['sendSurface']
-                assert surface == metrics['sendSurface'], 'Paint and geometry describe different Send surfaces'
+                paint = json.loads(exported(phase + '-painted-primarySurface', ('.json',)).read_text())
+                surface = paint['primarySurface']
+                assert surface == metrics['primarySurface'], 'Paint and geometry describe different primary controls'
+                empty = '-empty-' in phase
+                assert surface['selector'] == ('.dictation-button' if empty else '#send') and surface['controlKind'] == ('microphone' if empty else 'send'), 'Wrong actual primary control for supported iOS draft state'
+                capability = surface['capability']
+                assert capability['supported'] is True and capability['onDeviceAvailable'] is True and capability['engine'] == 'apple-on-device', 'Missing injected native supported capability; not real recognition proof'
                 assert surface['theme'] == phase.split('-')[1] and surface['hidden'] is False and surface['appearance'] == 'none', 'Incorrect Send appearance state'
                 assert surface['edgeHits'] == [True] * 4, 'Missing outer Send target hits'
                 def number(value):

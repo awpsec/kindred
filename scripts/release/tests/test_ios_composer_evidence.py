@@ -16,12 +16,15 @@ class ComposerEvidenceTests(unittest.TestCase):
             rows = []
             for phase in phases:
                 metrics = {'native': {'safeArea':dict(top=20,bottom=20,left=0,right=0), 'windowWidth':900 if phase=='landscape-150' else 400, 'windowHeight':400 if phase=='landscape-150' else 900}, 'controls':[dict(width=44,height=44,hit=True)]*2, 'prompt':{'height':24}, 'keyboardNotifications':dict(shows=1,hides=1), 'keyboardFrame':{'height':300}}
-                metrics.update(keyboardVisible='-open' in phase, nativeReduceMotion=True, layout=dict(textScale=1.5 if '-150-' in phase else 1), sendSurface=dict(theme=phase.split('-')[1] if phase.startswith('dictation-') else 'dark'))
+                metrics.update(keyboardVisible='-open' in phase, nativeReduceMotion=True, layout=dict(textScale=1.5 if '-150-' in phase else 1), primarySurface=dict(theme=phase.split('-')[1] if phase.startswith('dictation-') else 'dark'))
+                if phase.startswith('dictation-'):
+                    state=phase.rsplit('-',1)[1]; active=state=='dictating'
+                    metrics.update(nativeSpeechPhase='recording' if active else 'idle',nativeSpeechOperationActive=active,dictationState=dict(draftPresent=state!='empty',transientSpan=active,dictating=active,sendCount=0,reducedMotion=True,lastEvent=dict(phase={'dictating':'partial','stopped':'stopped','cancelled':'cancelled'}.get(state,'cancelled'),sequence=1,textLength=10)))
                 if phase.startswith('send-'):
-                    surface = dict(theme=phase.split('-')[1], hidden=False, appearance='none', edgeHits=[True]*4, target=dict(x=0,y=0,width=44,height=44), arrow=dict(x=12,y=12,width=20,height=20), paint=dict(width=36,height=36,left=4,top=4,rgba=[200,200,200,255]), opacity=1)
-                    metrics['sendSurface'] = surface
-                    paint = dict(sendSurface=surface, nativeBitmapProbes=[dict(direction=d,inside=[200]*3,outside=[0]*3,expected=[200]*3) for d in [[1,0],[-1,0],[0,1],[0,-1]]])
-                    name=phase+'-painted-Send.json'; (self.root/name).write_text(json.dumps(paint)); rows.append(dict(suggestedHumanReadableName=name,exportedFileName=name))
+                    surface = dict(selector='.dictation-button' if '-empty-' in phase else '#send', controlKind='microphone' if '-empty-' in phase else 'send', capability=dict(supported=True,onDeviceAvailable=True,engine='apple-on-device'),theme=phase.split('-')[1], hidden=False, appearance='none', edgeHits=[True]*4, target=dict(x=0,y=0,width=44,height=44), arrow=dict(x=12,y=12,width=20,height=20), paint=dict(width=36,height=36,left=4,top=4,rgba=[200,200,200,255]), opacity=1)
+                    metrics['primarySurface'] = surface
+                    paint = dict(primarySurface=surface, nativeBitmapProbes=[dict(direction=d,inside=[200]*3,outside=[0]*3,expected=[200]*3) for d in [[1,0],[-1,0],[0,1],[0,-1]]])
+                    name=phase+'-painted-primarySurface.json'; (self.root/name).write_text(json.dumps(paint)); rows.append(dict(suggestedHumanReadableName=name,exportedFileName=name))
                 for name, suffix, payload in [(phase,'.png',b'\x89PNG\r\n\x1a\nfixture-only'),(phase+'-actual-UIKit-geometry','.json',json.dumps(metrics).encode())]:
                     filename = name+suffix; (self.root/filename).write_bytes(payload)
                     rows.append(dict(suggestedHumanReadableName=filename, exportedFileName=filename))
@@ -35,18 +38,18 @@ class ComposerEvidenceTests(unittest.TestCase):
         self.manifest[0]['attachments'] = [r for r in self.manifest[0]['attachments'] if not r['suggestedHumanReadableName'].startswith('send-')];self.save()
         with self.assertRaises(AssertionError):self.validate()
     def mutate_paint(self, field, value):
-        p=self.root/'send-dark-empty-closed-painted-Send.json';d=json.loads(p.read_text());d[field]=value;p.write_text(json.dumps(d))
+        p=self.root/'send-dark-empty-closed-painted-primarySurface.json';d=json.loads(p.read_text());d[field]=value;p.write_text(json.dumps(d))
     def test_nonfinite_probe(self):
-        p=self.root/'send-dark-empty-closed-painted-Send.json';d=json.loads(p.read_text());d['nativeBitmapProbes'][0]['inside'][0]=float('nan');p.write_text(json.dumps(d))
+        p=self.root/'send-dark-empty-closed-painted-primarySurface.json';d=json.loads(p.read_text());d['nativeBitmapProbes'][0]['inside'][0]=float('nan');p.write_text(json.dumps(d))
         with self.assertRaises(AssertionError):self.validate()
     def test_wrong_bitmap_colour(self):
-        p=self.root/'send-dark-empty-closed-painted-Send.json';d=json.loads(p.read_text());d['nativeBitmapProbes'][0]['inside'][0]=0;p.write_text(json.dumps(d))
+        p=self.root/'send-dark-empty-closed-painted-primarySurface.json';d=json.loads(p.read_text());d['nativeBitmapProbes'][0]['inside'][0]=0;p.write_text(json.dumps(d))
         with self.assertRaises(AssertionError):self.validate()
     def test_missing_cardinal_probe(self):
-        p=self.root/'send-dark-empty-closed-painted-Send.json';d=json.loads(p.read_text());d['nativeBitmapProbes'].pop();p.write_text(json.dumps(d))
+        p=self.root/'send-dark-empty-closed-painted-primarySurface.json';d=json.loads(p.read_text());d['nativeBitmapProbes'].pop();p.write_text(json.dumps(d))
         with self.assertRaises(AssertionError):self.validate()
     def test_paint_geometry_mismatch(self):
-        p=self.root/'send-dark-empty-closed-painted-Send.json';d=json.loads(p.read_text());d['sendSurface']['target']['width']=36;p.write_text(json.dumps(d))
+        p=self.root/'send-dark-empty-closed-painted-primarySurface.json';d=json.loads(p.read_text());d['primarySurface']['target']['width']=36;p.write_text(json.dumps(d))
         with self.assertRaises(AssertionError):self.validate()
     def test_missing_dictation_method(self):
         self.tree['testNodes']=[n for n in self.tree['testNodes'] if not n['nodeIdentifier'].startswith('NativeDictationTests/')]
@@ -74,6 +77,29 @@ class ComposerEvidenceTests(unittest.TestCase):
             self.assertTrue(run.call_args.kwargs['check'])
         with patch.object(m,'OUT',self.root),patch.object(m.subprocess,'run'),patch.object(m.subprocess,'check_output',return_value='0'):
             with self.assertRaises(AssertionError):m.configure_simulator_reduce_motion({'udid':'selected-only'})
+    def test_wrong_measured_dictation_state(self):
+        p=self.root/'dictation-dark-100-open-dictating-actual-UIKit-geometry.json';d=json.loads(p.read_text());d['nativeSpeechOperationActive']=False;p.write_text(json.dumps(d))
+        with self.assertRaises(AssertionError):self.validate()
+    def test_label_without_typed_bridge_event(self):
+        p=self.root/'dictation-dark-100-open-stopped-actual-UIKit-geometry.json';d=json.loads(p.read_text());d['dictationState']['lastEvent']['phase']='partial';p.write_text(json.dumps(d))
+        with self.assertRaises(AssertionError):self.validate()
+    def test_dictation_send_not_zero(self):
+        p=self.root/'dictation-dark-100-open-empty-actual-UIKit-geometry.json';d=json.loads(p.read_text());d['dictationState']['sendCount']=1;p.write_text(json.dumps(d))
+        with self.assertRaises(AssertionError):self.validate()
+    def test_mic_paint_mislabeled_as_send(self):
+        for suffix in ['actual-UIKit-geometry','painted-primarySurface']:
+            p=self.root/('send-dark-empty-closed-'+suffix+'.json');d=json.loads(p.read_text());d['primarySurface']['selector']='#send';d['primarySurface']['controlKind']='send';p.write_text(json.dumps(d))
+        with self.assertRaises(AssertionError):self.validate()
+    def test_unsupported_capability_cannot_pass_supported_native_matrix(self):
+        for suffix in ['actual-UIKit-geometry','painted-primarySurface']:
+            p=self.root/('send-dark-empty-closed-'+suffix+'.json');d=json.loads(p.read_text());d['primarySurface']['capability']['supported']=False;p.write_text(json.dumps(d))
+        with self.assertRaises(AssertionError):self.validate()
+    def test_old_mislabeled_send_attachment(self):
+        g=self.manifest[0]
+        for row in g['attachments']:
+            row['suggestedHumanReadableName']=row['suggestedHumanReadableName'].replace('painted-primarySurface','painted-Send')
+        self.save()
+        with self.assertRaises(AssertionError):self.validate()
     def test_missing_orientation(self):
         self.tree['testNodes'].pop(); self.summary.update(totalTestCount=1,passedTests=1)
         with self.assertRaises(AssertionError): self.validate()
