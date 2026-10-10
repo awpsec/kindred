@@ -16,7 +16,9 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     private var keyboardFrame: CGRect = .zero
     private var keyboardShows = 0
     private var keyboardHides = 0
+    private var keyboardVisible = false
     private var observers: [NSObjectProtocol] = []
+    private var layoutEvidence: [String: Any] = [:]
 
     override func setUp() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -58,19 +60,28 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.keyboardShows += 1
+                self.keyboardVisible = true
                 self.keyboardFrame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
             }
         })
         observers.append(NotificationCenter.default.addObserver(forName: UIResponder.keyboardDidHideNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.keyboardHides += 1 }
+            MainActor.assumeIsolated { self?.keyboardHides += 1; self?.keyboardVisible = false }
         })
-        session.reload()
+        // The initializer's load was stopped before this delegate and fixture
+        // script were installed. Its pending URL is not a committed document
+        // to reload; issue one fresh request after the host is attached.
+        session.webView.load(URLRequest(url: origin.rootURL))
         try await waitFor("exact fixture UI and native geometry", timeout: 30) {
             try await self.boolean("!!document.querySelector('#prompt')?.getClientRects().length && !!document.querySelector('[data-message=\"1\"] [data-message-action=\"reply\"]') && !!window.__KINDRED_NATIVE_GEOMETRY && document.documentElement.hasAttribute('data-mobile')")
         }
         XCTAssertEqual(session.webView.url?.host, "localhost")
         XCTAssertEqual(session.webView.scrollView.contentInsetAdjustmentBehavior, .never)
         XCTAssertEqual(session.webView.scrollView.keyboardDismissMode, .interactive)
+        // Bind the fixture's exact shared candidate, not a stale connected UI.
+        _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
+        try await waitFor("exact Send candidate UI manifest") {
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='d671527d986778cbfb9b2549de4d8fc6f60b4830623c18ba07aaaf4012d70424' && window.__sendSurfaceFixture?.['app.js']==='68dac6db2dc2562759ed718c9beab36fa77a94a0e4bff97efc22c0e82cc16c7f'")
+        }
     }
 
     override func tearDown() async throws {
@@ -122,6 +133,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         try await waitFor("one fixture send") { try await self.boolean("window.__composerSends.length===1 && document.querySelector('#prompt').textContent==='' ") }
         let sentDraft = try await js("window.__composerSends[0].prompt") as? String
         XCTAssertEqual(sentDraft, draft)
+        try await checkSendSurfaceMatrix()
     }
 
     func testOrientationSafeAreaAndTextSizePreserveDraft() async throws {
@@ -157,29 +169,128 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     private func waitFor(_ label: String, timeout: TimeInterval = 12, predicate: () async throws -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if try await predicate() { return }
+            do {
+                if try await predicate() { return }
+            } catch {
+                await recordFailureEvidence(label)
+                throw error
+            }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
+        await recordFailureEvidence(label)
         XCTFail("Missing native evidence: \(label)")
         throw NSError(domain: "ComposerUIKitTests", code: 1, userInfo: [NSLocalizedDescriptionKey: label])
     }
 
-    private func checkComposer(label: String) async throws {
-        // Wait for the real host's geometry bridge, not a fixed rendering delay.
-        let expectedWidth = Double(session.webView.bounds.width)
-        let expectedHeight = Double(session.webView.bounds.height)
-        try await waitFor("native host geometry for " + label) {
-            try await self.boolean("Math.abs(window.__KINDRED_NATIVE_GEOMETRY.width-\(expectedWidth))<2 && Math.abs(window.__KINDRED_NATIVE_GEOMETRY.height-\(expectedHeight))<2")
+    private func recordFailureEvidence(_ label: String) async {
+        // Diagnose the failed condition without reading tokens, storage values,
+        // input contents or account data. Failure evidence never counts as a
+        // successful keyboard/orientation phase in the runner's acceptance gate.
+        var evidence: [String: Any] = ["condition": label,
+            "navigation": delegate?.milestones ?? [],
+            "nativeLoadFailed": session?.loadState.failure != nil,
+            "webViewLoading": session?.webView.isLoading ?? false,
+            "estimatedProgress": session?.webView.estimatedProgress ?? 0]
+        if !layoutEvidence.isEmpty { evidence["layoutTransition"] = layoutEvidence }
+        if let url = session?.webView.url {
+            evidence["url"] = ["scheme": url.scheme ?? "", "host": url.host ?? "",
+                "port": url.port ?? 0, "path": url.path] as [String: Any]
         }
+        let pageScript = """
+            (()=>{const p=document.querySelector('#prompt');let sessionPresent=null,storageReadable=true;
+              try {sessionPresent=!!sessionStorage.getItem('kindred-token')} catch {storageReadable=false}
+              return {
+              readyState:document.readyState,promptExists:!!p,promptVisible:!!p?.getClientRects().length,
+              replyExists:!!document.querySelector('[data-message="1"] [data-message-action="reply"]'),
+              geometry:window.__KINDRED_NATIVE_GEOMETRY??null,
+              mobile:document.documentElement.hasAttribute('data-mobile'),
+              bootstrap:window.__KINDRED_NATIVE_SESSION_BOOTSTRAP===true,
+              fixtureScript:Array.isArray(window.__composerSends),
+              sessionPresent,storageReadable,
+              startupFailed:window.__KINDRED_STARTUP?.failed===true,
+              startupVisible:!!document.querySelector('#startup-status')?.getClientRects().length
+            }})()
+            """
+        if let window {
+            evidence["window"] = ["width": window.bounds.width, "height": window.bounds.height,
+                "safeArea": ["top": window.safeAreaInsets.top, "bottom": window.safeAreaInsets.bottom,
+                    "left": window.safeAreaInsets.left, "right": window.safeAreaInsets.right]] as [String: Any]
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let screenshot = XCTAttachment(image: image)
+            screenshot.name = "failure-actual-UIKit"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+        }
+        evidence.merge(await boundedFailurePage(pageScript)) { _, new in new }
+        if let json = try? JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]) {
+            let attachment = XCTAttachment(data: json, uniformTypeIdentifier: "public.json")
+            attachment.name = "failure-actual-UIKit-readiness"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    private func boundedFailurePage(_ source: String) async -> [String: Any] {
+        await withCheckedContinuation { continuation in
+            let probe = FailurePageProbe(continuation)
+            let timeout = Task { @MainActor in
+                do { try await Task.sleep(nanoseconds: 2_000_000_000) }
+                catch { return }
+                probe.finish(["javascriptTimeout": true])
+            }
+            session.webView.evaluateJavaScript(source) { value, error in
+                timeout.cancel()
+                if let error {
+                    let failure = error as NSError
+                    probe.finish(["javascriptFailure": ["domain": failure.domain,
+                        "code": failure.code] as [String: Any]])
+                } else {
+                    probe.finish(["page": value ?? NSNull()])
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    private func checkComposer(label: String) async throws -> (metrics: [String: Any], image: UIImage) {
+        // A native bridge update precedes WebKit's applied CSS viewport in
+        // some transitions. Require applied shell shape, never eventual hits.
         let source = """
         (()=>{const rect=e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}};
         const c=document.querySelector('#composer'),p=document.querySelector('#prompt');
         const reply=document.querySelector('#composer-reply'),files=document.querySelector('.composer-files');
-        return {composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
+        const send=document.querySelector('#send'),surface=getComputedStyle(send,'::before'),arrow=send.querySelector('svg'),style=getComputedStyle(send);
+        const colour=document.createElement('canvas').getContext('2d');colour.fillStyle=surface.backgroundColor;colour.fillRect(0,0,1,1);const rgba=[...colour.getImageData(0,0,1,1).data];
+        return {sendSurface:{target:rect(send),arrow:rect(arrow),paint:{width:parseFloat(surface.width),height:parseFloat(surface.height),left:parseFloat(surface.left),top:parseFloat(surface.top),rgba},opacity:parseFloat(style.opacity),appearance:style.appearance,theme:document.documentElement.dataset.theme,hidden:send.hidden,disabled:send.disabled,fixture:window.__sendSurfaceFixture},layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
         controls:[...c.querySelectorAll('#composer-actions,#send,.dictation-button,.dictation-cancel')].filter(b=>b.getClientRects().length).map(b=>{const r=rect(b),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {...r,hit:h===b||b.contains(h)}})}})()
         """
-        let rawMetrics = try await js(source)
-        var metrics = try XCTUnwrap(rawMetrics as? [String: Any])
+        var measured: [String: Any]?
+        var previousStamp: String?
+        var sampleCount = 0
+        let started = Date()
+        layoutEvidence = ["phase": label]
+        try await waitFor("applied native and shared layout for " + label) {
+            let raw = try await self.js(source)
+            let sample = try XCTUnwrap(raw as? [String: Any])
+            sampleCount += 1
+            // Read the live UIKit host after this sample, not a pre-rotation size.
+            let host = self.session.webView.bounds
+            let stamp = Self.appliedLayoutStamp(sample,
+                hostWidth: Double(host.width), hostHeight: Double(host.height))
+            self.layoutEvidence["samples"] = sampleCount
+            self.layoutEvidence["elapsedSeconds"] = Date().timeIntervalSince(started)
+            self.layoutEvidence["liveHost"] = ["width": host.width, "height": host.height]
+            self.layoutEvidence["latest"] = sample
+            if self.layoutEvidence["first"] == nil { self.layoutEvidence["first"] = sample }
+            let stable = stamp != nil && stamp == previousStamp
+            previousStamp = stamp
+            if stable { measured = sample }
+            return stable
+        }
+        var metrics = try XCTUnwrap(measured)
+        metrics["layoutTransition"] = layoutEvidence
         metrics["keyboardNotifications"] = ["shows": keyboardShows, "hides": keyboardHides]
         metrics["keyboardFrame"] = ["x": keyboardFrame.minX, "y": keyboardFrame.minY, "width": keyboardFrame.width, "height": keyboardFrame.height]
         let c = try XCTUnwrap(metrics["composer"] as? [String: Double])
@@ -215,6 +326,117 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         screenshot.name = label
         screenshot.lifetime = .keepAlways
         add(screenshot)
+        return (metrics, image)
+    }
+
+    private func checkSendSurfaceMatrix() async throws {
+        for theme in ["dark", "light"] {
+            for populated in [false, true] {
+                for keyboard in [false, true] {
+                    let label = "send-" + theme + (populated ? "-populated" : "-empty") + (keyboard ? "-open" : "-closed")
+                    let draft = populated ? "Send surface fixture" : ""
+                    _ = try await js("document.documentElement.dataset.theme='\(theme)';const p=document.querySelector('#prompt');p.textContent='\(draft)';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.\(keyboard ? "focus" : "blur")();true")
+                    if !keyboard { window.endEditing(true) }
+                    try await waitFor("actual keyboard state for " + label) { self.keyboardVisible == keyboard }
+                    let observed = try await checkComposer(label: label)
+                    try checkPaintedSend(observed.metrics, image: observed.image, theme: theme, label: label)
+                    let retained = try await js("document.querySelector('#prompt').textContent") as? String
+                    XCTAssertEqual(retained, draft)
+                }
+            }
+        }
+        window.endEditing(true)
+        try await waitFor("Send matrix keyboard cleanup") { !self.keyboardVisible }
+        _ = try await js("document.documentElement.dataset.theme='dark';const p=document.querySelector('#prompt');p.textContent='';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
+        let sends = try await js("window.__composerSends.length") as? Int
+        XCTAssertEqual(sends, 1, "Paint matrix must not submit another message")
+    }
+
+    private func checkPaintedSend(_ metrics: [String: Any], image: UIImage, theme: String, label: String) throws {
+        let send = try XCTUnwrap(metrics["sendSurface"] as? [String: Any])
+        XCTAssertEqual(send["theme"] as? String, theme)
+        XCTAssertEqual(send["hidden"] as? Bool, false)
+        XCTAssertEqual(send["appearance"] as? String, "none")
+        let target = try XCTUnwrap(send["target"] as? [String: Double])
+        let arrow = try XCTUnwrap(send["arrow"] as? [String: Double])
+        let paint = try XCTUnwrap(send["paint"] as? [String: Any])
+        for key in ["width", "height"] {
+            XCTAssertEqual(target[key] ?? 0, 44, accuracy: 0.5)
+            XCTAssertEqual(arrow[key] ?? 0, 20, accuracy: 0.5)
+            XCTAssertEqual((paint[key] as? Double) ?? 0, 36, accuracy: 0.5)
+        }
+        for key in ["left", "top"] { XCTAssertEqual((paint[key] as? Double) ?? 0, 4, accuracy: 0.5) }
+        let centre = CGPoint(x: (target["x"] ?? 0) + 22, y: (target["y"] ?? 0) + 22)
+        XCTAssertEqual((arrow["x"] ?? 0) + 10, Double(centre.x), accuracy: 0.5)
+        XCTAssertEqual((arrow["y"] ?? 0) + 10, Double(centre.y), accuracy: 0.5)
+        let colour = try XCTUnwrap(paint["rgba"] as? [Double])
+        XCTAssertEqual(colour.count, 4)
+        XCTAssertEqual(colour[3], 255)
+        let opacity = try XCTUnwrap(send["opacity"] as? Double)
+        var probes: [[String: Any]] = []
+        // Cardinal samples avoid the 20px arrow. Radius17 must be painted;
+        // radius19 must be outside the 36px circle but inside the 44px target.
+        for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+            let inside = session.webView.convert(CGPoint(x: centre.x + dx * 17, y: centre.y + dy * 17), to: window)
+            let outside = session.webView.convert(CGPoint(x: centre.x + dx * 19, y: centre.y + dy * 19), to: window)
+            let innerPixel = try Self.imagePixel(image, point: inside)
+            let outerPixel = try Self.imagePixel(image, point: outside)
+            let expected = (0..<3).map { opacity * colour[$0] + (1 - opacity) * outerPixel[$0] }
+            XCTAssertGreaterThan(Self.colourDistance(expected, outerPixel), 12, "Paint must visibly differ from surroundings")
+            XCTAssertLessThanOrEqual(Self.colourDistance(innerPixel, expected), 12, "Native bitmap must paint through radius17")
+            probes.append(["direction": [dx, dy], "inside": innerPixel, "outside": outerPixel, "expected": expected])
+        }
+        let evidence: [String: Any] = ["sendSurface": send, "nativeBitmapProbes": probes]
+        let data = try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys])
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+        attachment.name = label + "-painted-Send"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private static func colourDistance(_ a: [Double], _ b: [Double]) -> Double {
+        zip(a.prefix(3), b.prefix(3)).map { abs($0 - $1) }.max() ?? 0
+    }
+
+    private static func imagePixel(_ image: UIImage, point: CGPoint) throws -> [Double] {
+        let cg = try XCTUnwrap(image.cgImage)
+        XCTAssertEqual(image.imageOrientation, .up)
+        let x = floor(point.x * CGFloat(cg.width) / image.size.width)
+        let y = floor(point.y * CGFloat(cg.height) / image.size.height)
+        XCTAssertGreaterThanOrEqual(x, 0); XCTAssertGreaterThanOrEqual(y, 0)
+        XCTAssertLessThan(x, CGFloat(cg.width)); XCTAssertLessThan(y, CGFloat(cg.height))
+        let crop = try XCTUnwrap(cg.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)))
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        var rgba = [UInt8](repeating: 0, count: 4)
+        let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: 1, height: 1,
+                bitsPerComponent: 8, bytesPerRow: 4, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        XCTAssertTrue(drawn)
+        XCTAssertEqual(rgba[3], 255)
+        return rgba.map(Double.init)
+    }
+
+    /// Pure shape/state predicate; control visibility and hits remain assertions.
+    private static func appliedLayoutStamp(_ metrics: [String: Any],
+        hostWidth: Double, hostHeight: Double) -> String? {
+        guard let native = metrics["native"] as? [String: Any],
+              let viewport = metrics["viewport"] as? [String: Double],
+              let layout = metrics["layout"] as? [String: Any],
+              let shell = layout["shell"] as? [String: Double],
+              layout["resizing"] as? Bool == false,
+              let nw = native["width"] as? Double, let nh = native["height"] as? Double,
+              let vw = viewport["width"], let vh = viewport["height"],
+              let sw = shell["width"], let sh = shell["height"],
+              let scale = layout["textScale"] as? Double,
+              [hostWidth, hostHeight, nw, nh, vw, vh, sw, sh, scale].allSatisfy({ $0.isFinite && $0 > 0 }),
+              abs(nw - hostWidth) < 2, abs(nh - hostHeight) < 2,
+              abs(vw - hostWidth) < 2, abs(vh - hostHeight) < 2,
+              abs(sw - vw) < 2, abs(sh - vh) < 2 else { return nil }
+        return "\(hostWidth)|\(hostHeight)|\(nw)|\(nh)|\(vw)|\(vh)|\(sw)|\(sh)|\(scale)|\(layout["mode"] as? String ?? "")"
     }
 
     func webSession(_ session: WebSession, didReceive message: SessionMessage) {}
@@ -223,29 +445,55 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     func webSession(_ session: WebSession, didDownload file: URL) {}
 }
 
+/// The callback and diagnostic deadline compete on the main actor. Only the
+/// first may resume the continuation; late WK completions have no effect.
+@MainActor
+private final class FailurePageProbe {
+    private var continuation: CheckedContinuation<[String: Any], Never>?
+    init(_ continuation: CheckedContinuation<[String: Any], Never>) {
+        self.continuation = continuation
+    }
+    func finish(_ result: [String: Any]) {
+        guard let continuation else { return }
+        self.continuation = nil
+        continuation.resume(returning: result)
+    }
+}
+
 /// Test-only TLS acceptance for the disposable loopback certificate. Production
 /// navigation policy is forwarded unchanged; no product trust/ATS setting changes.
 @MainActor
 private final class LocalFixtureDelegate: NSObject, WKNavigationDelegate {
     let session: WebSession
+    private(set) var milestones: [String] = []
     init(session: WebSession) { self.session = session }
     func webView(_ webView: WKWebView, didReceive challenge: URLAuthenticationChallenge,
                  completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         guard challenge.protectionSpace.host == "localhost", challenge.protectionSpace.port == 8765,
               challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let trust = challenge.protectionSpace.serverTrust else {
+            milestones.append("authentication-refused")
             completionHandler(.cancelAuthenticationChallenge, nil); return
         }
+        milestones.append("localhost-TLS-trust")
         completionHandler(.useCredential, URLCredential(trust: trust))
     }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        session.webView(webView, decidePolicyFor: action, decisionHandler: decisionHandler)
+        milestones.append("navigation-action:" + (action.targetFrame?.isMainFrame == false ? "subframe" : "main"))
+        session.webView(webView, decidePolicyFor: action) { [weak self] policy in
+            self?.milestones.append("navigation-action-policy:" + String(policy.rawValue))
+            decisionHandler(policy)
+        }
     }
     func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        session.webView(webView, decidePolicyFor: response, decisionHandler: decisionHandler)
+        milestones.append("navigation-response:" + String((response.response as? HTTPURLResponse)?.statusCode ?? 0))
+        session.webView(webView, decidePolicyFor: response) { [weak self] policy in
+            self?.milestones.append("navigation-response-policy:" + String(policy.rawValue))
+            decisionHandler(policy)
+        }
     }
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { session.webView(webView, didStartProvisionalNavigation: navigation) }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { session.webView(webView, didFinish: navigation) }
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { session.webView(webView, didFailProvisionalNavigation: navigation, withError: error) }
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { session.webView(webView, didFail: navigation, withError: error) }
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { milestones.append("navigation-start"); session.webView(webView, didStartProvisionalNavigation: navigation) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { milestones.append("navigation-finish"); session.webView(webView, didFinish: navigation) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { milestones.append("provisional-failure:\((error as NSError).domain):\((error as NSError).code)"); session.webView(webView, didFailProvisionalNavigation: navigation, withError: error) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { milestones.append("navigation-failure:\((error as NSError).domain):\((error as NSError).code)"); session.webView(webView, didFail: navigation, withError: error) }
 }
