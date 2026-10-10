@@ -93,6 +93,7 @@ struct AccountsSheet: View {
                     .environment(model)
             }
         }
+        .task { await model.refreshAccountIdentities() }
     }
 
     private func choose(_ account: Account) {
@@ -172,10 +173,20 @@ private struct AccountRow: View {
                 HStack(spacing: 12) {
                     AccountAvatar(account: account, size: 36)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(account.title)
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(account.title)
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            if isSignedIn, account.administrativeRole != nil {
+                                AdministratorBadge()
+                                    .accessibilityHidden(true)
+                                    .fixedSize()
+                                    .layoutPriority(1)
+                            }
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(account.title + (isSignedIn ? account.administrativeRole.map { ", " + $0.accessibilityLabel } ?? "" : ""))
                         Text(subtitle)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -214,5 +225,19 @@ private struct AccountRow: View {
         if !isSignedIn { return "Signed out" }
         if account.title != account.login { return account.login }
         return "Signed in"
+    }
+}
+
+/// Informational role marker; server authorization never depends on this cache.
+private struct AdministratorBadge: View {
+    @ScaledMetric(relativeTo: .body) private var side: CGFloat = 18
+    @ScaledMetric(relativeTo: .body) private var glyph: CGFloat = 12
+
+    var body: some View {
+        Text("A")
+            .font(.system(size: min(glyph, 15), weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: min(side, 22), height: min(side, 22))
+            .background(Color(uiColor: .systemBlue), in: RoundedRectangle(cornerRadius: 4))
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -40,6 +41,41 @@ public struct IdentitySummary: Equatable, Sendable {
     public let activeProfileID: String?
     public let activeProfileName: String?
     public let legacy: Bool
+    public let admin: Bool
+    public let owner: Bool
+
+    public init(serverAccountID: String?, username: String?, activeProfileID: String?,
+                activeProfileName: String?, legacy: Bool, admin: Bool = false, owner: Bool = false) {
+        self.serverAccountID = serverAccountID
+        self.username = username
+        self.activeProfileID = activeProfileID
+        self.activeProfileName = activeProfileName
+        self.legacy = legacy
+        self.admin = !legacy && admin
+        self.owner = !legacy && admin && owner
+    }
+
+    public static func parse(_ data: Data) throws -> IdentitySummary {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            throw KindredAPIError.invalidResponse
+        }
+        func flag(_ key: String) -> Bool {
+            guard let value = object[key] as? NSNumber,
+                  CFGetTypeID(value) == CFBooleanGetTypeID() else { return false }
+            return value.boolValue
+        }
+        let active = object["active"] as? String
+        let profiles = object["profiles"] as? [[String: Any]] ?? []
+        let profile = profiles.first { ($0["id"] as? String) == active } ?? profiles.first { $0["active"] as? Bool == true }
+        return IdentitySummary(
+            serverAccountID: (object["account_id"] as? String).flatMap(PushPayload.canonicalUUID),
+            username: (object["username"] as? String).map { String($0.prefix(80)) },
+            activeProfileID: active.flatMap { ProfileIdentifier.isValid($0) ? $0 : nil },
+            activeProfileName: (profile?["name"] as? String).map { String($0.prefix(80)) },
+            legacy: flag("legacy"), admin: flag("admin"),
+            owner: (object["role"] as? String) == "owner" && flag("owner_resolved")
+        )
+    }
 }
 
 /// Pure request builders. Credentialed requests never send cookies, never use
@@ -188,20 +224,7 @@ public final class KindredAPIClient: NSObject, URLSessionTaskDelegate, @unchecke
 
     public func identity(origin: ServerOrigin, token: String) async throws -> IdentitySummary {
         let data = try await checked(KindredRequests.profiles(origin: origin, token: token))
-        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            throw KindredAPIError.invalidResponse
-        }
-        let active = object["active"] as? String
-        let profiles = object["profiles"] as? [[String: Any]] ?? []
-        let activeProfile = profiles.first { ($0["id"] as? String) == active } ?? profiles.first { $0["active"] as? Bool == true }
-        let name = (activeProfile?["name"] as? String).map { String($0.prefix(80)) }
-        return IdentitySummary(
-            serverAccountID: (object["account_id"] as? String).flatMap(PushPayload.canonicalUUID),
-            username: (object["username"] as? String).map { String($0.prefix(80)) },
-            activeProfileID: active.flatMap { ProfileIdentifier.isValid($0) ? $0 : nil },
-            activeProfileName: name,
-            legacy: object["legacy"] as? Bool ?? false
-        )
+        return try IdentitySummary.parse(data)
     }
 
     public func logout(origin: ServerOrigin, token: String) async throws {

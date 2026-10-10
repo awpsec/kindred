@@ -10,6 +10,7 @@ public struct Account: Codable, Hashable, Identifiable, Sendable {
     /// The server's account UUID (`/identity/profiles` → `account_id`); push
     /// registrations and payloads use it.
     public var serverAccountID: String?
+    public var roleMetadata: AccountRoleMetadata?
     public var profileID: String?
     public var profileName: String?
     public var createdAt: Date
@@ -30,9 +31,61 @@ public struct Account: Codable, Hashable, Identifiable, Sendable {
         return login
     }
 
+    /// Cached role is informational and belongs only to this exact identity.
+    public var administrativeRole: AccountAdministrativeRole? {
+        guard let roleMetadata, roleMetadata.origin == origin,
+              roleMetadata.serverAccountID == serverAccountID else { return nil }
+        return roleMetadata.role == .user ? nil : roleMetadata.role
+    }
+
+    public mutating func applyIdentity(_ identity: IdentitySummary) {
+        if let name = identity.activeProfileName { profileName = name }
+        if let profile = identity.activeProfileID { profileID = profile }
+        if let username = identity.username { login = username.lowercased() }
+        if let accountID = identity.serverAccountID { serverAccountID = accountID }
+        roleMetadata = identity.serverAccountID.map {
+            AccountRoleMetadata(origin: origin, serverAccountID: $0,
+                                role: identity.owner ? .owner : (identity.admin ? .administrator : .user))
+        }
+    }
+
     public var initial: String {
         guard let first = title.trimmingCharacters(in: .whitespaces).first else { return "K" }
         return String(first).uppercased()
+    }
+}
+
+public enum AccountAdministrativeRole: String, Codable, Hashable, Sendable {
+    case user, administrator, owner
+
+    public var accessibilityLabel: String {
+        self == .owner ? "Owner, administrator" : "Administrator"
+    }
+}
+
+public struct AccountRoleMetadata: Codable, Hashable, Sendable {
+    public let origin: ServerOrigin
+    public let serverAccountID: String
+    public let role: AccountAdministrativeRole
+}
+
+/// Receipt fence used by native identity refreshes. No session secrets are stored.
+public struct AccountIdentityRefresh: Equatable, Sendable {
+    public let accountID: UUID
+    public let origin: ServerOrigin
+    public let sessionGeneration: Int
+    public let requestRevision: Int
+
+    public init(account: Account, sessionGeneration: Int, requestRevision: Int) {
+        accountID = account.id
+        origin = account.origin
+        self.sessionGeneration = sessionGeneration
+        self.requestRevision = requestRevision
+    }
+
+    public func matches(_ account: Account?, sessionGeneration: Int, requestRevision: Int) -> Bool {
+        account?.id == accountID && account?.origin == origin &&
+        self.sessionGeneration == sessionGeneration && self.requestRevision == requestRevision
     }
 }
 
