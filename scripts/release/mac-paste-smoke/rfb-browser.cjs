@@ -1,18 +1,22 @@
 // Test-only RFB destination. The expected clipboard text never enters this module.
-const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{execFileSync}=require('node:child_process');
 const {WebSocketServer}=require('ws'),{PNG}=require('pngjs'),{chromium}=require('playwright');
 const WIDTH=960,HEIGHT=640;
 function bounded(promise,ms,label){let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' timed out')),ms);})]).finally(()=>clearTimeout(timer));}
 const html=`<!doctype html><meta charset="utf-8"><title>Disposable Paste destination</title><style>body{font:20px system-ui;margin:30px}textarea{width:850px;height:440px;font:24px system-ui}</style><h1>Disposable Paste destination</h1><form><textarea id="destination" autofocus></textarea><button>Submit</button></form><script>window.observations={inputs:0,submits:0,enterDown:0};document.querySelector('form').onsubmit=e=>{e.preventDefault();observations.submits++};document.querySelector('textarea').addEventListener('input',()=>observations.inputs++);document.querySelector('textarea').addEventListener('keydown',e=>{if(e.key==='Enter')observations.enterDown++});</script>`;
 async function attach(server,options){
- const {output,token,executablePath,initiallyFocused=true}=options;
+ const {output,token,executablePath,initiallyFocused=true,source,sourceCommit}=options;
  if(!server.listening||server.address().address!=='127.0.0.1')throw Error('Use a listening loopback server');
  if(typeof token!=='string'||!token||!output)throw Error('Synthetic token and output required');
+ if(!source||!sourceCommit)throw Error('Exact UI source and commit required');
+ const actualCommit=execFileSync('git',['-C',source,'rev-parse','HEAD'],{encoding:'utf8',timeout:5000}).trim();if(actualCommit!==sourceCommit)throw Error('UI source commit mismatch');
+ const hash=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+ const sourceBinding={sourceCommit,appSha256:hash(path.join(source,'ui/app.js')),vendorSha256:hash(path.join(source,'ui/vendor.js')),adapterSha256:hash(__filename),dependencyLockSha256:hash(path.join(__dirname,'package-lock.json'))};
  fs.mkdirSync(output,{recursive:true});
  const origin='http://127.0.0.1:'+server.address().port,ticket=crypto.randomBytes(32).toString('hex');
  const browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});
  const page=await browser.newPage({viewport:{width:WIDTH,height:HEIGHT}});page.setDefaultTimeout(5000);
- const events=[];let connected=0,keys=0,control=false,closed=false,failure=null,inputTail=Promise.resolve();
+ const events=[];let inputSequence=0,processedInputSequence=0,connected=0,keys=0,control=false,closed=false,failure=null,inputTail=Promise.resolve();
  const sessions=new Set(),wss=new WebSocketServer({noServer:true,maxPayload:1024*1024});
  const old=server.listeners('request');server.removeAllListeners('request');
  const json=(res,data,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
@@ -67,20 +71,40 @@ async function attach(server,options){
     if(buffer.length<length)return;const message=buffer.subarray(0,length);buffer=buffer.subarray(length);
     if(type===0){if(message[4]!==32||message[5]!==24||message[7]!==1||[8,10,12].some(i=>message.readUInt16BE(i)!==255))throw Error('Require true-color32');format={big:!!message[6],r:message[14],g:message[15],b:message[16]};if(![format.r,format.g,format.b].every(v=>[0,8,16].includes(v))||new Set([format.r,format.g,format.b]).size!==3)throw Error('Unsupported channel format');}
     if(type===3)inputTail=inputTail.then(frame);
-    if(type===4){if(!control){fail('Input received without control');continue;}const key=message.readUInt32BE(4),down=!!message[1];keys++;const event={sequence:events.length+1,connectionID,key,down,received:Date.now(),processed:null,outcome:null};events.push(event);inputTail=inputTail.then(async()=>{if(ws.readyState!==1||!control){event.outcome='cancelled-before-dispatch';event.processed=Date.now();return;}await input(key,down);event.outcome='browser-dispatched';event.processed=Date.now();});}
-    if(type===5&&control){const x=message.readUInt16BE(2),y=message.readUInt16BE(4);inputTail=inputTail.then(async()=>{await page.mouse.move(x,y);if(message[1]&1)await page.mouse.down();else await page.mouse.up();});}
+    if(type===4){if(!control){fail('Input received without control');continue;}const key=message.readUInt32BE(4),down=!!message[1];keys++;const inputID=++inputSequence;const event={sequence:events.length+1,connectionID,key,down,received:Date.now(),processed:null,outcome:null};events.push(event);inputTail=inputTail.then(async()=>{if(ws.readyState!==1||!control){event.outcome='cancelled-before-dispatch';event.processed=Date.now();processedInputSequence=inputID;return;}await input(key,down);event.outcome='browser-dispatched';event.processed=Date.now();processedInputSequence=inputID;});}
+    if(type===5&&control){const inputID=++inputSequence;const x=message.readUInt16BE(2),y=message.readUInt16BE(4);inputTail=inputTail.then(async()=>{if(ws.readyState===1&&control){await page.mouse.move(x,y);if(message[1]&1)await page.mouse.down();else await page.mouse.up();}processedInputSequence=inputID;});}
     inputTail=inputTail.catch(fail);
    }
   };
   ws.on('message',data=>{try{buffer=Buffer.concat([buffer,data]);if(buffer.length>1024*1024)throw Error('Oversized RFB buffer');parse();}catch(e){fail(e);}});
  });
  async function snapshot(label){
-  const deadline=Date.now()+3000;let stable=0,previous=-1;while(stable<3){await bounded(inputTail,Math.max(1,deadline-Date.now()),'Destination input queue');if(failure)throw Error(failure);const current=events.length;stable=current===previous?stable+1:0;previous=current;if(Date.now()>deadline)throw Error('Destination input did not quiesce');await new Promise(r=>setTimeout(r,50));}
-  const observed=await page.evaluate(()=>({text:document.querySelector('#destination').value,...window.observations}));
-  const receipt={...observed,connected,keyEvents:keys,events:events.map(e=>({...e})),browserVersion:browser.version(),origin,destination:origin+'/fixture/mac-paste/destination'};
-  if(label){if(!/^[a-z0-9-]+$/.test(label))throw Error('Invalid evidence label');await page.screenshot({path:path.join(output,label+'.png')});fs.writeFileSync(path.join(output,label+'.json'),JSON.stringify(receipt,null,2));}
-  return receipt;
+  if(label&&!/^[a-z0-9-]+$/.test(label))throw Error('Invalid evidence label');
+  const deadline=Date.now()+3000;
+  const remaining=()=>{const ms=deadline-Date.now();if(ms<=0)throw Error('Destination input did not quiesce');return ms;};
+  const processed=()=>inputSequence===processedInputSequence&&events.every((e,i)=>e.sequence===i+1&&e.processed!==null&&['browser-dispatched','cancelled-before-dispatch'].includes(e.outcome));
+  while(true){
+   let stable=0,previous=-1;
+   while(stable<3){
+    await bounded(inputTail,remaining(),'Destination input queue');if(failure)throw Error(failure);
+    const before=inputSequence;
+    await bounded(new Promise(r=>setTimeout(r,50)),remaining(),'Destination quiet sample');
+    // Drain again after the quiet interval. An event in its final sleep is not quiet.
+    await bounded(inputTail,remaining(),'Destination final input queue');if(failure)throw Error(failure);
+    const current=inputSequence;
+    stable=current===before&&current===previous&&processed()?stable+1:0;previous=current;
+   }
+   const sequence=events.length,inputStamp=inputSequence;
+   const observed=await bounded(page.evaluate(()=>({text:document.querySelector('#destination').value,...window.observations})),remaining(),'Destination oracle');
+   if(label)await bounded(page.screenshot({path:path.join(output,label+'.png')}),remaining(),'Destination screenshot');
+   await bounded(inputTail,remaining(),'Destination post-oracle queue');if(failure)throw Error(failure);remaining();
+   // The DOM read and screenshot must belong to the same completely processed prefix.
+   if(sequence!==events.length||inputStamp!==inputSequence||!processed())continue;
+   const receipt={...observed,connected,keyEvents:keys,receivedSequence:sequence,processedSequence:sequence,inputSequence,processedInputSequence,events:events.map(e=>({...e})),sourceBinding,browserVersion:browser.version(),origin,destination:origin+'/fixture/mac-paste/destination'};
+   if(label)fs.writeFileSync(path.join(output,label+'.json'),JSON.stringify(receipt,null,2));
+   return receipt;
+  }
  }
- return {origin,ready:true,async snapshot(label){return snapshot(label);},async clear(){await inputTail;await page.evaluate(()=>{document.querySelector('#destination').value='';window.observations={inputs:0,submits:0,enterDown:0};});await page.locator('#destination').focus();keys=0;events.length=0;},async disconnect(){for(const ws of sessions)ws.close();},async close(){if(closed)return;closed=true;server.off('request',request);for(const l of old)server.on('request',l);server.off('upgrade',upgrade);for(const ws of sessions)ws.terminate();await new Promise(r=>wss.close(r));await browser.close();}};
+ return {origin,ready:true,async snapshot(label){return snapshot(label);},async clear(){await inputTail;await page.evaluate(()=>{document.querySelector('#destination').value='';window.observations={inputs:0,submits:0,enterDown:0};});await page.locator('#destination').focus();keys=0;events.length=0;inputSequence=0;processedInputSequence=0;},async disconnect(){for(const ws of sessions)ws.close();},async close(){if(closed)return;closed=true;server.off('request',request);for(const l of old)server.on('request',l);server.off('upgrade',upgrade);for(const ws of sessions)ws.terminate();await new Promise(r=>wss.close(r));await browser.close();}};
 }
 module.exports={attach};
