@@ -280,10 +280,10 @@ const providerName = (b) =>
   (state.providerAccounts || []).find(p=>p.id===b?.provider)?.name || ({codex:"Codex",openrouter:"OpenRouter","claude-code":"Claude Code","kimi-code":"Kimi Code"}[b?.provider]) || "Custom provider";
 // Historical configuration changes are ordinary chat events, not a toast or a card.
 function modelChangeNotice(message) {
-  const row=node('div','model-change-notice');row.dataset.message=String(message.seq);
+  const row=node('div','model-change-notice'),copy=node('span','model-change-copy');row.append(copy);row.dataset.message=String(message.seq);
   row.title='Saved model setting · '+new Date(message.created*1000).toLocaleString();
   const change=message.model_change;
-  if(!change?.from||!change?.to){row.textContent=message.text;return row;}
+  if(!change?.from||!change?.to){copy.textContent=message.text;return row;}
   const modelPart=value=>{
     const part=node('span','model-change-model'),raw=String(value.model||''),provider=String(value.provider||'');
     const known=state.providerAccounts?.find(p=>p.id===provider)?.models?.find(m=>m.model===raw);
@@ -304,7 +304,7 @@ function modelChangeNotice(message) {
     else mark.append(icon('network',12));
     part.append(mark);return part;
   };
-  row.append(document.createTextNode('Model changed from '),modelPart(change.from),document.createTextNode(' to '),modelPart(change.to));
+  copy.append(document.createTextNode('Model changed from '),modelPart(change.from),document.createTextNode(' to '),modelPart(change.to));
   return row;
 }
 function profile(b) {
@@ -7623,18 +7623,39 @@ async function openHumanComputer(task, takeOver=false) {
   await openComputer(false,true);
   if(takeOver && !(state.status.takeover && state.desktopControlRequested))await toggleControl();
 }
+const humanInstructionsOpen=new Set();
 function taskCards(run) {
   const block=node('div','task-cards');
   const receipts=state.details.get(run.id)?.approvals;
   const approvals=receipts || state.approvals.filter(a=>a.run_id===run.id);
   for(const a of approvals)if(!a.args?.artifact_id&&!a.message_seq&&!((a.status||'pending')==='pending'&&simpleApproval(a))){const card=approvalCard(a,run);card.dataset.approval=a.id;block.append(card);}
   for(const t of state.userTasks.filter(t=>t.run_id===run.id).reverse()) {
-    const box=node('div','task-card human-task');box.dataset.userTask=t.id;
-    const title=node('div','task-card-title');title.append(icon('computer',15),node('strong','',t.title||'Computer'));
+    // A takeover request is a quiet notice: what the bot needs, why, and one
+    // obvious Take over action. Long instructions fold; finished steps collapse
+    // to a one-line receipt.
+    const box=node('section','task-card human-task');box.dataset.userTask=t.id;
     const pending=t.status==='pending'&&run.status==='awaiting_user';
-    const done=t.status==='resumed';
-    title.append(node('span','task-badge '+(done?'done':''),done?(t.outcome==='skipped'?'Skipped':'Done'):t.status==='ready'?'Resuming':pending?'Waiting for you':'Expired'));
-    box.append(title,node('p','task-instructions',t.instructions));
+    const done=t.status==='resumed';box.dataset.status=pending?'pending':t.status;
+    const meta=node('div','human-task-meta');meta.append(icon('computer',15),node('span','task-badge '+(done?'done':''),done?(t.outcome==='skipped'?'Skipped':'Done'):t.status==='ready'?'Resuming':pending?'Waiting for you':'Expired'));
+    const title=node('div','task-card-title');title.append(node('strong','',t.title||'Computer'));
+    const instructions=node('p','task-instructions',t.instructions);box.append(meta,title,instructions);
+    if((t.instructions||'').length>200||(t.instructions||'').split('\n').length>3){
+      const more=node('details','human-task-details'),summary=node('summary','');more.append(summary);box.append(more);
+      const paint=open=>{more.open=open;instructions.classList.toggle('is-clamped',!open);summary.textContent=open?'Show less':'Show full instructions';summary.setAttribute('aria-expanded',String(open));};
+      paint(humanInstructionsOpen.has(t.id));let motion=null;
+      // Unfold from the clamped excerpt to the full text, so the following
+      // chat moves smoothly; the choice survives refreshes of the card.
+      summary.onclick=e=>{
+        e.preventDefault();const open=!more.open,from=instructions.getBoundingClientRect().height;
+        chatScroll.follow=false;captureChatAnchor();motion?.cancel();motion=null;
+        open?humanInstructionsOpen.add(t.id):humanInstructionsOpen.delete(t.id);
+        instructions.classList.remove('is-clamped');const full=instructions.getBoundingClientRect().height;paint(open);const to=instructions.getBoundingClientRect().height;
+        if(chatMotionReduced()||!instructions.isConnected)return;
+        instructions.classList.remove('is-clamped');instructions.style.overflow='hidden';
+        motion=instructions.animate([{height:from+'px'},{height:(open?full:to)+'px'}],{duration:240,easing:'cubic-bezier(.2,.8,.2,1)'});
+        motion.onfinish=motion.oncancel=()=>{instructions.style.overflow='';instructions.classList.toggle('is-clamped',!more.open);motion=null;};
+      };
+    }
     if(t.authentication){
       const auth=t.authentication,codeMethod=['sms','email','authenticator'].includes(auth.method);
       title.querySelector('strong').textContent=(codeMethod?'Two-factor authentication code for ':auth.method==='signin'?'Sign in to ':'Verify sign-in to ')+auth.service;
@@ -7661,7 +7682,7 @@ function taskCards(run) {
           e.preventDefault();input.setRangeText(value.replace(/\s/g,''),input.selectionStart??0,input.selectionEnd??input.value.length,'end');renderSlots();
         });
         renderSlots();
-        const submit=document.createElement('button');submit.type='submit';submit.className='outline-button';submit.textContent='Submit code';
+        const submit=document.createElement('button');submit.type='submit';submit.className='notice-primary';submit.textContent='Submit code';
         const feedback=node('p','muted small');feedback.setAttribute('role','status');
         form.append(entry,submit);box.append(form,feedback,node('p','muted small','The code is sent directly to the computer. Your bot will verify sign-in and continue.'));
         form.onsubmit=e=>{e.preventDefault();if(submit.disabled||!form.reportValidity())return;
@@ -7676,9 +7697,10 @@ function taskCards(run) {
     }
 
     const actions=node('div','task-card-actions');
-    actions.append(button(pending?'Take over':'Open computer',()=>openHumanComputer(t,pending),'outline-button','computer'));
+    const codeEntry=!!box.querySelector('.verification-code-form');
+    actions.append(button(pending?'Take over':'Open computer',()=>openHumanComputer(t,pending),pending&&!codeEntry?'notice-primary':'outline-button','computer'));
     if(pending)actions.append(button('Skip this step',async()=>{await openHumanComputer(t);await finishHumanTask(t,'skipped');},'subtle-button'));
-    box.append(actions);block.append(decisionReceipt(box,{key:'human:'+t.id,title:t.title||'Computer',outcome:done?(t.outcome==='skipped'?'Skipped':'Completed'):'Expired',terminal:done||t.status==='expired'}));
+    box.append(actions);block.append(decisionReceipt(box,{key:'human:'+t.id,title:t.title||'Computer',outcome:done?(t.outcome==='skipped'?'Skipped':'Completed'):'Expired',terminal:done||t.status==='expired',compact:true}));
   }
   return block;
 }
