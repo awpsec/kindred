@@ -2288,8 +2288,8 @@ async function settingsGeneral(revision) {
   const separateBots=settingSwitch('Separate bot conversations',state.general.separate_bot_chats!==false);
   appearance.body.append(settingRow('Theme',theme),motion.label);
   const conversations=settingsPane('Conversations'),delivery=select([['steer','Steer'],['queue','Queue']],state.general.message_delivery||'steer');
-  delivery.setAttribute('aria-label','While a bot is working');const deliveryHelp=node('p','muted small');const deliveryDescription=()=>{deliveryHelp.textContent=delivery.value==='queue'?"New messages wait for the bot's next task.":'New messages reach the bot during its current task.';};delivery.onchange=deliveryDescription;deliveryDescription();
-  conversations.body.append(settingRow('While a bot is working',delivery),deliveryHelp,activity.label,separateBots.label);
+  delivery.setAttribute('aria-label','While a bot is working');
+  conversations.body.append(settingRow('While a bot is working',delivery),activity.label,separateBots.label);
   const textSize=window.KindredReadingSize.systemManaged
     ? node('p','muted','Text size follows your iPhone setting (Settings › Display & Brightness › Text Size).')
     : select([['100','100%'],['115','115%'],['125','125%'],['150','150%']],String(window.KindredReadingSize.get()));
@@ -2354,7 +2354,7 @@ async function settingsGeneral(revision) {
     motion.input.checked=state.general.reduced_motion===true;activity.input.checked=state.general.show_activity===true;separateBots.input.checked=state.general.separate_bot_chats!==false;
     const selected=state.general.timezone_mode==='fixed'?state.general.timezone:'auto';
     if(selected&&!Array.from(timezone.options).some(o=>o.value===selected))timezone.add(new Option(selected,selected));
-    timezone.value=selected;delivery.value=state.general.message_delivery||'steer';deliveryDescription();progress.set(state.general.progress_updates);approval.input.value=state.general.approval_mode||'ask';notifications.value=state.general.notifications||'all';
+    timezone.value=selected;delivery.value=state.general.message_delivery||'steer';progress.set(state.general.progress_updates);approval.input.value=state.general.approval_mode||'ask';notifications.value=state.general.notifications||'all';
     serverControls.forEach(control=>control.disabled=false);loading.remove();
     void defaultModelSettings(root,current);
   livePreferences(form,()=>({name:name.input.value,identity:prefs.input.value,theme:theme.value,reduced_motion:motion.input.checked,approval_mode:approval.input.value,notifications:notifications.value,show_activity:activity.input.checked,separate_bot_chats:separateBots.input.checked,timezone:timezone.value==='auto'?deviceTimezone():timezone.value,timezone_mode:timezone.value==='auto'?'auto':'fixed',progress_updates:progress.value(),message_delivery:delivery.value}),value=>api('/settings','PUT',value),value=>{const zoneChanged=state.general.timezone!==value.timezone;state.general=value;applyGeneral();renderSidebar();void renderChat(true,'cached');if(zoneChanged)void refresh().then(()=>renderComputerRoutines()).catch(e=>notice(e.message,true));});
