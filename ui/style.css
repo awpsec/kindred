@@ -5634,3 +5634,38 @@ html[data-mobile] #composer .dictation-status {display:flex;align-items:center;g
 html[data-mobile] #composer .dictation-status > :first-child {min-width:0;overflow:hidden;text-overflow:ellipsis;}
 html[data-mobile] #composer .dictation-status > [aria-hidden] {flex:none;}
 html[data-mobile] #notice .notice-action {min-height:44px;}
+
+/* Folder actions are available to keyboard and touch, quiet at rest on desktop. */
+.artifact-folder{position:relative}
+.artifact-studio .artifact-folder:has(.artifact-folder-actions)>.artifact-folder-heading{padding-right:32px}
+.artifact-folder-actions{position:absolute;right:1px;top:5px;width:28px;height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:18px;opacity:0;transition:opacity .12s}
+.artifact-folder:hover>.artifact-folder-actions,.artifact-folder:focus-within>.artifact-folder-actions{opacity:1}
+.artifact-folder-actions:hover{background:var(--hover);color:var(--fg)}
+.artifact-context-menu button:disabled{opacity:.4;cursor:default}
+@media(hover:none){.artifact-folder-actions{opacity:1;width:36px;height:36px;top:0}}
+
+.artifact-sheet-status{padding:7px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;line-height:1.4}
+.artifact-formula-bar .artifact-formula-symbol{min-width:0;color:var(--muted);font-style:italic}
+.artifact-sheet-grid .selected{background:color-mix(in srgb,var(--fg) 7%,transparent)}
+.artifact-sheet-grid input.formula-error{color:var(--danger,#bf4242)}
+.artifact-sheet-grid tr>th:first-child{position:sticky;left:0;z-index:1;background:var(--surface)}
+.artifact-sheet-grid tr:first-child>th:first-child{z-index:2}
+.artifact-sheet-viewport{overscroll-behavior:contain}
+
+.artifact-document-layout{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line)}
+.artifact-document-layout select{padding:5px 8px;max-width:160px;background:transparent;color:var(--muted);border:1px solid transparent;border-radius:6px;font:12px var(--font-sans)}
+.artifact-document-layout select:hover,.artifact-document-layout select:focus-visible{border-color:var(--line);color:var(--fg)}
+.artifact-document-surface{box-sizing:border-box;width:var(--document-width,816px);max-width:100%;min-height:var(--document-height,1056px);padding:var(--document-padding,96px);margin:0 auto}
+.artifact-document-status{flex-shrink:0;padding:6px 12px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
+.artifact-format-extras button:disabled{opacity:.4;cursor:default}
+@media(max-width:760px){.artifact-document-surface{padding:24px 18px;min-height:75dvh}.artifact-document-layout{gap:3px;padding:4px 8px}.artifact-document-layout select{min-height:36px;font-size:12px;max-width:135px}.artifact-sheet-status{font-size:10px}}
+
+.artifact-library-filters{display:flex;gap:4px;min-width:0}
+.artifact-library-filters select{flex:1;min-width:0;max-width:58%;padding:5px 2px;border:0;background:transparent;color:var(--muted);font:11px var(--font-sans)}
+.artifact-library-filters select:focus-visible{outline:1px solid var(--line);border-radius:4px}
+@media(hover:none){.artifact-library-filters select{min-height:36px;font-size:12px}}
+
+.artifact-sheet-grid tr:not(:first-child)>th:first-child{top:auto}
+
+.artifact-document-canvas{background:var(--surface)}
+.artifact-document-surface{background:var(--bg)}
