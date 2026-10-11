@@ -160,20 +160,29 @@ pub async fn read_clipboard_text(window: Surface, app: tauri::AppHandle) -> Resu
     desktop::trusted(&window, &app.state::<Desktop>())?;
     #[cfg(target_os = "macos")]
     {
+        let generation = app.state::<Desktop>().session_generation();
         let session = scope(&app);
+        let read_app = app.clone();
+        let read_window = window.clone();
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         app.run_on_main_thread(move || {
             use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-            let result = match NSPasteboard::generalPasteboard()
-                .stringForType(unsafe { NSPasteboardTypeString })
-            {
-                // NSString length and the web editor both count UTF-16 units.
-                Some(text) if text.length() > 16_000 => {
-                    Err("Paste up to 16,000 characters at a time.".to_string())
+            let result = (|| {
+                desktop::trusted(&read_window, &read_app.state::<Desktop>())?;
+                if generation != read_app.state::<Desktop>().session_generation() {
+                    return Err("The account changed during paste.".to_string());
                 }
-                Some(text) => Ok(text.to_string()),
-                None => Ok(String::new()),
-            };
+                match NSPasteboard::generalPasteboard()
+                    .stringForType(unsafe { NSPasteboardTypeString })
+                {
+                    // NSString length and the web editor both count UTF-16 units.
+                    Some(text) if text.length() > 16_000 => {
+                        Err("Paste up to 16,000 characters at a time.".to_string())
+                    }
+                    Some(text) => Ok(text.to_string()),
+                    None => Ok(String::new()),
+                }
+            })();
             let _ = tx.send(result);
         })
         .map_err(|e| e.to_string())?;
@@ -184,7 +193,7 @@ pub async fn read_clipboard_text(window: Surface, app: tauri::AppHandle) -> Resu
         .await
         .map_err(|e| e.to_string())??;
         desktop::trusted(&window, &app.state::<Desktop>())?;
-        if session != scope(&app) {
+        if generation != app.state::<Desktop>().session_generation() || session != scope(&app) {
             return Err("The account changed during paste.".into());
         }
         return result;
