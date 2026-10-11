@@ -4751,11 +4751,11 @@ function reminderBatch(messages,entry){
   const step=delta=>{current=(current+delta+records.length)%records.length;paint();};
   bar.append(iconButton('chevron','Previous reminder',()=>step(-1)),page,iconButton('chevron','Next reminder',()=>step(1)));root.append(slot);paint();return root;
 }
-async function dismissReminder(reminder,feedback){
-  await planningPatch('reminders',reminder,{dismiss:true},feedback,async saved=>{
+async function dismissReminder(reminder,feedback,focusedCard=null){
+  const saved=await planningPatch('reminders',reminder,{dismiss:true},feedback,async saved=>{
     const animations=[];
     for(const previous of document.querySelectorAll('.reminder-card[data-reminder="'+CSS.escape(reminder.id)+'"]')){
-      const height=previous.getBoundingClientRect().height,focused=previous.contains(document.activeElement),next=reminderCard(saved);
+      const height=previous.getBoundingClientRect().height,focused=previous===focusedCard||previous.contains(document.activeElement),next=reminderCard(saved);
       const pager=previous.querySelector('.notice-pager');if(pager)next.append(pager);
       previous.replaceWith(next);
       if(focused){next.tabIndex=-1;next.focus({preventScroll:true});}
@@ -4768,6 +4768,13 @@ async function dismissReminder(reminder,feedback){
     }
     await Promise.all(animations);
   });
+  // The confirmed refresh may replace the receipt focused by the animation.
+  // Restore only a lost focus; never take it from another user-selected control.
+  if(saved&&focusedCard&&document.activeElement===document.body){
+    const receipt=$('content').querySelector('.reminder-dismissed[data-reminder="'+CSS.escape(reminder.id)+'"]');
+    if(receipt){receipt.tabIndex=-1;receipt.focus({preventScroll:true});}
+  }
+  return saved;
 }
 function reminderCard(reminder,delivered=false){
   if(reminder.dismissed_at){
@@ -4788,10 +4795,13 @@ function reminderCard(reminder,delivered=false){
   if(delivered||reminder.status!=='pending')schedule.append(node('span','reminder-status',delivered||reminder.status==='delivered'?'Delivered':reminder.status==='cancelled'?'Cancelled':reminder.status==='paused'?'Paused':reminder.status));
   meta.append(schedule);
   if(delivered||reminder.status==='delivered'){
-    const actions=node('div','reminder-actions'),dismiss=button('Dismiss',async()=>{
-      dismiss.disabled=true;
-      try{await dismissReminder(reminder,feedback);}finally{dismiss.disabled=false;}
-    },'subtle-button small-button');
+    const actions=node('div','reminder-actions'),dismiss=button('Dismiss',()=>{},'subtle-button small-button');
+    dismiss.onclick=()=>{
+      // perform() disables its control before calling the action, which blurs
+      // it in Chromium. Capture the keyboard destination before that boundary.
+      const focusedCard=card.contains(document.activeElement)?card:null;
+      return perform(()=>dismissReminder(reminder,feedback,focusedCard),dismiss);
+    };
     actions.append(dismiss);meta.append(actions);
   }else{
     const actions=node('div','reminder-actions');actions.append(button(reminder.status==='cancelled'?'Reschedule':'Edit',()=>editReminder(reminder),'subtle-button small-button'));
@@ -4837,7 +4847,7 @@ function editReminder(reminder){
     message.input.setCustomValidity(message.input.value.trim()?'':'Enter a reminder.');
     for(const b of quick.children)b.setAttribute('aria-pressed',String(date.input.value===quickDate(Number(b.dataset.days))));
     const instant=scheduledInstant(),past=instant&&instant.getTime()<=Date.now(),invalid=!instant;
-    save.disabled=past||invalid;
+    save.disabled=past||invalid||!message.input.value.trim();
     const abbreviation=new Intl.DateTimeFormat([],{timeZone:zone.value,timeZoneName:'short'}).formatToParts(instant||new Date()).find(p=>p.type==='timeZoneName')?.value||'';
     zoneText.textContent='Time zone: '+zoneName(zone.value).split(' · ')[0]+(abbreviation&&abbreviation!==zoneName(zone.value)?' ('+abbreviation+')':'');
     preview.classList.toggle('is-warning',!!past||invalid);
@@ -7488,7 +7498,11 @@ function captureChatAnchor(){
 }
 function restoreChatPosition(){
   const area=$('content');
-  if(chatScroll.follow)area.scrollTop=area.scrollHeight;
+  if(chatScroll.follow){
+    const summary=chatScroll.disclosureSummary;
+    const ceiling=summary?.isConnected?area.scrollTop+summary.getBoundingClientRect().top-area.getBoundingClientRect().top-8:Infinity;
+    area.scrollTop=Math.min(area.scrollHeight-area.clientHeight,ceiling);
+  }
   else {
     const a=chatScroll.anchor;
     let target,matched;
@@ -7520,7 +7534,7 @@ function beginChatRender(view){
   messageActionFocus=chatScroll.view===view && focused?.dataset.messageFocus && focused.closest('[data-message]') ? {seq:focused.closest('[data-message]').dataset.message,control:focused.dataset.messageFocus}:null;
   questionFocus=focused?.closest('.question-card') && chatScroll.view===view?{id:focused.closest('.question-card').dataset.questionId,target:focused.dataset.questionFocus,start:focused.selectionStart,end:focused.selectionEnd}:null;
   if(chatScroll.view!==view){
-    chatScroll.disclosure=null;
+    chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
     const saved=chatHistory.get(view)?.scroll;
     chatScroll.view=view;chatScroll.follow=saved?.follow??true;chatScroll.anchor=saved?.anchor??null;chatScroll.top=saved?.top??0;
   }
@@ -7575,8 +7589,9 @@ $('content').addEventListener('scroll',()=>{
 function readingGesture(e){
   if(chatOpening)return;
   if(e.type==='wheel'&&e.deltaY===0)return;
+  if((e.type==='pointerdown'||e.type==='keydown'&&e.key===' ')&&chatScroll.follow&&e.target.closest('summary,button[aria-expanded]')===chatScroll.disclosureSummary)return;
   if(e.type==='keydown'&&(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(e.key)||e.target.closest('input,textarea,[contenteditable=true]')))return;
-  chatScroll.disclosure=null;chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
+  chatScroll.disclosure=null;chatScroll.disclosureSummary=null;chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
 }
 for(const name of ['wheel','touchstart','pointerdown','keydown'])$('content').addEventListener(name,readingGesture,{passive:true});
@@ -7586,9 +7601,12 @@ for(const name of ['wheel','touchstart','pointerdown','keydown'])$('content').ad
 // wheel/touch input can still cancel it immediately.
 $('content').addEventListener('click',e=>{
   if(chatOpening||!e.target.closest('summary,button[aria-expanded]'))return;
+  if(e.target.closest('.message-expand')){chatScroll.disclosure=null;chatScroll.disclosureSummary=null;chatScroll.follow=false;captureChatAnchor();return;}
   const area=$('content');
-  chatScroll.follow=!chatHistory.get(currentConversationId())?.hasAfter&&area.scrollHeight-area.scrollTop-area.clientHeight<80;
+  const continuing=chatScroll.follow&&chatScroll.disclosureSummary===e.target.closest('summary,button[aria-expanded]');
+  chatScroll.follow=continuing||!chatHistory.get(currentConversationId())?.hasAfter&&area.scrollHeight-area.scrollTop-area.clientHeight<80;
   chatScroll.disclosure=chatScroll.follow?e.target.closest('[data-message],[data-run]'):null;
+  chatScroll.disclosureSummary=chatScroll.follow?e.target.closest('summary,button[aria-expanded]'):null;
   if(chatScroll.follow)chatScroll.anchor=null;else captureChatAnchor();
 },true);
 
@@ -7792,7 +7810,7 @@ function taskCards(run) {
       // chat moves smoothly; the choice survives refreshes of the card.
       summary.onclick=e=>{
         e.preventDefault();const open=!more.open,from=instructions.getBoundingClientRect().height;
-        chatScroll.follow=false;captureChatAnchor();motion?.cancel();motion=null;
+        motion?.cancel();motion=null;
         open?humanInstructionsOpen.add(t.id):humanInstructionsOpen.delete(t.id);
         instructions.classList.remove('is-clamped');const full=instructions.getBoundingClientRect().height;paint(open);const to=instructions.getBoundingClientRect().height;
         if(chatMotionReduced()||!instructions.isConnected)return;

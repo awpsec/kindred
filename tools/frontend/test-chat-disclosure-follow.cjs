@@ -23,7 +23,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
     // Observe after the app's ResizeObserver has corrected this frame, before paint.
     await p.evaluate(()=>{window.followFrames=[];const n=document.querySelector('#content'),r=n.querySelector('.decision-receipt');window.followObserver=new ResizeObserver(()=>window.followFrames.push({top:n.scrollTop,gap:n.scrollHeight-n.scrollTop-n.clientHeight,height:r.getBoundingClientRect().height}));window.followObserver.observe(r);});
     await summary.click();await p.waitForTimeout(450);const frames=await p.evaluate(()=>{window.followObserver.disconnect();return window.followFrames;});
-    assert.equal(await receipt.locator('details').evaluate(n=>n.open),open);
+    assert.equal(await receipt.locator(':scope > details.decision-receipt-disclosure').evaluate(n=>n.open),open);
     assert(await gap()<3,`Must follow ${open?'expansion':'collapse'} at ${width}px: gap ${await gap()}`);
     assert(frames.every(f=>f.gap<4),'Viewport must follow animated height, not jump afterward: '+JSON.stringify(frames));
     assert(Math.abs(frames.at(-1).top-frames[0].top)>50,'Fixture must change scroll position');

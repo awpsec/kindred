@@ -5862,7 +5862,7 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
 }
 @keyframes summary-task-shimmer {
   0%,65% {background-position:150% 0}
-  95%,100% {background-position:-100% 0}
+  95%,100% {background-position:-16.667% 0}
 }
 :root[data-page-hidden] .summary-progress-name.is-working {animation-play-state:paused}
 :root[data-motion="off"] .summary-progress-name.is-working {animation:none;background:none;color:var(--muted)}
@@ -5940,3 +5940,6 @@ html .shell>:is(.details-panel,.computer-panel).pane-layout-frame{
 
 .reminder-zone-info[hidden]{display:none}
 @media(max-width:360px){.reminder-date-shortcuts{gap:4px}.reminder-date-shortcuts button{padding-inline:9px}}
+
+.notice-pager>span{white-space:nowrap;flex:none}
+@media(max-width:360px){.reminder-dismissed:has(.notice-pager){flex-wrap:wrap}.reminder-dismissed:has(.notice-pager) .reminder-dismissed-text{flex:1 1 60%}.reminder-dismissed>.notice-pager{margin:0 0 0 auto}}

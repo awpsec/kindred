@@ -9,6 +9,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const p=await browser.newPage({viewport:{width:1180,height:850}}),errors=[],writes=[];let fail=false;
   let reminder={id:'reminder-test',chat_id:'dm-piper',bot_id:'piper',revision:2,message:'Leave for the station',timezone:'America/New_York',local_time:'2026-10-10T16:00',run_at:1791662400,delivered_at:1791662400,status:'delivered',sources:[]};
   p.on('pageerror',e=>errors.push(e.message));
+  await p.addInitScript(()=>{window.reminderFocusTrace=[];for(const kind of ['focusin','focusout'])document.addEventListener(kind,e=>window.reminderFocusTrace.push({kind,tag:e.target.tagName,id:e.target.id,cls:e.target.className,reminder:e.target.closest('[data-reminder]')?.dataset.reminder,time:performance.now()}),true);});
   await p.addInitScript(t=>{sessionStorage.setItem('kindred-token',t);window.__KINDRED_DESKTOP={platform:'macos'};window.__TAURI__={core:{invoke:async command=>command==='notification_status'?{enabled:true,notch:{supported:true,enabled:false}}:null}};},token);
   await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nexport {reminderCard,reminderBatch};'}));
   await p.route(url=>url.pathname==='/api/chats/dm-piper',async r=>{const original=await(await r.fetch()).json();original.messages=[{seq:1,sender:'user',text:'Remind me to leave for the station at 4 PM.',kind:'message',created:reminder.run_at-600},{seq:2,sender:'piper',text:'I’ll remind you at 4 PM.',kind:'message',created:reminder.run_at-599},{seq:3,sender:'piper',text:reminder.message,kind:'reminder',created:reminder.run_at,planning:reminder}];await r.fulfill({json:original});});
@@ -33,8 +34,10 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
       window.dismissFrames=values;motion.finish();
     });observer.observe(document.getElementById('content'),{subtree:true,childList:true});
   });
-  await card.hover();await card.getByRole('button',{name:'Dismiss',exact:true}).click();
+  await card.hover();const keyboardDismiss=card.getByRole('button',{name:'Dismiss',exact:true});await keyboardDismiss.focus();const dismissHandle=await keyboardDismiss.elementHandle();await p.keyboard.press('Enter');
   await p.waitForFunction(()=>window.dismissFrames);
+  await p.waitForFunction(n=>n.dataset.pending!=='true',dismissHandle);
+  const receiptFocused=await p.locator('.reminder-dismissed').evaluate(n=>n===document.activeElement);if(!receiptFocused)console.log('FOCUS_DIAGNOSTIC',await p.evaluate(()=>({active:document.activeElement.outerHTML,trace:window.reminderFocusTrace,receipt:document.querySelector('.reminder-dismissed')?.outerHTML})));assert(receiptFocused,'Keyboard dismissal retains focus on receipt');
   const frames=await p.evaluate(()=>window.dismissFrames);
   assert(frames.length,'Dismissal should animate');assert(frames[0].height>frames.at(-1).height+10);for(let i=1;i<frames.length;i++)assert(frames[i].height<=frames[i-1].height);assert(frames.every(f=>f.overflow==='hidden'));
   fs.writeFileSync(path.join(out,engine+'-collapse.json'),JSON.stringify(frames,null,2));
@@ -74,6 +77,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
     return {first,next,back:batch.querySelector('.reminder-dismissed .notice-pager')?.textContent};
   },reminder);
   assert.equal(batchProof.first,'1 / 2');assert.equal(batchProof.next,'second');assert.equal(batchProof.back,'1 / 2');
+  await p.setViewportSize({width:320,height:844});await p.evaluate(()=>document.documentElement.style.setProperty('--text-scale','1.5'));
+  const stack=p.locator('.reminder-batch .reminder-dismissed');assert(await stack.locator('.reminder-dismissed-text').evaluate(n=>n.getBoundingClientRect().width>100),'Stacked receipt leaves readable message width');assert(await stack.locator('.notice-pager>span').evaluate(n=>getComputedStyle(n).whiteSpace==='nowrap'),'Pager count stays on one line');
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,dismissalPersists:true,failedSavePreservesReminder:true,collapseClipped:true,connectionsLightDarkAndMobile:true,notchHelperRemoved:true}));
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});
