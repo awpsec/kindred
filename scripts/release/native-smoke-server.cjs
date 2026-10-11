@@ -43,12 +43,14 @@ try {
     if(paste.disabled||!paste.getClientRects().length)throw Error('Visible Paste not ready');
     window.__pasteNativeCalls=[];window.__pasteBrowserCalls=0;
     const invoke=window.__TAURI__.core.invoke.bind(window.__TAURI__.core);
-    window.__TAURI__.core.invoke=async(command,args)=>{
+    const observedInvoke=async(command,args)=>{
      if(command!=='read_clipboard_text')return invoke(command,args);
      const event={command,completed:false,error:false};window.__pasteNativeCalls.push(event);
      try{const value=await invoke(command,args);event.completed=true;if(window.__pasteUIBarrier)await window.__pasteUIBarrier;return value;}
      catch(error){event.completed=true;event.error=true;event.errorMessage=String(error);throw error;}
     };
+    // Tauri exports a frozen core namespace. Preserve it and forward through a fixture-only facade.
+    window.__TAURI__.core={...window.__TAURI__.core,invoke:observedInvoke};
     if(navigator.clipboard){const read=navigator.clipboard.readText.bind(navigator.clipboard);navigator.clipboard.readText=()=>{window.__pasteBrowserCalls++;return read();};}
     await report({phase:data.phase,passed:true,programmaticVisibleControl:true});
    }else{
