@@ -7488,7 +7488,7 @@ function saveAvatarChoice(bot,patch){
 }
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.avatar-menu'))document.querySelectorAll('.avatar-menu.menu-open').forEach(n=>n.classList.remove('menu-open'));});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelectorAll('.avatar-menu.menu-open').forEach(n=>n.classList.remove('menu-open'));$('new-menu').hidden=true;}});
-const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0,disclosure:null};
+const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0,disclosure:null,disclosureSummary:null,disclosureFrame:0};
 function captureChatAnchor(){
   const area=$('content'),top=area.getBoundingClientRect().top;
   const visible=[...area.querySelectorAll(':scope > [data-message], :scope > [data-run]')].filter(n=>n.getBoundingClientRect().bottom>top+1).slice(0,3);
@@ -7518,6 +7518,25 @@ function restoreChatPosition(){
     area.scrollTop=target?area.scrollTop+target.getBoundingClientRect().top-area.getBoundingClientRect().top-matched.offset:chatScroll.top;
   }
   chatScroll.top=area.scrollTop;updateJumpLatest();
+}
+function settleChatDisclosure(){
+  cancelAnimationFrame(chatScroll.disclosureFrame);
+  const summary=chatScroll.disclosureSummary,disclosure=chatScroll.disclosure;
+  if(!summary)return;
+  const step=()=>{
+    chatScroll.disclosureFrame=0;
+    if(chatScroll.disclosureSummary!==summary)return;
+    // Follow only this interaction's finite effects, including rapid reversals.
+    // A capped reader must become a normal anchored reader before later polling.
+    if(disclosure?.isConnected&&disclosure.getAnimations({subtree:true}).some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))){
+      chatScroll.disclosureFrame=requestAnimationFrame(step);return;
+    }
+    restoreChatPosition();
+    chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
+    const area=$('content');
+    if(area.scrollHeight-area.scrollTop-area.clientHeight>1){chatScroll.follow=false;captureChatAnchor();}
+  };
+  chatScroll.disclosureFrame=requestAnimationFrame(step);
 }
 function scheduleChatPosition(){
   if(chatScroll.frame)return;
@@ -7564,6 +7583,7 @@ function endChatRender(){
   if(questionFocus){const card=[...$('content').querySelectorAll('.question-card')].find(c=>c.dataset.questionId===questionFocus.id),control=card&&[...card.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===questionFocus.target);(control||card)?.focus({preventScroll:true});if(control?.tagName==='TEXTAREA'&&questionFocus.start!==null)control.setSelectionRange(questionFocus.start,questionFocus.end);questionFocus=null;}
 }
 function followChatLatest(){
+  chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
   chatScroll.follow=true;chatScroll.anchor=null;
   const entry=chatHistory.get(currentConversationId());if(entry)entry.wantLatest=true;
   scheduleChatPosition();
@@ -7608,6 +7628,7 @@ $('content').addEventListener('click',e=>{
   chatScroll.disclosure=chatScroll.follow?e.target.closest('[data-message],[data-run]'):null;
   chatScroll.disclosureSummary=chatScroll.follow?e.target.closest('summary,button[aria-expanded]'):null;
   if(chatScroll.follow)chatScroll.anchor=null;else captureChatAnchor();
+  settleChatDisclosure();
 },true);
 
 const jumpLatest=button('Latest messages',async()=>{followChatLatest();await renderChat(true);$('prompt').focus({preventScroll:true});},'jump-latest','chevron');jumpLatest.hidden=true;$('composer-area').append(jumpLatest);
