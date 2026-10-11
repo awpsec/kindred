@@ -1,5 +1,7 @@
 import KindredCore
 import XCTest
+import UIKit
+import WebKit
 @testable import Kindred
 
 /// Serves canned responses so sign-in runs without a network or server.
@@ -45,6 +47,60 @@ final class AppModelSignInTests: XCTestCase {
     override func tearDown() async throws {
         StubProtocol.handler = nil
         try? FileManager.default.removeItem(at: folder)
+    }
+
+    func testComputerPortraitLockBelongsOnlyToTheControllingView() {
+        let first = WKWebView(), second = WKWebView()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.addSubview(first)
+        window.addSubview(second)
+        let policy = ComputerOrientation.shared
+        policy.update(webView: first, active: true, isSlab: true)
+        XCTAssertEqual(policy.mask(for: window), .portrait)
+        policy.update(webView: second, active: false, isSlab: true)
+        XCTAssertEqual(policy.mask(for: window), .portrait, "Another account cannot release the owner's portrait lock")
+        policy.update(webView: first, active: true, isSlab: false)
+        XCTAssertTrue(policy.mask(for: window).contains(.landscapeLeft), "Duo control must release a slab lock when its capability changes")
+        XCTAssertTrue(policy.mask(for: window).contains(.landscapeRight))
+        policy.update(webView: first, active: false, isSlab: false)
+    }
+
+    func testNativeKeyboardGuideSizesWebViewExactlyOnce() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let account = try XCTUnwrap(model.activeAccount)
+        let session = model.session(for: account)
+        session.webView.stopLoading()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let oldKey = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        window.rootViewController = controller
+        let host = WebHostView()
+        host.attach(session)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        controller.view.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.topAnchor.constraint(equalTo: controller.view.topAnchor),
+            host.bottomAnchor.constraint(equalTo: controller.view.bottomAnchor),
+            host.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor)
+        ])
+        let input = UITextField(frame: CGRect(x: 20, y: 120, width: 240, height: 44))
+        controller.view.addSubview(input)
+        window.makeKeyAndVisible()
+        controller.view.layoutIfNeeded()
+        defer { input.resignFirstResponder(); window.isHidden = true; oldKey?.makeKey() }
+        XCTAssertEqual(session.webView.frame.maxY, host.bounds.maxY, accuracy: 1, "Hidden keyboard retains the full canvas")
+        let shown = expectation(description: "Software keyboard shown")
+        let observer = NotificationCenter.default.addObserver(forName: UIResponder.keyboardDidShowNotification, object: nil, queue: .main) { _ in shown.fulfill() }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        input.becomeFirstResponder()
+        await fulfillment(of: [shown], timeout: 5)
+        controller.view.layoutIfNeeded()
+        XCTAssertLessThan(session.webView.frame.maxY, host.bounds.maxY - 100)
+        XCTAssertEqual(session.webView.frame.maxY, host.keyboardLayoutGuide.layoutFrame.minY, accuracy: 1, "Web content ends exactly at the real keyboard edge")
+        XCTAssertEqual(session.webView.bounds.height, host.keyboardLayoutGuide.layoutFrame.minY, accuracy: 1, "Keyboard height is subtracted only once")
     }
 
     private func serveKindred(loginStatus: Int = 200) {
@@ -180,6 +236,50 @@ final class AppModelSignInTests: XCTestCase {
         XCTAssertEqual(model.accounts.map(\.id), [first])
     }
 
+    func testLaunchCompletionSurvivesActivationReloadAndAccountSwitch() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("kindred.example.com")
+        XCTAssertFalse(model.hasCompletedLaunch)
+        try await model.signIn(origin: origin, login: "ada", password: "pw")
+        let first = try XCTUnwrap(model.activeAccountID)
+        model.hasCompletedLaunch = true
+        model.sceneBecameActive()
+        model.reloadActive()
+        XCTAssertTrue(model.hasCompletedLaunch)
+        try await model.signIn(origin: origin, login: "bert", password: "pw")
+        model.activate(first)
+        XCTAssertTrue(model.hasCompletedLaunch)
+        for account in model.accounts { model.session(for: account).webView.stopLoading() }
+    }
+
+    func testMobileLayoutIsBundledWithNativeNavigationFallback() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("kindred.example.com")
+        try await model.signIn(origin: origin, login: "ada", password: "pw")
+        let account = try XCTUnwrap(model.accounts.first)
+        let session = model.session(for: account)
+        XCTAssertTrue(session.webView is KindredWebView)
+        XCTAssertFalse(session.webView.configuration.ignoresViewportScaleLimits, "The app must honor its fixed page scale")
+        XCTAssertNil(session.webView.inputAccessoryView, "Chat inputs should not show the browser's form-navigation toolbar")
+        let layout = try XCTUnwrap(session.webView.configuration.userContentController.userScripts.first { $0.injectionTime == .atDocumentEnd })
+        XCTAssertTrue(layout.isForMainFrameOnly)
+        XCTAssertTrue(layout.source.contains("window.location.origin !== \"https://kindred.example.com\""))
+        XCTAssertTrue(layout.source.contains("text-size-adjust:100%"))
+        XCTAssertTrue(layout.source.contains("maximum-scale=1, user-scalable=no"))
+        XCTAssertTrue(layout.source.contains("ios-accounts"))
+        session.webView.stopLoading()
+        session.presentation.hasChatInterface = true
+        session.presentation.hasLoadedChats = true
+        session.webView(session.webView, didStartProvisionalNavigation: nil)
+        XCTAssertTrue(session.presentation.hasChatInterface, "Opening an artifact/reloading must not flash native account navigation")
+        XCTAssertFalse(session.presentation.hasLoadedChats, "A new document still needs to report its own readiness")
+        session.webView(session.webView, didFailProvisionalNavigation: nil, withError: URLError(.cancelled))
+        XCTAssertTrue(session.presentation.hasChatInterface, "A cancelled download must not restore duplicate navigation")
+        session.webView(session.webView, didFailProvisionalNavigation: nil, withError: URLError(.notConnectedToInternet))
+        XCTAssertFalse(session.presentation.hasChatInterface, "Native accounts/reload navigation must return after a page failure")
+        try await model.remove(account.id, ignoringNotificationFailure: false)
+    }
+
     func testRedirectedSignInIsRefusedAndNothingIsSaved() async throws {
         serveKindred(loginStatus: 302)
         let origin = try ServerAddress.normalize("kindred.example.com")
@@ -217,6 +317,26 @@ final class AppModelSignInTests: XCTestCase {
         XCTAssertTrue(StubProtocol.paths.contains("/identity/logout"))
     }
 
+    func testRemoveDeletesExistingWebDataStore() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("kindred.example.com")
+        try await model.signIn(origin: origin, login: "ada", password: "pw")
+        let id = try XCTUnwrap(model.accounts.first?.id)
+        var store: WKWebsiteDataStore? = WKWebsiteDataStore(forIdentifier: id)
+        let cookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: "kindred.example.com", .path: "/", .name: "qa", .value: "test",
+        ]))
+        await store!.httpCookieStore.setCookie(cookie)
+        store = nil
+        let before = await WKWebsiteDataStore.allDataStoreIdentifiers
+        XCTAssertTrue(before.contains(id))
+
+        try await model.remove(id, ignoringNotificationFailure: false)
+
+        let after = await WKWebsiteDataStore.allDataStoreIdentifiers
+        XCTAssertFalse(after.contains(id), "removing an account deletes its persisted web data")
+    }
+
     func testRemovalStopsWhenNotificationRemovalFails() async throws {
         serveKindred()
         let origin = try ServerAddress.normalize("kindred.example.com")
@@ -239,4 +359,149 @@ final class AppModelSignInTests: XCTestCase {
             return XCTFail("state must say removal is unconfirmed")
         }
     }
+    func testNotificationPresentationRequiresSignedInOptedInExactAccount() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let id = try XCTUnwrap(model.accounts.first?.id)
+        let installation = try XCTUnwrap(model.account(id)?.push.installationID)
+        let route = PushRoute(serverAccountID: serverAccount, chatID: "dm-piper", eventID: "123", installationID: installation)
+        XCTAssertFalse(model.shouldPresentNotification(route), "Alerts start off until explicitly enabled")
+        model.markRegisteredForTesting(id)
+        XCTAssertTrue(model.shouldPresentNotification(route))
+        XCTAssertFalse(model.shouldPresentNotification(nil))
+        XCTAssertFalse(model.shouldPresentNotification(PushRoute(serverAccountID: serverAccount, chatID: nil, eventID: nil, installationID: UUID())))
+        XCTAssertFalse(model.shouldPresentNotification(PushRoute(serverAccountID: UUID().uuidString, chatID: nil, eventID: nil)))
+        let originalHandler = StubProtocol.handler
+        StubProtocol.handler = { request in
+            if request.url?.path.contains("/mobile/devices/") == true { return (200, Data(#"{"removed":true}"#.utf8)) }
+            return originalHandler?(request) ?? (404, Data())
+        }
+        try await model.disableAlerts(id)
+        XCTAssertFalse(model.shouldPresentNotification(route), "An in-flight alert must not appear after alerts are disabled")
+        model.markRegisteredForTesting(id)
+        try await model.signOut(id, ignoringNotificationFailure: false)
+        XCTAssertFalse(model.shouldPresentNotification(route), "An in-flight alert must not appear after sign-out")
+    }
+
+    func testUnsupportedServerCannotEnableAlertsOrRegisterDevice() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let id = try XCTUnwrap(model.accounts.first?.id)
+        do {
+            try await model.enableAlerts(id)
+            XCTFail("An older server must not offer working alerts")
+        } catch PushSetupError.server(let status) {
+            XCTAssertEqual(status, .unsupported)
+        }
+        XCTAssertFalse(try XCTUnwrap(model.account(id)).push.wanted)
+        XCTAssertFalse(StubProtocol.paths.contains { $0.contains("/mobile/devices/") })
+    }
+
+    func testNotificationTapChoosesExactInstallationAcrossClonedServers() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("first.example"), login: "ada", password: "pw")
+        let first = try XCTUnwrap(model.accounts.first)
+        try await model.signIn(origin: ServerAddress.normalize("second.example"), login: "ada", password: "pw")
+        XCTAssertNotEqual(model.activeAccountID, first.id)
+        model.sheet = .accounts
+        model.routeNotification(PushRoute(serverAccountID: serverAccount, chatID: nil, eventID: "1", installationID: first.push.installationID))
+        for _ in 0..<30 where model.activeAccountID != first.id { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(model.activeAccountID, first.id)
+        XCTAssertNil(model.sheet)
+        model.session(for: first).webView.stopLoading()
+    }
+
+    func testNotificationTapForSignedOutAccountOpensSignIn() async throws {
+        serveKindred()
+        let origin = try ServerAddress.normalize("kindred.example.com")
+        try await model.signIn(origin: origin, login: "ada", password: "pw")
+        let account = try XCTUnwrap(model.accounts.first)
+        try await model.signOut(account.id, ignoringNotificationFailure: false)
+        model.routeNotification(PushRoute(serverAccountID: serverAccount, chatID: "dm-piper", eventID: "1", installationID: account.push.installationID))
+        for _ in 0..<30 where model.sheet == nil { try await Task.sleep(for: .milliseconds(10)) }
+        guard case .addAccount(let prefill) = model.sheet else { return XCTFail("Expected native sign-in") }
+        XCTAssertEqual(prefill.origin, origin)
+        XCTAssertEqual(prefill.login, "ada")
+    }
+
+    func testNativeConversationMenuKeepsNestedActionsAndRejectsUnboundedData() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let session = model.session(for: try XCTUnwrap(model.accounts.first))
+        let items = session.conversationMenuElements([
+            ["title":"Pin", "id":"1-0"],
+            ["title":"Mute conversation", "children":[["title":"For 1 hour", "id":"1-1"], ["title":"Indefinitely", "id":"1-2"]]],
+            ["title":"Archive bot", "id":"1-3"]
+        ])
+        XCTAssertEqual(items.map(\.title), ["Pin", "Mute conversation", "Archive bot"])
+        XCTAssertEqual((items[1] as? UIMenu)?.children.map(\.title), ["For 1 hour", "Indefinitely"])
+        XCTAssertTrue(session.conversationMenuElements([["title":String(repeating:"x",count:101), "id":"1"]]).isEmpty)
+        XCTAssertNil(ConversationMenuTarget(body:["key":"bots:piper", "rect":[0.0,0.0,Double.infinity,44.0]]))
+        XCTAssertNotNil(ConversationMenuTarget(body:["key":"bots:piper", "rect":[0.0,0.0,200.0,44.0]]))
+        let messageTarget = try XCTUnwrap(ConversationMenuTarget(body:["key":"message-1", "rect":[0.0,0.0,200.0,44.0]], kind:.message))
+        XCTAssertEqual(messageTarget.kind, .message)
+        let messageItems = session.conversationMenuElements([
+            ["title":"React", "children":[["title":"❤️ Heart", "id":"1", "selected":true]]],
+            ["title":"Reply", "id":"2"], ["title":"Copy message", "id":"3"]
+        ], kind:.message)
+        XCTAssertEqual(messageItems.map(\.title), ["React", "Reply", "Copy message"])
+        XCTAssertEqual(((messageItems[0] as? UIMenu)?.children.first as? UIAction)?.state, .on)
+        let artifactTarget = try XCTUnwrap(ConversationMenuTarget(body:["key":"artifact-1", "rect":[0.0,0.0,200.0,44.0]], kind:.artifact))
+        XCTAssertEqual(artifactTarget.kind, .artifact)
+        let artifactItems = session.conversationMenuElements([["title":"Pin artifact", "id":"3-0"], ["title":"Rename", "id":"3-1", "disabled":true]], kind:.artifact)
+        XCTAssertEqual(artifactItems.map(\.title), ["Pin artifact", "Rename"])
+        XCTAssertTrue(try XCTUnwrap(artifactItems[1] as? UIAction).attributes.contains(.disabled))
+        session.webView.stopLoading()
+    }
+
+    func testNativeActionSheetsPreserveChoicesAndRejectMalformedMenus() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let session = model.session(for: try XCTUnwrap(model.accounts.first))
+        session.webView.stopLoading()
+        session.webView.overrideUserInterfaceStyle = .dark
+        let body: [String: Any] = ["key":"1", "rect":[10.0,20.0,44.0,44.0], "items":[
+            ["title":"Attach files", "id":"1-0"],
+            ["title":"Teach a task", "id":"1-1", "disabled":true],
+            ["title":"Shape", "children":[["title":"Pebble", "id":"1-2", "selected":true]]],
+            ["title":"Remove", "id":"1-3", "destructive":true]
+        ]]
+        let menu = try XCTUnwrap(NativeActionMenu(body:body))
+        let sheet = session.nativeMenuSheet(menu)
+        XCTAssertEqual(sheet.preferredStyle, .actionSheet)
+        XCTAssertEqual(sheet.overrideUserInterfaceStyle, .dark)
+        XCTAssertEqual(sheet.actions.map(\.title), ["Attach files","Teach a task","Shape","Remove","Cancel"])
+        XCTAssertFalse(sheet.actions[1].isEnabled)
+        XCTAssertEqual(sheet.actions[3].style, .destructive)
+        XCTAssertEqual(session.nativeMenuSheet(menu, items:menu.items[2].children).actions.first?.title, "✓ Pebble")
+        var invalid = body
+        invalid["items"] = [["title":"Bad", "id":String(repeating:"x",count:65)]]
+        XCTAssertNil(NativeActionMenu(body:invalid))
+        invalid["items"] = Array(repeating:["title":"Bad", "id":"1"],count:41)
+        XCTAssertNil(NativeActionMenu(body:invalid))
+        invalid["items"] = [["title":"Branch", "children":[["title":"Invalid leaf"]]]]
+        XCTAssertNil(NativeActionMenu(body:invalid))
+        invalid["rect"] = [0.0,0.0,Double.infinity,44.0]
+        XCTAssertNil(NativeActionMenu(body:invalid))
+    }
+
+    func testColdLaunchRestoresExplicitAppearanceAndLeavesSystemAppearanceDynamic() async throws {
+        serveKindred()
+        try await model.signIn(origin: ServerAddress.normalize("kindred.example.com"), login: "ada", password: "pw")
+        let account = try XCTUnwrap(model.accounts.first)
+        defer { CachedWebAppearance.clear(accountID: account.id) }
+        CachedWebAppearance(rgb: [0, 0, 0], followsSystem: false).save(accountID: account.id)
+        let explicit = WebSession(account: account, token: nil, host: model)
+        explicit.webView.stopLoading()
+        XCTAssertFalse(explicit.presentation.hasChatInterface)
+        XCTAssertEqual(explicit.presentation.isDark, true, "The first native frame should already follow the saved account appearance")
+        XCTAssertEqual(explicit.webView.overrideUserInterfaceStyle, .dark)
+        XCTAssertNil(CachedWebAppearance.load(accountID: UUID()), "Another account must not inherit the theme")
+        CachedWebAppearance(rgb: [0, 0, 0], followsSystem: true).save(accountID: account.id)
+        let system = WebSession(account: account, token: nil, host: model)
+        system.webView.stopLoading()
+        XCTAssertNil(system.presentation.isDark)
+        XCTAssertEqual(system.webView.overrideUserInterfaceStyle, .unspecified)
+    }
+
 }

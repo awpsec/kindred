@@ -1,6 +1,7 @@
 import KindredCore
 import UIKit
 import UserNotifications
+import WebKit
 
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate {
@@ -30,6 +31,40 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         model.didFailToRegisterForRemoteNotifications(error)
     }
+
+    func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        ComputerOrientation.shared.mask(for: window)
+    }
+}
+
+/// Remote typing on slab phones is portrait-only. Duo's inner display and
+/// keyboard adapt to the scene's available space without forcing a pose.
+@MainActor
+final class ComputerOrientation {
+    static let shared = ComputerOrientation()
+    private weak var owner: WKWebView?
+    func mask(for window: UIWindow?) -> UIInterfaceOrientationMask {
+        if let owner, owner.window === window { return .portrait }
+        return window?.traitCollection.userInterfaceIdiom == .phone ? .allButUpsideDown : .all
+    }
+
+    func update(webView: WKWebView, active: Bool, isSlab: Bool) {
+        let lock = active && isSlab
+        if lock {
+            guard owner !== webView else { return }
+            owner = webView
+        } else {
+            guard owner === webView else { return }
+            owner = nil
+        }
+        guard let scene = webView.window?.windowScene else { return }
+        let root = webView.window?.rootViewController
+        root?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        root?.presentedViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        // Retract the explicit portrait preference when an inner display or
+        // returned control releases the lock. UIKit chooses the current pose.
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: lock ? .portrait : mask(for: webView.window)))
+    }
 }
 
 /// Only routing identifiers in the payload are used to select a conversation,
@@ -39,7 +74,10 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .list, .sound])
+        let route = PushPayload.route(from: notification.request.content.userInfo)
+        Task { @MainActor [weak model] in
+            completionHandler(model?.shouldPresentNotification(route) == true ? [.banner, .list, .sound] : [])
+        }
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,

@@ -10,3 +10,4 @@ Config/Local.xcconfig
 *.mobileprovision
 *.ipa
 *.dSYM.zip
+.DS_Store

@@ -116,6 +116,7 @@ struct AddAccountSheet: View {
                 Text("Your credentials and conversations will use an unencrypted connection to \(pendingPrivateOrigin?.serialized ?? ""). Connect only on a network you trust.")
             }
         }
+        .tint(.primary)
     }
 
     private var canSubmit: Bool {
