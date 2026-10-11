@@ -5953,3 +5953,8 @@ html[data-system-text-size] #composer #prompt{font-size:var(--conversation-readi
 html[data-system-text-size] .request-tray :is(.question-context,.question-details,.question-custom,.question-dismiss){font-size:var(--conversation-secondary-size)}
 html[data-system-text-size] .request-tray .question-response textarea{font-size:var(--conversation-reading-size)}
 html[data-system-text-size] .summary-progress-body .message-bubble{font-size:inherit}
+
+/* Give iOS decision titles their full reading width when pager controls do not fit. */
+html[data-system-text-size] .request-tray-header{flex-wrap:wrap-reverse;row-gap:2px}
+html[data-system-text-size] .request-tray-heading{flex:1 1 12em}
+html[data-system-text-size] .request-tray-bar{margin-left:auto}
