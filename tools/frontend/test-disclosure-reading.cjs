@@ -35,7 +35,25 @@ const results=[];const check=(name,ok,detail)=>results.push({name,ok:!!ok,detail
  const toBottom=async p=>{await area(p).evaluate(n=>n.scrollTop=n.scrollHeight);await p.waitForTimeout(150);};
  const gap=p=>area(p).evaluate(n=>Math.round(n.scrollHeight-n.scrollTop-n.clientHeight));
  // Records per-frame: gap, clicked control's top relative to content top, last content bottom vs composer top
- const record=async(p,fn,selector=p.sel)=>{await p.evaluate(sel=>{const n=document.querySelector('#content'),c=[...document.querySelectorAll(sel)].at(-1),comp=document.querySelector('#composer-area')||document.querySelector('#composer');window.fr=[];let k=0;const ro=new ResizeObserver(()=>tick());[...n.children].forEach(ch=>ro.observe(ch));setTimeout(()=>ro.disconnect(),900);const tick=()=>{const cb=c.getBoundingClientRect(),nb=n.getBoundingClientRect();window.fr.push({gap:Math.round(n.scrollHeight-n.scrollTop-n.clientHeight),top:Math.round(n.scrollTop),ctrlTop:Math.round(cb.top-nb.top),visibleBottom:Math.round(nb.bottom),composerTop:Math.round(comp.getBoundingClientRect().top)});k++;};},selector);await fn();await p.waitForTimeout(700);return p.evaluate(()=>window.fr);};
+ const record=async(p,fn,selector=p.sel)=>{
+  await p.evaluate(sel=>{
+   window.fr=[];let ro,timer;
+   const start=e=>{
+    const c=e.target.closest(sel);if(!c)return;
+    document.removeEventListener('click',start,true);
+    const n=document.querySelector('#content'),comp=document.querySelector('#composer-area')||document.querySelector('#composer');
+    const tick=()=>{const cb=c.getBoundingClientRect(),nb=n.getBoundingClientRect();window.fr.push({gap:Math.round(n.scrollHeight-n.scrollTop-n.clientHeight),top:Math.round(n.scrollTop),ctrlTop:Math.round(cb.top-nb.top),visibleBottom:Math.round(nb.bottom),composerTop:Math.round(comp.getBoundingClientRect().top)});};
+    ro=new ResizeObserver(tick);[...n.children].forEach(ch=>ro.observe(ch));timer=setTimeout(()=>ro.disconnect(),900);
+   };
+   // Arm on the actual click, before the app changes layout. Locator readiness
+   // can take longer than the observation window; it is not animation time.
+   document.addEventListener('click',start,true);
+   window.stopDisclosureRecording=()=>{document.removeEventListener('click',start,true);clearTimeout(timer);ro?.disconnect();};
+  },selector);
+  if(process.env.KINDRED_TEST_DISCLOSURE_ACTION_DELAY_MS)await p.waitForTimeout(Number(process.env.KINDRED_TEST_DISCLOSURE_ACTION_DELAY_MS));
+  await fn();await p.waitForTimeout(700);
+  return p.evaluate(()=>{window.stopDisclosureRecording();return window.fr;});
+ };
  try{
   const SC=(process.env.SCEN||'ABCDEF');
   if(SC.includes('A'))
