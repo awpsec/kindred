@@ -24,7 +24,7 @@ Accounts on the same backend use separate Android WebView profiles. Session toke
 
 Create a Firebase Android app with package `dev.kindred.mobile` and place its downloaded `google-services.json` in `app/` (ignored by Git). Rebuild, configure the matching FCM service account on your Kindred server, then choose **Enable alerts** in account options. Notification permission is requested only when enabling alerts. Without Firebase configuration the app still builds and connects; the alert control explains that push is unavailable.
 
-Push contains a generic alert and opaque IDs, not conversation content. Tapping it selects the saved account and chat. Native push registration requires the matching server update. Server mutes and notification preferences remain authoritative. A server that is asleep or offline cannot deliver new events.
+Bot updates use generic push text and opaque routing IDs. Reminders include their text and scheduled time, subject to system notification-preview settings. Tapping it selects the saved account and chat. Native push registration requires the matching server update. Server mutes and notification preferences remain authoritative. A server that is asleep or offline cannot deliver new events.
 
 ## Adaptive behavior and validation
 

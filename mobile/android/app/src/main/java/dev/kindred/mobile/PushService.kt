@@ -59,9 +59,11 @@ class PushService : FirebaseMessagingService() {
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val pending = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         PushRegistration.channel(this)
+        val title = message.notification?.title?.take(160) ?: "Kindred"
+        val body = message.notification?.body?.take(1200) ?: "Your bots have an update for you."
         val notification = NotificationCompat.Builder(this, "kindred_updates")
-            .setSmallIcon(R.drawable.ic_notification).setContentTitle("Kindred")
-            .setContentText("Your bots have an update for you.")
+            .setSmallIcon(R.drawable.ic_notification).setContentTitle(title)
+            .setContentText(body).setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(pending).setAutoCancel(true).setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).build()
         NotificationManagerCompat.from(this).notify("${account.id}:$event", 1, notification)

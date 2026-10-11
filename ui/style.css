@@ -5466,8 +5466,8 @@ html[data-ios-layout=regular] .sidebar {display:flex;position:relative;inset:aut
 html[data-ios-layout=compact] .sidebar {display:none;position:absolute;inset:0;z-index:5;width:100%;box-shadow:none;}
 html[data-ios-layout=compact] .sidebar-open .sidebar,html[data-ios-layout=compact] .ios-edge-preview[data-edge-target=chat-list] .sidebar {display:flex;}
 html[data-ios-layout=compact] .ios-edge-preview[data-edge-target=chat-list] .conversation {position:relative;z-index:6;}
-html[data-ios-computer=overlay] .computer-panel:not([hidden]) {position:absolute!important;inset:0!important;width:100%!important;max-width:none!important;height:100%!important;z-index:8;}
-html[data-ios-computer=side] .computer-panel:not([hidden]) {position:relative!important;inset:auto!important;flex:0 1 42%;width:42%!important;max-width:none!important;min-width:360px;height:100%!important;}
+html[data-ios-computer=overlay] .computer-panel:not([hidden]):not(.pane-layout-frame) {position:absolute!important;inset:0!important;width:100%!important;max-width:none!important;height:100%!important;z-index:8;}
+html[data-ios-computer=side] .computer-panel:not([hidden]):not(.pane-layout-frame) {position:relative!important;inset:auto!important;flex:0 1 42%;width:42%!important;max-width:none!important;min-width:360px;height:100%!important;}
 html[data-ios-layout] .computer-panel #desktop {min-height:0;}
 html[data-ios-short=true] .conversation-header {min-height:40px;padding-block:4px;}
 html[data-ios-short=true] #prompt {max-height:calc(3lh + 12px);overflow-y:auto;}
@@ -5485,7 +5485,7 @@ html[data-native-safe-area=host] .artifact-editor-footer {padding-bottom:10px;}
 
 .access-choice>input:focus-visible {outline:2px solid var(--fg);outline-offset:4px;}
 
-html[data-ios-layout] .computer-panel.expanded:not([hidden]) {position:absolute!important;inset:0!important;flex:none;width:100%!important;max-width:none!important;height:100%!important;z-index:8;}
+html[data-ios-layout] .computer-panel.expanded:not([hidden]):not(.pane-layout-frame) {position:absolute!important;inset:0!important;flex:none;width:100%!important;max-width:none!important;height:100%!important;z-index:8;}
 
 /* Chat may scroll behind its floating composer, but status text remains opaque. */
 html[data-ios-layout] .conversation>.composer-area {background:var(--bg);}
@@ -5851,3 +5851,95 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
 .notice-primary:disabled{opacity:.55;cursor:default}
 @media(pointer:coarse){.notice-primary{min-height:44px}}
 @media(forced-colors:active){.notice-primary{border:1px solid ButtonText}}
+/* Quiet activity sweep, confined to the saved task name. No layout movement. */
+.summary-progress-name.is-working {
+  color:transparent;
+  background:linear-gradient(105deg,var(--muted) 0%,var(--muted) 40%,var(--fg) 50%,var(--muted) 60%,var(--muted) 100%);
+  background-size:250% 100%;
+  background-clip:text;
+  -webkit-background-clip:text;
+  animation:summary-task-shimmer 6s linear infinite;
+}
+@keyframes summary-task-shimmer {
+  0%,65% {background-position:150% 0}
+  95%,100% {background-position:-16.667% 0}
+}
+:root[data-page-hidden] .summary-progress-name.is-working {animation-play-state:paused}
+:root[data-motion="off"] .summary-progress-name.is-working {animation:none;background:none;color:var(--muted)}
+@media(prefers-reduced-motion:reduce) {
+  .summary-progress-name.is-working {animation:none;background:none;color:var(--muted)}
+}
+
+/* Temporary pane frames slide while their flex reservation resizes the chat. */
+.pane-layout-reservation{flex:none;min-width:0;pointer-events:none}
+html .shell>:is(.details-panel,.computer-panel).pane-layout-frame{
+  position:fixed!important;right:auto!important;bottom:auto!important;
+  min-width:0!important;max-width:none!important;flex:none!important;z-index:20;
+  overflow:hidden;transition:none!important;
+}
+
+/* Compact reminder receipts retain the reminder without competing with chat. */
+.planning-card.reminder-dismissed{display:flex;align-items:center;gap:8px;padding:7px 12px;min-height:32px;box-sizing:border-box;color:var(--muted);font-size:calc(12px * var(--text-scale,1));line-height:18px}
+.reminder-dismissed>svg{flex:none}.reminder-dismissed-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--muted) 55%,transparent)}
+.reminder-dismissed-time{flex:none;margin-left:auto;font-size:calc(11px * var(--text-scale,1));white-space:nowrap}
+/* Connection subsections share one spacing rhythm; empty catalogs take no space. */
+.ai-account-body .connection-section{gap:10px;padding-top:16px;margin-top:4px;min-width:0}
+.ai-account-body .connection-section>:is(p,h3,label,.row-actions,.catalog-model-list){margin:0}
+.connection-section-heading{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;min-width:0}
+.connection-section-heading strong{font-size:calc(13px * var(--text-scale,1));font-weight:600}
+.connection-section-heading>button{min-height:30px;padding:5px 9px;font-size:calc(12px * var(--text-scale,1))}
+.connection-section-heading>span{margin-left:auto}
+.connection-section>.catalog-model-list:empty{display:none}
+.connection-section>p{line-height:1.5}
+.connection-section>label{display:grid;gap:7px}.connection-section>label>input{margin-top:0}
+.connection-section>.row-actions{padding-top:2px}
+.ai-account-body .connection-section .account-connector-row{padding:5px 0;border:0;min-height:30px;box-sizing:border-box}
+.account-connector-row .connector-heading{gap:8px}
+.account-connector-row .connector-heading strong{font-size:calc(13px * var(--text-scale,1));font-weight:500;line-height:20px}
+.account-connector-row .connector-logo{width:20px;height:20px;flex:0 0 20px;border-radius:4px;background:transparent;color:var(--muted);box-shadow:none}
+.account-connector-row .connector-logo svg{width:16px;height:16px}
+.ai-account-body .connection-section .account-connector-row p{margin:3px 0 0 28px;font-size:calc(12px * var(--text-scale,1));line-height:1.5}
+@media(max-width:480px){.reminder-dismissed-time{max-width:40%;overflow:hidden;text-overflow:ellipsis}.connection-section-heading{gap:8px}.connection-section-heading>button{min-height:36px}}
+/* A reminder is a note with a schedule, rather than a generic settings form. */
+.reminder-edit-dialog{width:min(480px,calc(100vw - 28px));padding:22px;max-height:calc(100dvh - 32px);border-radius:16px}
+.reminder-edit-dialog .dialog-header{margin:0 0 22px;gap:12px}
+.reminder-edit-dialog .dialog-header h2{display:flex;align-items:center;gap:9px;font-size:calc(15px * var(--text-scale,1))}
+.reminder-edit-dialog .dialog-header h2 .icon{color:var(--muted);flex:none}
+.reminder-edit-dialog .dialog-header>button{width:36px;height:36px;flex:none}
+.reminder-edit-form{display:flex;flex-direction:column;gap:20px}
+.reminder-edit-message{display:flex;flex-direction:column;gap:8px;font-size:calc(12px * var(--text-scale,1));color:var(--muted)}
+.reminder-edit-message textarea{border:0;border-radius:0;border-bottom:1px solid var(--line);background:transparent;box-shadow:none;outline:none;padding:4px 0 14px;resize:none;min-height:58px;max-height:180px;width:100%;font:inherit;font-size:calc(18px * var(--text-scale,1));line-height:1.45;color:var(--fg)}
+.reminder-edit-message textarea:focus{outline:none;border-bottom-color:var(--muted)}
+.reminder-edit-when{display:flex;flex-direction:column;gap:12px;min-width:0}
+.reminder-edit-when h3{margin:0;font-size:calc(12px * var(--text-scale,1));font-weight:500;color:var(--muted)}
+.reminder-date-shortcuts{display:flex;gap:6px;flex-wrap:wrap}
+.reminder-date-shortcuts button{font-size:calc(12px * var(--text-scale,1));min-height:34px;padding:6px 11px;border-radius:7px;background:var(--surface);border:1px solid transparent}
+.reminder-date-shortcuts button[aria-pressed=true]{background:color-mix(in srgb,var(--fg) 9%,var(--panel));border-color:var(--line);color:var(--fg)}
+.reminder-edit-timing{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(145px * var(--text-scale,1))),1fr));gap:12px}
+.reminder-edit-timing label{display:flex;flex-direction:column;gap:6px;font-size:calc(12px * var(--text-scale,1));color:var(--muted);min-width:0}
+.reminder-edit-timing input{width:100%;min-width:0;min-height:42px;padding:9px 10px;background:var(--surface);border:1px solid var(--line);border-radius:8px;font:inherit;font-size:calc(14px * var(--text-scale,1));color:var(--fg)}
+.reminder-edit-zone{display:flex;align-items:center;gap:12px;min-width:0;color:var(--muted);font-size:calc(12px * var(--text-scale,1))}
+.reminder-edit-zone select{flex:1;min-width:0;max-width:100%;padding:9px 28px 9px 10px;min-height:40px;border:0;background-color:transparent;font:inherit;color:var(--fg);text-overflow:ellipsis}
+.reminder-edit-preview{margin:0;font-size:calc(12px * var(--text-scale,1));line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.reminder-edit-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding-top:14px;border-top:1px solid var(--line)}
+.reminder-edit-actions button{min-height:38px;padding:8px 14px;font-size:calc(13px * var(--text-scale,1))}
+.reminder-edit-form .run-error{margin:0;line-height:1.5}
+@media(max-width:520px){.reminder-edit-dialog{padding:18px}.reminder-edit-dialog .dialog-header{margin-bottom:16px}.reminder-edit-form{gap:16px}.reminder-edit-timing{gap:8px}.reminder-edit-timing input{font-size:16px;padding:8px 6px}.reminder-edit-message textarea{font-size:max(16px,calc(18px * var(--text-scale,1)))}}
+@media(pointer:coarse){.reminder-edit-dialog button,.reminder-edit-dialog select,.reminder-edit-dialog input{min-height:44px}.reminder-edit-dialog .dialog-header>button{min-width:44px}}
+@media(forced-colors:active){.reminder-edit-message textarea:focus{outline:2px solid Highlight}.reminder-date-shortcuts button[aria-pressed=true]{border-color:Highlight}}
+
+.reminder-edit-zone[hidden]{display:none}
+.reminder-zone-info{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:calc(12px * var(--text-scale,1));color:var(--muted)}
+.reminder-zone-info button{padding:4px;font-size:inherit;text-decoration:underline;text-underline-offset:3px}
+.reminder-edit-preview.is-warning{color:var(--danger,#d88585)}
+.reminder-edit-actions .primary{min-width:120px}
+@media(max-width:360px){.reminder-edit-timing{grid-template-columns:1fr}}
+
+.reminder-edit-form label{margin:0}
+.reminder-edit-form label :is(input,textarea,select){margin-top:0}
+
+.reminder-zone-info[hidden]{display:none}
+@media(max-width:360px){.reminder-date-shortcuts{gap:4px}.reminder-date-shortcuts button{padding-inline:9px}}
+
+.notice-pager>span{white-space:nowrap;flex:none}
+@media(max-width:360px){.reminder-dismissed:has(.notice-pager){flex-wrap:wrap}.reminder-dismissed:has(.notice-pager) .reminder-dismissed-text{flex:1 1 60%}.reminder-dismissed>.notice-pager{margin:0 0 0 auto}}
