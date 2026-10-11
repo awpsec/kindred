@@ -5,7 +5,13 @@ not rebuild/re-sign the app, clear quarantine, change Gatekeeper, start Docker,
 use accounts, or publish. A passing launch is separate from Gatekeeper approval.
 """
 from pathlib import Path
-import argparse,hashlib,json,os,platform,plistlib,signal,subprocess,tempfile,time,urllib.request,zipfile
+import argparse,hashlib,json,os,platform,plistlib,re,signal,subprocess,tempfile,time,urllib.request,zipfile
+
+def validate_paste_capture(rows):
+ labels=[re.sub(r'^\W+','',label.strip()).casefold() for row in rows for label in row['text']]
+ assert 'paste' in labels,'Standalone visible Paste label missing from native screenshot'
+ assert 'return control' in labels,'Visible Return control missing from native screenshot'
+ assert 'disposable paste destination' in labels,'Disposable destination missing from native screenshot'
 
 def validate_paste_receipt(expected,native,actual,reads=1,native_error=False):
  assert actual['text']==expected and actual['submits']==0,actual
@@ -199,7 +205,8 @@ try:
      native=paste_phase(phase)
      actual=paste_oracle('snapshot',label=phase)
      validate_paste_receipt(expected,native,actual,native_error=mode=='oversized')
-     capture(child,phase,['Bot computer'])
+     paste_windows=capture(child,phase,['Paste','Return control','Disposable Paste destination'])
+     validate_paste_capture(paste_windows)
      observations.append({'phase':phase,'native':native,'destination':actual})
     for phase in ['mac-paste-reconnect','mac-paste-control-loss']:
      paste_oracle('clear')
