@@ -339,7 +339,6 @@ function foldLongMessage(bubble, key, entry) {
   text.append(...bubble.childNodes);viewport.append(text);bubble.append(viewport);
   entry.expandedMessages ||= new Set();
   const toggle=button('Show more',()=>{
-    chatScroll.follow=false;captureChatAnchor();
     if(entry.expandedMessages.has(key))entry.expandedMessages.delete(key);else entry.expandedMessages.add(key);
     update();
   },'message-expand');
@@ -2562,7 +2561,7 @@ async function settingsConnections(revision) {
       if(provider===openCodePlans[0])openCodeAccount(ai,openCodePlans);
       continue;
     }
-    const row=accountCard(provider);ai.append(row.card);
+    const row=accountCard(provider);row.card.dataset.provider=provider.id;ai.append(row.card);
     if(provider.kind==='subscription') {
       const message=node('p','muted small','Checking account…'), actions=node('div','row-actions');row.body.append(message,actions);
       let revision=0,signingIn=false;
@@ -2595,7 +2594,7 @@ async function settingsConnections(revision) {
       }));
       if(['claude-code','codex'].includes(provider.id)) {
         const codex=provider.id==='codex',source=codex?'Codex':'Claude';
-        const inherited=node('div','provider-catalog'),status=node('p','muted small',codex?'Refresh to check connected apps.':source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
+        const inherited=node('div','provider-catalog connection-section'),status=node('p','muted small',codex?'Refresh to check connected apps.':source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
         status.setAttribute('role','status');
         const refreshConnectors=async()=>{
           refresh.disabled=true;status.hidden=false;status.classList.remove('run-error');status.textContent='Checking '+source+' account connectors…';items.replaceChildren();
@@ -2603,14 +2602,24 @@ async function settingsConnections(revision) {
             const result=await api(codex?'/codex/connectors':'/provider-cli/claude-code/connectors','POST',{});
             if(!inherited.isConnected)return;
             const rows=(codex?result.connections:result.data)||[];
-            status.hidden=codex&&rows.length>0&&!result.warning;status.textContent=rows.length?(codex?'':'Available through this workspace’s '+source+' sign-in. Kindred-connected apps remain available to all providers.'):'No connectors were returned by this '+source+' account. Connect an app in '+source+', then refresh.';
+            status.hidden=rows.length>0&&!result.warning;status.textContent=rows.length?(codex?'':'Available through this workspace’s '+source+' sign-in. Kindred-connected apps remain available to all providers.'):'No connectors were returned by this '+source+' account. Connect an app in '+source+', then refresh.';
             if(result.warning){status.textContent=connectorRefreshMessage(result.warning,source);status.classList.add('run-error');}
-            for(const connection of rows){const item=node('div','connector-setting-row'),info=node('div');info.append(connectorHeading(connection.display_name,source),node('p','muted small',connection.status==='connected'?'Connected':connection.status==='needs-auth'?'Reconnect in '+source:'Unavailable'));if(codex&&connection.availability_message)info.append(node('p','muted small',connection.availability_message));item.append(info);items.append(item);}
+            for(const connection of rows){
+              const item=node('div','connector-setting-row account-connector-row'),info=node('div'),brand=connectorBrand(connection.display_name||''),heading=connectorHeading(connection.display_name||'','');
+              if(!CONNECTOR_ICONS[brand.key])heading.querySelector('.connector-logo').replaceChildren(icon(brand.key==='calendar'?'calendar':'link',16));
+              info.append(heading);
+              if(connection.status!=='connected'){
+                info.append(node('p','muted small',connection.status==='needs-auth'?'Reconnect in '+source:'Unavailable'));
+                if(connection.availability_message)info.append(node('p','muted small',connection.availability_message));
+              }
+              item.append(info);items.append(item);
+            }
           }catch(e){if(inherited.isConnected){status.textContent=connectorRefreshMessage(e,source);status.classList.add('run-error');}}
           finally{refresh.disabled=false;}
         };
         const refresh=button('Refresh '+source+' connectors',refreshConnectors);
-        inherited.append(node('strong','',source+' account connectors'),status,items,refresh);
+        const heading=node('div','connection-section-heading');heading.append(node('strong','',source+' account connectors'),refresh);
+        inherited.append(heading,status,items);
         if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Each connector call requires review.'));
         else{const manage=node('a','outline-button','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';inherited.append(manage);}
         row.body.append(inherited);
@@ -4600,7 +4609,7 @@ function planningError(message,feedback){
   if(feedback?.closest('dialog[open],.artifact-library')){feedback.textContent=message;feedback.hidden=false;}
   else notice(message,true);
 }
-async function planningPatch(kind,record,patch,feedback){
+async function planningPatch(kind,record,patch,feedback,beforeRefresh){
   if(planningPending.has(record.id))return null;
   if(feedback)feedback.hidden=true;
   planningPending.add(record.id);let saved=null;
@@ -4608,6 +4617,7 @@ async function planningPatch(kind,record,patch,feedback){
     saved=await api(`/chats/${encodeURIComponent(record.chat_id)}/${kind}/${encodeURIComponent(record.id)}`,'PATCH',{expected_revision:record.revision,...patch});
   }catch(e){planningError(e.message,feedback);}
   finally{planningPending.delete(record.id);}
+  if(saved&&beforeRefresh)await beforeRefresh(saved);
   if(saved)document.querySelector('.artifact-library-record[data-artifact-id="'+CSS.escape(saved.id)+'"] .artifact-record-body')?.dispatchEvent(new CustomEvent('kindred-planning-saved',{detail:saved}));
   // A confirmed save remains successful even if refreshing the conversation fails.
   state.chatKey='';
@@ -4724,7 +4734,9 @@ function summaryProgress(items,entry,runs){
   const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender),name=bot?.name||'Bot';
   if(bot){const avatar=buddy(bot,20);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
   const elapsed=Math.max(0,(phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||items.at(-1).created):Math.floor(Date.now()/1000)))-(first.created||run?.progress_started||0));
-  title.append(node('strong','',name),node('span','summary-progress-task',' · '+(run?.prompt||'Task progress')),node('span','muted small summary-progress-time',elapsedTime(elapsed)),node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):''}`));
+  const taskName=(run?.task_title||first.progress?.task_title||'Task progress').trim()||'Task progress',taskLabel=node('span','summary-progress-task'),taskText=node('span','summary-progress-name',taskName);taskLabel.title=taskName;taskLabel.append(taskText);
+  if(!finished&&run?.status==='running'){taskText.classList.add('is-working');taskText.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}
+  title.append(node('strong','',name),taskLabel,node('span','muted small summary-progress-time',elapsedTime(elapsed)),node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):''}`));
   const body=node('div','summary-progress-body');for(const m of items){const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);update.append(markdown(m.text));body.append(update);}
   details.append(title,body);group.append(details);animateChatDisclosure(details,body);
   title.addEventListener('click',()=>{entry.progressReading.delete(key);details.open?entry.progressOpen.delete(key):entry.progressOpen.add(key);},{capture:true});
@@ -4735,11 +4747,44 @@ function reminderBatch(messages,entry){
   const first=messages[0],records=first.planning_batch||messages.map(m=>m.planning),key=first.planning.batch_id;
   entry.reminderPages??=new Map();const remembered=entry.reminderPages.get(key),index=Math.max(0,records.findIndex(r=>r.id===remembered)),root=node('section','reminder-batch'),slot=node('div');
   const bar=node('div','notice-pager'),page=node('span','muted small');let current=index;
-  const paint=()=>{const focus=bar.contains(document.activeElement)?document.activeElement:null;const r=records[current];entry.reminderPages.set(key,r.id);page.textContent=(current+1)+' / '+records.length;const card=reminderCard(r);card.querySelector('.reminder-schedule')?.append(bar);slot.replaceChildren(card);focus?.focus({preventScroll:true});};
+  const paint=()=>{const focus=bar.contains(document.activeElement)?document.activeElement:null;const r=records[current];entry.reminderPages.set(key,r.id);page.textContent=(current+1)+' / '+records.length;const card=reminderCard(r);(card.querySelector('.reminder-schedule')||card).append(bar);slot.replaceChildren(card);focus?.focus({preventScroll:true});};
   const step=delta=>{current=(current+delta+records.length)%records.length;paint();};
   bar.append(iconButton('chevron','Previous reminder',()=>step(-1)),page,iconButton('chevron','Next reminder',()=>step(1)));root.append(slot);paint();return root;
 }
+async function dismissReminder(reminder,feedback,focusedCard=null){
+  const saved=await planningPatch('reminders',reminder,{dismiss:true},feedback,async saved=>{
+    const animations=[];
+    for(const previous of document.querySelectorAll('.reminder-card[data-reminder="'+CSS.escape(reminder.id)+'"]')){
+      const height=previous.getBoundingClientRect().height,focused=previous===focusedCard||previous.contains(document.activeElement),next=reminderCard(saved);
+      const pager=previous.querySelector('.notice-pager');if(pager)next.append(pager);
+      previous.replaceWith(next);
+      if(focused){next.tabIndex=-1;next.focus({preventScroll:true});}
+      const end=next.getBoundingClientRect().height;
+      if(motionAllowed()&&height>end){
+        next.style.overflow='hidden';
+        const motion=next.animate([{height:height+'px'},{height:end+'px'}],{duration:240,easing:'cubic-bezier(.22,1,.36,1)'});
+        animations.push(motion.finished.catch(()=>{}).finally(()=>{next.style.overflow='';}));
+      }
+    }
+    await Promise.all(animations);
+  });
+  // The confirmed refresh may replace the receipt focused by the animation.
+  // Restore only a lost focus; never take it from another user-selected control.
+  if(saved&&focusedCard&&document.activeElement===document.body){
+    const receipt=$('content').querySelector('.reminder-dismissed[data-reminder="'+CSS.escape(reminder.id)+'"]');
+    if(receipt){receipt.tabIndex=-1;receipt.focus({preventScroll:true});}
+  }
+  return saved;
+}
 function reminderCard(reminder,delivered=false){
+  if(reminder.dismissed_at){
+    const card=node('section','planning-card reminder-card reminder-dismissed'),when=reminderWhen(reminder);
+    card.dataset.reminder=reminder.id;card.dataset.status='dismissed';
+    card.setAttribute('aria-label','Dismissed reminder: '+reminder.message+', '+when.full);
+    const text=node('span','reminder-dismissed-text',reminder.message),time=node('time','reminder-dismissed-time',when.label);
+    text.title=reminder.message;time.dateTime=new Date(reminder.run_at*1000).toISOString();time.title=when.full;
+    card.append(icon('check',13),text,time);return card;
+  }
   const card=node('section','planning-card reminder-card'),feedback=planningFeedback(),when=reminderWhen(reminder);card.dataset.reminder=reminder.id;card.dataset.status=reminder.status;
   const title=delivered?'Reminder':reminder.status==='pending'?'Reminder set':`Reminder ${reminder.status}`;
   card.setAttribute('aria-label',title+', '+when.label);
@@ -4749,7 +4794,16 @@ function reminderCard(reminder,delivered=false){
   if(when.zone){const zone=node('span','reminder-zone',when.zone);zone.title=reminder.timezone;schedule.append(zone);}
   if(delivered||reminder.status!=='pending')schedule.append(node('span','reminder-status',delivered||reminder.status==='delivered'?'Delivered':reminder.status==='cancelled'?'Cancelled':reminder.status==='paused'?'Paused':reminder.status));
   meta.append(schedule);
-  if(!delivered&&reminder.status!=='delivered'){
+  if(delivered||reminder.status==='delivered'){
+    const actions=node('div','reminder-actions'),dismiss=button('Dismiss',()=>{},'subtle-button small-button');
+    dismiss.onclick=()=>{
+      // perform() disables its control before calling the action, which blurs
+      // it in Chromium. Capture the keyboard destination before that boundary.
+      const focusedCard=card.contains(document.activeElement)?card:null;
+      return perform(()=>dismissReminder(reminder,feedback,focusedCard),dismiss);
+    };
+    actions.append(dismiss);meta.append(actions);
+  }else{
     const actions=node('div','reminder-actions');actions.append(button(reminder.status==='cancelled'?'Reschedule':'Edit',()=>editReminder(reminder),'subtle-button small-button'));
     if(reminder.status!=='cancelled')actions.append(button('Cancel',async()=>{await planningPatch('reminders',reminder,{cancel:true},feedback);},'subtle-button small-button'));
     meta.append(actions);
@@ -4761,12 +4815,64 @@ function reminderCard(reminder,delivered=false){
   card.append(feedback);return card;
 }
 function editReminder(reminder){
-  const d=modal('Edit reminder','planning-dialog'),form=node('form','planning-form');
-  const message=field('Reminder',reminder.message,'textarea',{required:true,maxLength:2000}),time=field('Date and time',reminder.local_time,'input',{type:'datetime-local',required:true}),zone=field('Time zone',reminder.timezone,'input',{required:true});
-  const save=button('Save',()=>{},'primary');save.onclick=null;save.type='submit';
-  const feedback=planningFeedback();form.append(message.label,time.label,zone.label,feedback,save);d.append(form);
-  form.onsubmit=async e=>{e.preventDefault();if(!form.reportValidity())return;save.disabled=true;const saved=await planningPatch('reminders',reminder,{message:message.input.value,local_time:time.input.value,timezone:zone.input.value},feedback);if(saved)d.close();else save.disabled=false;};
+  const resuming=['cancelled','paused'].includes(reminder.status),d=modal(resuming?'Reschedule reminder':'Edit reminder','planning-dialog reminder-edit-dialog'),form=node('form','reminder-edit-form');
+  const heading=d.querySelector('h2');heading.prepend(icon('bell',16));
+  const message=field('Remind me to',reminder.message,'textarea',{required:true,maxLength:2000,rows:1,placeholder:'What would you like to remember?'});
+  message.label.className='reminder-edit-message';message.input.setAttribute('aria-label','Remind me to');
+  const when=node('section','reminder-edit-when'),label=node('h3','','When'),quick=node('div','reminder-date-shortcuts');quick.setAttribute('aria-label','Quick dates');
+  const [initialDate,initialTime]=(reminder.local_time||localDateInput(new Date(),reminder.timezone)).split('T');
+  const date=field('Date',initialDate,'input',{type:'date',required:true}),time=field('Time',initialTime?.slice(0,5)||'09:00','input',{type:'time',required:true,step:60});
+  const timing=node('div','reminder-edit-timing');timing.append(date.label,time.label);
+  const zones=[...new Set([reminder.timezone,'UTC',...(Intl.supportedValuesOf?.('timeZone')||['America/New_York','Europe/London','Asia/Tokyo'])])].filter(Boolean);
+  const zoneName=z=>z==='UTC'?'UTC':z.split('/').at(-1).replaceAll('_',' ')+' · '+z.split('/').slice(0,-1).join(' / ').replaceAll('_',' ');
+  const zone=select(zones.map(z=>[z,zoneName(z)]),reminder.timezone);zone.setAttribute('aria-label','Time zone');zone.dataset.searchable='true';zone.dataset.searchPlaceholder='Search time zones…';zone.dataset.searchEmpty='No matching time zones';
+  const zoneRow=node('label','reminder-edit-zone','Time zone');zoneRow.append(zone);zoneRow.hidden=true;
+  const zoneInfo=node('div','reminder-zone-info'),zoneText=node('span'),changeZone=button('Change',()=>{zoneRow.hidden=false;zoneInfo.hidden=true;changeZone.setAttribute('aria-expanded','true');zone.focus({preventScroll:true});},'subtle-button');changeZone.setAttribute('aria-label','Change time zone');changeZone.setAttribute('aria-expanded','false');zoneInfo.append(zoneText,changeZone);
+  const preview=node('p','reminder-edit-preview');preview.setAttribute('aria-live','polite');
+  const feedback=planningFeedback(),actions=node('div','reminder-edit-actions'),cancel=button('Cancel',()=>d.close(),'subtle-button'),save=button(resuming?'Reschedule':'Save reminder',()=>{},'primary');save.onclick=null;save.type='submit';
+  actions.append(cancel,save);if(reminder.status==='paused')when.append(node('p','reminder-edit-preview','Paused after transfer. Choose a time to resume.'));when.append(label,quick,timing,preview,zoneInfo,zoneRow);form.append(message.label,when,feedback,actions);d.append(form);
+  // Calendar shortcuts use the selected zone's civil date, never a 24-hour
+  // duration: crossing a daylight-saving boundary must not change the day.
+  const quickDate=days=>{const today=localDateInput(new Date(),zone.value).slice(0,10),civil=new Date(today+'T12:00:00Z');civil.setUTCDate(civil.getUTCDate()+days);return civil.toISOString().slice(0,10);};
+  for(const [text,days] of [['Today',0],['Tomorrow',1],['Next week',7]]){const b=button(text,()=>{date.input.value=quickDate(days);feedback.hidden=true;update();},'subtle-button');b.dataset.days=days;quick.append(b);}
+  // Resolve only a unique local minute for the preview. The server remains
+  // authoritative and rejects nonexistent or ambiguous daylight-saving times.
+  function scheduledInstant(){
+    const local=date.input.value+'T'+time.input.value,civil=Date.parse(local+':00Z');if(!Number.isFinite(civil))return null;
+    const offsets=[-36,0,36].map(hours=>{const sample=civil+hours*3600000;return Date.parse(localDateInput(new Date(sample),zone.value)+':00Z')-sample;});
+    const matches=[...new Set(offsets)].map(offset=>new Date(civil-offset)).filter(instant=>localDateInput(instant,zone.value)===local);
+    return matches.length===1?matches[0]:null;
+  }
+  function update(){
+    message.input.setCustomValidity(message.input.value.trim()?'':'Enter a reminder.');
+    for(const b of quick.children)b.setAttribute('aria-pressed',String(date.input.value===quickDate(Number(b.dataset.days))));
+    const instant=scheduledInstant(),past=instant&&instant.getTime()<=Date.now(),invalid=!instant;
+    save.disabled=past||invalid||!message.input.value.trim();
+    const abbreviation=new Intl.DateTimeFormat([],{timeZone:zone.value,timeZoneName:'short'}).formatToParts(instant||new Date()).find(p=>p.type==='timeZoneName')?.value||'';
+    zoneText.textContent='Time zone: '+zoneName(zone.value).split(' · ')[0]+(abbreviation&&abbreviation!==zoneName(zone.value)?' ('+abbreviation+')':'');
+    preview.classList.toggle('is-warning',!!past||invalid);
+    if(past)preview.textContent='That time has already passed. Choose a future time.';
+    else if(invalid)preview.textContent=date.input.value&&time.input.value?'This time is skipped or repeated by the clock change. Choose another time.':'Choose a date and time.';
+    else{preview.textContent=instant.toLocaleString([],{timeZone:zone.value,weekday:'short',month:'short',day:'numeric',...(date.input.value.slice(0,4)!==localDateInput(new Date(),zone.value).slice(0,4)?{year:'numeric'}:{}),hour:'numeric',minute:'2-digit'});if(zone.value!==deviceTimezone())preview.textContent+=' · '+instant.toLocaleString([],{timeZone:deviceTimezone(),weekday:'short',hour:'numeric',minute:'2-digit'})+' your time';}
+  }
+  const resize=()=>{message.input.style.height='auto';message.input.style.height=message.input.scrollHeight+'px';};
+  form.addEventListener('input',()=>{feedback.hidden=true;update();resize();});const closeZone=()=>{zoneRow.hidden=true;zoneInfo.hidden=false;changeZone.setAttribute('aria-expanded','false');changeZone.focus({preventScroll:true});};
+  zone.addEventListener('change',()=>{update();closeZone();});
+  zoneRow.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();closeZone();}});
+  update();resize();let width=message.input.clientWidth;
+  const observer=new ResizeObserver(()=>{if(message.input.clientWidth!==width){width=message.input.clientWidth;resize();}});observer.observe(message.input);d.addEventListener('close',()=>observer.disconnect(),{once:true});
+  if(resuming)date.input.focus({preventScroll:true});else{message.input.focus({preventScroll:true});message.input.setSelectionRange(message.input.value.length,message.input.value.length);}
+  form.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();if(!save.disabled)form.requestSubmit();}});
+  let saving=false;d.addEventListener('cancel',e=>{if(saving)e.preventDefault();});
+  form.onsubmit=async e=>{
+    e.preventDefault();if(saving)return;update();if(save.disabled||!form.reportValidity())return;
+    const patch={message:message.input.value.trim(),local_time:date.input.value+'T'+time.input.value,timezone:zone.value};
+    saving=true;form.setAttribute('aria-busy','true');const controls=[...d.querySelectorAll('button,input,textarea,select')];controls.forEach(control=>control.disabled=true);save.textContent='Saving…';
+    try{const saved=await planningPatch('reminders',reminder,patch,feedback);if(saved)d.close();}
+    finally{saving=false;form.removeAttribute('aria-busy');controls.forEach(control=>control.disabled=false);save.textContent=resuming?'Reschedule':'Save reminder';update();}
+  };
 }
+
 async function openArtifacts(){
   const bot=state.bot;if(!bot)return;state.view='artifacts';state.panelKey='';
   showPane($('details-panel'));hidePane($('computer-panel'));disconnectDesktop();
@@ -5834,9 +5940,6 @@ function animateChatDisclosure(history,body,falling=false){
   summary.onclick=e=>{
     e.preventDefault();
     expanded=motion?!expanded:!history.open;
-    // Opening older diagnostics is a reading gesture, not new chat activity.
-    // Disable bottom-follow before ResizeObserver sees the changing height.
-    chatScroll.follow=false;captureChatAnchor();
     const start=history.open?body.getBoundingClientRect().height:0;
     const starts=falling?[...body.children].map(n=>({opacity:getComputedStyle(n).opacity,transform:getComputedStyle(n).transform})):[];
     motion?.cancel();motion=null;cards.forEach(a=>a.cancel());cards=[];
@@ -6760,7 +6863,7 @@ addEventListener('pageshow',e=>{invalidateNavigationRecovery();pageHidden=false;
 // Every finite UI effect must settle even if a webview drops its finish event.
 // Cancellation for a new interaction discards the old destination; cancellation
 // by the browser, reduced motion or backgrounding settles the current destination.
-const motionPreference=matchMedia('(prefers-reduced-motion: reduce)'),activeMotion=new Set(),paneMotion=new WeakMap();
+const motionPreference=matchMedia('(prefers-reduced-motion: reduce)'),activeMotion=new Set();
 function motionAllowed() { return !document.hidden && document.hasFocus() && !state.general.reduced_motion && document.documentElement.dataset.motion!=='off' && !motionPreference.matches; }
 function trackMotion(animation,duration,settled=()=>{}) {
   let timer,done=false;
@@ -6785,49 +6888,78 @@ motionPreference.addEventListener('change',settleMotion);
 document.addEventListener('visibilitychange',settleMotion);
 window.addEventListener('blur',()=>{for(const motion of [...activeMotion])motion.finish();});
 new MutationObserver(settleMotion).observe(document.documentElement,{attributes:true,attributeFilter:['data-motion']});
-function panePose(panel){const style=getComputedStyle(panel);return {opacity:style.opacity,transform:style.transform};}
-function showPane(panel) {
-  const prior=paneMotion.get(panel),start=panel.hidden?{opacity:0,transform:'translateX(24px)'}:panePose(panel);
-  const animate=panel.hidden||!!prior;prior?.cancel();panel.hidden=false;panel.inert=false;
-  if(animate&&motionAllowed())paneMotion.set(panel,trackMotion(panel.animate([start,{opacity:1,transform:'translateX(0)'}],{duration:240,easing:'cubic-bezier(.2,.8,.2,1)'}),240,()=>paneMotion.delete(panel)));
+// Animate the space beside the conversation along with the actual pane. The
+// header and composer stay in normal layout; neither is scaled or snap-positioned.
+let paneLayoutMotion=null;
+const rightPanes=()=>[$('details-panel'),$('computer-panel')];
+function paneLayoutSnapshot(){
+  const shell=$('app'),chat=shell.querySelector('.conversation'),sidebar=shell.querySelector('.sidebar');
+  return {shell:shell.getBoundingClientRect(),sidebar:sidebar.getBoundingClientRect(),chat:chat.getBoundingClientRect(),panels:rightPanes().map(panel=>({panel,visible:!panel.hidden,rect:panel.getBoundingClientRect()})),screen:$('desktop').getBoundingClientRect()};
 }
-function hidePane(panel) {
-  if(panel.id==='computer-panel')finishComputerTransition();
-  if(panel.id==='details-panel'&&state.view==='artifacts'){$('details-content').replaceChildren();state.view='details';state.panelKey='';}
-  const start=panePose(panel);paneMotion.get(panel)?.cancel();
-  if(panel.hidden) return;
-  if(panel.contains(document.activeElement))$(panel.id==='computer-panel'?'show-computer':'bot-details')?.focus({preventScroll:true});
-  panel.inert=true;
-  if(!motionAllowed()) {panel.hidden=true;return;}
-  paneMotion.set(panel,trackMotion(panel.animate([start,{opacity:0,transform:'translateX(24px)'}],{duration:170,easing:'ease-in'}),170,complete=>{paneMotion.delete(panel);if(complete)panel.hidden=true;}));
-}
-let computerTransition=null;
 function refitComputer(){if(state.rfb)state.rfb.scaleViewport=true;}
-function finishComputerTransition(){computerTransition?.();refitComputer();}
+function finishComputerTransition(){paneLayoutMotion?.finish();refitComputer();}
 window.addEventListener('resize',finishComputerTransition);
-function setComputerExpanded(expanded) {
-  const panel=$('computer-panel'),screen=$('desktop'),before=panel.getBoundingClientRect(),screenBefore=screen.getBoundingClientRect(),changed=panel.classList.contains('expanded')!==expanded;
-  finishComputerTransition();
-  if(changed)panel.getAnimations().forEach(a=>a.cancel());
-  panel.classList.toggle('expanded',expanded);
-  const after=panel.getBoundingClientRect(),screenAfter=screen.getBoundingClientRect();
-  if(changed&&before.width&&after.width&&motionAllowed()){
-    // Animate real dimensions: scaling the ancestor makes noVNC apply the scale
-    // again when it measures the canvas, causing a shrunken frame and a flash.
-    const panelStyle=panel.style.cssText,screenStyle=screen.style.cssText;
-    let spacer=null;
-    if(['static','relative'].includes(getComputedStyle(panel).position)){
-      spacer=node('div');spacer.setAttribute('aria-hidden','true');spacer.style.cssText=`flex:none;width:${after.width}px;`;panel.before(spacer);
-    }
-    Object.assign(panel.style,{position:'fixed',inset:'auto',left:after.x+'px',top:after.y+'px',width:after.width+'px',height:after.height+'px',minWidth:'0',maxWidth:'none',zIndex:'20',overflow:'hidden'});
-    Object.assign(screen.style,{flex:'none',height:screenAfter.height+'px',minHeight:'0'});
-    const timing={duration:320,easing:'cubic-bezier(.22,1,.36,1)'},rect=r=>({left:r.x+'px',top:r.y+'px',width:r.width+'px',height:r.height+'px'});
-    const animation=panel.animate([rect(before),rect(after)],timing),screenAnimation=screen.animate([{height:screenBefore.height+'px'},{height:screenAfter.height+'px'}],timing);
-    let frame;
-    const fit=()=>{refitComputer();frame=requestAnimationFrame(fit);};frame=requestAnimationFrame(fit);
-    const cleanup=()=>{computerTransition=null;cancelAnimationFrame(frame);screenAnimation.cancel();panel.style.cssText=panelStyle;screen.style.cssText=screenStyle;spacer?.remove();refitComputer();layoutPanes();};
-    computerTransition=trackMotion(animation,timing.duration,cleanup).finish;
-  }else refitComputer();
+function transitionPaneLayout(change){
+  const before=paneLayoutSnapshot();
+  paneLayoutMotion?.cancel();
+  change();layoutPanes();
+  const after=paneLayoutSnapshot();
+  if(!motionAllowed()||$('app').hidden){for(const panel of rightPanes())if(panel.hidden&&panel.dataset.clearPaneOnClose){$('details-content').replaceChildren();delete panel.dataset.clearPaneOnClose;}refitComputer();return;}
+  const moving=after.panels.filter((p,i)=>p.visible||before.panels[i].visible);
+  if(!moving.length)return;
+  const shell=$('app'),sidebar=shell.querySelector('.sidebar'),screen=$('desktop');
+  const reserve=node('div','pane-layout-reservation');reserve.setAttribute('aria-hidden','true');
+  shell.querySelector('.conversation').after(reserve);
+  const timing={duration:320,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'},animations=[],restores=[];
+  const reserved=shot=>Math.max(0,shot.shell.right-shot.chat.right);
+  reserve.style.width=reserved(after)+'px';
+  animations.push(reserve.animate([{width:reserved(before)+'px'},{width:reserved(after)+'px'}],timing));
+  animations.push(sidebar.animate([{width:before.sidebar.width+'px'},{width:after.sidebar.width+'px'}],timing));
+  for(const target of moving){
+    const prior=before.panels.find(p=>p.panel===target.panel),panel=target.panel;
+    const end=target.visible?target.rect:{...prior.rect.toJSON(),x:after.shell.right},start=prior.visible?prior.rect:{...target.rect.toJSON(),x:before.shell.right};
+    const style=panel.style.cssText,hidden=panel.hidden,inert=panel.inert;
+    restores.push(()=>{const externallyHidden=panel.hidden;panel.style.cssText=style;panel.classList.remove('pane-layout-frame');panel.hidden=hidden||externallyHidden;panel.inert=inert||externallyHidden;if(panel.hidden&&panel.dataset.clearPaneOnClose){$('details-content').replaceChildren();delete panel.dataset.clearPaneOnClose;}});
+    panel.hidden=false;panel.classList.add('pane-layout-frame');
+    // Frame geometry also overrides native mobile's overlay positioning. The
+    // slide uses translation, never scale, so screen input coordinates stay sane.
+    Object.assign(panel.style,{left:end.x+'px',top:end.y+'px',width:end.width+'px',height:end.height+'px'});
+    const frames=[{transform:`translate(${start.x-end.x}px,${start.y-end.y}px)`,width:start.width+'px',height:start.height+'px'},{transform:'translate(0,0)',width:end.width+'px',height:end.height+'px'}];
+    animations.push(panel.animate(frames,timing));
+  }
+  const screenStyle=screen.style.cssText;
+  if(before.panels[1].visible&&after.panels[1].visible&&Math.abs(before.screen.height-after.screen.height)>1){
+    Object.assign(screen.style,{flex:'none',minHeight:'0',height:after.screen.height+'px'});
+    animations.push(screen.animate([{height:before.screen.height+'px'},{height:after.screen.height+'px'}],timing));
+    restores.push(()=>{screen.style.cssText=screenStyle;});
+  }
+  let frame,control;
+  const fit=()=>{refitComputer();frame=requestAnimationFrame(fit);};frame=requestAnimationFrame(fit);
+  const cleanup=()=>{
+    cancelAnimationFrame(frame);
+    for(const animation of animations){animation.oncancel=null;animation.cancel();}
+    for(const restore of restores)restore();reserve.remove();paneLayoutMotion=null;
+    layoutPanes();refitComputer();
+  };
+  control=trackMotion(animations[0],timing.duration,cleanup);paneLayoutMotion=control;
+  // External cancellation (including webview lifecycle) settles every sibling.
+  for(const animation of animations.slice(1))animation.oncancel=()=>control.finish();
+}
+function showPane(panel){
+  if(!panel.hidden&&!panel.inert)return;
+  transitionPaneLayout(()=>{panel.hidden=false;panel.inert=false;});
+}
+function hidePane(panel){
+  if(panel.hidden||panel.inert)return;
+  if(panel.contains(document.activeElement))$(panel.id==='computer-panel'?'show-computer':'bot-details')?.focus({preventScroll:true});
+  transitionPaneLayout(()=>{
+    panel.hidden=true;panel.inert=true;
+    if(panel.id==='details-panel'&&state.view==='artifacts'){panel.dataset.clearPaneOnClose='true';state.view='details';state.panelKey='';}
+  });
+}
+function setComputerExpanded(expanded){
+  const panel=$('computer-panel');
+  if(panel.classList.contains('expanded')!==expanded)transitionPaneLayout(()=>panel.classList.toggle('expanded',expanded));
   $('computer-expand').setAttribute('aria-label',expanded?'Collapse computer':'Expand computer');
   $('computer-expand').title=expanded?'Collapse computer':'Expand computer';
   $('computer-expand').replaceChildren(icon(expanded?'chevrons-right':'expand'));
@@ -6862,9 +6994,9 @@ function setPaneWidth(panel,width,natural){
   else{panel.removeAttribute('data-pane-sized');panel.style.removeProperty('--pane-width');}
 }
 function layoutPanes(){
+  if(paneLayoutMotion)return;
   const shell=$('app');if(window.__KINDRED_MOBILE_PLATFORM==='ios'){setSidebarWidth(null);for(const id of ['details-panel','computer-panel'])setPaneWidth($(id),0,0);return;}if(paneDrag||shell.hidden||!shell.clientWidth)return;
   const panels=[$('details-panel'),$('computer-panel')];
-  if(computerTransition)return;
   for(const panel of panels)panel.classList.remove('pane-overlay');
   if(!wideLayout.matches){setSidebarWidth(null);for(const panel of panels)setPaneWidth(panel,0,0);updateSeparators();return;}
   const total=shell.clientWidth,pane=openRightPane(),natural=pane?naturalPaneWidth(pane):0,rail=railWidth();
@@ -6966,7 +7098,7 @@ function paneSeparator(kind){
 }
 function beginPaneDrag(event,kind,handle){
   if(event.button!==0||!event.isPrimary||!wideLayout.matches||paneDrag)return;
-  event.preventDefault();
+  event.preventDefault();finishComputerTransition();
   const spec=paneSpecs[kind],limits=spec.measure(),origin=event.clientX,root=document.documentElement;
   let raw=limits.start,frame=0,ended=false;
   clearTimeout(paneSettle);$('app').classList.remove('pane-settling');
@@ -7356,7 +7488,7 @@ function saveAvatarChoice(bot,patch){
 }
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.avatar-menu'))document.querySelectorAll('.avatar-menu.menu-open').forEach(n=>n.classList.remove('menu-open'));});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelectorAll('.avatar-menu.menu-open').forEach(n=>n.classList.remove('menu-open'));$('new-menu').hidden=true;}});
-const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0};
+const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0,disclosure:null,disclosureSummary:null,disclosureFrame:0};
 function captureChatAnchor(){
   const area=$('content'),top=area.getBoundingClientRect().top;
   const visible=[...area.querySelectorAll(':scope > [data-message], :scope > [data-run]')].filter(n=>n.getBoundingClientRect().bottom>top+1).slice(0,3);
@@ -7366,7 +7498,11 @@ function captureChatAnchor(){
 }
 function restoreChatPosition(){
   const area=$('content');
-  if(chatScroll.follow)area.scrollTop=area.scrollHeight;
+  if(chatScroll.follow){
+    const summary=chatScroll.disclosureSummary;
+    const ceiling=summary?.isConnected?area.scrollTop+summary.getBoundingClientRect().top-area.getBoundingClientRect().top-8:Infinity;
+    area.scrollTop=Math.min(area.scrollHeight-area.clientHeight,ceiling);
+  }
   else {
     const a=chatScroll.anchor;
     let target,matched;
@@ -7383,6 +7519,25 @@ function restoreChatPosition(){
   }
   chatScroll.top=area.scrollTop;updateJumpLatest();
 }
+function settleChatDisclosure(){
+  cancelAnimationFrame(chatScroll.disclosureFrame);
+  const summary=chatScroll.disclosureSummary,disclosure=chatScroll.disclosure;
+  if(!summary)return;
+  const step=()=>{
+    chatScroll.disclosureFrame=0;
+    if(chatScroll.disclosureSummary!==summary)return;
+    // Follow only this interaction's finite effects, including rapid reversals.
+    // A capped reader must become a normal anchored reader before later polling.
+    if(disclosure?.isConnected&&disclosure.getAnimations({subtree:true}).some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))){
+      chatScroll.disclosureFrame=requestAnimationFrame(step);return;
+    }
+    restoreChatPosition();
+    chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
+    const area=$('content');
+    if(area.scrollHeight-area.scrollTop-area.clientHeight>1){chatScroll.follow=false;captureChatAnchor();}
+  };
+  chatScroll.disclosureFrame=requestAnimationFrame(step);
+}
 function scheduleChatPosition(){
   if(chatScroll.frame)return;
   chatScroll.frame=requestAnimationFrame(()=>{chatScroll.frame=0;restoreChatPosition();chatScroll.rendering=false;finishConversationOpening(chatScroll.view);});
@@ -7398,6 +7553,7 @@ function beginChatRender(view){
   messageActionFocus=chatScroll.view===view && focused?.dataset.messageFocus && focused.closest('[data-message]') ? {seq:focused.closest('[data-message]').dataset.message,control:focused.dataset.messageFocus}:null;
   questionFocus=focused?.closest('.question-card') && chatScroll.view===view?{id:focused.closest('.question-card').dataset.questionId,target:focused.dataset.questionFocus,start:focused.selectionStart,end:focused.selectionEnd}:null;
   if(chatScroll.view!==view){
+    chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
     const saved=chatHistory.get(view)?.scroll;
     chatScroll.view=view;chatScroll.follow=saved?.follow??true;chatScroll.anchor=saved?.anchor??null;chatScroll.top=saved?.top??0;
   }
@@ -7427,6 +7583,7 @@ function endChatRender(){
   if(questionFocus){const card=[...$('content').querySelectorAll('.question-card')].find(c=>c.dataset.questionId===questionFocus.id),control=card&&[...card.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===questionFocus.target);(control||card)?.focus({preventScroll:true});if(control?.tagName==='TEXTAREA'&&questionFocus.start!==null)control.setSelectionRange(questionFocus.start,questionFocus.end);questionFocus=null;}
 }
 function followChatLatest(){
+  chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
   chatScroll.follow=true;chatScroll.anchor=null;
   const entry=chatHistory.get(currentConversationId());if(entry)entry.wantLatest=true;
   scheduleChatPosition();
@@ -7434,6 +7591,10 @@ function followChatLatest(){
 $('content').addEventListener('scroll',()=>{
   if(chatOpening||chatScroll.rendering)return;
   const area=$('content');
+  // Measuring a collapsed disclosure can temporarily clamp scrollTop before
+  // its height animation is attached. That browser adjustment is not a user
+  // scroll; keep following the finite animation until a real gesture cancels it.
+  if(chatScroll.follow&&chatScroll.disclosure?.getAnimations({subtree:true}).some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))){restoreChatPosition();return;}
   if(Math.abs(area.scrollTop-chatScroll.top)<1)return;
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
   const entry=chatHistory.get(currentConversationId());
@@ -7448,11 +7609,28 @@ $('content').addEventListener('scroll',()=>{
 function readingGesture(e){
   if(chatOpening)return;
   if(e.type==='wheel'&&e.deltaY===0)return;
+  if((e.type==='pointerdown'||e.type==='keydown'&&e.key===' ')&&chatScroll.follow&&e.target.closest('summary,button[aria-expanded]')===chatScroll.disclosureSummary)return;
   if(e.type==='keydown'&&(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(e.key)||e.target.closest('input,textarea,[contenteditable=true]')))return;
-  chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
+  chatScroll.disclosure=null;chatScroll.disclosureSummary=null;chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
 }
 for(const name of ['wheel','touchstart','pointerdown','keydown'])$('content').addEventListener(name,readingGesture,{passive:true});
+// Capture the position before a disclosure changes layout. Pointer/keyboard
+// focus is a reading gesture above, but expanding at the bottom should keep
+// following. ResizeObserver then moves the viewport with each animation frame;
+// wheel/touch input can still cancel it immediately.
+$('content').addEventListener('click',e=>{
+  if(chatOpening||!e.target.closest('summary,button[aria-expanded]'))return;
+  if(e.target.closest('.message-expand')){chatScroll.disclosure=null;chatScroll.disclosureSummary=null;chatScroll.follow=false;captureChatAnchor();return;}
+  const area=$('content');
+  const continuing=chatScroll.follow&&chatScroll.disclosureSummary===e.target.closest('summary,button[aria-expanded]');
+  chatScroll.follow=continuing||!chatHistory.get(currentConversationId())?.hasAfter&&area.scrollHeight-area.scrollTop-area.clientHeight<80;
+  chatScroll.disclosure=chatScroll.follow?e.target.closest('[data-message],[data-run]'):null;
+  chatScroll.disclosureSummary=chatScroll.follow?e.target.closest('summary,button[aria-expanded]'):null;
+  if(chatScroll.follow)chatScroll.anchor=null;else captureChatAnchor();
+  settleChatDisclosure();
+},true);
+
 const jumpLatest=button('Latest messages',async()=>{followChatLatest();await renderChat(true);$('prompt').focus({preventScroll:true});},'jump-latest','chevron');jumpLatest.hidden=true;$('composer-area').append(jumpLatest);
 function updateJumpLatest(){const area=$('content');jumpLatest.hidden=!chatHistory.get(currentConversationId())?.hasAfter && area.scrollHeight-area.scrollTop-area.clientHeight<150;}
 $('content').addEventListener('scroll',updateJumpLatest,{passive:true});new MutationObserver(updateJumpLatest).observe($('content'),{childList:true,subtree:true});
@@ -7653,7 +7831,7 @@ function taskCards(run) {
       // chat moves smoothly; the choice survives refreshes of the card.
       summary.onclick=e=>{
         e.preventDefault();const open=!more.open,from=instructions.getBoundingClientRect().height;
-        chatScroll.follow=false;captureChatAnchor();motion?.cancel();motion=null;
+        motion?.cancel();motion=null;
         open?humanInstructionsOpen.add(t.id):humanInstructionsOpen.delete(t.id);
         instructions.classList.remove('is-clamped');const full=instructions.getBoundingClientRect().height;paint(open);const to=instructions.getBoundingClientRect().height;
         if(chatMotionReduced()||!instructions.isConnected)return;
@@ -7811,7 +7989,7 @@ function connectorLogo(brand) {
   return box;
 }
 function connectorHeading(name,source,tool='') {
-  const brand=connectorBrand(name,tool),row=node('div','connector-heading'),heading=node('strong','',`${brand.name} (via ${source})`);heading.setAttribute('role','heading');heading.setAttribute('aria-level','4');row.append(connectorLogo(brand),heading);return row;
+  const brand=connectorBrand(name,tool),row=node('div','connector-heading'),heading=node('strong','',source?`${brand.name} (via ${source})`:brand.name);heading.setAttribute('role','heading');heading.setAttribute('aria-level','4');row.append(connectorLogo(brand),heading);return row;
 }
 function connectorSourceLabel(source='') {
   const key=String(source).toLowerCase();
@@ -8063,8 +8241,7 @@ function desktopNotificationControl() {
           catch(e){notchToggle.input.checked=notchEnabled;notice(e.message||String(e),true);}
           finally{notchToggle.input.disabled=false;}
         };
-        const help=node('p','muted small settings-device-status','Replaces system banners and appears even during macOS Focus.');
-        root.append(notchToggle.label,help);
+        root.append(notchToggle.label);
       }
 
       if(window.__KINDRED_DESKTOP?.platform==='macos'&&!value.notch?.supported&&!root.querySelector('.notch-update-required'))root.append(node('p','muted small notch-update-required','Notch notifications require Mac client 0.51.0 or newer. Desktop app on this device: '+(installedClientVersion()||'Unknown')+'. Update the client to enable them.'));
@@ -8337,7 +8514,8 @@ function workflowOptions(chatId,panel){return {
 function animateWorkflowDetails(root){for(const details of root.querySelectorAll('.workflow-details')){const body=node('div','chat-disclosure-body');for(const child of [...details.children])if(child.tagName!=='SUMMARY')body.append(child);details.append(body);animateChatDisclosure(details,body);}}
 
 async function decisionsConnection() {
-  const root=node('div','provider-catalog decisions-connection');root.append(node('h3','','Decisions API (optional)'));
+  const root=node('div','provider-catalog connection-section decisions-connection'),heading=node('div','connection-section-heading');
+  heading.append(node('strong','','Decisions API'),node('span','muted small','Optional'));root.append(heading);
   const status=node('p','muted small');status.setAttribute('role','status');
   const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'Paste your OpenAI API key'}),actions=node('div','row-actions');
   key.input.spellcheck=false;key.input.autocapitalize='off';
