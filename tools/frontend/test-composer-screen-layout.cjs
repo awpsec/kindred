@@ -1,6 +1,7 @@
 const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
 const {server,token}=require('./fixtures/desktop.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const translateXOnly=({matrix,is2D})=>is2D&&matrix.length===6&&matrix.every(Number.isFinite)&&Math.abs(matrix[0]-1)<1e-6&&Math.abs(matrix[1])<1e-6&&Math.abs(matrix[2])<1e-6&&Math.abs(matrix[3]-1)<1e-6&&Math.abs(matrix[5])<1e-6;
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+server.address().port;
  const engine=process.env.WEBKIT?'webkit':'chromium',browser=await(process.env.WEBKIT?webkit:chromium).launch({headless:!process.env.KINDRED_HEADED});
@@ -48,15 +49,15 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   }
   const sample=expand=>page.evaluate(async expand=>{
    const panel=document.querySelector('#computer-panel'),screen=document.querySelector('#desktop'),rows=[];
-   const read=()=>{const p=panel.getBoundingClientRect(),s=screen.getBoundingClientRect();return {x:p.x,width:p.width,height:s.height,transform:getComputedStyle(panel).transform,canvasSame:screen.contains(window.fixtureCanvas)};};
+   const read=()=>{const p=panel.getBoundingClientRect(),s=screen.getBoundingClientRect(),transform=getComputedStyle(panel).transform,m=new DOMMatrixReadOnly(transform==='none'?undefined:transform);return {x:p.x,width:p.width,height:s.height,transform,is2D:m.is2D,matrix:[m.a,m.b,m.c,m.d,m.e,m.f],canvasSame:screen.contains(window.fixtureCanvas)};};
    rows.push(read());window.fixture.setComputerExpanded(expand);rows.push(read());
    const start=performance.now();while(performance.now()-start<380){await new Promise(requestAnimationFrame);rows.push(read());}
    return rows;
   },expand);
   for(const expanded of [true,false]){
    const rows=await sample(expanded);assert(rows.length>4);assert(Math.abs(rows[0].x-rows[1].x)<2,JSON.stringify(rows.slice(0,2)));
-   assert(rows.every(r=>r.transform==='none'&&r.canvasSame));
-   for(let i=1;i<rows.length;i++){assert(expanded?rows[i].width>=rows[i-1].width-1:rows[i].width<=rows[i-1].width+1);assert(expanded?rows[i].height>=rows[i-1].height-1:rows[i].height<=rows[i-1].height+1);}
+   assert(rows.every(r=>translateXOnly(r)&&r.canvasSame),'Pane motion must translate only along X, without scale, skew or a replacement canvas: '+JSON.stringify(rows));
+   for(let i=1;i<rows.length;i++){assert(expanded?rows[i].x<=rows[i-1].x+1:rows[i].x>=rows[i-1].x-1,'Panel X must move monotonically');assert(expanded?rows[i].width>=rows[i-1].width-1:rows[i].width<=rows[i-1].width+1);assert(expanded?rows[i].height>=rows[i-1].height-1:rows[i].height<=rows[i-1].height+1);}
   }
   const reversed=await page.evaluate(async()=>{
    const panel=document.querySelector('#computer-panel');window.fixture.setComputerExpanded(true);await new Promise(r=>setTimeout(r,80));const before=panel.getBoundingClientRect();window.fixture.setComputerExpanded(false);const after=panel.getBoundingClientRect();return Math.abs(before.x-after.x)+Math.abs(before.width-after.width);
