@@ -398,11 +398,15 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     private func js(_ source: String) async throws -> Any? {
         // A WK page retains its global lexical environment between evaluations.
         // A block isolates const/let while preserving expression/Promise results.
-        let result = try await session.webView.evaluateJavaScript("{\n\(source)\n}")
-        // Supported programmatic WebKit focus needs the UIKit first responder
-        // as well as DOM focus. Actual touch input is a separate device check.
-        if source.contains(".focus(") { session.webView.becomeFirstResponder() }
-        return result
+        return try await withCheckedThrowingContinuation { continuation in
+            session.webView.evaluateJavaScript("{\n\(source)\n}") { value, error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume(returning: value) }
+            }
+            // Pair the queued script with UIKit focus immediately, before the
+            // asynchronous DOM focus runs. Actual touch is a separate check.
+            if source.contains(".focus(") { session.webView.becomeFirstResponder() }
+        }
     }
     private func boolean(_ source: String) async throws -> Bool { try await js(source) as? Bool == true }
     private func waitFor(_ label: String, timeout: TimeInterval = 12, predicate: () async throws -> Bool) async throws {
@@ -543,10 +547,10 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                     probe.finish(["javascriptFailure": ["domain": failure.domain,
                         "code": failure.code] as [String: Any]])
                 } else {
-                    if source.contains(".focus(") { self.session.webView.becomeFirstResponder() }
                     probe.finish(["page": value ?? NSNull()])
                 }
             }
+            if source.contains(".focus(") { session.webView.becomeFirstResponder() }
         }
     }
 
