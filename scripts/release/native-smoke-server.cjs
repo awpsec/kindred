@@ -26,8 +26,14 @@ try {
  await report({phase:'chat',passed:true,clientVersion:state.version,text,errors,secureContext:window.isSecureContext,microphoneCaptureAvailable:typeof navigator.mediaDevices?.getUserMedia==='function',audioContextAvailable:typeof (window.AudioContext||window.webkitAudioContext)==='function'});
  let notchTested=false,foregroundTested=false,previewTested=false,updaterTested=false;
  const framePhases=new Set();
- for(let n=0;n<300;n++){
+ let lastPhase=null,idlePolls=0,terminalPhaseCompleted=false;
+ // Each phase retains the original 300-poll idle allowance. Earlier captures
+ // must not consume the listener needed by a later Accounts request.
+ // The whole listener is finite even if the controller keeps changing phase.
+ for(let n=0;n<3000;n++){
   const data=await(await fetch('/fixture/phase')).json();
+  if(data.phase!==lastPhase){lastPhase=data.phase;idlePolls=0;}
+  if(++idlePolls>300)throw Error('Native fixture phase listener idle budget exhausted: '+lastPhase);
   if(data.phase.startsWith('mac-paste-')&&!framePhases.has(data.phase)){
    if(!window.__KINDRED_NATIVE_CLIPBOARD_TEXT)throw Error('Native clipboard capability missing');
    const paste=document.querySelector('#desktop-paste'),control=document.querySelector('#take-control');
@@ -135,15 +141,16 @@ try {
    try{await window.__TAURI__.core.invoke('start_native_dictation');accepted=true;}
    catch(e){unavailable=String(e);if(!unavailable.includes('Enable Dictation in macOS System Settings'))throw e;}
    await report({phase:'native-dictation',passed:true,accepted,unavailable,physicalSpeechVerified:false});
-   break;
+   terminalPhaseCompleted=true;break;
   }
   if(data.phase==='accounts'){
    if(notchTested)await window.__TAURI__.core.invoke('set_notch_notifications',{enabled:false});
    await window.__TAURI__.core.invoke('open_profile_home',{bounds:null,theme:'dark'});
-   await report({phase:'accounts',passed:true});break;
+   await report({phase:'accounts',passed:true});terminalPhaseCompleted=true;break;
   }
   await sleep(200);
  }
+ if(!terminalPhaseCompleted)throw Error('Native fixture phase listener total polling budget exhausted');
 }catch(e){await report({passed:false,error:String(e),chat:chatState(),errors});}
 </script>`;
 // Block external HTTPS update discovery only for the test app’s proxy.
