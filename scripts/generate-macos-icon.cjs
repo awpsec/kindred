@@ -1,11 +1,11 @@
-// Render the existing vector mark on an opaque black macOS background.
+// Render the existing vector mark on an approved Soft K dark tile.
 // Run with KINDRED_PLAYWRIGHT_MODULE pointing to Playwright when installed externally.
 const fs=require('node:fs'),path=require('node:path');
 const {chromium}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
 (async()=>{
  const icons=path.resolve(__dirname,'../desktop/icons');
  const mark=fs.readFileSync(path.join(icons,'icon.svg'),'utf8').replace(/<svg[^>]*>/,'').replace(/<\/svg>\s*$/,'');
- const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 128 128">\n<rect width="128" height="128" fill="#000"/>\n<g transform="translate(12.8 12.8) scale(.8)">'+mark+'</g>\n</svg>\n';
+ const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 160 160">\n<rect width="160" height="160" fill="#20201f"/>\n<g>'+mark+'</g>\n</svg>\n';
  fs.writeFileSync(path.join(icons,'macos.svg'),svg);
  const browser=await chromium.launch();
  try{

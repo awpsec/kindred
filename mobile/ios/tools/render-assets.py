@@ -85,9 +85,10 @@ def flatten_to_rgb(path: pathlib.Path) -> None:
 
 
 def main() -> None:
-    icon = ASSETS / "AppIcon.appiconset" / "AppIcon-1024.png"
-    render(ICON, 1024, icon)
-    flatten_to_rgb(icon)
+    for suffix in ("", "-dark", "-tinted"):
+        icon = ASSETS / "AppIcon.appiconset" / f"AppIcon{suffix}-1024.png"
+        render(ICON.with_name(f"app-icon{suffix}.svg"), 1024, icon)
+        flatten_to_rgb(icon)
     mark = ASSETS / "KindredMark.imageset"
     for scale in (1, 2, 3):
         render(MARK, 96 * scale, mark / f"KindredMark@{scale}x.png")
