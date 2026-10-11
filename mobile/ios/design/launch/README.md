@@ -45,6 +45,8 @@ using the current native startup implementation as the integration point. Keep
 the static launch screen unchanged. Use the updated mark from
 `mobile/ios/tools/kindred-mark.svg` with separately animatable pill eyes; do not
 embed the eyes twice in the body image.
+The October 11 approved Soft K asset replaces the earlier body and eye positions;
+the native drawing follows that current SVG while retaining the approved timing.
 
 - Run once on a fresh app launch. Do not replay on scene activation, background
   return, account/profile switching, navigation, web reload or reconnect.
