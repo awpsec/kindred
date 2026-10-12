@@ -5799,6 +5799,15 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   // Human handoffs belong where they were requested, not beneath the live
   // worker or the final answer. Keep one stable card as its status changes.
   const placedHumanTasks=new Set();
+  // Hidden history rows have no element; grouped rows share their rendered
+  // anchor. Choose the first later rendered message rather than falling back
+  // to the bottom when the first later history row is invisible.
+  const humanTaskMessageGroups=new Map();
+  for(const group of area.children){
+    for(const seq of [group.dataset.message,...(group.dataset.scrollMessages?.split(' ')||[])]){
+      if(seq)humanTaskMessageGroups.set(seq,group);
+    }
+  }
   for(const card of [...area.querySelectorAll('[data-user-task]')]){
     const task=state.userTasks.find(t=>t.id===card.dataset.userTask);
     if(!task)continue;
@@ -5806,11 +5815,12 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     placedHumanTasks.add(task.id);
     const event=(state.details.get(task.run_id)?.events||[]).find(e=>e.kind==='user_action'&&e.body?.id===task.id);
     const later=data.messages.find(m=>{
+      if(!humanTaskMessageGroups.has(String(m.seq)))return false;
       if(m.run_id===task.run_id&&m.kind==='result')return true;
       if(m.run_id===task.run_id&&event&&Number.isInteger(m.source_event_seq))return m.source_event_seq>event.seq;
       return m.created>task.created;
     });
-    const anchor=(later&&[...area.children].find(n=>n.dataset.message===String(later.seq)))
+    const anchor=(later&&humanTaskMessageGroups.get(String(later.seq)))
       ||[...area.children].find(n=>n.dataset.run===task.run_id&&!n.dataset.message);
     const group=node('article','message-group human-handoff-message');
     group.dataset.message='human-task-'+task.id;group.append(card);
