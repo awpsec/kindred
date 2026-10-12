@@ -4762,11 +4762,31 @@ function summaryProgress(items,entry,runs){
   const finished=!!phaseFinal||run&&!active(run)&&run.status!=='queued',manual=entry.progressOpen.has(key),details=node('details','summary-progress-disclosure');details.open=!finished||manual||entry.progressReading.has(key);
   const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender),name=bot?.name||'Bot';
   if(bot){const avatar=buddy(bot,20);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
-  const elapsed=Math.max(0,(phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||items.at(-1).created):Math.floor(Date.now()/1000)))-(first.created||run?.progress_started||0));
+  const taskStarted=[run?.progress_started,run?.created].find(value=>Number.isFinite(value)&&value>0);
+  entry.progressTimePins??=new Set();
+  const taskEnded=phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||items.at(-1).created):Math.floor(Date.now()/1000));
+  const elapsed=taskStarted&&taskStarted<=taskEnded?taskEnded-taskStarted:null;
   const taskName=(run?.task_title||first.progress?.task_title||'Task progress').trim()||'Task progress',taskLabel=node('span','summary-progress-task'),taskText=node('span','summary-progress-name',taskName);taskLabel.title=taskName;taskLabel.append(taskText);
   if(!finished&&run?.status==='running'){taskText.classList.add('is-working');taskText.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}
-  title.append(node('strong','',name),taskLabel,node('span','muted small summary-progress-time',elapsedTime(elapsed)),node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):''}`));
-  const body=node('div','summary-progress-body');for(const m of items){const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);update.append(markdown(m.text));body.append(update);}
+  title.append(node('strong','',name),taskLabel);
+  if(elapsed!==null)title.append(node('span','muted small summary-progress-time',elapsedTime(elapsed)));
+  title.append(node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):''}`));
+  const body=node('div','summary-progress-body');for(const m of items){const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);const content=markdown(m.text);
+    if(Number.isFinite(m.created)&&m.created>0){
+      const date=new Date(m.created*1000),stamp=node('span','progress-update-time'),clock=node('time','progress-update-clock','('+date.toLocaleTimeString([],{timeZone:botTimezone(),hour:'numeric',minute:'2-digit'})+')');
+      clock.dateTime=date.toISOString();
+      const fullDate=date.toLocaleString([],{timeZone:botTimezone(),dateStyle:'full',timeStyle:'short'});clock.setAttribute('aria-label',fullDate);clock.title=fullDate;
+      const knownStart=Number.isFinite(taskStarted)&&taskStarted>0&&taskStarted<=m.created;
+      if(knownStart){
+        const messageKey=String(m.seq),elapsed=elapsedTime(m.created-taskStarted),toggle=button(elapsed,()=>{},'progress-update-time-toggle');
+        toggle.setAttribute('aria-label',elapsed+' after task start. '+fullDate+'. Toggle timestamp.');
+        const paint=()=>{const pinned=entry.progressTimePins.has(messageKey);stamp.dataset.pinned=String(pinned);toggle.setAttribute('aria-pressed',String(pinned));};
+        toggle.onclick=()=>{if(!toggle.isConnected||currentConversationId()!==entry.id)return;entry.progressTimePins.has(messageKey)?entry.progressTimePins.delete(messageKey):entry.progressTimePins.add(messageKey);paint();};paint();stamp.append(toggle);
+      }else stamp.dataset.pinned='true'; // Historical run unavailable: never invent elapsed time.
+      stamp.append(clock);const last=content.lastElementChild;
+      (last?.tagName==='P'?last:content).append(document.createTextNode(' '),stamp);
+    }
+    update.append(content);body.append(update);}
   details.append(title,body);group.append(details);animateChatDisclosure(details,body);
   title.addEventListener('click',()=>{entry.progressReading.delete(key);details.open?entry.progressOpen.delete(key):entry.progressOpen.add(key);},{capture:true});
   if(finished&&details.open&&!manual){const observer=new IntersectionObserver(records=>{if(!group.isConnected){observer.disconnect();return;}if(!records[0].isIntersecting&&!group.contains(document.activeElement)&&!entry.progressOpen.has(key)){captureChatAnchor();entry.progressReading.delete(key);details.open=false;restoreChatPosition();observer.disconnect();}},{root:$('content')});requestAnimationFrame(()=>{if(group.isConnected)observer.observe(group);});}
