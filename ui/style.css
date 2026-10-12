@@ -5962,3 +5962,7 @@ html[data-system-text-size] .request-tray-bar{margin-left:auto}
 
 /* Native iOS already presents the supported full-size computer surface. */
 html[data-system-text-size] :is(#computer-expand,.desktop-preview-open){display:none}
+
+/* Sending replaces the arrow, rather than adding a second glyph to its circle. */
+#composer #send.is-busy>svg{visibility:hidden}
+#composer #send.is-busy::after{position:absolute;inset:0;margin:auto;width:14px;height:14px;box-sizing:border-box;pointer-events:none}
