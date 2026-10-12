@@ -3081,7 +3081,7 @@ input[type="checkbox"]:checked::after {
 :root[data-theme="light"] .openai-white { display:none; }
 :root[data-theme="light"] .openai-black { display:block; }
 #prompt { flex:none; height:auto; }
-#prompt:empty::before { position:absolute; }
+#prompt:empty::before, #prompt[data-empty="true"]::before { position:absolute; }
 @media (min-width:761px) and (max-width:1050px) {
   .details-panel { position:absolute; right:0; top:0; bottom:0; width:340px; max-width:calc(100vw - 210px); z-index:4; box-shadow:var(--shadow); }
 }
