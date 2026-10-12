@@ -1,7 +1,7 @@
-const {chromium}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
 const {server,token}=require('./fixtures/desktop.cjs');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({headless:true});try{
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await(process.env.WEBKIT?webkit:chromium).launch({headless:true});try{
  const p=await browser.newPage(),origin='http://127.0.0.1:'+server.address().port;
  await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nexport {checkComputerStartup};'}));
  await p.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);await p.goto(origin);
@@ -19,7 +19,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await checkComputerStartup({...options,probe:async()=>({})});
   return{recovery,failure,cancelled,incomplete:reports};
  });
- assert.equal(result.recovery.calls,3);assert.deepEqual(result.recovery.reports,[['Computer is responding.',false]]);
+ assert.equal(result.recovery.calls,3);assert.deepEqual(result.recovery.reports,[['Guest resources are responding. Screen connection is checked separately.',false]]);
  assert.equal(result.failure.length,1);assert.equal(result.failure[0][1],true);assert.match(result.failure[0][0],/SSH connection refused/);
  assert.deepEqual(result.cancelled,[]);assert.equal(result.incomplete[0][1],true);assert.match(result.incomplete[0][0],/incomplete health response/);
  console.log('Startup: delayed guest, persistent failure, stale response cancellation and invalid health response passed');

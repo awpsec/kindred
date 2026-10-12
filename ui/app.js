@@ -3229,7 +3229,7 @@ async function settingsComputer(){
 // Launching QEMU does not prove the guest booted. Check the guest RPC without
 // rebooting, reinstalling, or changing its disk; stale checks cannot overwrite
 // a later shutdown/reboot or a different settings pane.
-async function checkComputerStartup({probe,active,report,now=()=>Date.now(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),timeout=300000}) {
+async function checkComputerStartup({probe,active,report,now=()=>Date.now(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),timeout=300000,onResponding=()=>{}}) {
   const deadline=now()+timeout;
   let lastError='';
   while(active()&&now()<deadline){
@@ -3237,7 +3237,8 @@ async function checkComputerStartup({probe,active,report,now=()=>Date.now(),slee
       const resources=await probe();
       if(!active())return;
       if(!Number.isFinite(resources?.uptime_seconds))throw new Error('The computer returned an incomplete health response.');
-      report('Computer is responding.',false);
+      report('Guest resources are responding. Screen connection is checked separately.',false);
+      await onResponding();
       return;
     }catch(error){
       if(!active())return;
@@ -3292,18 +3293,38 @@ async function settingsBotComputer() {
     if(machineControlBusy)return;
     machineControlBusy=true;
     const check=++computerStartCheck;
+    const context={token:state.token,chat:currentConversationId(),bot:screenBotId(),generation:state.desktopGeneration,panelOpen:!$('computer-panel').hidden};
+    const current=()=>check===computerStartCheck&&machineStatus.isConnected&&$('settings-dialog').open
+      &&state.token===context.token&&currentConversationId()===context.chat&&screenBotId()===context.bot&&state.desktopGeneration===context.generation;
     for(const control of machineActions.children)control.disabled=true;
     machineStatus.hidden=false;machineStatus.className='muted small';
     machineStatus.textContent={start:'Starting the computer…',reboot:'Restarting the computer…',shutdown:'Shutting down the computer…'}[action];
     try{
-      await api('/vm/'+action,'POST',{});
-      machineStatus.textContent={start:'Computer is booting. Waiting for a connection…',reboot:'Restart requested. The screen will reconnect when ready.',shutdown:'Shutdown requested.'}[action];
-      if(action==='start')void checkComputerStartup({
-        probe:()=>api('/computer/resources'),
-        active:()=>check===computerStartCheck&&machineStatus.isConnected&&$('settings-dialog').open,
+      const result=await api('/vm/'+action,'POST',{});
+      if(!current())return;
+      if(typeof result?.state!=='string'||!result.state.trim()||result.state.trim()==='unknown')throw new Error('The computer returned an incomplete action response. Reconnect manually to check its state.');
+      if(action!=='shutdown'&&['shut off','stopped','paused'].includes(result.state.trim().toLowerCase()))throw new Error('The computer did not report a running state. Its screen has not been reconnected.');
+      machineStatus.textContent=action==='shutdown'?'Shutdown requested. Screen disconnected.':'Computer action accepted. Waiting for guest resources…';
+      if(action!=='shutdown')void checkComputerStartup({
+        probe:()=>api('/computer/resources'),active:current,
         report:(message,failed)=>{machineStatus.className=failed?'run-error small':'muted small';machineStatus.textContent=message;},
+        onResponding:async()=>{
+          if(!current())return;
+          if(!context.panelOpen||$('computer-panel').hidden){machineStatus.textContent='Guest resources are responding. Open computer to check the screen.';return;}
+          if(state.desktopControlRequested||state.status.takeover){machineStatus.textContent='Guest resources are responding. Reconnect the screen manually while control is active.';return;}
+          const connectionCurrent=()=>current()&&!$('computer-panel').hidden&&!state.desktopControlRequested&&!state.status.takeover;
+          const connecting=connectDesktop({isCurrent:connectionCurrent,allowRetry:false});context.generation=state.desktopGeneration;
+          await connecting;
+          if(!connectionCurrent())return;
+          const rfb=state.rfb;if(!rfb){machineStatus.textContent='Guest resources are responding. Screen connection is not ready.';return;}
+          const connected=()=>{if(connectionCurrent()&&state.rfb===rfb&&state.desktopConnected)machineStatus.textContent='Screen connected. Guest resources are responding.';};
+          const disconnected=()=>{if(connectionCurrent()&&state.rfb===rfb){machineStatus.className='run-error small';machineStatus.textContent='Guest resources are responding, but the screen connection closed. Reconnect the screen to try again.';}};
+          machineStatus.textContent='Guest resources are responding. Connecting the selected screen…';
+          if(state.desktopConnected)connected();else rfb.addEventListener('connect',connected,{once:true});
+          rfb.addEventListener('disconnect',disconnected,{once:true});
+        },
       });
-    }catch(error){machineStatus.className='run-error small';machineStatus.textContent=error.message;}
+    }catch(error){if(current()){machineStatus.className='run-error small';machineStatus.textContent=error.message;}}
     finally{machineControlBusy=false;for(const control of machineActions.children)control.disabled=false;}
   }
   machineActions.append(
@@ -3502,7 +3523,7 @@ function desktopLoading(label = "Connecting") {
   $("desktop").append(loading);
   $("desktop-mode").textContent = label;
 }
-function retryDesktop(generation, message) {
+function retryDesktop(generation, message, allowRetry=true) {
   if (generation !== state.desktopGeneration || $("computer-panel").hidden)
     return;
   clearTimeout(state.desktopTimeout);
@@ -3512,7 +3533,7 @@ function retryDesktop(generation, message) {
   const reason=message || "The screen connection closed before it was ready.";
   $("desktop-error").textContent=reason;
   $("desktop-error").hidden=false;
-  if ((state.desktopRetry || 0) >= 3) {
+  if (!allowRetry || (state.desktopRetry || 0) >= 3) {
     desktopLoading("Screen unavailable");
     $("desktop-error").textContent=reason+" Check Computer settings, then use Reconnect desktop to try again.";
     return;
@@ -3546,7 +3567,7 @@ async function openComputer(controlRequested = false, expanded = false) {
   renderScreenPicker();
   await Promise.all([connectDesktop(), refreshResources()]);
 }
-async function connectDesktop() {
+async function connectDesktop({isCurrent=()=>true,allowRetry=true}={}) {
   disconnectDesktop();
   const candidates=chatScreenBots();
   if(!candidates.some(b=>b.id===screenBotId()))state.screenBotId=candidates[0]?.id||'';
@@ -3559,13 +3580,14 @@ async function connectDesktop() {
   try {
     // Read the selected screen directly; a concurrent chat refresh may still be in flight.
     const status = await api("/status");
-    if (generation !== state.desktopGeneration) return;
+    if (generation !== state.desktopGeneration || !isCurrent()) return;
     state.status = status;
     state.statusEpoch=(state.statusEpoch||0)+1;
+    if(!isCurrent())return;
     const control = !!state.desktopControlRequested && !!state.status.takeover;
     if(!state.status.takeover)state.desktopControlRequested=false;
     const result = await api("/computer/session", "POST", { control });
-    if (generation !== state.desktopGeneration || $("computer-panel").hidden)
+    if (generation !== state.desktopGeneration || $("computer-panel").hidden || !isCurrent())
       return;
     const url = new URL("/vnc", location.href);
     url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -3576,7 +3598,7 @@ async function connectDesktop() {
     const previewOpen=button('',()=>setComputerExpanded(true),'desktop-preview-open');
     previewOpen.setAttribute('aria-label','Open computer screen');const openLabel=node('span');openLabel.append(icon('expand'),node('span','','Open'));previewOpen.append(openLabel);previewOpen.hidden=true;host.append(previewOpen);
     let failed=false;
-    const fail=message=>{if(failed||generation!==state.desktopGeneration)return;failed=true;rfb.disconnect();retryDesktop(generation,message);};
+    const fail=message=>{if(failed||generation!==state.desktopGeneration)return;failed=true;rfb.disconnect();retryDesktop(generation,message,allowRetry);};
     state.rfb = rfb;
     state.stopComputerPointer?.();
     state.stopComputerPointer = computerClickIndicator(host, () => state.status, () => screenBotId());
@@ -3593,6 +3615,11 @@ async function connectDesktop() {
     }, 35000);
     rfb.addEventListener("connect", () => {
       if (failed || generation !== state.desktopGeneration) return;
+      if(!isCurrent()){
+        failed=true;clearTimeout(state.desktopTimeout);rfb.disconnect();
+        if(state.rfb===rfb){state.rfb=null;state.desktopConnected=false;}
+        return;
+      }
       clearTimeout(state.desktopTimeout);
       state.desktopRetry = 0;
       state.desktopConnected = true;
@@ -3604,8 +3631,8 @@ async function connectDesktop() {
     rfb.addEventListener("disconnect", () => fail("The screen connection closed. The computer may be offline or its screen service unavailable."));
     rfb.addEventListener("securityfailure", () => fail("The computer rejected the screen connection. Check its screen service and retry."));
   } catch (e) {
-    if (generation !== state.desktopGeneration) return;
-    retryDesktop(generation,e.message);
+    if (generation !== state.desktopGeneration || !isCurrent()) return;
+    retryDesktop(generation,e.message,allowRetry);
   }
   updateDesktopState();
 }
