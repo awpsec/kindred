@@ -5966,6 +5966,7 @@ html[data-system-text-size] :is(#computer-expand,.desktop-preview-open){display:
 /* Fixed per-update elapsed time; reserve the clock width to prevent hover reflow. */
 .progress-update-time{display:inline-block;white-space:nowrap;margin-left:6px;color:var(--muted);font-size:calc(11px * var(--text-scale,1));line-height:1.5;font-variant-numeric:tabular-nums;vertical-align:baseline}
 .progress-update-time-toggle{display:inline-block;border:0;background:none;color:inherit;font:inherit;padding:0;min-width:32px;text-align:left;cursor:pointer}
+.progress-update-time-toggle:hover:not(:disabled){background:none}
 .progress-update-clock{display:inline-block;margin-left:5px;opacity:0;transition:opacity .14s ease}
 .progress-update-time[data-pinned=true] .progress-update-clock,.progress-update-time:focus-within .progress-update-clock{opacity:1}
 @media(hover:hover){.summary-progress-update:hover .progress-update-clock{opacity:1}}
