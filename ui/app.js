@@ -2272,7 +2272,7 @@ async function defaultModelSettings(root,current) {
     };
   }catch(error){if(current())pane.body.append(node('p','muted small',error.message||String(error)));}
 }
-const progressModes=[['calm','Calm','Mostly quiet, with occasional updates during longer tasks.'],['balanced','Balanced','Useful updates at meaningful milestones.'],['frequent','Frequent','More frequent updates, without narrating every step.'],['summaries','Summaries (experimental)','Group updates on longer jobs; keep every update available.']];
+const progressModes=[['calm','Calm','Mostly quiet, with occasional updates during longer tasks.'],['balanced','Balanced','Useful updates at meaningful milestones.'],['frequent','Frequent','More frequent updates, without narrating every step.'],['summaries','Summaries','Group updates on longer jobs; keep every update available.']];
 function progressChoices(value='summaries'){
   const root=node('fieldset','progress-choices'),legend=node('legend','','Progress updates'),tiles=node('div','progress-choice-tiles'),description=node('p','progress-choice-description');
   description.id='progress-choice-description';description.setAttribute('aria-live','polite');
@@ -2284,7 +2284,6 @@ function progressChoices(value='summaries'){
     for(let i=0;i<[1,2,4,2][index];i++){const bubble=node('i','progress-sketch-bubble'+(key==='calm'?' progress-sketch-summary':''));bubble.append(node('i'));if(key==='calm')bubble.append(node('i'));thread.append(bubble);}preview.append(thread);
     const working=node('i','progress-sketch-working');working.append(node('i','progress-sketch-bot'),node('i','progress-sketch-strokes'));preview.append(working);
     const title=node('span','progress-choice-title',key==='summaries'?'Summaries':label);
-    if(key==='summaries')title.append(node('small','progress-choice-note','Experimental'));
     tile.append(input,title,preview);tiles.append(tile);
   }
   const update=()=>{description.textContent=progressModes.find(([key])=>inputs.some(i=>i.checked&&i.value===key))?.[2]||progressModes[3][2];};
@@ -2292,7 +2291,7 @@ function progressChoices(value='summaries'){
   return {root,inputs,value:()=>inputs.find(i=>i.checked)?.value||'summaries',set:v=>{inputs.forEach(i=>i.checked=i.value===(v||'summaries'));update();}};
 }
 function botProgressControl(bot){
-  const label=node('label','','Progress updates'),input=select([['inherit','Account default ('+(progressModes.find(([key])=>key===state.general.progress_updates)?.[1]||'Summaries (experimental)')+')'],...progressModes.map(([key,name])=>[key,name])],profile(bot).progress_updates||'inherit');
+  const label=node('label','','Progress updates'),input=select([['inherit','Account default ('+(progressModes.find(([key])=>key===state.general.progress_updates)?.[1]||'Summaries')+')'],...progressModes.map(([key,name])=>[key,name])],profile(bot).progress_updates||'inherit');
   input.setAttribute('aria-label','Progress updates');label.append(input);return {label,input};
 }
 async function settingsGeneral(revision) {
