@@ -1,0 +1,25 @@
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const {server,token}=require('./fixtures/desktop.cjs'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+(async()=>{
+await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await(process.env.WEBKIT?webkit:chromium).launch();
+try{
+const engine=process.env.WEBKIT?'webkit':'chromium',out=process.env.KINDRED_TEST_ARTIFACTS||'test-artifacts/chat-images',snapshots=[],errors=[];fs.mkdirSync(out,{recursive:true});const p=await browser.newPage();p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
+const chat={id:'dm-piper',name:'Piper',members:['piper']};let count=5;
+await p.route(origin+'/api/**',r=>{const n=new URL(r.request().url()).pathname;
+if(n==='/api/chats')return r.fulfill({json:[chat]});
+if(n==='/api/chats/dm-piper')return r.fulfill({json:{chat,messages:[{seq:1,sender:'user',kind:'message',text:'Check these images.',created:Math.floor(Date.now()/1000),files:[...Array.from({length:count},(_,i)=>({id:'image'+i,name:'image'+i+'.png',mime:'image/png'})),{id:'doc',name:'notes.txt',mime:'text/plain'}]}],page:{has_before:false,has_after:false}}});
+if(n.startsWith('/api/uploads/'))return r.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});return r.continue();});
+if(process.env.KINDRED_TEST_APP_SOURCE)await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(process.env.KINDRED_TEST_APP_SOURCE,'utf8')}));
+if(process.env.KINDRED_TEST_STYLE_SOURCE)await p.route(origin+'/style.css',r=>r.fulfill({contentType:'text/css',body:fs.readFileSync(process.env.KINDRED_TEST_STYLE_SOURCE,'utf8')}));
+for(const width of [1100,390,320])for(count of [1,3,4,7]){
+await p.setViewportSize({width,height:844});await p.goto(origin);const group=p.locator('.message-group[data-message="1"]');await group.locator('.message-file-image').first().waitFor();await p.waitForFunction(()=>{const n=document.querySelector('.message-file-image img');return n?.complete&&n.naturalWidth>0});await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const priorImage=await group.locator('.message-file-image').first().boundingBox(),priorText=await group.locator('.message-row').boundingBox();assert(priorImage.height>0&&priorText.height>0);fs.writeFileSync(path.join(out,`${engine}-${width}-${count}-initial-order.json`),JSON.stringify({priorImage,priorText}));assert(priorImage.y+priorImage.height<=priorText.y,'images precede accompanying text');await group.locator('.message-images').waitFor();
+await p.waitForFunction(()=>[...document.querySelectorAll('.message-file-image img')].every(n=>n.complete&&n.naturalWidth>0));await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+assert.equal(await group.locator('.message-file-image').count(),Math.min(count,3));
+const images=await group.locator('.message-images').boundingBox(),row=await group.locator('.message-row').boundingBox();assert(Math.abs(row.y-images.y-images.height-6)<1,JSON.stringify({width,count,images,row}));assert(images.x>=0&&images.x+images.width<=width);
+assert.equal(await group.locator('.message-file').last().innerText(),'notes.txt');const doc=await group.locator('.message-file').last().boundingBox();assert(doc.y>=row.y+row.height,'documents below accompanying text');assert(images.width>0&&row.height>0&&doc.height>0);assert.equal(await group.locator('.message-images-more').count(),count>3?1:0);
+await p.screenshot({path:path.join(out,`${engine}-${width}-${count}-strip.png`)});snapshots.push({width,count,images,row,doc});
+if(count>3){const more=group.locator('.message-images-more');assert.equal(await more.innerText(),'+'+(count-3));await more.click();assert.equal(await p.locator('.attachment-gallery .message-file-image').count(),count);assert.deepEqual(await p.locator('.attachment-gallery .message-file-image img').evaluateAll(ns=>ns.map(n=>n.alt)),Array.from({length:count},(_,i)=>'image'+i+'.png'));await p.locator('.attachment-gallery .uploaded-image-open').last().click();await p.locator('.screenshot-dialog img').waitFor();await p.waitForFunction(()=>{const n=document.querySelector('.screenshot-dialog img');return n?.complete&&n.naturalWidth>0});assert.equal(await p.locator('.screenshot-dialog img').getAttribute('alt'),'image'+(count-1)+'.png');await p.screenshot({path:path.join(out,`${engine}-${width}-${count}-last-image.png`)});}
+}
+assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({engine,passed:true,snapshots,errors},null,2));console.log('PASS image order, gap, overflow gallery and viewing at desktop/mobile widths');
+}finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
+})().catch(e=>{console.error(e);process.exit(1)});
