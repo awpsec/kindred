@@ -5973,3 +5973,7 @@ html[data-system-text-size] :is(#computer-expand,.desktop-preview-open){display:
 @media(pointer:coarse){.progress-update-time-toggle{min-width:44px;min-height:44px}}
 @media(prefers-reduced-motion:reduce){.progress-update-clock{transition:none}}
 :root[data-motion="off"] .progress-update-clock{transition:none}
+
+/* Sending replaces the arrow, rather than adding a second glyph to its circle. */
+#composer #send.is-busy>svg{visibility:hidden}
+#composer #send.is-busy::after{position:absolute;inset:0;margin:auto;width:14px;height:14px;box-sizing:border-box;pointer-events:none}
