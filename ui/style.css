@@ -2336,7 +2336,8 @@ input[type="checkbox"]:checked::after {
   font-size: calc(15px * var(--text-scale, 1));
   line-height: calc(22px * var(--text-scale, 1));
 }
-#prompt:empty:before {
+#prompt:empty:before,
+#prompt[data-empty="true"]:before {
   content: attr(data-placeholder);
   color: var(--muted);
   pointer-events: none;
@@ -5958,3 +5959,6 @@ html[data-system-text-size] .summary-progress-body .message-bubble{font-size:inh
 html[data-system-text-size] .request-tray-header{flex-wrap:wrap-reverse;row-gap:2px}
 html[data-system-text-size] .request-tray-heading{flex:1 1 12em}
 html[data-system-text-size] .request-tray-bar{margin-left:auto}
+
+/* Native iOS already presents the supported full-size computer surface. */
+html[data-system-text-size] :is(#computer-expand,.desktop-preview-open){display:none}
