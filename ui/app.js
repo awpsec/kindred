@@ -2273,7 +2273,7 @@ async function defaultModelSettings(root,current) {
   }catch(error){if(current())pane.body.append(node('p','muted small',error.message||String(error)));}
 }
 const progressModes=[['calm','Calm','Mostly quiet, with occasional updates during longer tasks.'],['balanced','Balanced','Useful updates at meaningful milestones.'],['frequent','Frequent','More frequent updates, without narrating every step.'],['summaries','Summaries (experimental)','Group updates on longer jobs; keep every update available.']];
-function progressChoices(value='balanced'){
+function progressChoices(value='summaries'){
   const root=node('fieldset','progress-choices'),legend=node('legend','','Progress updates'),tiles=node('div','progress-choice-tiles'),description=node('p','progress-choice-description');
   description.id='progress-choice-description';description.setAttribute('aria-live','polite');
   const inputs=[];
@@ -2287,12 +2287,12 @@ function progressChoices(value='balanced'){
     if(key==='summaries')title.append(node('small','progress-choice-note','Experimental'));
     tile.append(input,title,preview);tiles.append(tile);
   }
-  const update=()=>{description.textContent=progressModes.find(([key])=>inputs.some(i=>i.checked&&i.value===key))?.[2]||progressModes[1][2];};
+  const update=()=>{description.textContent=progressModes.find(([key])=>inputs.some(i=>i.checked&&i.value===key))?.[2]||progressModes[3][2];};
   root.addEventListener('change',update);root.append(legend,tiles,description);update();
-  return {root,inputs,value:()=>inputs.find(i=>i.checked)?.value||'balanced',set:v=>{inputs.forEach(i=>i.checked=i.value===(v||'balanced'));update();}};
+  return {root,inputs,value:()=>inputs.find(i=>i.checked)?.value||'summaries',set:v=>{inputs.forEach(i=>i.checked=i.value===(v||'summaries'));update();}};
 }
 function botProgressControl(bot){
-  const label=node('label','','Progress updates'),input=select([['inherit','Account default ('+(progressModes.find(([key])=>key===state.general.progress_updates)?.[1]||'Balanced')+')'],...progressModes.map(([key,name])=>[key,name])],profile(bot).progress_updates||'inherit');
+  const label=node('label','','Progress updates'),input=select([['inherit','Account default ('+(progressModes.find(([key])=>key===state.general.progress_updates)?.[1]||'Summaries (experimental)')+')'],...progressModes.map(([key,name])=>[key,name])],profile(bot).progress_updates||'inherit');
   input.setAttribute('aria-label','Progress updates');label.append(input);return {label,input};
 }
 async function settingsGeneral(revision) {
@@ -2365,7 +2365,7 @@ async function settingsGeneral(revision) {
   const bots=settingsPane('Bot'),zoneOptions=[['auto','Auto-detect ('+deviceTimezone()+')'],...([...new Set(['UTC',state.general.timezone,...(Intl.supportedValuesOf?.('timeZone')||[])])].filter(Boolean)).map(z=>[z,z])];
   const timezone=select(zoneOptions,state.general.timezone_mode==='fixed'?state.general.timezone:'auto');
   bots.body.append(settingRow('Timezone',timezone));
-  const progress=progressChoices(state.general.progress_updates);bots.body.append(progress.root);
+  const progress=progressChoices(state.general.progress_updates||'summaries');bots.body.append(progress.root);
   const approval=approvalSelect(state.general.approval_mode||'ask'),notifications=select([['all','All'],['input_needed','Input needed'],['none','None']],state.general.notifications||'all');
   bots.body.append(settingRow('Default approval policy',approval.input),settingRow('Notifications',notifications));
   const help=node('details','settings-about');help.append(node('summary','','About approval policies'),node('p','muted small',approvalHelp));bots.body.append(help);
@@ -2388,7 +2388,7 @@ async function settingsGeneral(revision) {
     motion.input.checked=state.general.reduced_motion===true;activity.input.checked=state.general.show_activity===true;separateBots.input.checked=state.general.separate_bot_chats!==false;
     const selected=state.general.timezone_mode==='fixed'?state.general.timezone:'auto';
     if(selected&&!Array.from(timezone.options).some(o=>o.value===selected))timezone.add(new Option(selected,selected));
-    timezone.value=selected;delivery.value=state.general.message_delivery||'steer';progress.set(state.general.progress_updates);approval.input.value=state.general.approval_mode||'ask';notifications.value=state.general.notifications||'all';
+    timezone.value=selected;delivery.value=state.general.message_delivery||'steer';progress.set(state.general.progress_updates||'summaries');approval.input.value=state.general.approval_mode||'ask';notifications.value=state.general.notifications||'all';
     serverControls.forEach(control=>control.disabled=false);loading.remove();
     void defaultModelSettings(root,current);
   livePreferences(form,()=>({name:name.input.value,identity:prefs.input.value,theme:theme.value,reduced_motion:motion.input.checked,approval_mode:approval.input.value,notifications:notifications.value,show_activity:activity.input.checked,separate_bot_chats:separateBots.input.checked,timezone:timezone.value==='auto'?deviceTimezone():timezone.value,timezone_mode:timezone.value==='auto'?'auto':'fixed',progress_updates:progress.value(),message_delivery:delivery.value}),value=>api('/settings','PUT',value),value=>{const zoneChanged=state.general.timezone!==value.timezone;state.general=value;applyGeneral();renderSidebar();void renderChat(true,'cached');if(zoneChanged)void refresh().then(()=>renderComputerRoutines()).catch(e=>notice(e.message,true));});
