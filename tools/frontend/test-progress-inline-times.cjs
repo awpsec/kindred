@@ -6,7 +6,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  const engine=process.env.WEBKIT?'webkit':'chromium',browser=await({chromium,webkit}[engine]).launch();
  const out=process.env.KINDRED_TEST_ARTIFACTS||'/opt/kindred/testing/task-titles';fs.mkdirSync(out,{recursive:true});
  try{
-  const p=await browser.newPage({viewport:{width:1100,height:760}}),errors=[];p.on('pageerror',e=>errors.push(e.message));
+  const p=await browser.newPage({viewport:{width:1100,height:760},hasTouch:true}),errors=[];p.on('pageerror',e=>errors.push(e.message));
   await p.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
   const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};
   const run={id:'summary-run',bot_id:'piper',chat_id:chat.id,status:'running',created:now-240,prompt:'Go through my Gmail, find the recurring bills, and set up a couple of useful filters. Leave existing messages alone.',task_title:'Set up Gmail bill filters',output:'',error:'',progress_started:now-240};
@@ -17,13 +17,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const first=p.locator('.progress-update-time').first(),toggle=first.locator('button'),clock=first.locator('time');
   assert.equal(await toggle.innerText(),'10s');
   const before=await p.locator('.summary-progress-body').boundingBox();
-  await toggle.click();assert.equal(await toggle.getAttribute('aria-pressed'),'true');
+  await toggle.tap();assert.equal(await toggle.getAttribute('aria-pressed'),'true');
   assert.equal(await first.getAttribute('data-pinned'),'true');
   await p.waitForTimeout(180);assert.equal(await clock.evaluate(n=>getComputedStyle(n).opacity),'1');
   const after=await p.locator('.summary-progress-body').boundingBox();assert.equal(before.height,after.height);
   assert.equal(await clock.getAttribute('datetime'),new Date(messages[1].created*1000).toISOString());
-  await p.setViewportSize({width:390,height:844});await toggle.click();assert.equal(await toggle.getAttribute('aria-pressed'),'false');
-  await toggle.click();assert.equal(await toggle.getAttribute('aria-pressed'),'true');
+  await p.setViewportSize({width:390,height:844});await toggle.tap();assert.equal(await toggle.getAttribute('aria-pressed'),'false');
+  await toggle.tap();assert.equal(await toggle.getAttribute('aria-pressed'),'true');
   assert.equal(await toggle.innerText(),'10s');
   assert(await first.evaluate(n=>n.getBoundingClientRect().right<=innerWidth));
   run.created=0;run.progress_started=0;await p.reload();await p.locator('.summary-progress').waitFor();
