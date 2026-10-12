@@ -5731,7 +5731,11 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     // Moving one avatar along the sequence leaves its name at the first message.
     // Anchor to the bubble so wrapped actions cannot pull it below the message.
     if(groupMessage&&sequenceAvatar)bubble.append(sequenceAvatar);
-    if (m.files?.length&&!attachmentOnly) group.append(fileLinks(m.files));
+    if(m.files?.length&&!attachmentOnly){
+      const images=m.files.filter(imageUpload),documents=m.files.filter(file=>!imageUpload(file));
+      if(images.length){const strip=fileLinks(images);strip.classList.add('message-images');group.insertBefore(strip,row);}
+      if(documents.length)group.append(fileLinks(documents));
+    }
     if (m.kind === "result") {
       renderAttachments(group, m.attachments || state.details.get(m.run_id)?.attachments || []);
       const run =
@@ -7808,9 +7812,21 @@ async function queueFiles(chosen,destination=attachmentDestination()){
     renderPendingFiles();
   }
 }
-function fileLinks(files){
-  const row=node('div','message-files');
+function fileLinks(files, expanded=false){
+  const row=node('div','message-files'),images=files.filter(imageUpload);
+  if(!expanded&&images.length===files.length)row.classList.add('message-images');
+  let shown=0;
   for(const file of files){
+    if(imageUpload(file)&&!expanded&&++shown>3){
+      if(shown===4){
+        const more=button('+'+(images.length-3),()=>{
+          const dialog=modal('Attached images','attachment-gallery');
+          dialog.append(fileLinks(images,true));
+        },'uploaded-image-open message-images-more');
+        more.setAttribute('aria-label','View all '+images.length+' attached images');row.append(more);
+      }
+      continue;
+    }
     const download=button(file.name,async()=>{
       const response=await fetch('/api/'+(file.shared?'server-uploads/':'uploads/')+encodeURIComponent(file.id),{headers:{Authorization:'Bearer '+state.token},cache:'no-store'});
       if(!response.ok)throw new Error('This file could not be downloaded.');
