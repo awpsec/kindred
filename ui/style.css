@@ -5987,3 +5987,6 @@ html[data-system-text-size] :is(#computer-expand,.desktop-preview-open){display:
 .attachment-gallery .message-files{justify-content:flex-start;gap:10px;}
 
 .message-images + .message-row{margin-top:0;}
+
+/* Transparent photo-only messages use the surrounding page palette. */
+.message-row.user .message-bubble.attachment-only{--fg:inherit;--soft:inherit;--bg:inherit;--surface:inherit;--line:inherit}
