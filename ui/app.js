@@ -5846,14 +5846,12 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   // Human handoffs belong where they were requested, not beneath the live
   // worker or the final answer. Keep one stable card as its status changes.
   const placedHumanTasks=new Set();
-  // Hidden history rows have no element; grouped rows share their rendered
-  // anchor. Choose the first later rendered message rather than falling back
-  // to the bottom when the first later history row is invisible.
+  // Only a group's first message marks its visible position. Later members
+  // must not move a handoff before an earlier group that spans the request.
+  // Hidden history rows have no element and cannot serve as an anchor.
   const humanTaskMessageGroups=new Map();
   for(const group of area.children){
-    for(const seq of [group.dataset.message,...(group.dataset.scrollMessages?.split(' ')||[])]){
-      if(seq)humanTaskMessageGroups.set(seq,group);
-    }
+    if(group.dataset.message)humanTaskMessageGroups.set(group.dataset.message,group);
   }
   for(const card of [...area.querySelectorAll('[data-user-task]')]){
     const task=state.userTasks.find(t=>t.id===card.dataset.userTask);
