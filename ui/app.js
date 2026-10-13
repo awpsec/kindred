@@ -4764,7 +4764,8 @@ function reminderWhen(reminder){
 }
 function progressGroups(messages){
   const groups=new Map();for(const m of messages)if(m.kind==='assistant'&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
-  return new Map([...groups].filter(([,items])=>{const run=state.allRuns.find(r=>r.id===items[0].run_id)||state.details.get(items[0].run_id)?.run;const start=run?.progress_started||items[0].created;const end=run&&active(run)?Math.floor(Date.now()/1000):(messages.find(m=>m.run_id===items[0].run_id&&m.kind==='result')?.created||items.at(-1).created);return items.length>=3&&end-start>=60;}));
+  // Summaries is a presentation preference, not a duration or message-count heuristic.
+  return groups;
 }
 function summaryProgress(items,entry,runs){
   const first=items[0],key=first.progress.group_id,run=runs.find(r=>r.id===first.run_id)||state.allRuns.find(r=>r.id===first.run_id)||state.details.get(first.run_id)?.run;
