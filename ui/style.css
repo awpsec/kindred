@@ -6037,3 +6037,33 @@ html[data-mobile] .request-tray.is-answering .request-tray-bar .icon-button{widt
 /* These task surfaces already provide their own disclosure chevron. */
 .task-question-receipt>.task-question-heading,.summary-progress-disclosure>.summary-progress-heading{padding-inline-start:0}
 .task-question-receipt>.task-question-heading::before,.summary-progress-disclosure>.summary-progress-heading::before{display:none}
+
+/* Original documents use the existing full Artifacts stage, never a nested chat report. */
+.artifact-file-row{display:flex;align-items:center;gap:12px;padding:10px 12px}
+.artifact-file-row>.workspace-artifact-link{display:flex;align-items:center;gap:12px;flex:1;min-width:0;min-height:44px;text-decoration:none;color:var(--fg)}
+.artifact-file-copy{display:flex;flex-direction:column;min-width:0;gap:3px}
+.artifact-file-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.artifact-file-row>button{min-height:44px;flex:none}
+.artifact-document-mount{height:100%;min-height:0}
+.artifact-document-pending{position:absolute;inset:0;visibility:hidden;pointer-events:none}
+.document-inline{height:100%;min-height:0;display:flex;flex-direction:column}
+.artifact-studio-preview:has(.document-inline)>.workspace-artifact-stage,.artifact-workbench-body:has(.document-inline){overflow:hidden}
+.document-inline .document-body{overflow:hidden}
+.document-inline .document-body:has(>.document-word),.document-inline .document-body:has(>.document-prose){overflow:auto}
+.document-inline .document-footer{flex:none}
+.document-inline .document-sheets{max-width:100%;overflow-x:auto}
+@media(pointer:coarse){.document-inline .document-pages button,.document-inline .document-sheets button{min-height:44px;min-width:44px}}
+
+.document-grid col:not(:first-child){min-width:40px;max-width:480px}
+.document-grid td{min-width:0;max-width:none}
+.document-truncation{position:sticky;left:0;margin:0;padding:12px;font-size:12px;color:var(--muted);background:var(--surface)}
+
+.artifact-library-copy{display:flex;flex-direction:column;min-width:0;gap:3px;flex:1}.artifact-library-identity{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+
+.artifact-viewer-back{flex:none;min-width:44px;min-height:44px;padding:0;font-size:24px}.artifact-workbench-title{min-width:0}
+
+.artifact-original-identity,.artifact-update-identity{color:var(--muted);font-size:11px;line-height:15px}.artifact-update-identity{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+@media(pointer:coarse){.artifact-workbench-actions button{min-width:44px;min-height:44px}}
+
+.document-pages button[aria-disabled="true"]{opacity:.45;cursor:default}

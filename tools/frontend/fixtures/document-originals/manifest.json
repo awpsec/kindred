@@ -1,0 +1,40 @@
+{
+  "synthetic": true,
+  "validation": "ZIP CRC and XML well-formedness only; no render acceptance",
+  "files": [
+    {
+      "name": "original-v1.docx",
+      "size": 2119,
+      "sha256": "e6e8addeb2fa533ebd3a6bce759ba9d00e688759cdf7c3477a5926cafddb4815"
+    },
+    {
+      "name": "original-v2.docx",
+      "size": 2120,
+      "sha256": "b73b8698445a8b0690a67ef6f07d439812a9c4147120860f5daa7680d9d2ebf3"
+    },
+    {
+      "name": "styled-multi-sheet.xlsx",
+      "size": 2630,
+      "sha256": "580792165e8027496fa5ec6be4b20e40728a36b68809b6c05635d862b07b99ef"
+    }
+  ],
+  "xlsxExpected": {
+    "B2": "15.00%",
+    "C2": "48,200.25",
+    "B3": "96,400.50",
+    "C3": "2026-10-13 14:30",
+    "B4": "uncached formula; never compute or present as cached result",
+    "merge": "A1:C1",
+    "widths": [
+      28,
+      18,
+      24
+    ],
+    "header": "white bold on #234567, centered, wrap",
+    "sheets": [
+      "Styled overview",
+      "Forecast"
+    ]
+  },
+  "docxExpected": "Heading, Unicode, table, embedded synthetic raster, explicit page break; v2 distinct marker"
+}

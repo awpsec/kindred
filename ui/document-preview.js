@@ -86,16 +86,17 @@ export async function renderWordLayout(buffer,name){
  notes.push('Use a PDF exported by the author for final pagination review.');
  return {page,note:notes.join(' '),dispose:()=>embedded.forEach(face=>document.fonts.delete(face))};
 }
-export async function openDocumentPreview({card,name,extension,getBlob,getPagePreview,download,createDownloadButton,renderMarkdown,artifactPreview}){
- const dialog=el('dialog','document-dialog'),head=el('header','document-header'),body=el('div','document-body'),foot=el('footer','document-footer','Quick preview · Download for the original formatting.');
+export async function openDocumentPreview({card,name,extension,getBlob,getPagePreview,download,createDownloadButton,renderMarkdown,artifactPreview,mount=null,onMount=null,onUnavailable=()=>{}}){
+ const dialog=el(mount?'section':'dialog',mount?'document-inline':'document-dialog'),head=el('header','document-header'),body=el('div','document-body'),foot=el('footer','document-footer','Quick preview · Download for the original formatting.');
  const title=el('strong','',name);dialog.setAttribute('aria-label',name+' preview');
- const conversionAbort=new AbortController();let paginatedWord=false,conversionFailed=false;
+ const conversionAbort=new AbortController(),lifecycleAbort=new AbortController();let paginatedWord=false,conversionFailed=false;
  let closed=false,worker=null,pdfTask=null,timer=null,cancelWork=null,passwordRequired=false,wordDispose=null;
- const cleanup=()=>{if(closed)return;closed=true;conversionAbort.abort();clearTimeout(timer);cancelWork?.();wordDispose?.();worker?.terminate();pdfTask?.destroy().catch(()=>{});observer.disconnect();dialog.remove();};
- const observer=new MutationObserver(()=>{if(!card.isConnected)cleanup();});observer.observe(document.body,{childList:true,subtree:true});
- const close=button('Close',()=>dialog.close());head.append(title,createDownloadButton?createDownloadButton():button('Download',download),close);dialog.append(head,body,foot);card.append(dialog);
- dialog.addEventListener('close',cleanup,{once:true});dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
- dialog.showModal();close.focus();body.append(el('p','document-status','Preparing preview…'));
+ const cleanup=()=>{if(closed)return;closed=true;lifecycleAbort.abort();conversionAbort.abort();clearTimeout(timer);cancelWork?.();wordDispose?.();worker?.terminate();pdfTask?.destroy().catch(()=>{});observer.disconnect();dialog.remove();};
+ const handle={root:dialog,dispose:cleanup};
+ const observer=new MutationObserver(()=>{if(!card.isConnected)cleanup();});observer.observe(document.body,{childList:true,subtree:true});onMount?.(handle);
+ const close=button('Close',()=>dialog.close());head.append(title,createDownloadButton?createDownloadButton():button('Download',download),close);if(!mount)dialog.append(head);dialog.append(body,foot);(mount||card).append(dialog);
+ dialog.addEventListener('close',cleanup,{once:true});dialog.addEventListener('click',e=>{if(!mount&&e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
+ if(!mount){dialog.showModal();close.focus();}body.append(el('p','document-status','Preparing preview…'));
  try{
   let blob;
   if(extension==='docx'&&getPagePreview){
@@ -104,7 +105,7 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
    try{blob=await getPagePreview(conversionAbort.signal);paginatedWord=true;extension='pdf';}catch{conversionFailed=true;}finally{clearTimeout(timer);}
    if(closed)return;
   }
-  if(!blob)blob=await getBlob();if(closed)return;if(blob.size>(paginatedWord?32:8)*1024*1024)throw Error('Preview supports files up to 8 MB. Download to view this file.');
+  if(!blob)blob=await getBlob(lifecycleAbort.signal);if(closed)return;if(blob.size>(paginatedWord?32:8)*1024*1024)throw Error('Preview supports files up to 8 MB. Download to view this file.');
   if(['docx','xlsx'].includes(extension)){
    const buffer=await blob.arrayBuffer();if(closed)return;
    const result=await new Promise((resolve,reject)=>{cancelWork=()=>reject(Error('Preview closed.'));worker=new Worker(new URL('./document-worker.js',import.meta.url));timer=setTimeout(()=>{worker.terminate();reject(Error('This preview took too long. Download to view the file.'));},20000);worker.onmessage=({data})=>{cancelWork=null;clearTimeout(timer);worker.terminate();data.error?reject(Error(data.error)):resolve(data);};worker.onerror=()=>{cancelWork=null;clearTimeout(timer);worker.terminate();reject(Error('Unable to read this document. You can still download the original.'));};worker.postMessage({buffer,extension},[buffer]);});
@@ -113,8 +114,9 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
     const rendered=await renderWordLayout(result.buffer,name);if(closed){rendered.dispose();return;}wordDispose=rendered.dispose;body.append(rendered.page);foot.textContent=(conversionFailed?'Quick preview · Page layout unavailable on this server. ':'')+rendered.note;
    }else{
     const tabs=el('div','document-sheets'),grid=el('div','document-grid');tabs.setAttribute('aria-label','Worksheets');grid.tabIndex=0;grid.setAttribute('role','region');body.append(tabs,grid);
-    if(!result.sheets.length){body.append(el('p','document-status','No visible worksheets.'));return;}
-    const select=index=>{const sheet=result.sheets[index];for(const [i,b] of [...tabs.children].entries())b.setAttribute('aria-pressed',String(i===index));grid.setAttribute('aria-label',sheet.name+' cells');const table=el('table'),thead=el('thead'),tr=el('tr');tr.append(el('th','',''));for(let c=0;c<(sheet.rows[0]?.length||0);c++)tr.append(el('th','',letters(c)));thead.append(tr);table.append(thead);const tbody=el('tbody');sheet.rows.forEach((row,r)=>{const tr=el('tr');tr.append(el('th','',String(r+1)));for(const cell of row){const td=el('td','',cell.text);if(cell.bold)td.style.fontWeight='650';tr.append(td);}tbody.append(tr);});table.append(tbody);grid.replaceChildren(table);foot.textContent=`${sheet.name} · ${sheet.totalRows} rows × ${sheet.totalColumns} columns${sheet.totalRows>200||sheet.totalColumns>40?' · Showing the first 200 rows and 40 columns':''}${result.truncatedSheets?' · First 30 visible sheets':''} · Formulas show saved results.`;};
+    if(!result.sheets.length){body.append(el('p','document-status','No visible worksheets.'));return handle;}
+    tabs.setAttribute('role','group');
+    const select=index=>{const sheet=result.sheets[index];for(const [i,b] of [...tabs.children].entries())b.setAttribute('aria-pressed',String(i===index));grid.setAttribute('aria-label',sheet.name+' cells');const table=el('table'),columns=el('colgroup');columns.append(el('col'));for(const width of sheet.widths||[]){const col=el('col');col.style.width=width+'px';columns.append(col);}if(sheet.widths?.length){table.style.tableLayout='fixed';table.style.width=(40+sheet.widths.reduce((n,w)=>n+w,0))+'px';columns.firstChild.style.width='40px';}table.append(columns);const thead=el('thead'),tr=el('tr');tr.append(el('th','',''));for(let c=0;c<(sheet.rows[0]?.length||0);c++)tr.append(el('th','',letters(c)));thead.append(tr);table.append(thead);const tbody=el('tbody');sheet.rows.forEach((row,r)=>{const tr=el('tr');if(sheet.heights?.[r])tr.style.height=sheet.heights[r]+'px';tr.append(el('th','',String(r+1)));for(const cell of row){if(cell.covered)continue;const td=el('td','',cell.text);td.rowSpan=cell.rowSpan||1;td.colSpan=cell.colSpan||1;td.style.textAlign=cell.align||'left';td.style.whiteSpace=cell.wrap?'pre-wrap':'nowrap';td.style.verticalAlign=cell.vertical||'top';td.style.fontVariantNumeric='tabular-nums';if(cell.bold)td.style.fontWeight='650';if(cell.italic)td.style.fontStyle='italic';if(cell.underline)td.style.textDecoration='underline';if(cell.fontSize)td.style.fontSize=cell.fontSize+'pt';if(cell.color)td.style.color=cell.color;if(cell.fill)td.style.background=cell.fill;tr.append(td);}tbody.append(tr);});table.append(tbody);grid.replaceChildren(table);if(sheet.totalRows>200||sheet.totalColumns>40){const limit=el('p','document-truncation',`Showing rows 1–${sheet.rows.length} of ${sheet.totalRows}, columns 1–${sheet.rows[0]?.length||0} of ${sheet.totalColumns}. Download original for the remaining cells.`);limit.setAttribute('role','note');grid.append(limit);}foot.textContent=`${sheet.name} · Saved values, number/date formats and basic styling${result.truncatedSheets?' · First 30 visible sheets':''} · At most 200 rows × 40 columns per sheet. Formulas show saved results; charts, macros and conditional formatting are not displayed.`;};
     result.sheets.forEach((sheet,i)=>tabs.append(button(sheet.name,()=>select(i))));select(0);
    }
   }else if(extension==='pdf'){
@@ -126,7 +128,7 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
    timer=setTimeout(()=>pdfTask.destroy().catch(()=>{}),20000);const pdf=await pdfTask.promise;clearTimeout(timer);if(closed)return;body.replaceChildren();let pageNumber=1,busy=false;
    const controls=el('div','document-pages'),label=el('span'),canvasWrap=el('div','document-pdf');
    const render=async()=>{
-    if(busy||closed)return;busy=true;previous.disabled=next.disabled=true;canvasWrap.setAttribute('aria-busy','true');
+    if(busy||closed)return;busy=true;previous.setAttribute('aria-disabled','true');next.setAttribute('aria-disabled','true');canvasWrap.setAttribute('aria-busy','true');
     try{
      const page=await pdf.getPage(pageNumber);if(closed)return;
      const viewport=page.getViewport({scale:1}),scale=Math.min(2,1600/viewport.width,2200/viewport.height),view=page.getViewport({scale}),canvas=el('canvas');
@@ -134,9 +136,9 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
      await page.render({canvasContext:canvas.getContext('2d'),viewport:view}).promise;page.cleanup();if(closed)return;
      canvasWrap.replaceChildren(canvas);canvasWrap.scrollTop=0;label.textContent=`Page ${pageNumber} of ${pdf.numPages}`;
     }catch(e){if(!closed)body.replaceChildren(el('p','document-status','Could not render this page. Download to view the original.'));}
-    finally{busy=false;canvasWrap.removeAttribute('aria-busy');previous.disabled=pageNumber===1;next.disabled=pageNumber===pdf.numPages;}
+    finally{busy=false;canvasWrap.removeAttribute('aria-busy');previous.setAttribute('aria-disabled',String(pageNumber===1));next.setAttribute('aria-disabled',String(pageNumber===pdf.numPages));}
    };
-   const previous=button('Previous page',()=>{pageNumber--;render();}),next=button('Next page',()=>{pageNumber++;render();});controls.append(previous,label,next);body.append(controls,canvasWrap);await render();
+   const previous=button('Previous page',()=>{if(busy||closed||pageNumber<=1)return;pageNumber--;render();}),next=button('Next page',()=>{if(busy||closed||pageNumber>=pdf.numPages)return;pageNumber++;render();});controls.append(previous,label,next);body.append(controls,canvasWrap);await render();
   }else if(['html','htm','jsx'].includes(extension)){
    if(blob.size>256*1024)throw Error('Interactive preview supports files up to 256 KB.');const text=await blob.text();if(closed)return;const preview=artifactPreview(text,extension==='jsx'?'jsx':'html',name);body.replaceChildren(preview);preview.querySelector('button').click();
   }else if(['png','jpg','jpeg','webp','gif'].includes(extension)){
@@ -144,5 +146,6 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
   }else{
    if(blob.size>256*1024)throw Error('Text preview supports files up to 256 KB. Download to view the full file.');const text=await blob.text();if(closed)return;const content=extension==='md'&&renderMarkdown?renderMarkdown(text):el('pre','deliverable-text',text);content.classList.add('document-prose');body.replaceChildren(content);
   }
- }catch(error){clearTimeout(timer);if(!closed&&!passwordRequired)body.replaceChildren(el('p','document-status','Preview unavailable. '+(error.message||'Download to view this file.')));}
+ }catch(error){clearTimeout(timer);if(!closed&&/Original file (?:not found|identity changed|bytes changed)/.test(String(error.message||'')))onUnavailable();if(!closed&&!passwordRequired)body.replaceChildren(el('p','document-status',/Original file (?:not found|identity changed|bytes changed)/.test(String(error.message||''))?'The original file is no longer available.':'Preview unavailable. '+(error.message||'Download to view this file.')));}
+ return handle;
 }
