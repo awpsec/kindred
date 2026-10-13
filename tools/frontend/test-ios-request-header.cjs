@@ -55,8 +55,8 @@ let browser;
   }
   await p.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:1}})));
   phase='response';await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-  await p.locator('.request-tray .question-custom').click();await p.evaluate(()=>Promise.all(document.getAnimations().filter(a=>a.playState==='running'&&a.effect?.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))));await p.locator('.question-response textarea').fill('Editable answer');
-  for(const scale of [1,2.1]){await p.evaluate(s=>window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:s}})),scale);await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));assert.equal(await p.locator('.question-response textarea').inputValue(),'Editable answer');}
+  await p.locator('.request-tray .question-custom').click();await p.evaluate(()=>Promise.all(document.getAnimations().filter(a=>a.playState==='running'&&a.effect?.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))));await p.locator('#prompt').fill('Editable answer');
+  for(const scale of [1,2.1]){await p.evaluate(s=>window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:s}})),scale);await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));assert.equal(await p.locator('#prompt').evaluate(n=>n.value),'Editable answer');}
   pageErrors.push(...errors.map(message=>({w,theme,message})));await ctx.close();
  }
  for(const platform of ['desktop','android']){

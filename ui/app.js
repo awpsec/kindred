@@ -102,7 +102,7 @@ const profilesUI = createProfileUI({
     if(previous)sessionStorage.setItem('kindred-profile-draft-'+previous,JSON.stringify(conversationSnapshot()));
     if(window.__KINDRED_MOBILE)persistConversation();
     let saved={};try{saved=JSON.parse(sessionStorage.getItem('kindred-profile-draft-'+next)||(mobileConversationKey(next)&&localStorage.getItem(mobileConversationKey(next)))||'{}');}catch{}
-    for(const [key,value] of Object.entries({drafts:saved.drafts||[],replies:saved.replies||[],files:saved.files||[],sends:saved.sends||[],queueEdits:saved.queueEdits||[],draftRecipients:saved.draftRecipients||[],selection:saved.selection||{}}))sessionStorage.setItem('kindred-reload-'+key,JSON.stringify(value));
+    for(const [key,value] of Object.entries({drafts:saved.drafts||[],replies:saved.replies||[],files:saved.files||[],sends:saved.sends||[],queueEdits:saved.queueEdits||[],draftRecipients:saved.draftRecipients||[],questionDrafts:saved.questionDrafts||[],selection:saved.selection||{}}))sessionStorage.setItem('kindred-reload-'+key,JSON.stringify(value));
     disconnectDesktop();
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:''});
   }
@@ -596,7 +596,9 @@ async function refresh(force = false) {
         state.reloadResumeKey=updateKey.replace('kindred-update-resume-','kindred-tab-resume-');
         state.mobileDraftKey=mobileConversationKey();
         const stored=localStorage.getItem(updateKey)||(!sessionStorage.getItem('kindred-reload-selection')&&(sessionStorage.getItem(state.reloadResumeKey)||(mobileConversationKey()&&localStorage.getItem(mobileConversationKey()))));
-        if(stored){const resume=JSON.parse(stored);for(const key of ["drafts","replies","files","sends","queueEdits","draftRecipients","selection"])sessionStorage.setItem("kindred-reload-"+key,JSON.stringify(resume[key]||(key==="selection"?{}:[])));localStorage.removeItem(updateKey);}
+        if(stored){const resume=JSON.parse(stored);for(const key of ["drafts","replies","files","sends","queueEdits","draftRecipients","questionDrafts","selection"])sessionStorage.setItem("kindred-reload-"+key,JSON.stringify(resume[key]||(key==="selection"?{}:[])));localStorage.removeItem(updateKey);}
+        questionComposerModes.clear();questionDrafts.clear();
+        for(const [id,text] of JSON.parse(sessionStorage.getItem('kindred-reload-questionDrafts')||'[]'))if(typeof id==='string'&&typeof text==='string')questionDrafts.set(id,text);
         state.drafts = new Map(
           JSON.parse(sessionStorage.getItem("kindred-reload-drafts") || "[]"),
         );
@@ -620,7 +622,7 @@ async function refresh(force = false) {
       sessionStorage.removeItem("kindred-reload-sends");
       sessionStorage.removeItem("kindred-reload-files");
       sessionStorage.removeItem("kindred-reload-queueEdits");
-      sessionStorage.removeItem("kindred-reload-draftRecipients");
+      sessionStorage.removeItem("kindred-reload-draftRecipients");sessionStorage.removeItem("kindred-reload-questionDrafts");
     }
     state.bot =
       bots.find((b) => b.id === state.bot?.id && !profile(b).archived) ||
@@ -3926,6 +3928,13 @@ $("text-form").onsubmit = (e) => {
 };
 $("composer").onsubmit = (e) => {
   e.preventDefault();
+  const answer=questionComposerMode();
+  if(answer){
+    const text=$('prompt').value.trim();questionDrafts.set(answer.q.id,$('prompt').value);
+    if(!text||questionPending.has(answer.q.id))return;
+    if(text.length>4000){notice('Responses are limited to 4,000 characters.',true);return;}
+    void perform(()=>submitQuestion(answer.q,{custom:text}),$('send')).finally(syncQuestionComposer);return;
+  }
   perform(async () => {
     const commandDraft=$("prompt").value,commandChat=composerChatId();
     const library=state.chat?.shared?false:await commandsUI?.beforeSend();
@@ -3989,7 +3998,7 @@ $("composer").onsubmit = (e) => {
 function resizeComposer() {
   const editor=$('prompt'),form=$('composer');
   editor.dataset.empty=String(!composerText(editor).replace(/\u200b/g,'').trim());
-  editor.style.height='auto';dictationUI?.render();
+  editor.style.height='auto';dictationUI?.render();syncQuestionComposer();
   if(!form.getClientRects().length||form.matches('.is-replying,.has-files,.is-dictating')){
     form.classList.remove('is-multiline');return;
   }
@@ -4063,11 +4072,17 @@ function wakeCuriousBot() {
 }
 $("prompt").addEventListener("blur",()=>{typingReactionChat=null;updateReactions();});
 $("prompt").oninput = () => {
+  if(questionComposerMode()){saveDraft();resizeComposer();syncQuestionComposer();return;}
   updateMentions();
   resizeComposer();
   wakeCuriousBot();
 };
 $("prompt").onkeydown = (e) => {
+  if(questionComposerMode()){
+    if(e.isComposing)return;
+    if(e.key==='Escape'){e.preventDefault();if(!questionPending.has(questionComposerMode().q.id))leaveQuestionComposer(true);return;}
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('composer').requestSubmit();}return;
+  }
   if(commandsUI?.keydown(e))return;
   if(!e.isComposing&&!$("mention-options").hidden&&['ArrowDown','ArrowUp'].includes(e.key)){
     e.preventDefault();const list=$("mention-options"),items=[...list.querySelectorAll('button')];
@@ -4579,6 +4594,7 @@ function mentionCandidates() {
   );
 }
 function updateMentions() {
+  if(questionComposerMode())return;
   const list = $("mention-options"),
     sel = getSelection();
   list.replaceChildren();
@@ -4962,6 +4978,68 @@ async function openArtifacts(){
   kind.onchange=()=>{previous=[];void load('');};await load('');
 }
 
+// Answer mode owns only the visible editor. Ordinary draft maps, files and reply
+// metadata stay in their conversation, including while an upload finishes.
+const questionComposerModes=new Map();
+function questionComposerMode(){const mode=questionComposerModes.get(composerChatId());return mode?.token===state.token?mode:null;}
+function syncQuestionComposer(){
+  const mode=questionComposerMode(),prompt=$('prompt');
+  $('composer').classList.toggle('is-answering',!!mode);
+  $('composer-actions').hidden=!!mode;
+  $('send').setAttribute('aria-label',mode?'Send response':'Send message');$('send').title=mode?'Send response':'Send message';
+  if(mode){
+    prompt.setAttribute('data-placeholder','Your response…');prompt.setAttribute('aria-label','Your response');prompt.setAttribute('aria-describedby','question-composer-title');
+    $('mention-options').hidden=true;
+    const disabled=!prompt.value.trim()||prompt.value.length>4000||questionPending.has(mode.q.id)||$('composer').classList.contains('is-dictating');
+    if($('send').disabled!==disabled)$('send').disabled=disabled;$('send').setAttribute('aria-disabled',String(disabled));
+  }else{prompt.removeAttribute('aria-describedby');prompt.setAttribute('aria-label','Message');$('send').disabled=$('send').dataset.pending==='true'||$('composer').classList.contains('is-dictating');$('send').setAttribute('aria-disabled',String($('send').disabled));}
+}
+const questionComposerStatus=node('span');questionComposerStatus.id='question-composer-status';questionComposerStatus.setAttribute('role','status');questionComposerStatus.setAttribute('aria-live','polite');$('composer-area').append(questionComposerStatus);
+function announceQuestionComposer(text){questionComposerStatus.textContent=text;}
+function beginQuestionComposer(q){
+  if(q.status!=='pending'||questionPending.has(q.id))return;
+  const chatId=composerChatId();saveDraft();
+  questionComposerModes.set(chatId,{q,token:state.token});
+  const model=trayState.get(chatId);if(model){model.key='question:'+q.id;model.minimized=false;}
+  closeComposerMenu();restoreDraft();
+  renderRequestTray({id:chatId},conversationHistory(chatId));
+  // Remain in the activating tap's stack so WebKit can show its keyboard.
+  $('prompt').focus({preventScroll:true});announceQuestionComposer('Answering: '+q.question);
+}
+function leaveQuestionComposer(focusOptions=false){
+  const chatId=composerChatId(),mode=questionComposerMode();if(!mode)return;
+  questionDrafts.set(mode.q.id,$('prompt').value);questionComposerModes.delete(chatId);announceQuestionComposer('Question options. Normal draft restored.');restoreDraft();renderPendingFiles();
+  const tray=$('request-tray');if(tray)tray.dataset.signature='';
+  renderRequestTray({id:chatId},conversationHistory(chatId));
+  if(focusOptions)tray?.querySelector('.question-custom')?.focus({preventScroll:true});else $('prompt').focus({preventScroll:true});
+}
+function finishQuestionComposer(q,external){
+  const chatId=[...questionComposerModes].find(([,mode])=>mode.token===state.token&&mode.q.id===q.id)?.[0];if(!chatId)return;
+  const text=chatId===composerChatId()?$('prompt').value:questionDrafts.get(q.id)||'';
+  questionComposerModes.delete(chatId);
+  if(chatId===composerChatId())announceQuestionComposer('Question resolved. Normal draft restored.');
+  if(chatId===composerChatId()){restoreDraft();renderPendingFiles();$('prompt').focus({preventScroll:true});}
+  if(external&&text.trim()){questionDrafts.set(q.id,text);notice('This question was resolved. Your response was kept.',false,{label:'Copy response',run:()=>copyText(text)});}
+}
+async function submitQuestion(q,body){
+    const token=state.token;
+    if(questionPending.has(q.id))return;questionPending.add(q.id);syncQuestionComposer();for(const card of document.querySelectorAll('[data-question-id]'))if(card.dataset.questionId===q.id){card.setAttribute('aria-busy','true');for(const control of card.querySelectorAll('button'))control.disabled=true;}
+    try{
+      const saved=await api(q.shared_seq?'/server-chats/'+q.chat_id+'/questions/'+q.shared_seq+'/answer':'/questions/'+q.id+(body.dismiss?'/dismiss':'/answer'),'POST',body);if(state.token!==token)return;questionDrafts.delete(q.id);finishQuestionComposer(q,false);
+      for(const entry of chatHistory.values())for(const m of entry.messages)if(m.question?.id===q.id)m.question=saved;
+      await refresh(true);
+    }catch(error){
+      // A rejected stale decision may already have a server-confirmed receipt.
+      // Refresh without replaying the answer; preserve genuine errors otherwise.
+      if([400,409].includes(error.status)){
+        try{await refresh(true);}catch{}
+        const resolved=[...chatHistory.values()].flatMap(entry=>entry.messages||[]).find(m=>m.question?.id===q.id&&['answered','dismissed','cancelled'].includes(m.question.status));
+        if(resolved){finishQuestionComposer(q,true);return;}
+      }
+      throw error;
+    }finally{questionPending.delete(q.id);if(state.token===token){state.chatKey='';await renderChat(true,'cached');syncQuestionComposer();}}
+}
+
 function questionCard(q){
   const card=node('section','question-card');card.dataset.questionId=q.id;card.tabIndex=-1;card.setAttribute('aria-label',q.question);
   const title=node('strong','question-title',q.question);card.append(title);
@@ -4980,48 +5058,14 @@ function questionCard(q){
     card.append(receipt);return decisionReceipt(card,{key:'question:'+q.id,title:q.question,outcome:q.status==='answered'?'Answered':q.status==='dismissed'?'Skipped':'Cancelled',terminal:true,compact:true});
   }
   const choices=node('div','question-choices');
-  const submit=async body=>{
-    if(questionPending.has(q.id))return;questionPending.add(q.id);card.setAttribute('aria-busy','true');for(const control of card.querySelectorAll('button,textarea'))control.disabled=true;
-    try{
-      const saved=await api(q.shared_seq?'/server-chats/'+q.chat_id+'/questions/'+q.shared_seq+'/answer':'/questions/'+q.id+(body.dismiss?'/dismiss':'/answer'),'POST',body);questionDrafts.delete(q.id);
-      for(const entry of chatHistory.values())for(const m of entry.messages)if(m.question?.id===q.id)m.question=saved;
-      await refresh(true);
-    }catch(error){
-      // A rejected stale decision may already have a server-confirmed receipt.
-      // Refresh without replaying the answer; preserve genuine errors otherwise.
-      if([400,409].includes(error.status)){
-        try{await refresh(true);}catch{}
-        const resolved=[...chatHistory.values()].flatMap(entry=>entry.messages||[]).find(m=>m.question?.id===q.id&&['answered','dismissed','cancelled'].includes(m.question.status));
-        if(resolved){questionDrafts.delete(q.id);return;}
-      }
-      throw error;
-    }finally{questionPending.delete(q.id);state.chatKey='';await renderChat(true,'cached');}
-  };
+  const submit=body=>submitQuestion(q,body);
   q.options.forEach((label,i)=>{
     const option=button('',()=>submit({selected:i}),'question-option');option.dataset.questionFocus='option-'+i;
     option.append(node('span','question-letter',String.fromCharCode(65+i)),node('span','',label));choices.append(option);
   });
-  const custom=button('Write my own response',()=>{
-    questionDrafts.set(q.id,questionDrafts.get(q.id)||'');form.hidden=false;custom.hidden=true;input.focus({preventScroll:true});resizeAnswer(true);
-    if(!chatMotionReduced()){
-      const height=form.getBoundingClientRect().height;
-      form.animate([{height:'0px',opacity:0,overflow:'hidden',transform:'translateY(-4px)'},{height:height+'px',opacity:1,overflow:'hidden',transform:'translateY(0)'}],{duration:180,easing:'cubic-bezier(.2,.8,.2,1)'}).finished.then(()=>resizeAnswer(true)).catch(()=>{});
-    }
-  },'question-custom');custom.dataset.questionFocus='custom';
-  const form=node('form','question-response'),input=node('textarea');input.rows=2;input.maxLength=4000;input.required=true;input.placeholder='Your response…';input.setAttribute('aria-label','Your response');input.dataset.questionFocus='input';input.value=questionDrafts.get(q.id)||'';
-  const resizeAnswer=(reveal=false)=>{
-    if(!input.isConnected||form.hidden)return;
-    input.style.height='auto';input.style.height=Math.min(input.scrollHeight,240)+'px';
-    if(reveal){const bounds=form.getBoundingClientRect(),composer=$('composer')?.getBoundingClientRect(),limit=Math.min(innerHeight-16,composer?.top??innerHeight)-12;
-      if(bounds.bottom>limit){const messages=card.closest('.messages');if(messages)messages.scrollTop+=bounds.bottom-limit;}
-    }
-  };
-  input.addEventListener('input',()=>{questionDrafts.set(q.id,input.value);send.disabled=!input.value.trim()||questionPending.has(q.id);resizeAnswer(true);});
-  requestAnimationFrame(()=>resizeAnswer(false));
-  const send=node('button','question-send');send.append(icon('send',16));send.setAttribute('aria-label','Send response');send.title='Send response';send.type='submit';send.disabled=!input.value.trim();send.dataset.questionFocus='send';form.append(input,send);form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity())return;perform(()=>submit({custom:input.value.trim()}),send);};
+  const custom=button('Write my own response',()=>beginQuestionComposer(q),'question-custom');custom.dataset.questionFocus='custom';
   const dismiss=button('Dismiss',()=>submit({dismiss:true}),'question-dismiss');dismiss.dataset.questionFocus='dismiss';dismiss.title='Dismiss without answering';
-  const actions=node('div','question-actions');actions.append(custom,dismiss);
-  form.hidden=!questionDrafts.has(q.id);custom.hidden=!form.hidden;card.append(choices,actions,form);
+  const actions=node('div','question-actions');actions.append(custom,dismiss);card.append(choices,actions);
   if(questionPending.has(q.id)){card.setAttribute('aria-busy','true');for(const control of card.querySelectorAll('button,textarea'))control.disabled=true;}
   return decisionReceipt(card,{key:'question:'+q.id,title:q.question,terminal:false});
 }
@@ -5326,6 +5370,8 @@ function renderRequestTray(chat,entry){
     if(m.question&&['answered','dismissed','cancelled'].includes(m.question.status))resolved.add('question:'+m.question.id);
   }
   for(const q of state.questions||[])if((q.delivery_chat_id||q.chat_id)===chat.id&&['answered','dismissed','cancelled'].includes(q.status))resolved.add('question:'+q.id);
+  const answering=questionComposerMode();
+  if(answering&&resolved.has('question:'+answering.q.id))finishQuestionComposer(answering.q,true);
   const requests=[];
   for(const a of state.approvals){const run=state.allRuns.find(r=>r.id===a.run_id);if((a.status||'pending')==='pending'&&!resolved.has('approval:'+a.id)&&simpleApproval(a)&&approvalChat(run)===chat.id)requests.push({key:'approval:'+a.id,created:a.created??run.created,seq:a.message_seq??0,a,run});}
   for(const m of entry.messages||[])if(m.question?.status==='pending'&&!resolved.has('question:'+m.question.id))requests.push({key:'question:'+m.question.id,created:m.question.created??m.created,seq:m.seq,q:m.question});
@@ -5333,8 +5379,10 @@ function renderRequestTray(chat,entry){
   requests.sort((a,b)=>a.created-b.created||a.seq-b.seq||a.key.localeCompare(b.key));
   const model=trayState.get(chat.id)||{minimized:false,key:''};trayState.set(chat.id,model);
   const selected=requests.findIndex(r=>r.key===model.key),index=selected<0?0:selected;model.key=requests[index]?.key||'';
-  const signature=JSON.stringify([chat.id,requests,model.minimized,model.key,requests.map(r=>questionDrafts.get(r.q?.id))]);
+  const answerMode=questionComposerMode(),isAnswering=!!answerMode&&model.key==='question:'+answerMode.q.id;
+  const signature=JSON.stringify([chat.id,requests,isAnswering,model.minimized,model.key]);
   if(tray.dataset.signature===signature)return;tray.dataset.signature=signature;
+  const wasAnswering=tray.classList.contains('is-answering')&&tray.dataset.chat===chat.id;
   const focused=tray.contains(document.activeElement),focusKey=document.activeElement?.dataset.questionFocus;
   tray.replaceChildren();tray.hidden=!requests.length;if(!requests.length){if(focused)$('prompt').focus({preventScroll:true});return;}
   tray.dataset.chat=chat.id;
@@ -5342,8 +5390,9 @@ function renderRequestTray(chat,entry){
   card.classList.add('in-request-tray');card.querySelector('.task-card-title')?.remove();
   const heading=card.querySelector('.question-title,.task-description,h3');
   const title=heading?.textContent||'Review request';
-  tray.classList.toggle('is-minimized',model.minimized);
-  if(model.minimized){
+  tray.classList.toggle('is-answering',isAnswering);tray.classList.toggle('is-minimized',model.minimized&&!isAnswering);
+  tray.setAttribute('aria-label',isAnswering?'Answering: '+title:'Pending requests');
+  if(model.minimized&&!isAnswering){
     const expand=button('',()=>{model.minimized=false;renderRequestTray(chat,entry);},'request-tray-expand');
     expand.setAttribute('aria-label',requests.length+' pending request'+(requests.length===1?'':'s'));
     expand.setAttribute('aria-expanded','false');expand.dataset.questionFocus='expand';
@@ -5351,18 +5400,25 @@ function renderRequestTray(chat,entry){
     tray.append(expand);if(focused)expand.focus({preventScroll:true});return;
   }
   const header=node('div','request-tray-header'),bar=node('div','request-tray-bar'),page=node('span','request-tray-page',(index+1)+' / '+requests.length);
-  if(heading){heading.classList.add('request-tray-heading');header.append(heading);}
-  const step=delta=>{const next=index+delta;if(next<0||next>=requests.length)return;model.key=requests[next].key;renderRequestTray(chat,entry);};
+  if(isAnswering){const options=button('‹ Options',()=>leaveQuestionComposer(true),'question-back');options.dataset.questionFocus='options';options.disabled=questionPending.has(item.q.id);header.append(options);}
+  if(heading){heading.classList.add('request-tray-heading');heading.title=title;if(isAnswering)heading.id='question-composer-title';header.append(heading);}
+  const step=delta=>{const next=index+delta;if(next<0||next>=requests.length)return;if(questionComposerMode())leaveQuestionComposer();model.key=requests[next].key;renderRequestTray(chat,entry);};
   if(requests.length>1){
     const previous=iconButton('chevron','Previous request',()=>step(-1)),next=iconButton('chevron','Next request',()=>step(1));
     previous.classList.add('request-tray-prev');previous.dataset.questionFocus='previous-request';next.dataset.questionFocus='next-request';
     previous.disabled=index===0;next.disabled=index===requests.length-1;bar.append(previous,page,next);
   }
   const minimize=iconButton('chevron','Minimize pending requests',()=>{model.minimized=true;renderRequestTray(chat,entry);});
-  minimize.classList.add('request-tray-minimize');minimize.dataset.questionFocus='minimize';minimize.setAttribute('aria-expanded','true');bar.append(minimize);
+  minimize.classList.add('request-tray-minimize');minimize.dataset.questionFocus='minimize';minimize.setAttribute('aria-expanded','true');if(!isAnswering)bar.append(minimize);
   header.append(bar);
   const details=card.querySelector('.task-details>summary');if(details)details.textContent='Details';card.querySelector('.question-dismiss')?.replaceChildren(document.createTextNode('Skip'));
   tray.append(header,card);
+  if(isAnswering){
+    card.inert=true;const height=card.getBoundingClientRect().height;
+    if(!wasAnswering&&!chatMotionReduced()&&height){card.animate([{height:height+'px',opacity:1,overflow:'hidden',transform:'translateY(0)'},{height:'0px',opacity:0,overflow:'hidden',transform:'translateY(-4px)'}],{duration:180,easing:'cubic-bezier(.2,.8,.2,1)',fill:'forwards'}).finished.then(()=>{card.hidden=true;}).catch(()=>{});}else card.hidden=true;
+    syncQuestionComposer();return;
+  }
+  if(wasAnswering&&!chatMotionReduced()){const height=card.getBoundingClientRect().height;card.animate([{height:'0px',opacity:0,overflow:'hidden',transform:'translateY(-4px)'},{height:height+'px',opacity:1,overflow:'hidden',transform:'translateY(0)'}],{duration:180,easing:'cubic-bezier(.2,.8,.2,1)'});}
   if(focused){
     const target=focusKey==='expand'?card.querySelector('button:not(:disabled),textarea:not(:disabled)'):focusKey&&[...tray.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===focusKey&&!n.disabled);
     (target||tray.querySelector('button:not(:disabled)'))?.focus({preventScroll:true});
@@ -6413,7 +6469,7 @@ composerLists=createComposerLists($("prompt"),chip=>{
   if(!chip.querySelector('.character')){const bot=state.bots.find(b=>b.id===chip.dataset.mention);if(bot)chip.replaceChildren(...mentionBadge(bot).childNodes);}
 });
 commandsUI=createCommandsUI({editor:$("prompt"),composer:$("composer"),api,
-  connected:()=>!!state.token,unavailable:()=>state.chat?.shared?'Workspace commands are available in private bot chats.':'',onDraft:saveDraft,openLibrary:()=>openSettings("skills")});
+  connected:()=>!!state.token&&!questionComposerMode(),unavailable:()=>questionComposerMode()?'Answer this question first.':state.chat?.shared?'Workspace commands are available in private bot chats.':'',onDraft:saveDraft,openLibrary:()=>openSettings("skills")});
 document.addEventListener('paste',async e=>{
   const target=e.target instanceof Element?e.target:null;
   if($('composer-area').hidden||document.querySelector('dialog[open]')||!composerChatId())return;
@@ -6422,13 +6478,14 @@ document.addEventListener('paste',async e=>{
   e.preventDefault();
   let clipboardFiles=transferFiles(e.clipboardData);
   const pastedText=e.clipboardData?.getData('text/plain')||'';
-  if(!clipboardFiles.length&&!pastedText){try{clipboardFiles=await clipboardImages();}catch(error){notice('Could not paste image: '+(error.message||error),true);return;}}
+  if(destination.answer&&clipboardFiles.length){notice("Attachments can't be added to a question response.",true);return;}
+  if(!destination.answer&&!clipboardFiles.length&&!pastedText){try{clipboardFiles=await clipboardImages();}catch(error){notice('Could not paste image: '+(error.message||error),true);return;}}
   if(clipboardFiles.length){
     const images=clipboardFiles.map((file,index)=>file.type.startsWith('image/')?new File([file],`Screenshot ${new Date().toISOString().slice(0,19).replaceAll(':','-')}${index?' '+(index+1):''}.${({'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/gif':'gif'})[file.type]||'png'}`,{type:file.type}):file);
     void perform(()=>queueFiles(images,destination));return;
   }
   if(destination.chatId!==composerChatId()||destination.token!==state.token)return;
-  if(pastedText.length>=4000 || pastedText.split(/\r\n|\r|\n/).length>=40){
+  if(!destination.answer&&(pastedText.length>=4000 || pastedText.split(/\r\n|\r|\n/).length>=40)){
     void perform(()=>queueFiles([new File([pastedText],'Pasted text.txt',{type:'text/plain;charset=utf-8'})],destination));
     return;
   }
@@ -6443,6 +6500,7 @@ document.addEventListener('paste',async e=>{
   r.collapse(true);
   sel.removeAllRanges();
   sel.addRange(r);
+  if(questionComposerMode()){saveDraft();syncQuestionComposer();}
   updateMentions();
   resizeComposer();
   wakeCuriousBot();
@@ -6517,10 +6575,14 @@ function normalizePromptMentions() {
 }
 
 function saveDraft() {
+  const answer=questionComposerMode();if(answer){questionDrafts.set(answer.q.id,$('prompt').value);return;}
   state.drafts ??= new Map();
   state.drafts.set(state.chat?.id || `dm-${state.bot?.id}`, $("prompt").value);
 }
 function restoreDraft() {
+  const answer=questionComposerMode();
+  if(answer){$('prompt').value=questionDrafts.get(answer.q.id)||'';renderReplyDraft();renderPendingFiles();syncQuestionComposer();return;}
+  syncQuestionComposer();
   $("prompt").value =
     state.drafts?.get(state.chat?.id || `dm-${state.bot?.id}`) || "";
   normalizePromptMentions();
@@ -6872,7 +6934,7 @@ addEventListener("beforeunload",()=>{
 });
 function conversationSnapshot(){
   saveDraft();
-  return {drafts:[...state.drafts],replies:[...state.replyDrafts],sends:[...state.pendingSends],queueEdits:[...state.queueEdits],draftRecipients:[...state.draftRecipients],files:[...pendingFiles].map(([id,files])=>[id,files.filter(f=>!f.loading)]),selection:{bot:state.bot?.id,chat:state.chat?.id}};
+  return {questionDrafts:[...questionDrafts],drafts:[...state.drafts],replies:[...state.replyDrafts],sends:[...state.pendingSends],queueEdits:[...state.queueEdits],draftRecipients:[...state.draftRecipients],files:[...pendingFiles].map(([id,files])=>[id,files.filter(f=>!f.loading)]),selection:{bot:state.bot?.id,chat:state.chat?.id}};
 }
 function persistConversation(){
   if(!state.reloadResumeKey)return;
@@ -7739,6 +7801,7 @@ composerMenu.addEventListener('keydown',e=>{
   if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();const items=[attachAction,teachAction],index=items.indexOf(document.activeElement);items[(index+(e.key==='ArrowDown'?1:-1)+items.length)%items.length].focus({preventScroll:true});}
 });
 function renderPendingFiles(){
+  if(questionComposerMode()){fileChips.hidden=true;$('composer').classList.remove('has-files');syncQuestionComposer();return;}
   const files=pendingFiles.get(composerChatId())||[],key=JSON.stringify(files);
   if(fileChips.dataset.key!==key){stopComposerMotion();fileChips.dataset.key=key;}
   fileChips.replaceChildren();fileChips.hidden=!files.length;
@@ -7758,7 +7821,7 @@ function renderPendingFiles(){
     fileChips.append(chip);
   }
 }
-function attachmentDestination(){return {chatId:composerChatId(),token:state.token,shared:!!state.chat?.shared};}
+function attachmentDestination(){return {answer:!!questionComposerMode(),chatId:composerChatId(),token:state.token,shared:!!state.chat?.shared};}
 function transferFiles(data){const files=[...(data?.files||[])];return files.length?files:[...(data?.items||[])].filter(i=>i.kind==='file').map(i=>i.getAsFile()).filter(Boolean);}
 function nativeAttachment(value){const bytes=Uint8Array.from(atob(value.data),c=>c.charCodeAt(0)),extension=value.name?.split('.').pop().toLowerCase(),type=value.mime||({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp'})[extension]||'';return new File([bytes],value.name||'Screenshot.png',{type});}
 async function clipboardImages(){
@@ -7782,6 +7845,7 @@ window.addEventListener('kindred-native-file-drop',e=>{
  const d=e.detail||{},hit=Number.isFinite(d.x)&&Number.isFinite(d.y)?document.elementFromPoint(d.x,d.y):null,accepted=hit?.closest('.conversation')&&!$('composer-area').hidden&&!document.querySelector('dialog[open]')&&composerChatId();
  if(d.kind==='leave'||!accepted){nativeFileDrag=false;clearFileDrag();return;}
  if(d.kind==='over'){nativeFileDrag=true;$('composer').classList.add('file-drag-over');return;}
+ if(d.kind==='drop'&&questionComposerMode()){nativeFileDrag=false;clearFileDrag();notice("Attachments can't be added to a question response.",true);return;}
  if(d.kind==='drop'){nativeFileDrag=false;nativeDropFinished=performance.now()+250;clearFileDrag();const destination=attachmentDestination();void perform(async()=>{const files=await window.__TAURI__.core.invoke('read_dropped_files',{ticket:d.ticket});await queueFiles(files.map(nativeAttachment),destination);});}
 });
 window.addEventListener('blur',clearFileDrag);
@@ -7790,6 +7854,7 @@ filePicker.addEventListener('change',()=>{const chosen=[...filePicker.files];fil
 async function queueFiles(chosen,destination=attachmentDestination()){
 
   if(!chosen.length)return;
+  if(destination.answer||(destination.chatId===composerChatId()&&questionComposerMode()))throw new Error("Attachments can't be added to a question response.");
   const {chatId,token,shared}=destination;
   if(token!==state.token)throw new Error('The account changed before the attachment was ready.');
   if(!chatId)throw new Error('Choose a conversation first.');
@@ -8457,6 +8522,7 @@ function changeComposerReply(update,animate){
 $('prompt').addEventListener('input',stopComposerMotion);
 window.addEventListener('resize',stopComposerMotion);
 function renderReplyDraft(){
+  if(questionComposerMode()){replyPreview.hidden=true;$('composer').classList.remove('is-replying');replyPreview.dataset.key='';syncQuestionComposer();return;}
   const chatId=composerChatId(),quote=state.replyDrafts.get(chatId);
   if(quote)$('prompt').setAttribute('data-placeholder','Reply…');
   else $('prompt').setAttribute('data-placeholder','Message '+(state.chat?.name||state.bot?.name||'your bot'));
@@ -8472,6 +8538,7 @@ function renderReplyDraft(){
 }
 function startMessageReply(chatId,message){
   if(composerChatId()!==chatId)return;
+  if(questionComposerMode())leaveQuestionComposer();
   state.replyDrafts.set(chatId,{seq:message.seq,sender:message.sender,text:plainMessage(message.text).slice(0,500)});
   closeMessageMenu();renderReplyDraft();$('prompt').focus({preventScroll:true});
 }
@@ -8574,6 +8641,7 @@ $('content').addEventListener('scroll',()=>positionMessageMenu());window.addEven
 initDesktopChrome();
 initPaneResizing();
 
+new MutationObserver(()=>{if(questionComposerMode())syncQuestionComposer();}).observe($('send'),{attributes:true,attributeFilter:['disabled']});
 dictationUI=createDictationUI({editor:$("prompt"),send:$("send"),composer:$("composer"),api,nativeInvoke,chatId:composerChatId,hasFiles:()=>!!pendingFiles.get(composerChatId())?.length,notice,icon});
 
 function workflowOptions(chatId,panel){return {

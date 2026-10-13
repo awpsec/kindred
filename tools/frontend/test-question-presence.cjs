@@ -11,7 +11,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   const now=Math.floor(Date.now()/1000),bot={id:'leet',name:'Leet',provider:'claude-code',profile:{shape:'round',color:'#f24d93'}},chat={id:'dm-leet',name:'Leet',members:['leet'],archived:false};
   const original={id:'question-turn',bot_id:bot.id,chat_id:chat.id,status:'running',prompt:'Find my workflows.',output:'',error:'',created:now};
   const runs=[original],details=new Map([[original.id,[]]]),messages=[{seq:1,sender:'user',kind:'message',text:original.prompt,created:now}];
-  let label='Thinking it through',question;
+  let label='Thinking it through',question,dismissWrites=0;
   await p.route(origin+'/api/**',async route=>{
    const req=route.request(),name=new URL(req.url()).pathname.slice(4),send=json=>route.fulfill({json});
    if(name==='/bots')return send([bot]);if(name==='/chats')return send([chat]);if(name==='/runs')return send(runs);
@@ -19,7 +19,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
    if(name.startsWith('/runs/')){const run=runs.find(r=>r.id===name.slice(6));return send({run,events:details.get(run.id)||[],approvals:[],attachments:[]});}
    if(name==='/activity'){const run=runs[0];return send({leet:{run_id:run.id,status:run.status,shape:label==='Searching'?'investigate':'think',label,started_at:now}});}
    if(name==='/questions/stale/dismiss'){
-    const stale=messages.find(m=>m.question?.id==='stale').question;stale.status='dismissed';stale.answer='';stale.selected=null;return send(stale);
+    dismissWrites++;const stale=messages.find(m=>m.question?.id==='stale').question;stale.status='dismissed';stale.answer='';stale.selected=null;return send(stale);
    }
    if(name==='/questions/choice/answer'){
     question.status='answered';question.selected=0;question.answer=question.options[0];
@@ -55,10 +55,10 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   messages.push({seq:3,sender:'leet',kind:'question',question:{...question,id:'stale',status:'pending',answer:'',selected:null},run_id:original.id,text:question.question,created:now+4});
   const stale=p.locator('[data-question-id="stale"]');await stale.waitFor();
   await stale.getByRole('button',{name:'Write my own response'}).click();
-  await stale.getByRole('textbox',{name:'Your response'}).fill('Unsubmitted draft');
-  await stale.getByRole('button',{name:'Dismiss',exact:true}).click();
-  await p.waitForFunction(()=>document.querySelector('[data-question-id="stale"] .decision-receipt-outcome')?.textContent==='Dismissed');
-  assert.equal(runs.length,countBefore,'Dismiss must not start a continuation');
+  await p.locator('#prompt').fill('Unsubmitted draft');
+  await p.locator('.question-back').click();await stale.getByRole('button',{name:'Skip',exact:true}).click();
+  await p.waitForFunction(()=>document.querySelector('[data-question-id="stale"] .decision-receipt-outcome')?.textContent==='Skipped');
+  assert.equal(dismissWrites,1,'Skip dispatches exactly one dismissal');assert.equal(runs.length,countBefore,'Dismiss must not start a continuation');assert.equal(await p.locator('#prompt').evaluate(n=>n.value),'','Unsubmitted answer never becomes an ordinary message draft');
   assert.equal(await workers.count(),0);assert.equal(await stale.getByRole('textbox').count(),0);
   await stale.scrollIntoViewIfNeeded();await p.screenshot({path:path.join(artifacts,engine+'-question-dismissed-mobile.png')});
   assert.deepEqual(errors,[]);

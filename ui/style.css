@@ -5599,14 +5599,14 @@ html[data-mobile] #composer #send > svg {
   display:block;width:20px;height:20px;flex:none;pointer-events:none;
 }
 
-html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating) {
+html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering) {
   grid-template-rows:auto auto minmax(28px,auto) 44px;
   min-height:96px;padding:8px 10px 5px;align-content:end;border-radius:24px;
 }
-html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating) #prompt {
+html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering) #prompt {
   grid-column:1/-1;grid-row:3;align-self:start;padding:2px 4px;margin-bottom:6px;min-height:28px;
 }
-html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating) #composer-hint {display:flex;justify-content:center;}
+html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering) #composer-hint {display:flex;justify-content:center;}
 html[data-mobile] #composer.is-dictating #composer-hint {display:none;}
 html[data-mobile] .composer-area {padding:8px 10px;}
 
@@ -5990,3 +5990,15 @@ html[data-system-text-size] :is(#computer-expand,.desktop-preview-open){display:
 
 /* Transparent photo-only messages use the surrounding page palette. */
 .message-row.user .message-bubble.attachment-only{--fg:inherit;--soft:inherit;--bg:inherit;--surface:inherit;--line:inherit}
+
+/* Custom question answers use the ordinary editor and retain its draft elsewhere. */
+.request-tray.is-answering .request-tray-header{align-items:center;flex-wrap:nowrap;gap:8px;margin-bottom:0}
+.request-tray.is-answering .request-tray-heading{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0}
+.request-tray.is-answering .request-tray-bar{flex:none}
+.request-tray .question-back{flex:none;min-width:44px;min-height:44px;padding:0 8px;font-size:12px;white-space:nowrap;background:none}
+.request-tray.is-answering .question-card{margin:0;box-sizing:border-box}
+#composer.is-answering .composer-files,#composer.is-answering .composer-reply{display:none}
+
+.request-tray.is-answering{margin-bottom:2px;padding-block:6px}
+html[data-mobile] .request-tray.is-answering .request-tray-bar .icon-button{width:44px;height:44px}
+#question-composer-status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
