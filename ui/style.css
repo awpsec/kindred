@@ -5599,14 +5599,14 @@ html[data-mobile] #composer #send > svg {
   display:block;width:20px;height:20px;flex:none;pointer-events:none;
 }
 
-html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering) {
+html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) {
   grid-template-rows:auto auto minmax(28px,auto) 44px;
   min-height:96px;padding:8px 10px 5px;align-content:end;border-radius:24px;
 }
-html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering) #prompt {
+html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) #prompt {
   grid-column:1/-1;grid-row:3;align-self:start;padding:2px 4px;margin-bottom:6px;min-height:28px;
 }
-html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering) #composer-hint {display:flex;justify-content:center;}
+html[data-mobile] #composer:is(:focus-within,.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) #composer-hint {display:flex;justify-content:center;}
 html[data-mobile] #composer.is-dictating #composer-hint {display:none;}
 html[data-mobile] .composer-area {padding:8px 10px;}
 
@@ -6002,3 +6002,38 @@ html[data-system-text-size] :is(#computer-expand,.desktop-preview-open){display:
 .request-tray.is-answering{margin-bottom:2px;padding-block:6px}
 html[data-mobile] .request-tray.is-answering .request-tray-bar .icon-button{width:44px;height:44px}
 #question-composer-status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+
+/* Question decisions belong to their explicitly linked task, without a card. */
+.task-question-receipt{margin-left:18px;padding:5px 0;font-size:calc(12px * var(--text-scale,1))}
+.task-question-heading{display:flex;align-items:baseline;gap:8px;cursor:pointer;list-style:none;overflow-wrap:anywhere;color:var(--fg)}
+.task-question-heading::-webkit-details-marker{display:none}
+.task-question-glyph{width:15px;flex:none;color:var(--muted)}
+.task-question-title{min-width:0;flex:1}
+.task-question-chevron{color:var(--muted);transition:transform .2s ease}
+.task-question-heading[aria-expanded="true"] .task-question-chevron{transform:rotate(90deg)}
+.task-question-answer,.task-question-detail{margin-left:23px;white-space:pre-wrap;overflow-wrap:anywhere}
+.task-question-answer{font-weight:500}.task-question-answer .muted,.task-question-answer.muted{font-weight:400}
+.task-question-detail{color:var(--muted);overflow:hidden}.task-question-detail p{margin:8px 0}
+.task-question-receipt:not([open])>.task-question-detail{display:none}
+.task-question-time{white-space:nowrap;color:var(--muted);font-size:inherit}
+.task-question-heading:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.summary-progress-chevron{color:var(--muted);transition:transform .2s ease}
+.summary-progress-disclosure:not([open])>.summary-progress-heading .summary-progress-chevron{transform:rotate(-90deg)}
+@media(pointer:coarse){.task-question-heading{min-height:44px;align-items:center}}
+@media(prefers-reduced-motion:reduce){.task-question-chevron,.summary-progress-chevron{transition:none}}
+:root[data-motion="off"] .task-question-chevron,:root[data-motion="off"] .summary-progress-chevron{transition:none}
+.task-connector-disclosure{display:inline;position:relative}
+.task-connector-toggle{display:inline-flex;vertical-align:baseline;align-items:center;gap:4px;padding:2px;border:0;border-radius:3px;background:none;opacity:.5;position:relative}
+.task-connector-toggle .connector-logo{width:11px;height:11px;min-width:11px;flex:none;background:none;border-radius:0;font-size:8px}
+.task-connector-toggle .connector-logo svg{width:11px;height:11px}
+.task-connector-toggle:hover:not(:disabled),.task-connector-toggle[aria-expanded="true"],.task-connector-toggle:focus-visible{opacity:1;background:var(--hover)}
+.task-connector-toggle:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.task-connector-detail{display:block;color:var(--muted);white-space:pre-wrap;font-size:inherit;margin:5px 0}
+.task-connector-detail[hidden]{display:none}
+@media(pointer:coarse){.task-connector-toggle::before{content:'';position:absolute;min-width:44px;min-height:44px;inset:50% auto auto 50%;transform:translate(-50%,-50%)}}
+
+.task-question-heading{flex-wrap:wrap;row-gap:3px}.task-question-heading>.task-question-answer{flex-basis:calc(100% - 23px);min-width:0}
+
+/* These task surfaces already provide their own disclosure chevron. */
+.task-question-receipt>.task-question-heading,.summary-progress-disclosure>.summary-progress-heading{padding-inline-start:0}
+.task-question-receipt>.task-question-heading::before,.summary-progress-disclosure>.summary-progress-heading::before{display:none}
