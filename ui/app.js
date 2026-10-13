@@ -4849,7 +4849,7 @@ function summaryProgress(items,entry,runs){
   title.append(node('strong','',name),taskLabel);
   if(elapsed!==null)title.append(node('span','muted small summary-progress-time',elapsedTime(elapsed)));
   title.append(node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${questions.some(m=>m.question.status==='pending')?' · Waiting for your answer':questions.some(m=>m.question.status==='answered')?' · '+questions.filter(m=>m.question.status==='answered').length+' answer'+(questions.filter(m=>m.question.status==='answered').length===1?'':'s'):''}${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):''}`));
-  const body=node('div','summary-progress-body');for(const m of [...items,...questions].sort((a,b)=>(a.question?.created??a.created)-(b.question?.created??b.created)||a.seq-b.seq)){if(m.question){body.append(taskQuestionReceipt(m,entry,key,taskStarted));continue;}const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);const content=markdown(m.text);
+  const body=node('div','summary-progress-body');for(const m of [...items,...questions].sort((a,b)=>(a.question?.created??a.created)-(b.question?.created??b.created)||a.seq-b.seq)){if(m.question){body.append(taskQuestionReceipt(m,entry,key,taskStarted));continue;}const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);const content=markdown(m.text),ownedCalls=calls.filter(call=>call.connector_artifact.progress_message_seq===m.seq);
     if(Number.isFinite(m.created)&&m.created>0){
       const date=new Date(m.created*1000),stamp=node('span','progress-update-time'),clock=node('time','progress-update-clock','('+date.toLocaleTimeString([],{timeZone:botTimezone(),hour:'numeric',minute:'2-digit'})+')');
       clock.dateTime=date.toISOString();
@@ -4861,10 +4861,11 @@ function summaryProgress(items,entry,runs){
         const paint=()=>{const pinned=entry.progressTimePins.has(messageKey);stamp.dataset.pinned=String(pinned);toggle.setAttribute('aria-pressed',String(pinned));};
         toggle.onclick=()=>{if(!toggle.isConnected||currentConversationId()!==entry.id)return;entry.progressTimePins.has(messageKey)?entry.progressTimePins.delete(messageKey):entry.progressTimePins.add(messageKey);paint();};paint();stamp.append(toggle);
       }else stamp.dataset.pinned='true'; // Historical run unavailable: never invent elapsed time.
+      if(ownedCalls.length)stamp.append(document.createTextNode(' '),taskConnectorDisclosure(ownedCalls,entry,key));
       stamp.append(clock);const last=content.lastElementChild;
       (last?.tagName==='P'?last:content).append(document.createTextNode(' '),stamp);
     }
-    const ownedCalls=calls.filter(call=>call.connector_artifact.progress_message_seq===m.seq);if(ownedCalls.length){const last=content.lastElementChild;(last?.tagName==='P'?last:content).append(document.createTextNode(' '),taskConnectorDisclosure(ownedCalls,entry,key));}
+    else if(ownedCalls.length){const last=content.lastElementChild;(last?.tagName==='P'?last:content).append(document.createTextNode(' '),taskConnectorDisclosure(ownedCalls,entry,key));}
     update.append(content);body.append(update);}
   details.append(title,body);group.append(details);animateChatDisclosure(details,body);
   title.addEventListener('click',()=>{if(details.open){entry.progressOpen.delete(key);entry.progressClosed.add(key);}else{entry.progressOpen.add(key);entry.progressClosed.delete(key);}},{capture:true});
@@ -5471,7 +5472,7 @@ function renderRequestTray(chat,entry){
   const title=heading?.textContent||'Review request';
   tray.classList.toggle('is-answering',isAnswering);tray.classList.toggle('is-minimized',model.minimized&&!isAnswering);
   tray.setAttribute('aria-label',isAnswering?'Answering: '+title:'Pending requests');
-  if(model.minimized&&!isAnswering&&requests.length===1&&item.q&&[...progressGroups(entry.messages||[]).values()].some(items=>taskQuestions(items,entry).some(m=>m.question.id===item.q.id))){tray.hidden=true;return;}
+  if(model.minimized&&!isAnswering&&requests.length===1&&item.q&&[...progressGroups(entry.messages||[]).values()].some(items=>taskQuestions(items,entry).some(m=>m.question.id===item.q.id))){tray.hidden=true;if(focused)$('content').querySelector('[data-task-question="'+CSS.escape(item.q.id)+'"]>summary')?.focus({preventScroll:true});return;}
   if(model.minimized&&!isAnswering){
     const expand=button('',()=>{model.minimized=false;renderRequestTray(chat,entry);},'request-tray-expand');
     expand.setAttribute('aria-label',requests.length+' pending request'+(requests.length===1?'':'s'));
