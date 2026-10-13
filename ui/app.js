@@ -255,6 +255,7 @@ async function api(path, method = "GET", body, options = {}) {
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if(options.responseType==='blob'&&res.ok){if(state.token!==requestToken)throw new Error('Workspace changed');const blob=await res.blob();if(state.token!==requestToken)throw new Error('Workspace changed');if(blob.size>(options.maxBlobBytes??8*1024*1024))throw new Error('Preview exceeds the supported size');return blob;}
   let data;
   try {
     data = await res.json();
@@ -6609,13 +6610,14 @@ function mountArtifactNavigation(sidebar,leave){
  sidebar.append(footer);const removeResizer=mountLibraryResizer(sidebar);
  return ()=>{closeIdentityMenu();removeResizer();entry.replaceChildren(...originalContents);entry.onclick=originalClick;placeholder.replaceWith(footer);};
 }
-let artifactWorkspace=null,artifactWorkspaceToken=null;
+let artifactWorkspace=null,artifactWorkspaceToken=null,artifactChatReturn=null;
+function restoreArtifactChat(){const saved=artifactChatReturn;artifactChatReturn=null;if(!saved||saved.chat!==currentConversationId())return;requestAnimationFrame(()=>{const content=$('content');content.scrollTop=saved.scroll;content.querySelector('[data-workspace-artifact="'+CSS.escape(saved.id)+'"] .workspace-artifact-link')?.focus({preventScroll:true});});}
 function syncArtifactRoute(){
  const legacy=new URLSearchParams(location.hash.slice(1)).get('artifact'),match=location.pathname.match(/^\/artifacts(?:\/([^/]+))?\/?$/),requested=!!match||!!legacy;
  if(artifactWorkspace&&artifactWorkspaceToken!==state.token){artifactWorkspace.dispose();artifactWorkspace=null;}
  if(!state.token)return;
- if(!requested){if(artifactWorkspace){if(!artifactWorkspace.canLeave()){history.pushState({},'',artifactWorkspace.selected?'/artifacts/'+encodeURIComponent(artifactWorkspace.selected):'/artifacts');return;}artifactWorkspace.dispose();artifactWorkspace=null;}return;}
- if(!artifactWorkspace){artifactWorkspaceToken=state.token;artifactWorkspace=artifactStudio({api,markdown,mountNavigation:mountArtifactNavigation,authorBadge:(artifact,leave,currentKey)=>{if(artifact.created_by!=='bot')return null;const bot=state.bots.find(b=>b.id===artifact.bot_id);if(!bot)return null;const key=JSON.stringify([bot.name,profile(bot)]);if(key===currentKey)return {key};const element=mentionBadge(bot,false);element.classList.add('mention-link');element.tabIndex=0;element.setAttribute('role','link');element.setAttribute('aria-label','Open '+bot.name);const open=()=>{if(leave())void chooseBot(state.bots.find(b=>b.id===bot.id)||bot);};element.onclick=e=>{e.stopPropagation();open();};element.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}};return {element,key};},baseUrl:state.status.public_url||location.origin,chats:state.chats,initialChatId:currentConversationId(),onExit:()=>{artifactWorkspace=null;history.pushState({},'', '/');},onNavigate:id=>{const path=id?'/artifacts/'+encodeURIComponent(id):'/artifacts';if(location.pathname!==path||location.hash)history.pushState({},'',path);}});$('app').append(artifactWorkspace.root);}
+ if(!requested){if(artifactWorkspace){if(!artifactWorkspace.canLeave()){history.pushState({},'',artifactWorkspace.selected?'/artifacts/'+encodeURIComponent(artifactWorkspace.selected):'/artifacts');return;}artifactWorkspace.dispose();artifactWorkspace=null;restoreArtifactChat();}return;}
+ if(!artifactWorkspace){artifactWorkspaceToken=state.token;artifactWorkspace=artifactStudio({api,markdown,mountNavigation:mountArtifactNavigation,authorBadge:(artifact,leave,currentKey)=>{if(artifact.created_by!=='bot')return null;const bot=state.bots.find(b=>b.id===artifact.bot_id);if(!bot)return null;const key=JSON.stringify([bot.name,profile(bot)]);if(key===currentKey)return {key};const element=mentionBadge(bot,false);element.classList.add('mention-link');element.tabIndex=0;element.setAttribute('role','link');element.setAttribute('aria-label','Open '+bot.name);const open=()=>{if(leave())void chooseBot(state.bots.find(b=>b.id===bot.id)||bot);};element.onclick=e=>{e.stopPropagation();open();};element.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}};return {element,key};},baseUrl:state.status.public_url||location.origin,chats:state.chats,initialChatId:currentConversationId(),onExit:()=>{artifactWorkspace=null;history.pushState({},'', '/');restoreArtifactChat();},onNavigate:id=>{const path=id?'/artifacts/'+encodeURIComponent(id):'/artifacts';if(location.pathname!==path||location.hash)history.pushState({},'',path);}});$('app').append(artifactWorkspace.root);}
  const id=match?.[1]?decodeURIComponent(match[1]):legacy||null;
  if(artifactWorkspace.selected!==id)void artifactWorkspace.open(id);
 }
@@ -8386,7 +8388,7 @@ document.addEventListener('click',event=>{
   const artifactLink=event.target.closest?.('a.workspace-artifact-link');
   if(artifactLink&&!event.defaultPrevented&&event.button===0&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&!event.altKey){
     const id=artifactLink.closest('[data-workspace-artifact]')?.dataset.workspaceArtifact;
-    if(id){event.preventDefault();history.pushState({},'', '/artifacts/'+encodeURIComponent(id));syncArtifactRoute();return;}
+    if(id){event.preventDefault();if(artifactLink.closest('#content'))artifactChatReturn={id,chat:currentConversationId(),scroll:$('content').scrollTop};history.pushState({},'', '/artifacts/'+encodeURIComponent(id));syncArtifactRoute();return;}
   }
   if(!window.__KINDRED_EXTERNAL_LINKS||event.defaultPrevented||event.button!==0)return;
   const link=event.target.closest?.('a[href]');if(!link||link.hasAttribute('download'))return;
