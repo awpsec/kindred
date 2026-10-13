@@ -4767,27 +4767,89 @@ function progressGroups(messages){
   // Summaries is a presentation preference, not a duration or message-count heuristic.
   return groups;
 }
+// Only persisted, same-conversation question links join a rendered task.
+function taskQuestions(items,entry){
+  const key=items[0].progress.group_id,seen=new Set();
+  return (entry.messages||[]).filter(m=>{
+    const q=m.question;
+    if(!q||seen.has(q.id)||q.task_group_id!==key||(q.delivery_chat_id||q.chat_id)!==entry.id||!items.some(i=>i.sender===q.bot_id&&(i.run_id===q.run_id||i.run_id===q.continuation_run_id)))return false;
+    seen.add(q.id);return true;
+  });
+}
+function reopenTaskQuestion(q,entry){
+  const mode=questionComposerMode();if(mode&&mode.q.id!==q.id)leaveQuestionComposer();
+  const model=trayState.get(entry.id)||{};model.key='question:'+q.id;model.minimized=false;trayState.set(entry.id,model);
+  entry.questionReturn=q.id;renderRequestTray({id:entry.id},entry);
+  const card=$('request-tray').querySelector('[data-question-id="'+CSS.escape(q.id)+'"]');
+  if(card){card.focus({preventScroll:true});card.scrollIntoView({block:'nearest',behavior:'instant'});}
+  state.chatKey='';void renderChat(true,'cached');
+}
+function taskQuestionReceipt(m,entry,key,taskStarted){
+  const q=m.question,pending=q.status==='pending',answered=q.status==='answered',outcome=pending?'Waiting for your answer':answered?'You chose: '+q.answer:q.status==='dismissed'?'Dismissed without an answer.':'This question was cancelled.';
+  entry.questionDetails??=new Set();
+  const receipt=node('details','task-question-receipt');receipt.dataset.taskQuestion=q.id;receipt.dataset.message=String(m.seq);receipt.open=!pending&&entry.questionDetails.has(q.id);
+  const heading=node('summary','task-question-heading'),glyph=node('span','task-question-glyph',answered?'✓':'?'),text=node('span','task-question-title',q.question),chevron=node('span','task-question-chevron','›');glyph.setAttribute('aria-hidden','true');chevron.setAttribute('aria-hidden','true');heading.append(glyph,text,chevron);
+  heading.setAttribute('aria-label',(pending?'Question waiting for your answer: ':answered?'Answered question: ':'Question: ')+q.question+'. '+outcome);
+  const detail=node('div','task-question-detail');detail.id='task-question-detail-'+encodeURIComponent(q.id);
+  const trayModel=trayState.get(entry.id),dockOpen=!trayModel?.minimized&&(!trayModel?.key||trayModel.key==='question:'+q.id);
+  heading.setAttribute('aria-controls',pending?'question-card-'+encodeURIComponent(q.id):detail.id);heading.setAttribute('aria-expanded',String(pending?dockOpen:receipt.open));
+  if(Number.isFinite(q.created)&&taskStarted>0&&q.created>=taskStarted)heading.append(node('span','progress-update-time task-question-time',elapsedTime(q.created-taskStarted)));
+  const answer=node('div','task-question-answer');
+  if(answered){answer.append(node('span','muted','You chose: '),node('span','',q.answer));}
+  else answer.textContent=pending?'Waiting for your answer · '+(dockOpen?'Open above composer':'Select the question to reopen'):outcome;
+  answer.classList.toggle('muted',!answered);
+  detail.append(node('p','',q.question));if(q.context)detail.append(node('p','',q.context));
+  if(answered){detail.append(node('p','',q.answer));if(q.answered_at>0)detail.append(node('p','muted','Answered at '+new Date(q.answered_at*1000).toLocaleTimeString([],{timeZone:botTimezone(),hour:'numeric',minute:'2-digit'})));}else if(!pending)detail.append(node('p','',outcome));
+  heading.append(answer);receipt.append(heading,detail);
+  if(pending)heading.onclick=e=>{e.preventDefault();reopenTaskQuestion(q,entry);};
+  else {
+    animateChatDisclosure(receipt,detail);
+    heading.addEventListener('click',()=>{
+      const opening=!receipt.open||receipt.classList.contains('is-collapsing');
+      opening?entry.questionDetails.add(q.id):entry.questionDetails.delete(q.id);
+      // Opening a read-only receipt is explicit expansion of its parent task.
+      entry.progressOpen.add(key);heading.setAttribute('aria-expanded',String(opening));
+    },{capture:true});
+  }
+  return receipt;
+}
+function taskConnectorCalls(items,entry){
+  return (entry.messages||[]).filter(m=>{const c=m.connector_artifact;return c?.status==='completed'&&c.chat_id===entry.id&&items.some(i=>i.seq===c.progress_message_seq&&i.run_id===c.run_id&&i.sender===c.bot_id);});
+}
+function taskConnectorDisclosure(calls,entry,key){
+  entry.taskConnectorDetails??=new Set();const anchor=String(calls[0].connector_artifact.progress_message_seq),id='task-call-details-'+anchor,wrap=node('span','task-connector-disclosure'),brands=[...new Map(calls.map(m=>{const c=m.connector_artifact,b=connectorBrand(c.connection||c.connector,c.tool);return [b.key,b];})).values()];
+  const toggle=button('',()=>{},'task-connector-toggle'),body=node('span','task-connector-detail');body.id=id;
+  const label=brands.map(b=>b.name).join(' and ')+': '+calls.length+' completed call'+(calls.length===1?'':'s');toggle.setAttribute('aria-label',label);toggle.title=label;toggle.setAttribute('aria-controls',id);
+  for(const brand of brands){const logo=connectorLogo(brand);logo.setAttribute('aria-hidden','true');wrap.dataset.theme=document.documentElement.dataset.theme;toggle.append(logo);}
+  body.textContent=brands.map(brand=>{const owned=calls.filter(m=>{const c=m.connector_artifact;return connectorBrand(c.connection||c.connector,c.tool).key===brand.key;}),actions=[...new Set(owned.map(m=>String(m.connector_artifact.tool||'').split('__').at(-1).replaceAll('_',' ')))];return brand.name+' · '+actions.join(', ')+' · '+owned.length+' completed call'+(owned.length===1?'':'s');}).join('\n');
+  const paint=()=>{const open=entry.taskConnectorDetails.has(anchor);toggle.setAttribute('aria-expanded',String(open));body.hidden=!open;};
+  toggle.onclick=()=>{entry.taskConnectorDetails.has(anchor)?entry.taskConnectorDetails.delete(anchor):entry.taskConnectorDetails.add(anchor);entry.progressOpen.add(key);paint();};paint();wrap.append(toggle,body);return wrap;
+}
 function summaryProgress(items,entry,runs){
-  const first=items[0],key=first.progress.group_id,run=runs.find(r=>r.id===first.run_id)||state.allRuns.find(r=>r.id===first.run_id)||state.details.get(first.run_id)?.run;
-  const group=node('article','summary-progress');group.dataset.message=String(first.seq);group.dataset.scrollMessages=items.map(m=>m.seq).join(' ');group.dataset.progressGroup=key;
-  entry.progressOpen??=new Set();entry.progressReading??=new Set();
-  const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),bounds=previous?.getBoundingClientRect(),viewport=$('content').getBoundingClientRect();
-  const reading=!!previous&&(previous.contains(document.activeElement)||bounds.bottom>viewport.top&&bounds.top<viewport.bottom);
-  if(reading&&previous.querySelector('details')?.open)entry.progressReading.add(key);
-  const phaseFinal=entry.messages.find(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer');
-  const finished=!!phaseFinal||run&&!active(run)&&run.status!=='queued',manual=entry.progressOpen.has(key),details=node('details','summary-progress-disclosure');details.open=!finished||manual||entry.progressReading.has(key);
+  const first=items[0],key=first.progress.group_id,questions=taskQuestions(items,entry),calls=taskConnectorCalls(items,entry),parentRunId=questions[0]?.question.run_id||first.run_id,rootRun=runs.find(r=>r.id===parentRunId)||state.allRuns.find(r=>r.id===parentRunId)||state.details.get(parentRunId)?.run;
+  const memberRuns=new Set([...items.map(m=>m.run_id),...questions.map(m=>m.question.continuation_run_id).filter(Boolean)]),run=[...runs,...state.allRuns].find(r=>r.id===[...memberRuns].at(-1))||rootRun;
+  const group=node('article','summary-progress');group.dataset.message=String(first.seq);group.dataset.scrollMessages=[...items,...questions,...calls].map(m=>m.seq).join(' ');group.dataset.progressGroup=key;
+  entry.progressOpen??=new Set();entry.progressClosed??=new Set();
+  const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key);
+  const phaseFinal=entry.messages.findLast(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer'&&(!run||m.run_id===run.id));
+  const finished=!questions.some(m=>m.question.status==='pending')&&(!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued')),manual=entry.progressOpen.has(key);
+  // Visibility is not intent to keep reading. Only an explicit expansion pins progress open.
+  const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open;
+  group.dataset.progressFinished=String(finished);
+  const details=node('details','summary-progress-disclosure');details.open=completing||manual||(!finished&&!entry.progressClosed.has(key));
   const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender),name=bot?.name||'Bot';
   if(bot){const avatar=buddy(bot,20);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
-  const taskStarted=[run?.progress_started,run?.created].find(value=>Number.isFinite(value)&&value>0);
+  const taskStarted=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
   entry.progressTimePins??=new Set();
   const taskEnded=phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||items.at(-1).created):Math.floor(Date.now()/1000));
   const elapsed=taskStarted&&taskStarted<=taskEnded?taskEnded-taskStarted:null;
-  const taskName=(run?.task_title||first.progress?.task_title||'Task progress').trim()||'Task progress',taskLabel=node('span','summary-progress-task'),taskText=node('span','summary-progress-name',taskName);taskLabel.title=taskName;taskLabel.append(taskText);
+  const taskName=(rootRun?.task_title||first.progress?.task_title||'Task progress').trim()||'Task progress',taskLabel=node('span','summary-progress-task'),taskText=node('span','summary-progress-name',taskName);taskLabel.title=taskName;taskLabel.append(taskText);
   if(!finished&&run?.status==='running'){taskText.classList.add('is-working');taskText.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}
+  const taskChevron=node('span','summary-progress-chevron','⌄');taskChevron.setAttribute('aria-hidden','true');title.prepend(taskChevron);
   title.append(node('strong','',name),taskLabel);
   if(elapsed!==null)title.append(node('span','muted small summary-progress-time',elapsedTime(elapsed)));
-  title.append(node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):''}`));
-  const body=node('div','summary-progress-body');for(const m of items){const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);const content=markdown(m.text);
+  title.append(node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${questions.some(m=>m.question.status==='pending')?' · Waiting for your answer':questions.some(m=>m.question.status==='answered')?' · '+questions.filter(m=>m.question.status==='answered').length+' answer'+(questions.filter(m=>m.question.status==='answered').length===1?'':'s'):''}${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):''}`));
+  const body=node('div','summary-progress-body');for(const m of [...items,...questions].sort((a,b)=>(a.question?.created??a.created)-(b.question?.created??b.created)||a.seq-b.seq)){if(m.question){body.append(taskQuestionReceipt(m,entry,key,taskStarted));continue;}const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);const content=markdown(m.text);
     if(Number.isFinite(m.created)&&m.created>0){
       const date=new Date(m.created*1000),stamp=node('span','progress-update-time'),clock=node('time','progress-update-clock','('+date.toLocaleTimeString([],{timeZone:botTimezone(),hour:'numeric',minute:'2-digit'})+')');
       clock.dateTime=date.toISOString();
@@ -4802,10 +4864,12 @@ function summaryProgress(items,entry,runs){
       stamp.append(clock);const last=content.lastElementChild;
       (last?.tagName==='P'?last:content).append(document.createTextNode(' '),stamp);
     }
+    const ownedCalls=calls.filter(call=>call.connector_artifact.progress_message_seq===m.seq);if(ownedCalls.length){const last=content.lastElementChild;(last?.tagName==='P'?last:content).append(document.createTextNode(' '),taskConnectorDisclosure(ownedCalls,entry,key));}
     update.append(content);body.append(update);}
   details.append(title,body);group.append(details);animateChatDisclosure(details,body);
-  title.addEventListener('click',()=>{entry.progressReading.delete(key);details.open?entry.progressOpen.delete(key):entry.progressOpen.add(key);},{capture:true});
-  if(finished&&details.open&&!manual){const observer=new IntersectionObserver(records=>{if(!group.isConnected){observer.disconnect();return;}if(!records[0].isIntersecting&&!group.contains(document.activeElement)&&!entry.progressOpen.has(key)){captureChatAnchor();entry.progressReading.delete(key);details.open=false;restoreChatPosition();observer.disconnect();}},{root:$('content')});requestAnimationFrame(()=>{if(group.isConnected)observer.observe(group);});}
+  title.addEventListener('click',()=>{if(details.open){entry.progressOpen.delete(key);entry.progressClosed.add(key);}else{entry.progressOpen.add(key);entry.progressClosed.delete(key);}},{capture:true});
+  // Use the same clipped disclosure motion as a user collapse, without recording a user choice.
+  if(completing)requestAnimationFrame(()=>{if(group.isConnected&&!entry.progressOpen.has(key)&&details.open){if(body.contains(document.activeElement))title.focus({preventScroll:true});title.onclick({preventDefault(){}});}});
   return group;
 }
 function reminderBatch(messages,entry){
@@ -5042,7 +5106,7 @@ async function submitQuestion(q,body){
 }
 
 function questionCard(q){
-  const card=node('section','question-card');card.dataset.questionId=q.id;card.tabIndex=-1;card.setAttribute('aria-label',q.question);
+  const card=node('section','question-card');card.id='question-card-'+encodeURIComponent(q.id);card.dataset.questionId=q.id;card.tabIndex=-1;card.setAttribute('aria-label',q.question);
   const title=node('strong','question-title',q.question);card.append(title);
   if(q.context){
     const paragraphs=q.context.trim().split(/\n\s*\n/),brief=paragraphs[0];
@@ -5362,6 +5426,20 @@ function approvalChat(run){const source=state.chats.find(c=>c.id===run?.chat_id)
 function renderRequestTray(chat,entry){
   const holder=$('composer-area');let tray=$('request-tray');
   if(!tray){tray=node('section','request-tray');tray.id='request-tray';tray.setAttribute('aria-label','Pending requests');holder.prepend(tray);}
+  // Blurring a one-line phone draft can move the tray before a synthesized
+  // touch click. Keep its geometry through activation, without cancelling
+  // pointer defaults or intercepting keyboard/assistive activation.
+  if(!tray.requestActivationBound){
+    tray.requestActivationBound=true;let releaseTimer,press;
+    const release=()=>{press=null;clearTimeout(releaseTimer);requestAnimationFrame(()=>$('composer').classList.remove('is-request-activating'));};
+    tray.addEventListener('pointerdown',e=>{if(e.isPrimary&&e.button===0&&$('composer').contains(document.activeElement)){press={x:e.clientX,y:e.clientY};$('composer').classList.add('is-request-activating');clearTimeout(releaseTimer);releaseTimer=setTimeout(release,1000);}});
+    tray.addEventListener('click',release);tray.addEventListener('pointercancel',release);
+    tray.addEventListener('pointermove',e=>{if(press&&Math.hypot(e.clientX-press.x,e.clientY-press.y)>10)release();});
+    // Composer clearance can scroll the chat during pointer activation. Only
+    // user scroll gestures cancel the guard; layout scrolling must not.
+    for(const type of ['wheel','touchmove'])document.addEventListener(type,()=>{if(press)release();},{capture:true,passive:true});
+  }
+
   // Pending feeds and conversation pages are separate reads. Once this chat
   // has a server-confirmed terminal receipt, an older feed must not resurrect
   // its controls. Retain only identities, including when that page is unloaded.
@@ -5393,6 +5471,7 @@ function renderRequestTray(chat,entry){
   const title=heading?.textContent||'Review request';
   tray.classList.toggle('is-answering',isAnswering);tray.classList.toggle('is-minimized',model.minimized&&!isAnswering);
   tray.setAttribute('aria-label',isAnswering?'Answering: '+title:'Pending requests');
+  if(model.minimized&&!isAnswering&&requests.length===1&&item.q&&[...progressGroups(entry.messages||[]).values()].some(items=>taskQuestions(items,entry).some(m=>m.question.id===item.q.id))){tray.hidden=true;return;}
   if(model.minimized&&!isAnswering){
     const expand=button('',()=>{model.minimized=false;renderRequestTray(chat,entry);},'request-tray-expand');
     expand.setAttribute('aria-label',requests.length+' pending request'+(requests.length===1?'':'s'));
@@ -5409,7 +5488,7 @@ function renderRequestTray(chat,entry){
     previous.classList.add('request-tray-prev');previous.dataset.questionFocus='previous-request';next.dataset.questionFocus='next-request';
     previous.disabled=index===0;next.disabled=index===requests.length-1;bar.append(previous,page,next);
   }
-  const minimize=iconButton('chevron','Minimize pending requests',()=>{model.minimized=true;renderRequestTray(chat,entry);});
+  const minimize=iconButton('chevron','Minimize pending requests',()=>{model.minimized=true;renderRequestTray(chat,entry);state.chatKey='';void renderChat(true,'cached');if(entry.questionReturn){$('content').querySelector('[data-task-question="'+CSS.escape(entry.questionReturn)+'"]>summary')?.focus({preventScroll:true});}});
   minimize.classList.add('request-tray-minimize');minimize.dataset.questionFocus='minimize';minimize.setAttribute('aria-expanded','true');if(!isAnswering)bar.append(minimize);
   header.append(bar);
   const details=card.querySelector('.task-details>summary');if(details)details.textContent='Details';card.querySelector('.question-dismiss')?.replaceChildren(document.createTextNode('Skip'));
@@ -5625,10 +5704,10 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   let sequenceAvatar = null, previousSender = null,
     previousTime = 0;
   const boundary=unreadBoundaries.get(id);let unreadInserted=false;
-  const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages);
+  const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq))),taskConnectorSeqs=new Set([...summaries.values()].flatMap(items=>taskConnectorCalls(items,entry).map(m=>m.seq)));
   for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
   for (const m of data.messages) {
-    if(stacked.has(m.seq)||m.kind==='continuation')continue;
+    if(stacked.has(m.seq)||taskQuestionSeqs.has(m.seq)||taskConnectorSeqs.has(m.seq)||m.kind==='continuation')continue;
     if (!m.text?.trim()) continue;
     if(hiddenCompletionMessage(m) && !runs.find(r=>r.id===m.run_id)?.error)continue;
     if(boundary&&!unreadInserted&&m.kind!=='connector_artifact'&&(chat.shared?!m.mine:m.sender!=='user')&&m.sender!=='system'&&m.seq>boundary.after&&m.seq<=boundary.through){
@@ -6016,6 +6095,7 @@ function connectorAdvance(group,next){
   };
 }
 function reconcileConversation(target,desired,animate=true){
+  const focusedQuestion=target.contains(document.activeElement)?document.activeElement?.closest('[data-task-question]')?.dataset.taskQuestion:null;
   const formations=animate?connectorStackFormation(target,desired):[];
   for(const next of desired.querySelectorAll('.command-progress')){
     const previous=[...target.querySelectorAll('.command-progress')].find(p=>p.dataset.command===next.dataset.command);
@@ -6047,6 +6127,7 @@ function reconcileConversation(target,desired,animate=true){
   let cursor=target.firstChild;
   for(const next of nodes){if(next===cursor){cursor=cursor.nextSibling;continue;}target.insertBefore(next,cursor);}
   for(const formation of formations)animateConnectorFormation(formation);
+  if(focusedQuestion&&!target.contains(document.activeElement))target.querySelector('[data-task-question="'+CSS.escape(focusedQuestion)+'"]>summary')?.focus({preventScroll:true});
   observeLongMessages(target);
   continueLoops(target);
 }
