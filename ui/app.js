@@ -4770,12 +4770,14 @@ function progressGroups(messages){
 function summaryProgress(items,entry,runs){
   const first=items[0],key=first.progress.group_id,run=runs.find(r=>r.id===first.run_id)||state.allRuns.find(r=>r.id===first.run_id)||state.details.get(first.run_id)?.run;
   const group=node('article','summary-progress');group.dataset.message=String(first.seq);group.dataset.scrollMessages=items.map(m=>m.seq).join(' ');group.dataset.progressGroup=key;
-  entry.progressOpen??=new Set();entry.progressReading??=new Set();
-  const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),bounds=previous?.getBoundingClientRect(),viewport=$('content').getBoundingClientRect();
-  const reading=!!previous&&(previous.contains(document.activeElement)||bounds.bottom>viewport.top&&bounds.top<viewport.bottom);
-  if(reading&&previous.querySelector('details')?.open)entry.progressReading.add(key);
+  entry.progressOpen??=new Set();entry.progressClosed??=new Set();
+  const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key);
   const phaseFinal=entry.messages.find(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer');
-  const finished=!!phaseFinal||run&&!active(run)&&run.status!=='queued',manual=entry.progressOpen.has(key),details=node('details','summary-progress-disclosure');details.open=!finished||manual||entry.progressReading.has(key);
+  const finished=!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued'),manual=entry.progressOpen.has(key);
+  // Visibility is not intent to keep reading. Only an explicit expansion pins progress open.
+  const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open;
+  group.dataset.progressFinished=String(finished);
+  const details=node('details','summary-progress-disclosure');details.open=completing||manual||(!finished&&!entry.progressClosed.has(key));
   const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender),name=bot?.name||'Bot';
   if(bot){const avatar=buddy(bot,20);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
   const taskStarted=[run?.progress_started,run?.created].find(value=>Number.isFinite(value)&&value>0);
@@ -4804,8 +4806,9 @@ function summaryProgress(items,entry,runs){
     }
     update.append(content);body.append(update);}
   details.append(title,body);group.append(details);animateChatDisclosure(details,body);
-  title.addEventListener('click',()=>{entry.progressReading.delete(key);details.open?entry.progressOpen.delete(key):entry.progressOpen.add(key);},{capture:true});
-  if(finished&&details.open&&!manual){const observer=new IntersectionObserver(records=>{if(!group.isConnected){observer.disconnect();return;}if(!records[0].isIntersecting&&!group.contains(document.activeElement)&&!entry.progressOpen.has(key)){captureChatAnchor();entry.progressReading.delete(key);details.open=false;restoreChatPosition();observer.disconnect();}},{root:$('content')});requestAnimationFrame(()=>{if(group.isConnected)observer.observe(group);});}
+  title.addEventListener('click',()=>{if(details.open){entry.progressOpen.delete(key);entry.progressClosed.add(key);}else{entry.progressOpen.add(key);entry.progressClosed.delete(key);}},{capture:true});
+  // Use the same clipped disclosure motion as a user collapse, without recording a user choice.
+  if(completing)requestAnimationFrame(()=>{if(group.isConnected&&!entry.progressOpen.has(key)&&details.open)title.onclick({preventDefault(){}});});
   return group;
 }
 function reminderBatch(messages,entry){
