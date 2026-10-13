@@ -69,7 +69,7 @@ await p.keyboard.press('Escape');await p.setViewportSize({width:390,height:844})
   await p.setViewportSize({width:390,height});await p.waitForTimeout(250);
   const b=await tray.boundingBox(),composer=await p.locator('#composer').boundingBox();assert(b.y>=0,'Tray remains within the viewport');assert(b.y+b.height<=composer.y,'Tray never covers the composer');assert(b.height<=height*.52+2,'Tall request content stays bounded');
   assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  await tray.getByRole('textbox',{name:'Your response',exact:true}).scrollIntoViewIfNeeded();assert.equal(await tray.getByRole('textbox',{name:'Your response',exact:true}).inputValue(),'Include the supporting evidence, with a short summary at the top.');
+  await p.locator('#prompt').scrollIntoViewIfNeeded();assert.equal(await p.locator('#prompt').evaluate(n=>n.value),'Include the supporting evidence, with a short summary at the top.');
   await capture(theme+'-'+height);
  }
 }
