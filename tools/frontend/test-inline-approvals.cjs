@@ -8,6 +8,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  try{for(const width of [1100,390,320])for(const theme of ['light','dark']){
   const phone=width<600,context=await browser.newContext({viewport:{width,height:1000},hasTouch:phone,isMobile:phone,reducedMotion:'reduce'});
   await context.addInitScript(({t,phone})=>{sessionStorage.setItem('kindred-token',t);if(phone){window.__KINDRED_MOBILE=true;window.__KINDRED_MOBILE_PLATFORM='ios';}},{t:token,phone});
+  if(process.env.KINDRED_INLINE_STYLE_REF){const body=cp.execFileSync('git',['show',process.env.KINDRED_INLINE_STYLE_REF+':ui/style.css'],{cwd:path.resolve(__dirname,'../..')});await context.route(origin+'/style.css',r=>r.fulfill({contentType:'text/css',body}));}
   if(process.env.KINDRED_INLINE_PARENT)for(const name of ['connector-cards.js','style.css']){const body=cp.execFileSync('git',['show',(process.env.KINDRED_INLINE_PARENT_REF||'HEAD^')+':ui/'+name],{cwd:path.resolve(__dirname,'../..')});await context.route(origin+'/'+name,r=>r.fulfill({contentType:name.endsWith('.css')?'text/css':'text/javascript',body}));}
   const cards=[
    {id:'read',kind:'page',connection:'Atlassian',connector:'confluence',source:'Claude',tool:'getConfluencePage',title:'Model text must not name approval',status:'pending',revision:3,approval_id:'read-approval',read_only:true,input:{cloudId:'https://tenant.example.invalid',pageId:'2580054428',contentFormat:'markdown'},records:[]},
@@ -26,6 +27,23 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const page=await context.newPage(),errors=[];page.setDefaultTimeout(12000);page.on('pageerror',e=>errors.push(e.message));await page.goto(origin);await page.locator('#prompt').waitFor();await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
   const read=page.locator('[data-connector-artifact="read"]'),write=page.locator('[data-connector-artifact="write"]'),unknown=page.locator('[data-connector-artifact="unknown"]');
   try{await read.getByRole('button',{name:'Allow',exact:true}).waitFor();}catch(e){console.error('SETUP DOM',await page.locator('#content').innerText(),await read.count()?await read.evaluate(n=>n.outerHTML):'NO CARD',errors);await page.screenshot({path:path.join(out,'setup-failure.png'),fullPage:true});throw e;}
+  if(process.env.KINDRED_INLINE_VISUAL){
+   const issues=[],measurements={};
+   const summary=read.locator('.connector-request-details > summary');
+   measurements.chevron=await summary.evaluate(n=>{const r=document.createRange();r.selectNodeContents(n);const b=n.getBoundingClientRect(),t=r.getBoundingClientRect(),p=getComputedStyle(n,'::before');return {textInset:t.x-b.x,chevronRight:parseFloat(p.left)+parseFloat(p.width)};});
+   if(measurements.chevron.textInset<measurements.chevron.chevronRight+2)issues.push('H2 chevron overlaps text');
+   const visibleSubmit=async(label)=>{
+    const b=write.getByRole('button',{name:label,exact:true});await b.focus();
+    const v=await b.evaluate(n=>{const s=getComputedStyle(n),r=n.getBoundingClientRect(),body=getComputedStyle(document.body);return {color:s.color,fill:s.backgroundColor,page:body.backgroundColor,width:r.width,height:r.height,outline:s.outlineWidth,outlineStyle:s.outlineStyle};});
+    const rgb=x=>(x.match(/[\d.]+/g)||[]).slice(0,3).map(Number),lum=x=>rgb(x).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((a,v,i)=>a+v*[.2126,.7152,.0722][i],0),contrast=(a,b)=>(Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
+    v.contrast=contrast(v.color,v.fill==='rgba(0, 0, 0, 0)'?v.page:v.fill);measurements[label]=v;
+    if(v.width<=0||v.height<=0||v.contrast<4.5)issues.push('H1 '+label+' invisible');
+    await write.screenshot({path:path.join(out,`${engine}-${width}-${theme}-${label.startsWith('Save')?'edit':'feedback'}.png`)});
+   };
+   await write.getByRole('button',{name:'Edit fields',exact:true}).click();await visibleSubmit('Save field changes');await write.getByLabel('Page body').press('Escape');
+   await write.getByRole('button',{name:'Ask for changes…',exact:true}).click();await write.getByLabel('What would you like changed?').fill('Visible feedback submit.');await visibleSubmit('Request changes');await write.getByLabel('What would you like changed?').press('Escape');
+   assert.deepEqual(actions,[],'Visibility checks never approve or save');assert.deepEqual(errors,[]);results.push({width,theme,measurements,issues});await context.close();continue;
+  }
   assert.equal(await read.getAttribute('role'),'group');assert.equal(await read.getAttribute('aria-label'),'Approval request: Read a Confluence page');
   assert.equal(await read.locator('.connector-request-title').textContent(),'Read a Confluence page');assert.equal(await unknown.locator('.connector-request-title').textContent(),'getButActuallyWrite');
   assert(await unknown.locator('.connector-artifact-content > .connector-record-fields').innerText().then(t=>t.includes('(empty)')&&t.includes('Sub-item name')&&t.includes('overwrite')&&t.includes('9')&&t.includes('Nested change data')),'Nested proposed fields and an empty replacement remain visible');
@@ -47,6 +65,6 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await activate(unknown.getByRole('button',{name:'Decline',exact:true}));assert.equal(actions.at(-1).action,'deny');assert.equal(cards[2].status,'denied');assert.deepEqual(errors,[]);
   results.push({width,theme,geometry:geom,actions:actions.map(a=>({id:a.id,action:a.action,revision:a.revision})),errors});await context.close();
  }
- fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed:true,engine,cases:results},null,2));console.log(JSON.stringify({passed:true,engine,cases:results.length,scope:'synthetic browser; no connector execution'}));
+ const passed=results.every(c=>!c.issues?.length);fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed,engine,cases:results},null,2));assert(passed,'Visual H1/H2 checks failed; see result.json');console.log(JSON.stringify({passed:true,engine,cases:results.length,scope:'synthetic browser; no connector execution'}));
  }finally{await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e.stack);process.exitCode=1});
