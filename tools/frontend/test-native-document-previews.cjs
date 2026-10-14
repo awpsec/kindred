@@ -15,10 +15,10 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
   const card=fileCard({id:name,name,kind:'file'},{getBlob:async()=>await(await fetch('/fixture/file/'+name)).blob(),notice:m=>{throw Error(m);}});document.querySelector('#content').append(card);
   card.querySelector('.deliverable-more').click();await until(()=>card.querySelector('.deliverable-menu').matches(':popover-open'));
   [...card.querySelectorAll('button')].find(b=>b.textContent==='Preview').click();
-  if(name.endsWith('docx'))await until(()=>card.querySelector('.document-word')?.shadowRoot?.textContent.includes('Quarterly review'));
-  if(name.endsWith('xlsx'))await until(()=>card.querySelector('.document-grid')?.textContent.includes('48200'));
-  if(name.endsWith('pdf'))await until(()=>card.querySelector('.document-pages')?.textContent.includes('Page 1 of 2'));
-  const dialog=card.querySelector('dialog');if(!dialog.open)throw Error('Preview modal missing');dialog.close();await until(()=>!card.querySelector('dialog'));
+  if(name.endsWith('docx'))await until(()=>document.querySelector('.document-dialog .document-word')?.shadowRoot?.textContent.includes('Quarterly review'));
+  if(name.endsWith('xlsx'))await until(()=>document.querySelector('.document-dialog .document-grid')?.textContent.includes('48200'));
+  if(name.endsWith('pdf'))await until(()=>document.querySelector('.document-dialog .document-pages')?.textContent.includes('Page 1 of 2'));
+  const dialog=document.querySelector('.document-dialog');if(!dialog.open)throw Error('Preview modal missing');dialog.close();await until(()=>!document.querySelector('.document-dialog'));
  }
  if(errors.length)throw Error(errors.join('; '));await fetch('/fixture/report',{method:'POST',body:JSON.stringify({passed:true,nativeLinux:true,docx:true,xlsx:true,pdf:true,errors})});
  }catch(e){await fetch('/fixture/report',{method:'POST',body:JSON.stringify({passed:false,error:String(e),errors,text:document.querySelector('.document-body')?.innerText})});}

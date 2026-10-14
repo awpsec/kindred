@@ -93,8 +93,11 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
  let closed=false,worker=null,pdfTask=null,timer=null,cancelWork=null,passwordRequired=false,wordDispose=null;
  const cleanup=()=>{if(closed)return;closed=true;lifecycleAbort.abort();conversionAbort.abort();clearTimeout(timer);cancelWork?.();wordDispose?.();worker?.terminate();pdfTask?.destroy().catch(()=>{});observer.disconnect();dialog.remove();};
  const handle={root:dialog,dispose:cleanup};
- const observer=new MutationObserver(()=>{if(!card.isConnected)cleanup();});observer.observe(document.body,{childList:true,subtree:true});onMount?.(handle);
- const close=button('Close',()=>dialog.close());head.append(title,createDownloadButton?createDownloadButton():button('Download',download),close);if(!mount)dialog.append(head);dialog.append(body,foot);(mount||card).append(dialog);
+ // A modal is a reading session, not part of its transient transcript card.
+ // Live progress may replace that card while the reader is on another page.
+ // Inline studio previews still belong to their card and its lifecycle.
+ const observer=new MutationObserver(()=>{if(!dialog.isConnected||(mount&&!card.isConnected))cleanup();});observer.observe(document.body,{childList:true,subtree:true});onMount?.(handle);
+ const close=button('Close',()=>dialog.close());head.append(title,createDownloadButton?createDownloadButton():button('Download',download),close);if(!mount)dialog.append(head);dialog.append(body,foot);(mount||document.body).append(dialog);
  dialog.addEventListener('close',cleanup,{once:true});dialog.addEventListener('click',e=>{if(!mount&&e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
  if(!mount){dialog.showModal();close.focus();}body.append(el('p','document-status','Preparing preview…'));
  try{
