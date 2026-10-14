@@ -1,0 +1,92 @@
+name: Retained Windows output verification (manual only)
+on:
+  workflow_dispatch:
+    inputs:
+      approve_runner_usage:
+        description: 'Approve one retained-output native verification; no application rebuild.'
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: kindred-windows-existing-output-verification
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: ${{ inputs.approve_runner_usage && github.run_attempt == '1' }}
+    runs-on: windows-2025
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: application-source
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CARGO_INCREMENTAL: '0'
+      KINDRED_PACKAGE_SOURCE_ROOT: ${{ github.workspace }}/application-source
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 9bf296ebcb30585f68ab6bfd5d3cf115348086ba
+          path: application-source
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: verification-tools
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Verify selected tool bytes and exact application source
+        run: |
+          python - <<'PY'
+          import hashlib, os, subprocess
+          from pathlib import Path
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '9bf296ebcb30585f68ab6bfd5d3cf115348086ba'
+          tools = Path('../verification-tools')
+          assert subprocess.check_output(['git', '-C', str(tools), 'rev-parse', 'HEAD'], text=True).strip() == os.environ['GITHUB_SHA']
+          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '05b750bbe2b748a88c47a4a20f9fc5fae237c2c95daa1b801277f0663895b71f'
+          PY
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Restore compiler dependencies without saving a cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            application-source/desktop/target
+          key: kindred-native-v1-x86_64-pc-windows-msvc-${{ hashFiles('application-source/desktop/Cargo.lock', 'application-source/desktop/build.rs', 'application-source/desktop/dictation/**') }}
+          restore-keys: kindred-native-v1-x86_64-pc-windows-msvc-
+          fail-on-cache-miss: true
+      - name: Stage exact API-bound executable and adjacent standalone resource
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python ../verification-tools/scripts/release/stage-retained-windows.py --source . --output verification-proof
+      - name: Verify unchanged cold production network discovery and Compose replacement
+        run: python scripts/release/test-native-network.py --target x86_64-pc-windows-msvc --output native-network-validation
+      - name: Verify actual retained executable worker lifetime and cancellation
+        run: python scripts/release/test-command-worker.py --binary desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe > verification-proof/worker.json
+      - name: Verify and collect the retained native package
+        run: python scripts/release/collect-packages.py --target x86_64-pc-windows-msvc --output package-artifacts
+      - name: Retain native evidence including refusals
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-existing-evidence-${{ github.run_id }}-attempt1
+          path: |
+            application-source/verification-proof/*.json
+            application-source/native-network-validation/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload packages only after every required native gate passed
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kindred-0.86.6-x86_64-pc-windows-msvc
+          path: application-source/package-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
