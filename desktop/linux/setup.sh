@@ -76,7 +76,7 @@ if [[ $kindred_manager == apt ]]; then
   fi
   fi
   if [[ $kindred_client_only == 1 || -n $kindred_image || -n $kindred_binary ]]; then
-    sudo apt-get install -y libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio gstreamer1.0-tools patchelf python3 desktop-file-utils
+    sudo apt-get install -y libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio gstreamer1.0-tools hunspell-en-us patchelf python3 desktop-file-utils
   fi
 elif [[ $kindred_manager == dnf ]]; then
   if [[ $kindred_client_only == 0 ]]; then
