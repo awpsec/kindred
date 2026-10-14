@@ -1,0 +1,65 @@
+name: Windows network phase diagnostic (manual only)
+on:
+  workflow_dispatch:
+    inputs:
+      approve_runner_usage:
+        description: 'Approve this one four-minute diagnostic run; it does not pass the release gate.'
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: kindred-windows-network-phase-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: ${{ inputs.approve_runner_usage && github.run_attempt == '1' }}
+    runs-on: windows-2025
+    timeout-minutes: 4
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_BUILD_JOBS: '1'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: be35f1bbda52e8adc7d2665d5d5058a33d3187ec
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Verify immutable diagnostic inputs
+        run: |
+          python - <<'PY'
+          import hashlib, subprocess
+          from pathlib import Path
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == 'be35f1bbda52e8adc7d2665d5d5058a33d3187ec'
+          assert hashlib.sha256(Path('scripts/release/test-windows-network-phases.py').read_bytes()).hexdigest() == '41ea785a6a47e245b2a0b79f36bf792dbc85040899ced20b89cbaed76bf72427'
+          PY
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Restore existing compiler dependencies without saving a cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/target
+          key: kindred-native-v1-x86_64-pc-windows-msvc-${{ hashFiles('desktop/Cargo.lock', 'desktop/build.rs', 'desktop/dictation/**') }}
+          restore-keys: kindred-native-v1-x86_64-pc-windows-msvc-
+          fail-on-cache-miss: true
+      - name: Observe phases under the unchanged ten-second process budget
+        run: |
+          python scripts/release/test-windows-network-phases.py --source-commit 9bf296ebcb30585f68ab6bfd5d3cf115348086ba --expected-helper-sha256 41ea785a6a47e245b2a0b79f36bf792dbc85040899ced20b89cbaed76bf72427 --output phase-proof
+      - name: Retain only the sanitized diagnostic receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-network-phases-${{ github.run_id }}-attempt1
+          path: phase-proof/phase-receipt.json
+          if-no-files-found: warn
+          retention-days: 7
