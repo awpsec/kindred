@@ -6086,16 +6086,16 @@ html[data-mobile] .request-tray.is-answering .request-tray-bar .icon-button{widt
 .connector-request .connector-record-fields dd{min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:none;overflow:visible}
 .connector-request .connector-record-fields dd:has(pre){max-width:100%}
 .connector-request .connector-request-details{margin:9px 0 0;font-size:inherit;color:var(--muted)}
-.connector-request .connector-request-details>summary{width:fit-content;cursor:pointer;padding:5px 0;min-height:28px}
+.connector-request .connector-request-details>summary{width:fit-content;cursor:pointer;padding:5px 0 5px 18px;min-height:28px}
 .connector-request .connector-request-details>.connector-record-fields{margin:6px 0 8px}
 .connector-request>footer,.connector-request .decision-receipt-body>footer{border:0;padding:0;margin-top:9px;gap:4px}
 .connector-request .connector-card-actions>button{border:0;background:transparent;color:var(--muted);border-radius:7px;padding:7px 10px;font-size:calc(13px * var(--text-scale,1));min-height:34px}
 .connector-request .connector-card-actions>button:hover:not(:disabled){background:var(--hover);color:var(--fg)}
 .connector-request .connector-card-actions>button.connector-request-allow{background:light-dark(#e4ece6,#2d3b31);color:light-dark(#31553b,#d0e3d5);font-weight:500;padding:8px 13px}
 .connector-request .connector-card-actions>button.connector-request-allow:hover:not(:disabled){background:light-dark(#d8e5dc,#384b3d)}
-.connector-request :is(button,summary):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.connector-request :is(button,summary):focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .connector-request>.connector-card-editor{border:0;background:transparent;padding:14px 0 0}
-.connector-request .connector-card-editor .primary{background:var(--accent);color:var(--bg)}
+.connector-request .connector-card-editor .primary{background:light-dark(#e4ece6,#2d3b31);color:light-dark(#31553b,#d0e3d5)}
 .connector-request .connector-feedback,.connector-request .connector-outcome-warning{margin:10px 0 0}
 .connector-artifact.connector-request.decision-receipt{padding:0 0 8px 26px!important;--receipt-radius:0;width:calc(100% - 18px)}
 .connector-request .decision-receipt-body{border:0;padding:8px 0 0}
