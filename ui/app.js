@@ -4830,11 +4830,15 @@ function summaryProgress(items,entry,runs){
   const first=items[0],key=first.progress.group_id,questions=taskQuestions(items,entry),calls=taskConnectorCalls(items,entry),parentRunId=questions[0]?.question.run_id||first.run_id,rootRun=runs.find(r=>r.id===parentRunId)||state.allRuns.find(r=>r.id===parentRunId)||state.details.get(parentRunId)?.run;
   const memberRuns=new Set([...items.map(m=>m.run_id),...questions.map(m=>m.question.continuation_run_id).filter(Boolean)]),run=[...runs,...state.allRuns].find(r=>r.id===[...memberRuns].at(-1))||rootRun;
   const group=node('article','summary-progress');group.dataset.message=String(first.seq);group.dataset.scrollMessages=[...items,...questions,...calls].map(m=>m.seq).join(' ');group.dataset.progressGroup=key;
-  entry.progressOpen??=new Set();entry.progressClosed??=new Set();
+  entry.progressOpen??=new Set();entry.progressClosed??=new Set();entry.progressFinished??=new Map();
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key);
   const phaseFinal=entry.messages.findLast(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer'&&(!run||m.run_id===run.id));
-  const finished=!questions.some(m=>m.question.status==='pending')&&(!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued')),manual=entry.progressOpen.has(key);
-  // Visibility is not intent to keep reading. Only an explicit expansion pins progress open.
+  const finished=!questions.some(m=>m.question.status==='pending')&&(!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued'));
+  // Reading choices made while running expire on completion. Keep later,
+  // finished-task expansions across polling and conversation remounts.
+  if(finished&&entry.progressFinished.get(key)!==true){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
+  entry.progressFinished.set(key,finished);
+  const manual=entry.progressOpen.has(key);
   const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open;
   group.dataset.progressFinished=String(finished);
   const details=node('details','summary-progress-disclosure');details.open=completing||manual||(!finished&&!entry.progressClosed.has(key));
