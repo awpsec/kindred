@@ -51,7 +51,7 @@ def verify_artifact(meta, blob):
 
 
 def verify_bundle(meta, blob, exe):
-    assert meta['id'] == ASSET and meta['name'] == 'kindred-standalone-0.86.6.zip'
+    assert meta['id'] == ASSET and meta['name'] == 'standalone.zip'
     assert meta['digest'] == 'sha256:' + BUNDLE and meta['size'] == len(blob) == 27087490
     assert sha(blob) == BUNDLE
     # Windows ships standalone.zip as an adjacent resource; it is not an EXE section.
