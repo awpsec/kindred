@@ -2,7 +2,7 @@ import { decisionReceipt } from './decision-receipts.js';
 import { emailRecipients } from './email-recipients.js';
 // Content comes from connector receipts, never executable model-authored markup.
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
-const labels={preparing:'Preparing',pending:'Your review',approved:'Approved · waiting to run',ready:'Approved · waiting to run',executing:'In progress',completed:'Completed',failed:'Check outcome',denied:'Declined',changes_requested:'Changes requested',interrupted:'Interrupted · check outcome'};
+const labels={preparing:'Preparing',pending:'Your review',approved:'Approved · waiting to run',ready:'Approved · waiting to run',executing:'In progress',completed:'Completed',failed:'Check outcome',denied:'Declined',cancelled:'Cancelled',changes_requested:'Changes requested',interrupted:'Interrupted · check outcome'};
 // Fixed display verbs are product copy, never a model-authored approval promise.
 const actionTitles={getConfluencePage:'Read a Confluence page',updateConfluencePage:'Update a Confluence page',createConfluencePage:'Create a Confluence page',searchConfluenceUsingCql:'Search Confluence',searchJiraIssuesUsingJql:'Search Jira',getJiraIssue:'Read a Jira issue',getConfluenceSpaces:'List Confluence spaces',getAccessibleAtlassianResources:'Find your Atlassian sites',atlassianUserInfo:'Read your Atlassian profile'};
 const fieldNames={to:'To',from:'From',cc:'Cc',bcc:'Bcc',subject:'Subject',body:'Message'};
@@ -52,7 +52,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  const previewMissing=card.email_send&&!(card.email?.to?.text&&card.email?.body);
  const header=el('header','connector-artifact-header');const brand=heading(card.connection||card.connector,request?'':card.source,card.tool);
  if(request){const title=el('h3','connector-request-title',actionTitle),logo=brand.querySelector('.connector-logo');if(logo)header.append(logo);header.append(title);}else header.append(brand);
- const status=card.email_send? (card.status==='completed'?'Email sent':card.status==='failed'&&card.delivery_state==='not_sent'?'Not sent: the call did not dispatch':['failed','interrupted'].includes(card.status)?'Delivery unknown. Check your Sent folder before sending again.':['approved','ready','executing'].includes(card.status)?'Sending…':'Email draft · Not sent'):card.status==='pending'&&card.email_send?'Draft · not sent':card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
+ const status=card.email_send? (card.status==='cancelled'?'Cancelled · Not sent':card.status==='completed'?'Email sent':card.status==='failed'&&card.delivery_state==='not_sent'?'Not sent: the call did not dispatch':['failed','interrupted'].includes(card.status)?'Delivery unknown. Check your Sent folder before sending again.':['approved','ready','executing'].includes(card.status)?'Sending…':'Email draft · Not sent'):card.status==='pending'&&card.email_send?'Draft · not sent':card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
  const stateLabel=el('span','connector-card-status status-'+card.status,status);stateLabel.setAttribute('role','status');if(inline){const meta=el('div','connector-inline-meta');stateLabel.prepend(document.createTextNode(card.status==='completed'?'✓ ':card.status==='denied'?'✗ ':''));meta.append(stateLabel,document.createTextNode(' · via '+(card.source||'Connector')+' · By '+(botName||'your bot')));root.append(meta);}else{if(request&&card.status==='pending')stateLabel.classList.add('connector-request-announcement');header.append(stateLabel);root.append(header);}
  const operation=el('div','connector-operation');operation.append(el('span','connector-call-name',card.tool.split('__').at(-1)),el('span','',`By ${botName||'your bot'}`));if(card.kind!=='email'&&!inline&&!request)root.append(operation);
  const proposed=!card.records?.length&&card.preview_records?.length&&card.status!=='completed';const shown=card.records?.length?card.records:(proposed?card.preview_records:[]);
@@ -182,5 +182,5 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   }
   paint();return root;
  }
- if(!inline&&(card.approval_id||card.email_send||['pending','denied'].includes(card.status)))return decisionReceipt(root,{key:'connector:'+card.id,title:request?actionTitle:card.title,outcome:status,terminal:['approved','executing','completed','denied'].includes(card.status)});return root;
+ if(!inline&&(card.approval_id||card.email_send||['pending','denied','cancelled'].includes(card.status)))return decisionReceipt(root,{key:'connector:'+card.id,title:request?actionTitle:card.title,outcome:status,terminal:['approved','executing','completed','denied','cancelled'].includes(card.status)});return root;
 }
