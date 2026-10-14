@@ -1,0 +1,22 @@
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const {server,token}=require('./fixtures/desktop.cjs');
+const assert=require('node:assert/strict'),fs=require('node:fs');
+(async()=>{
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,engine=process.env.WEBKIT?'webkit':'chromium';const browser=await({chromium,webkit}[engine]).launch();
+ const receipts=[];
+ try{for(const width of [1100,390]){
+  const page=await browser.newPage({viewport:{width,height:844}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
+  const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};let messages=[],run;
+  await page.route(origin+'/api/**',r=>{const n=new URL(r.request().url()).pathname,send=json=>r.fulfill({json});if(n==='/api/runs')return send([run]);if(n==='/api/runs/'+run.id)return send({run,events:[],attachments:[],approvals:[]});if(n==='/api/chats')return send([chat]);if(n==='/api/chats/'+chat.id)return send({chat,messages,page:{has_before:false,has_after:false}});if(n==='/api/activity')return send({});return r.continue();});
+  for(const [name,seconds,text] of [['ordinary14',14,'I understand your preference.'],['ordinary20',20,'Yes, that makes sense.'],['memory',14,'I will remember that preference.']]){
+   run={id:name,bot_id:'piper',chat_id:chat.id,status:'running',created:now-seconds,progress_started:now-seconds,task_title:'',output:'',error:''};messages=[{seq:1,sender:'piper',kind:'assistant',run_id:run.id,created:now,text,progress:{mode:'summaries',phase:'commentary',run_id:run.id,group_id:name,work_qualified:false,task_title:''}}];await page.goto(origin);await page.getByText(text,{exact:true}).waitFor();assert.equal(await page.locator('.summary-progress').count(),0,name);receipts.push({width,name,ordinary:true});
+  }
+  run={id:'website',bot_id:'piper',chat_id:chat.id,status:'running',created:now,progress_started:now,task_title:'',output:'',error:''};messages=[{seq:1,sender:'piper',kind:'assistant',run_id:run.id,created:now,text:'Checking the website layout.',progress:{mode:'summaries',phase:'commentary',run_id:run.id,group_id:'website',work_qualified:false,task_title:''}}];await page.goto(origin);await page.getByText(messages[0].text,{exact:true}).waitFor();assert.equal(await page.locator('.summary-progress').count(),0);
+  run.task_title='Review website';messages[0].progress.work_qualified=true;messages[0].progress.task_title=run.task_title;
+  await page.locator('.summary-progress').waitFor();assert.equal(await page.locator('.summary-progress-name').innerText(),'Review website');assert.equal(await page.locator('.summary-progress-update').count(),1,'first update is immediately compact after qualification');
+  const final={seq:2,sender:'piper',kind:'assistant',run_id:run.id,created:now+1,text:'Here is the completed website review.',progress:{...messages[0].progress,phase:'final_answer'}};run.status='completed';messages.push(final);await page.reload();await page.getByText(final.text,{exact:true}).waitFor();assert.equal(await page.locator('.summary-progress-update').count(),1);assert.equal(await page.locator('.summary-progress').getByText(final.text,{exact:true}).count(),0);receipts.push({width,name:'website',firstCompact:true,finalOutside:true});
+  run.task_title='Later task title';await page.reload();await page.locator('.summary-progress').waitFor();assert.equal(await page.locator('.summary-progress-name').innerText(),'Review website','modern phase snapshot survives a later run title');
+  delete messages[0].progress.work_qualified;await page.reload();await page.locator('.summary-progress').waitFor();assert.equal(await page.locator('.summary-progress-name').innerText(),'Later task title','legacy rows keep live-run title compatibility');receipts.push({width,name:'legacy',preserved:true,modernSnapshot:true,legacyLiveTitle:true});assert.deepEqual(errors,[]);
+  if(process.env.KINDRED_TEST_ARTIFACT_DIR){fs.mkdirSync(process.env.KINDRED_TEST_ARTIFACT_DIR,{recursive:true});await page.screenshot({path:process.env.KINDRED_TEST_ARTIFACT_DIR+'/'+engine+'-'+width+'.png'});}await page.close();
+ }console.log(JSON.stringify({engine,passed:receipts.length,receipts}));}finally{await browser.close();server.closeAllConnections();server.close();}
+})().catch(e=>{console.error(e);server.close();process.exitCode=1});
