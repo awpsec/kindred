@@ -27,7 +27,7 @@ def sha(blob):
 
 def get(path, binary=False):
     argv = ['gh', 'api', 'repos/awpsec/kindred/' + path]
-    if binary:
+    if binary and path.startswith('releases/assets/'):
         argv += ['-H', 'Accept: application/octet-stream']
     result = subprocess.run(argv, capture_output=True, timeout=90)
     if result.returncode:
