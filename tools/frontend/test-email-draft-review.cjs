@@ -38,6 +38,20 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  await view.getByRole('button',{name:'Remove attachments',exact:true}).click();await view.getByText('project-summary.pdf',{exact:true}).waitFor({state:'detached'});
  assert.equal(card.status,'pending');assert.deepEqual(actions.map(a=>a.action),['edit','remove_attachments']);
  for(const width of [390,1000])for(const scale of [1,1.5]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.setProperty('--text-scale',scale),scale);await page.waitForTimeout(400);const close=await view.getByRole('button',{name:'Close',exact:true}).boundingBox(),send=await view.getByRole('button',{name:'Send email',exact:true}).boundingBox();assert(close&&send);assert(Math.abs(close.y+close.height/2-send.y-send.height/2)<=2,'Email Close and Send stay on the same final row');assert(close.x+close.width<send.x,'Email Send remains right of Close');const secondary=await view.getByRole('button',{name:'Edit draft',exact:true}).boundingBox();assert(secondary.y+secondary.height<=Math.min(close.y,send.y),'Secondary email actions stay above final row');}await page.evaluate(()=>document.documentElement.style.removeProperty('--text-scale'));await page.setViewportSize({width:390,height:900});await view.screenshot({path:path.join(output,'email-draft-mobile.png')});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ // Explicit Save repairs a pre-upgrade stale alternative even when the visible
+ // text is unchanged; merely opening/closing still writes nothing.
+ card.body_resave_required=true;await page.reload();await view.getByRole('button',{name:'Review',exact:true}).click();
+ await view.getByRole('button',{name:'Edit draft',exact:true}).click();
+ await view.getByRole('form',{name:'Edit email draft'}).getByRole('button',{name:'Save edits',exact:true}).click();
+ await page.waitForFunction(()=>!document.querySelector('.connector-card-editor'));
+ assert.deepEqual(actions.at(-1).fields,{body:'Updated draft, still not sent.'});
+ assert.equal(actions.at(-1).action,'edit');assert.equal(card.status,'pending');
+ card.body_resave_required=false;
+ card.input={to:['jordan@example.invalid'],subject:'HTML-only review',htmlBody:'<p>Visible <strong>formatted</strong> message</p>'};
+ card.email={to:{key:'to',text:'jordan@example.invalid',editable:true},subject:{key:'subject',text:card.input.subject,editable:true},body:{key:'htmlBody',text:card.input.htmlBody,format:'html',editable:true}};
+ await page.reload();await view.getByRole('button',{name:'Review',exact:true}).click();
+ assert.equal(await view.locator('.connector-email-body strong').textContent(),'formatted');
+ assert.equal(await view.getByText(card.input.htmlBody,{exact:true}).count(),0,'HTML-only preview renders metadata-marked HTML rather than source');
  card.input={draft_id:'opaque-draft-id'};card.email={};await page.reload();
  await view.getByRole('button',{name:'Review',exact:true}).click();await view.getByText('Email preview unavailable',{exact:true}).waitFor();
  assert(await view.getByRole('button',{name:'Send email',exact:true}).isDisabled());
