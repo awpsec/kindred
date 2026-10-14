@@ -8,16 +8,16 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-SOURCE = '9bf296ebcb30585f68ab6bfd5d3cf115348086ba'
-SERVER = 'd27f796c8c443b97b1ae3f1a66a0689fd133418a'
-ARTIFACT = 11907004307
-RUN = 38590907164
-ARCHIVE = '4e7c7b2680afbe8f10aa7f505c32d6470bfb92267755e60c5955f32405e9d12f'
-EXE = '37460555e00b95e624d67c9f5686c8bb7eb23f64aca572877554d13df9ed9faf'
+SOURCE = '34d24a544a63c5699dc993c0b0cad7a124beb6e9'
+SERVER = '5467781f80c05185e40b08ec6aa2dfc1aa3d5a63'
+ARTIFACT = 11934072115
+RUN = 38649169062
+ARCHIVE = '33b5c0ef227eb8a326f25ea8f7c71a4d6702ebb63fce3ebe9465f10c3534b319'
+EXE = '2d67397ea751c872808ff9aa74d18e9c82e07f327b0138d37dfd4ff2684c6e12'
 MEMBER = 'desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe'
-ASSET = 640816636
-BUNDLE = '8d58e049680a4a5899921a9eaeea46b21298f68d02cefec18333dc64d190361a'
-RUNTIME = 'b5ccf018a94fa8d10af1da217aadbd7040296315d2c624bb4f5f437e9b2f7da5'
+ASSET = 641899384
+BUNDLE = '7efd6c0068d9c37c6d2fe3039bf7385a90658502d8e46a49d056a5b910b8e6ed'
+RUNTIME = '67bba27af39ee44aabc3ac32e45f74fa7329221ba726a568c2495ca59035cc00'
 HELPER = '2a06c326557974f776aedf1ab8faaf4e9f9235f10be4d4e88aabf9cb1f65eefb'
 
 
@@ -37,7 +37,7 @@ def get(path, binary=False):
 
 def verify_artifact(meta, blob):
     assert meta['id'] == ARTIFACT and meta['expired'] is False
-    assert meta['name'] == 'unverified-kindred-0.86.6-x86_64-pc-windows-msvc'
+    assert meta['name'] == 'unverified-kindred-0.86.8-x86_64-pc-windows-msvc'
     assert meta['workflow_run']['id'] == RUN and meta['workflow_run']['head_sha'] == SOURCE
     assert meta['digest'] == 'sha256:' + ARCHIVE and meta['size_in_bytes'] == len(blob)
     assert sha(blob) == ARCHIVE
@@ -52,14 +52,14 @@ def verify_artifact(meta, blob):
 
 def verify_bundle(meta, blob, exe):
     assert meta['id'] == ASSET and meta['name'] == 'standalone.zip'
-    assert meta['digest'] == 'sha256:' + BUNDLE and meta['size'] == len(blob) == 27087490
+    assert meta['digest'] == 'sha256:' + BUNDLE and meta['size'] == len(blob) == 27130239
     assert sha(blob) == BUNDLE
     # Windows ships standalone.zip as an adjacent resource; it is not an EXE section.
     assert sha(exe) == EXE, 'Retained native executable changed'
     with zipfile.ZipFile(io.BytesIO(blob)) as bundle:
         assert bundle.testzip() is None
         source = json.loads(bundle.read('bundle.json'))
-        assert source['version'] == '0.86.6' and source['source_commit'] == SERVER
+        assert source['version'] == '0.86.8' and source['source_commit'] == SERVER
         assert source['server_sha256'] == RUNTIME and sha(bundle.read('kindred')) == RUNTIME
         assert sha(bundle.read('deploy/provider-connectors.py')) == HELPER
     return source
@@ -85,7 +85,7 @@ def main():
     root = args.source.resolve()
     assert subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip() == SOURCE
     assert not subprocess.check_output(['git', '-C', str(root), 'status', '--porcelain', '--untracked-files=no'], text=True).strip()
-    assert json.loads((root / 'desktop/tauri.conf.json').read_text())['version'] == '0.86.6'
+    assert json.loads((root / 'desktop/tauri.conf.json').read_text())['version'] == '0.86.8'
     args.output.mkdir(parents=True, exist_ok=True)
     receipt_path = args.output / 'retained-inputs.json'
     assert not receipt_path.exists(), 'Refuse to overwrite prior custody receipt'
@@ -98,8 +98,8 @@ def main():
         artifact = get('actions/artifacts/' + str(ARTIFACT))
         exe = verify_artifact(artifact, get('actions/artifacts/' + str(ARTIFACT) + '/zip', True))
         stage = 'bundle'
-        release = get('releases/412885014')
-        assert release['draft'] is True and release['tag_name'] == 'build-inputs-0.86.6-complete-final'
+        release = get('releases/413245106')
+        assert release['draft'] is True and release['tag_name'] == 'build-inputs-0.86.8-complete-final'
         assert release['target_commitish'] == SOURCE and any(a['id'] == ASSET for a in release['assets'])
         asset = get('releases/assets/' + str(ASSET))
         bundle = get('releases/assets/' + str(ASSET), True)
