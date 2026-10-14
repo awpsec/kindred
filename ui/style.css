@@ -5558,6 +5558,7 @@ html[data-motion=off] .request-tray .question-choices{gap:8px}
 .email-notice .connector-card-status{flex:0 1 auto;margin-left:auto;max-width:none;background:transparent;border:0;padding:0;border-radius:0;text-align:right}.email-notice .connector-card-status.status-pending{border:0;background:transparent;padding:0}.email-notice .connector-artifact-header{align-items:baseline}.email-notice-title{flex:1;min-width:100px}
 
 .summary-progress-body .message-bubble{font-size:inherit;background:transparent;border:0;border-radius:0;box-shadow:none;padding:0;max-width:100%;margin:0}
+.summary-progress-update .message-bubble :not(pre)>code{font-size:inherit}
 
 .summary-progress-heading{gap:4px 6px}.summary-progress-heading>.summary-progress-time{flex-basis:auto;margin-left:auto}.summary-progress-heading>.summary-progress-count{flex-basis:100%}.summary-progress-disclosure:not([open]) .summary-progress-task{display:block}.summary-progress-task{min-width:100px}
 
