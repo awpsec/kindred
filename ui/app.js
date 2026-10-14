@@ -8161,6 +8161,9 @@ function chatEditApprovalCard(a,run){
   return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+(a.args.chat_name||'chat'),outcome:a.status==='approved'?'Allowed':a.status==='denied'?'Declined':'Expired',terminal:a.status!=='pending'});
 }
 function approvalCard(a,run) {
+  // The pending-only approval feed omits status; conversation receipts include it.
+  // Normalize before specialized renderers decide whether to show actions.
+  a={...a,status:a.status||'pending'};
   if(a.connector_artifact)return connectorMessage({seq:'approval-'+a.id,connector_artifact:a.connector_artifact},run.chat_id);
   if(a.args?.artifact_id){
     const box=node('div','task-card approval');box.dataset.approval=a.id;
