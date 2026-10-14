@@ -2,7 +2,7 @@ import { decisionReceipt } from './decision-receipts.js';
 import { emailRecipients } from './email-recipients.js';
 // Content comes from connector receipts, never executable model-authored markup.
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
-const labels={preparing:'Preparing',pending:'Your review',approved:'Approved · awaiting execution',ready:'Ready',executing:'In progress',completed:'Completed',failed:'Check outcome',denied:'Not approved',changes_requested:'Changes requested',interrupted:'Interrupted · check outcome'};
+const labels={preparing:'Preparing',pending:'Your review',approved:'Approved · awaiting execution',ready:'Ready',executing:'In progress',completed:'Completed',failed:'Check outcome',denied:'Not approved',cancelled:'Cancelled',changes_requested:'Changes requested',interrupted:'Interrupted · check outcome'};
 const fieldNames={to:'To',from:'From',cc:'Cc',bcc:'Bcc',subject:'Subject',body:'Message'};
 const safeLink=value=>{try{const u=new URL(value);return ['https:','http:'].includes(u.protocol)&&!u.username&&!u.password?u.href:null;}catch{return null;}};
 function readable(value){if(value===null||value===undefined)return '';if(typeof value==='string')return value;if(typeof value==='number'||typeof value==='boolean')return String(value);if(Array.isArray(value))return value.map(readable).filter(Boolean).join(', ');return value.name||value.filename||value.file_name||value.displayName||value.value||value.text||JSON.stringify(value);}
@@ -47,7 +47,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  const root=el('section','connector-artifact connector-kind-'+card.kind);if(inline)root.classList.add('connector-inline');root.dataset.connectorArtifact=card.id;if(card.approval_id)root.dataset.approval=card.approval_id;root.setAttribute('aria-label',`${card.connection||card.connector}: ${card.title}`);cardSignatures.set(root,JSON.stringify([card,botName,inline]));
  const previewMissing=card.email_send&&!(card.email?.to?.text&&card.email?.body);
  const header=el('header','connector-artifact-header');header.append(heading(card.connection||card.connector,card.source,card.tool));
- const status=card.email_send? (card.status==='completed'?'Email sent':card.status==='failed'&&card.delivery_state==='not_sent'?'Not sent: the call did not dispatch':['failed','interrupted'].includes(card.status)?'Delivery unknown. Check your Sent folder before sending again.':['approved','ready','executing'].includes(card.status)?'Sending…':'Email draft · Not sent'):card.status==='pending'&&card.email_send?'Draft · not sent':card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
+ const status=card.email_send? (card.status==='cancelled'?'Cancelled · Not sent':card.status==='completed'?'Email sent':card.status==='failed'&&card.delivery_state==='not_sent'?'Not sent: the call did not dispatch':['failed','interrupted'].includes(card.status)?'Delivery unknown. Check your Sent folder before sending again.':['approved','ready','executing'].includes(card.status)?'Sending…':'Email draft · Not sent'):card.status==='pending'&&card.email_send?'Draft · not sent':card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
  const stateLabel=el('span','connector-card-status status-'+card.status,status);stateLabel.setAttribute('role','status');if(inline){const meta=el('div','connector-inline-meta');stateLabel.prepend(document.createTextNode(card.status==='completed'?'✓ ':card.status==='denied'?'✗ ':''));meta.append(stateLabel,document.createTextNode(' · via '+(card.source||'Connector')+' · By '+(botName||'your bot')));root.append(meta);}else{header.append(stateLabel);root.append(header);}
  const operation=el('div','connector-operation');operation.append(el('span','connector-call-name',card.tool.split('__').at(-1)),el('span','',`By ${botName||'your bot'}`));if(card.kind!=='email'&&!inline)root.append(operation);
  const proposed=!card.records?.length&&card.preview_records?.length&&card.status!=='completed';const shown=card.records?.length?card.records:(proposed?card.preview_records:[]);
@@ -169,5 +169,5 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   }
   paint();return root;
  }
- if(!inline&&(card.approval_id||card.email_send||['pending','denied'].includes(card.status)))return decisionReceipt(root,{key:'connector:'+card.id,title:card.title,outcome:status,terminal:['approved','executing','completed','denied'].includes(card.status)});return root;
+ if(!inline&&(card.approval_id||card.email_send||['pending','denied','cancelled'].includes(card.status)))return decisionReceipt(root,{key:'connector:'+card.id,title:card.title,outcome:status,terminal:['approved','executing','completed','denied','cancelled'].includes(card.status)});return root;
 }

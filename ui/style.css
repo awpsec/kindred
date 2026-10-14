@@ -837,9 +837,20 @@ kbd {
   min-height: 14px;
 }
 .queue-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   font-size: calc(11px * var(--text-scale, 1));
   color: var(--soft);
   padding: 5px 2px 10px;
+}
+.queue-status > span:first-child {min-width:0;}
+.queue-actions {display:flex;align-items:center;gap:8px;flex-shrink:0;}
+#queue-status .queue-push {margin:0;padding:3px 8px;font-size:inherit;color:var(--soft);}
+#queue-status .queue-push:hover {color:var(--fg);}
+@media (pointer:coarse) {
+  #queue-status .queue-push {min-height:32px;min-width:44px;}
 }
 .details-panel {
   width: 365px;

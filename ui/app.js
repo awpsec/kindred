@@ -43,6 +43,7 @@ const CHAT_PAGE_SIZE=50, CHAT_WINDOW_SIZE=150, CHAT_CACHE_SIZE=6;
 const chatHistory=new Map();
 let chatOpening=null;
 const stoppingTasks=new Set();
+const pushingQueues=new Set();
 const $ = (id) => document.getElementById(id);
 const state = {
   token:
@@ -1252,7 +1253,16 @@ function renderHeader() {
   $('queue-status').dataset.controlBotId = pause?.bot_id || '';
   const helping=helperWork(b?.id),queueReason=helping?.name&&(helping.run.status==='running'||helping.waiting||helping.run.delegation.resuming)?` · ${b.name} is working for ${helping.name} and will reply after that.`:'';
   $('queue-status').replaceChildren(node('span','',queued ? `${queued} message${queued===1?'':'s'} queued${pause?' · waiting for control to be returned':queueReason}` : 'Computer paused for manual control'));
-  if(pause)$('queue-status').append(button('Return control',()=>returnScreenControl(pause),'subtle-button small-button'));
+  const queueActions=node('span','queue-actions');
+  if(pause)queueActions.append(button('Return control',()=>returnScreenControl(pause),'subtle-button small-button'));
+  const pushRuns=state.allRuns.filter(r=>r.chat_id===queueChatId&&r.status==='queued'&&r.push_target_run_id).map(r=>r.id);
+  if(queued&&pushRuns.length){
+    const busy=pushingQueues.has(state.token+':'+queueChatId);
+    const push=button(busy?'Pushing…':'Push',()=>pushQueuedMessages(queueChatId,pushRuns),'subtle-button small-button queue-push');
+    push.disabled=busy;push.title='Steer the current task with queued messages. Any pending approval for that task is cancelled.';
+    push.setAttribute('aria-label','Push queued messages now');queueActions.append(push);
+  }
+  if(queueActions.children.length)$('queue-status').append(queueActions);
   $('queue-status').title = pause ? 'Return control to let this bot continue. Dismissing the notice does not resume work.' : 'Ordinary follow-ups join the current task after its next action. Slash commands and scheduled work keep their place in the queue.';
   renderControlNotice();
   if (state.chat) {
@@ -1280,6 +1290,20 @@ function renderHeader() {
   $("composer-caption").textContent = "";
   renderVersions();
   renderUpdateNotice();
+}
+async function pushQueuedMessages(chatId,runIds){
+  const token=state.token,key=token+':'+chatId;
+  if(pushingQueues.has(key)||currentConversationId()!==chatId)return;
+  pushingQueues.add(key);renderHeader();
+  try{
+    const result=await api('/chats/'+encodeURIComponent(chatId)+'/push','POST',{run_ids:runIds});
+    if(state.token!==token)return;
+    notice(result.requested_count?'Push requested. Your message will reach the bot at its next safe pause.':'The task changed. Messages that were not pushed keep their place in the queue.');
+    await refresh(true);
+  }finally{
+    pushingQueues.delete(key);
+    if(state.token===token)renderHeader();
+  }
 }
 function installedClientVersion(){return typeof window.__KINDRED_DESKTOP_VERSION==='string'?window.__KINDRED_DESKTOP_VERSION:null;}
 function renderVersions(){
@@ -5436,7 +5460,7 @@ const trayState=new Map(),queueEditBusy=new Set();
 function approvalChat(run){const source=state.chats.find(c=>c.id===run?.chat_id);return source&&!source.bot_only&&!source.archived?source.id:run?'dm-'+run.bot_id:'';}
 function renderRequestTray(chat,entry){
   const holder=$('composer-area');let tray=$('request-tray');
-  if(!tray){tray=node('section','request-tray');tray.id='request-tray';tray.setAttribute('aria-label','Pending requests');holder.prepend(tray);}
+  if(!tray){tray=node('section','request-tray');tray.id='request-tray';tray.setAttribute('aria-label','Pending requests');$('queue-status').after(tray);}
   // Blurring a one-line phone draft can move the tray before a synthesized
   // touch click. Keep its geometry through activation, without cancelling
   // pointer defaults or intercepting keyboard/assistive activation.
@@ -5456,7 +5480,7 @@ function renderRequestTray(chat,entry){
   // its controls. Retain only identities, including when that page is unloaded.
   const resolved=entry.resolvedTrayRequests??=new Set();
   for(const m of entry.messages||[]){
-    if(m.approval&&['approved','denied','expired'].includes(m.approval.status))resolved.add('approval:'+m.approval.id);
+    if(m.approval&&['approved','denied','expired','cancelled'].includes(m.approval.status))resolved.add('approval:'+m.approval.id);
     if(m.question&&['answered','dismissed','cancelled'].includes(m.question.status))resolved.add('question:'+m.question.id);
   }
   for(const q of state.questions||[])if((q.delivery_chat_id||q.chat_id)===chat.id&&['answered','dismissed','cancelled'].includes(q.status))resolved.add('question:'+q.id);
@@ -8139,7 +8163,7 @@ function instructionApprovalCard(a,run){
     receipt.append(node('span','',a.status==='approved'?'Allowed for this change':a.status==='denied'?'Declined':a.status));
     card.append(receipt);
   }
-  return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+target+'’s instructions',outcome:a.status==='approved'?'Approved':a.status==='denied'?'Denied':'Expired',terminal:a.status!=='pending',compact:true});
+  return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+target+'’s instructions',outcome:a.status==='approved'?'Approved':a.status==='denied'?'Denied':a.status==='cancelled'?'Cancelled':'Expired',terminal:a.status!=='pending',compact:true});
 }
 function chatEditApprovalCard(a,run){
   const card=node('section','approval-card instruction-review chat-edit-review'),before=a.args.before||{},after=a.args.after||{};
@@ -8158,7 +8182,7 @@ function chatEditApprovalCard(a,run){
   if(a.status==='pending'){
     const actions=node('div','row-actions');for(const[label,approved]of[['Allow changes',true],['Decline',false]])actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved});await refresh(true);},approved?'primary small-button':'outline-button'));card.append(actions);
   }
-  return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+(a.args.chat_name||'chat'),outcome:a.status==='approved'?'Allowed':a.status==='denied'?'Declined':'Expired',terminal:a.status!=='pending'});
+  return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+(a.args.chat_name||'chat'),outcome:a.status==='approved'?'Allowed':a.status==='denied'?'Declined':a.status==='cancelled'?'Cancelled':'Expired',terminal:a.status!=='pending'});
 }
 function approvalCard(a,run) {
   // The pending-only approval feed omits status; conversation receipts include it.
@@ -8176,7 +8200,7 @@ function approvalCard(a,run) {
   const box=node('div','task-card approval');box.dataset.approval=a.id;
   const status=a.status||'pending',pending=status==='pending';
   const title=node('div','task-card-title');
-  title.append(node('strong','',pending?'Permission needed':'Task permission'),node('span','task-badge '+(status==='approved'?'done':''),status==='approved'?'Allowed once':status==='denied'?'Declined':status==='expired'?'Expired':'Needs your okay'));
+  title.append(node('strong','',pending?'Permission needed':'Task permission'),node('span','task-badge '+(status==='approved'?'done':''),status==='approved'?'Allowed once':status==='denied'?'Declined':status==='expired'?'Expired':status==='cancelled'?'Cancelled':'Needs your okay'));
   const labels={inbox_monitor_save:'Save an inbox routine',guest_exec:'Run a command',computer_open_url:'Open a page',computer_browser_task:'Use the browser',computer_click:'Click on the computer',computer_type:'Enter text',computer_key:'Press a key',computer_scroll:'Scroll',routine_create:'Create a routine',routine_update:'Update a routine',routine_control:'Manage a routine',share_file:'Share a file in chat'};
   const action=(a.tool==='claude_connector'||a.tool==='codex_connector')?(a.args.tool_name||'Connected app action').split('__').pop():a.tool==='connector_execute'?(a.args.tool_slug||'Connected app action').toLowerCase().replaceAll('_',' '):labels[a.tool]||a.tool.replaceAll('_',' ');
   const connectorTool=a.tool==='claude_connector'||a.tool==='codex_connector',connectorSource=connectorSourceLabel(a.args.source||(a.tool==='claude_connector'?'claude':a.tool==='codex_connector'?'codex':''));
@@ -8206,7 +8230,7 @@ function approvalCard(a,run) {
   box.append(node('p','muted small',browserWhere+caption));
   const details=node('details','task-details');details.append(node('summary','','Show the details'),node('pre','',JSON.stringify(detailsArgs,null,2)));box.append(details);
   if(pending){const actions=node('div','task-card-actions');for(const [label,approved]of [['Allow once',true],['Decline',false]])actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved});await refresh(true);},approved?'primary small-button':'outline-button'));box.append(actions);}
-  return decisionReceipt(box,{key:'approval:'+a.id,title:action,outcome:status==='approved'?'Approved':status==='denied'?'Denied':'Expired',terminal:!pending,compact:true});
+  return decisionReceipt(box,{key:'approval:'+a.id,title:action,outcome:status==='approved'?'Approved':status==='denied'?'Denied':status==='cancelled'?'Cancelled':'Expired',terminal:!pending,compact:true});
 }
 function connectorBrand(connection='',tool='') {
   const raw=connection.replace(/^claude.ai /,'');
@@ -8241,7 +8265,7 @@ function connectorActivityLabel(body) {
 function connectorApprovalCard(a,run) {
   const box=node('div','task-card approval connector-approval');box.dataset.approval=a.id;
   const args=a.args||{},status=a.status||'pending',pending=status==='pending',config=a.tool==='connector_configure',preference=config&&args.request==='source_preference';
-  const title=node('div','task-card-title');title.append(node('span','connector-eyebrow',preference?'Connector preference':'Connector approval'),node('span','task-badge '+(status==='approved'?'done':''),status==='approved'?'Approved':status==='denied'?'Denied':status==='expired'?'Expired':'Needs your okay'));box.append(title);
+  const title=node('div','task-card-title');title.append(node('span','connector-eyebrow',preference?'Connector preference':'Connector approval'),node('span','task-badge '+(status==='approved'?'done':''),status==='approved'?'Approved':status==='denied'?'Denied':status==='expired'?'Expired':status==='cancelled'?'Cancelled':'Needs your okay'));box.append(title);
   const bot=state.bots.find(b=>b.id===run.bot_id)?.name||'This bot';
   let choices=[];
   if(preference){
@@ -8270,7 +8294,7 @@ function connectorApprovalCard(a,run) {
     const details=node('details','task-details');details.append(node('summary','','Action details'),node('pre','',JSON.stringify(claude?args.input:args.arguments,null,2)));box.append(details);
   }
   if(pending){const actions=node('div','task-card-actions');for(const [label,approved,choice] of choices)actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved,choice});await refresh(true);},approved?'primary small-button':'outline-button'));box.append(actions);}
-  return decisionReceipt(box,{key:'approval:'+a.id,title:box.querySelector('.task-description')?.textContent||'Connector approval',outcome:status==='approved'?'Allowed':status==='denied'?'Declined':'Expired',terminal:!pending});
+  return decisionReceipt(box,{key:'approval:'+a.id,title:box.querySelector('.task-description')?.textContent||'Connector approval',outcome:status==='approved'?'Allowed':status==='denied'?'Declined':status==='cancelled'?'Cancelled':'Expired',terminal:!pending});
 }
 const expandedBotConnectors=new Set();
 function botConnectorPreferences(bot) {
