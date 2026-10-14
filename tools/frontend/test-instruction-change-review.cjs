@@ -9,7 +9,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const now=Math.floor(Date.now()/1000),bot={id:'piper',name:'Piper',provider:'codex',profile:{shape:'round',color:'#2475ff'},approval_mode:'full'};
   const chat={id:'dm-piper',name:'Piper',members:[bot.id],archived:false},runs=[],messages=[],reviews=[];
   await page.route(origin+'/api/**',async route=>{const req=route.request(),name=new URL(req.url()).pathname.slice(4),send=json=>route.fulfill({json});
-   if(name==='/bots')return send([bot]);if(name==='/chats')return send([chat]);if(name==='/runs')return send(runs);if(name==='/approvals')return send(reviews.filter(a=>a.status==='pending'));
+   if(name==='/bots')return send([bot]);if(name==='/chats')return send([chat]);if(name==='/runs')return send(runs);if(name==='/approvals')return send(reviews.filter(a=>a.status==='pending').map(({status,...pending})=>pending)); // Real pending-only feed omits status.
    if(name==='/questions')return send([]);if(name==='/chats/'+chat.id)return send({chat,messages,page:{has_before:false,has_after:false}});
    if(name.startsWith('/approvals/')){
     assert.equal(req.method(),'POST');assert.equal(req.headers().authorization,'Bearer '+token);
@@ -26,10 +26,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    const before=long?Array.from({length:9},(_,i)=>'Current rule '+i+'.').join('\n'):'Review invoices.';
    const after=long?Array.from({length:9},(_,i)=>'Proposed rule '+i+'.').join('\n'):'Review invoices and report outstanding balances.';
    const run={id:'run-'+id,bot_id:bot.id,chat_id:chat.id,status:'awaiting_approval',prompt:'Review instructions',created:now,output:'',error:''};runs.push(run);
-   const review={id,run_id:run.id,tool:'bot_instructions_update',status:'pending',created:now,args:{bot_id:'jenny',bot_name:'Jenny',expected_instructions:before,instructions:after}};reviews.push(review);
+   const review={id,run_id:run.id,tool:'bot_instructions_update',status:'pending',created:now,message_seq:messages.length+1,args:{bot_id:'jenny',bot_name:'Jenny',expected_instructions:before,instructions:after}};reviews.push(review);
    messages.push({seq:messages.length+1,sender:bot.id,kind:'approval',text:review.tool,run_id:run.id,approval:review,created:now});
    await page.goto(origin);const tray=page.locator('#request-tray'),card=tray.getByRole('region',{name:'Review instruction change',exact:true});await card.waitFor();
    assert.equal(await page.locator('#content .instruction-review:not(.compact-receipt)').count(),0,'Pending instruction review appears only in composer tray');
+   assert.equal(await tray.getByText(/^Expired/).count(),0,'A pending-only feed without status must not show an expired receipt');
    assert((await card.innerText()).includes('Your one-time approval is required, including with Full access. Applies to future tasks.'));
    assert.equal(await card.getByRole('button',{name:'Allow',exact:true}).count(),1);assert.equal(await card.getByRole('button',{name:'Decline',exact:true}).count(),1);
    if(long)await card.locator('summary').filter({hasText:/^View changes$/}).click();
@@ -45,6 +46,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    assert.deepEqual(actions.filter(a=>a.name==='/approvals/'+id),[{name:'/approvals/'+id,body:{approved}}],'Duplicate activation dispatches one authenticated decision');
    await receipt.screenshot({path:path.join(folder,engine+'-'+id+'-receipt.png')});
   }
-  assert.equal(actions.length,2);assert.deepEqual(errors,[]);console.log('Instruction approvals: tray-only, Full access warning, exact short/long diff and full text, approve/deny IDs, authenticated single dispatch, compact terminal receipts PASS');
+  const expired={...reviews[0],id:'instruction-expired',status:'expired'};
+  messages.push({seq:messages.length+1,sender:bot.id,kind:'approval',text:expired.tool,run_id:expired.run_id,approval:expired,created:now});
+  await page.reload();
+  const expiredReceipt=page.locator('[data-receipt-key="approval:instruction-expired"]');
+  await expiredReceipt.getByText('Expired',{exact:true}).waitFor();
+  assert.equal(await expiredReceipt.getByRole('button',{name:/^(Allow|Decline)$/}).count(),0,'Explicitly expired receipts stay terminal');
+  assert.equal(actions.length,2);assert.deepEqual(errors,[]);console.log('Instruction approvals: omitted feed status stays pending, exact diff, authenticated single approve/deny, explicit terminal receipts PASS');
  }finally{await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
