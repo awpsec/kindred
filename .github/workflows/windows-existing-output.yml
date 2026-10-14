@@ -46,7 +46,7 @@ jobs:
           assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '9bf296ebcb30585f68ab6bfd5d3cf115348086ba'
           tools = Path('.verification-tools')
           assert subprocess.check_output(['git', '-C', str(tools), 'rev-parse', 'HEAD'], text=True).strip() == os.environ['GITHUB_SHA']
-          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '05b750bbe2b748a88c47a4a20f9fc5fae237c2c95daa1b801277f0663895b71f'
+          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '268d3e109a9b1baef0fff7cef37000ed11ba2c030792f7fa9ad3f0bd00a6ef0d'
           PY
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
