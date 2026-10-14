@@ -2,24 +2,27 @@ import { decisionReceipt } from './decision-receipts.js';
 import { emailRecipients } from './email-recipients.js';
 // Content comes from connector receipts, never executable model-authored markup.
 const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
-const labels={preparing:'Preparing',pending:'Your review',approved:'Approved · awaiting execution',ready:'Ready',executing:'In progress',completed:'Completed',failed:'Check outcome',denied:'Not approved',changes_requested:'Changes requested',interrupted:'Interrupted · check outcome'};
+const labels={preparing:'Preparing',pending:'Your review',approved:'Approved · waiting to run',ready:'Approved · waiting to run',executing:'In progress',completed:'Completed',failed:'Check outcome',denied:'Declined',changes_requested:'Changes requested',interrupted:'Interrupted · check outcome'};
+// Fixed display verbs are product copy, never a model-authored approval promise.
+const actionTitles={getConfluencePage:'Read a Confluence page',updateConfluencePage:'Update a Confluence page',createConfluencePage:'Create a Confluence page',searchConfluenceUsingCql:'Search Confluence',searchJiraIssuesUsingJql:'Search Jira',getJiraIssue:'Read a Jira issue',getConfluenceSpaces:'List Confluence spaces',getAccessibleAtlassianResources:'Find your Atlassian sites',atlassianUserInfo:'Read your Atlassian profile'};
 const fieldNames={to:'To',from:'From',cc:'Cc',bcc:'Bcc',subject:'Subject',body:'Message'};
 const safeLink=value=>{try{const u=new URL(value);return ['https:','http:'].includes(u.protocol)&&!u.username&&!u.password?u.href:null;}catch{return null;}};
 function readable(value){if(value===null||value===undefined)return '';if(typeof value==='string')return value;if(typeof value==='number'||typeof value==='boolean')return String(value);if(Array.isArray(value))return value.map(readable).filter(Boolean).join(', ');return value.name||value.filename||value.file_name||value.displayName||value.value||value.text||JSON.stringify(value);}
-function safeRelated(value){if(Array.isArray(value))return value.map(safeRelated);if(!value||typeof value!=='object')return value;return Object.fromEntries(Object.entries(value).filter(([k])=>!/contentBytes|authorization|token|secret|password|credential|^data$/i.test(k)).map(([k,v])=>[k,safeRelated(v)]));}
+function safeRelated(value,includeData=false){if(Array.isArray(value))return value.map(item=>safeRelated(item,includeData));if(!value||typeof value!=='object')return value;return Object.fromEntries(Object.entries(value).filter(([k])=>!/contentBytes|authorization|token|secret|password|credential/i.test(k)&&(includeData||!/^data$/i.test(k))).map(([k,v])=>[k,safeRelated(v,includeData)]));}
 function sourceTime(service,key,text){const millis=service==='clickup'&&key==='Due',seconds=service==='stripe'&&key==='Created';if(!(millis||seconds)||! /^-?\d+$/.test(text))return null;const raw=Number(text),value=raw*(millis?1:1000);if(!Number.isSafeInteger(raw)||!Number.isSafeInteger(value))return null;const date=new Date(value);if(!Number.isFinite(date.getTime()))return null;const iso=date.toISOString();return {iso,text:iso.replace('T',' ').replace('.000Z',' UTC').replace('Z',' UTC'),source:`Source timestamp: ${text} (${millis?'milliseconds':'seconds'})`};}
-function details(value,service,inline=false){
+function details(value,service,inline=false,approval=false){
  const box=el('dl','connector-record-fields');
  for(const[k,v]of Object.entries(value||{})){
   if(/token|secret|password|credential|authorization/i.test(k))continue;
-  const clean=inline?safeRelated(v):v,nested=inline&&clean&&typeof clean==='object',text=readable(clean);
-  if(!nested&&!text)continue;
-  const label=({CustomerRef:'Customer',TotalAmt:'Total',Balance:'Balance due',CurrencyRef:'Currency',DueDate:'Due date',DocNumber:'Number'}[k]||k.replace(/([a-z])([A-Z])/g,'$1 $2').replaceAll('_',' ')).replace(/\b(id|url|api)\b/gi,w=>w.toUpperCase()).replace(/^./,c=>c.toUpperCase());
+  const clean=inline||approval?safeRelated(v,approval):v,nested=inline&&clean&&typeof clean==='object',text=approval&&clean&&typeof clean==='object'?JSON.stringify(clean,null,2):readable(clean);
+  if(!approval&&!nested&&!text)continue;
+  const label=({CustomerRef:'Customer',TotalAmt:'Total',Balance:'Balance due',CurrencyRef:'Currency',DueDate:'Due date',DocNumber:'Number',...(approval?{cloudId:'Site',pageId:'Page',content:'Proposed content'}:{})}[k]||k.replace(/([a-z])([A-Z])/g,'$1 $2').replaceAll('_',' ')).replace(/\b(id|url|api)\b/gi,w=>w.toUpperCase()).replace(/^./,c=>c.toUpperCase());
   box.append(el('dt','',label));const dd=el('dd');
   const href=/^(url|webUrl|web_url|Open source|Open form|Join meeting)$/i.test(k)?safeLink(text):null;
   if(nested){const more=el('details','connector-field-more'),count=Object.keys(clean).length;more.append(el('summary','',`${count} ${count===1?'field':'fields'}`),details(clean,service,true));dd.append(more);}
   else if(href){const a=el('a','',/^(Open |Join )/.test(k)?k:'Open source');a.href=href;a.target='_blank';a.rel='noopener noreferrer';dd.append(a);}
-  else{const time=sourceTime(service,k,text);if(time){const n=el('time','',time.text);n.dateTime=time.iso;n.title=time.source;dd.append(n);}else if(inline&&text.length>600){const more=el('details','connector-field-more');more.append(el('summary','',text.slice(0,180)+'…'),el('pre','',text));dd.append(more);}else dd.textContent=text;}
+  else{const time=sourceTime(service,k,text);if(time){const n=el('time','',time.text);n.dateTime=time.iso;n.title=time.source;dd.append(n);}else if(inline&&text.length>600){const more=el('details','connector-field-more');more.append(el('summary','',text.slice(0,180)+'…'),el('pre','',text));dd.append(more);}else dd.textContent=approval&&!text?'(empty)':text;}
+  if(approval&&/^(content|body|text|description|notes)$/i.test(k))dd.classList.add('connector-proposed-content');
   if(inline&&/(^id$|id$|_id$)/i.test(k))dd.classList.add('connector-field-id');box.append(dd);
  }
  return box;
@@ -44,12 +47,14 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  inline=inline&&!card.email_send&&!['pending','changes_requested'].includes(card.status);
  // Presentation follows the email content; sending authority stays on email_send.
  const emailNotice=card.email_send||(!inline&&card.kind==='email');
- const root=el('section','connector-artifact connector-kind-'+card.kind);if(inline)root.classList.add('connector-inline');root.dataset.connectorArtifact=card.id;if(card.approval_id)root.dataset.approval=card.approval_id;root.setAttribute('aria-label',`${card.connection||card.connector}: ${card.title}`);cardSignatures.set(root,JSON.stringify([card,botName,inline]));
+ const request=!inline&&!emailNotice,leaf=String(card.tool||'').split('__').at(-1),actionTitle=actionTitles[leaf]||leaf||'Connector action';
+ const root=el('section','connector-artifact connector-kind-'+card.kind);if(inline)root.classList.add('connector-inline');if(request){root.classList.add('connector-request');root.classList.toggle('connector-request-write',card.read_only!==true&&card.display_read_only!==true);root.classList.toggle('connector-request-pending',card.status==='pending');root.setAttribute('role','group');}root.dataset.connectorArtifact=card.id;if(card.approval_id)root.dataset.approval=card.approval_id;root.setAttribute('aria-label',request?`Approval request: ${actionTitle}`:`${card.connection||card.connector}: ${card.title}`);cardSignatures.set(root,JSON.stringify([card,botName,inline]));
  const previewMissing=card.email_send&&!(card.email?.to?.text&&card.email?.body);
- const header=el('header','connector-artifact-header');header.append(heading(card.connection||card.connector,card.source,card.tool));
+ const header=el('header','connector-artifact-header');const brand=heading(card.connection||card.connector,request?'':card.source,card.tool);
+ if(request){const title=el('h3','connector-request-title',actionTitle),logo=brand.querySelector('.connector-logo');if(logo)header.append(logo);header.append(title);}else header.append(brand);
  const status=card.email_send? (card.status==='completed'?'Email sent':card.status==='failed'&&card.delivery_state==='not_sent'?'Not sent: the call did not dispatch':['failed','interrupted'].includes(card.status)?'Delivery unknown. Check your Sent folder before sending again.':['approved','ready','executing'].includes(card.status)?'Sending…':'Email draft · Not sent'):card.status==='pending'&&card.email_send?'Draft · not sent':card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
- const stateLabel=el('span','connector-card-status status-'+card.status,status);stateLabel.setAttribute('role','status');if(inline){const meta=el('div','connector-inline-meta');stateLabel.prepend(document.createTextNode(card.status==='completed'?'✓ ':card.status==='denied'?'✗ ':''));meta.append(stateLabel,document.createTextNode(' · via '+(card.source||'Connector')+' · By '+(botName||'your bot')));root.append(meta);}else{header.append(stateLabel);root.append(header);}
- const operation=el('div','connector-operation');operation.append(el('span','connector-call-name',card.tool.split('__').at(-1)),el('span','',`By ${botName||'your bot'}`));if(card.kind!=='email'&&!inline)root.append(operation);
+ const stateLabel=el('span','connector-card-status status-'+card.status,status);stateLabel.setAttribute('role','status');if(inline){const meta=el('div','connector-inline-meta');stateLabel.prepend(document.createTextNode(card.status==='completed'?'✓ ':card.status==='denied'?'✗ ':''));meta.append(stateLabel,document.createTextNode(' · via '+(card.source||'Connector')+' · By '+(botName||'your bot')));root.append(meta);}else{if(request&&card.status==='pending')stateLabel.classList.add('connector-request-announcement');header.append(stateLabel);root.append(header);}
+ const operation=el('div','connector-operation');operation.append(el('span','connector-call-name',card.tool.split('__').at(-1)),el('span','',`By ${botName||'your bot'}`));if(card.kind!=='email'&&!inline&&!request)root.append(operation);
  const proposed=!card.records?.length&&card.preview_records?.length&&card.status!=='completed';const shown=card.records?.length?card.records:(proposed?card.preview_records:[]);
  const content=el('div','connector-artifact-content');content.tabIndex=0;content.setAttribute('role','region');content.setAttribute('aria-label','Connector contents');root.append(content);const email=card.email||{},pending=card.status==='pending',retry=card.email_send&&['failed','interrupted'].includes(card.status);
  if(card.kind==='email'&&(email.body||email.subject||email.to)){
@@ -69,8 +74,8 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  }else if(previewMissing){
   content.append(el('h3','','Email preview unavailable'),el('p','muted','The connector supplied a draft reference without the recipients or message. Ask your bot to load the draft before sending.'));
  }else{
-  if(!inline||shown.length===1&&shown[0].title!==card.title)content.append(el('h3','',shown.length===1?shown[0].title:card.title));
-  if(!shown.length){content.append(details(card.input,undefined,inline));if(!content.querySelector('dd'))content.append(el('p','muted','This tool provides no displayable item fields.'));
+  if(!request&&(!inline||shown.length===1&&shown[0].title!==card.title))content.append(el('h3','',shown.length===1?shown[0].title:card.title));
+  if(!shown.length||request){content.append(details(card.input,undefined,inline,request));if(!content.querySelector('dd'))content.append(el('p','muted','This tool provides no displayable item fields.'));
   }
  }
  if(shown.length){
@@ -91,14 +96,22 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   const renderRecords=()=>records.replaceChildren(...shown.slice(0,expanded?shown.length:5).map(renderRecord));renderRecords();content.append(records);
   if(shown.length>5){const more=button('+'+(shown.length-5)+' more',()=>{expanded=!expanded;renderRecords();more.replaceChildren(el('span','',expanded?'Show fewer':'+'+(shown.length-5)+' more'));more.setAttribute('aria-expanded',String(expanded));},'subtle-button connector-show-more');more.setAttribute('aria-expanded','false');content.append(more);}
  }
+ if(request){
+  const provenance=el('details','connector-request-details');provenance.append(el('summary','','Request details'));
+  const fields={Connection:card.connection||card.connector,Tool:card.tool,Via:card.source||'Connector',By:botName||'your bot',Permission:'This request only'};
+  const format=card.input?.contentFormat||card.input?.content_format;if(format)fields.Format=format;
+  if(card.created)fields['Requested at']=new Date(card.created*1000).toISOString();
+  provenance.append(details(fields));content.append(provenance);
+ }
  if(card.feedback)content.append(el('p','connector-feedback','Your feedback: '+card.feedback));
  if(!card.email_send&&['failed','interrupted'].includes(card.status))content.append(el('p','connector-outcome-warning',card.read_only===true||card.display_read_only===true?'This lookup did not finish.': 'The final external state is unconfirmed. Check the connected service before retrying a change.'));
  if(card.edited_by_user)content.append(el('p','connector-edit-receipt','Includes your saved edits'));
  const footer=el('footer','connector-card-actions');let sending=false,editorOpen=false,editorOpener=null;
  const syncActionState=()=>{for(const b of root.querySelectorAll('button'))b.disabled=sending||b.dataset.previewBlocked==='true'||b.dataset.reviewRequested==='true'||(editorOpen&&!b.closest('.connector-card-editor'));};
  const act=async(action,values={})=>{
-  if(sending)return;sending=true;for(const b of root.querySelectorAll('button'))b.disabled=true;
-  try{const next=await api('/connector-artifacts/'+encodeURIComponent(card.id),'POST',{action,revision:card.revision,...values});await onChange(next);}catch(error){
+  if(sending)return;const restore=request&&(root.contains(document.activeElement)||document.activeElement===document.body);sending=true;for(const b of root.querySelectorAll('button'))b.disabled=true;
+  try{const next=await api('/connector-artifacts/'+encodeURIComponent(card.id),'POST',{action,revision:card.revision,...values});await onChange(next);
+   if(restore&&['approve','deny','changes'].includes(action)&&(document.activeElement===document.body||root.contains(document.activeElement))){const current=document.querySelector('[data-connector-artifact="'+CSS.escape(card.id)+'"]');const target=[current?.querySelector('.decision-receipt-summary'),current?.closest('.connector-call')?.querySelector(':scope > summary'),current?.closest('.connector-stack')?.querySelector(':scope > summary'),current?.querySelector('.connector-card-status')].find(n=>n&&n.getClientRects().length);if(target){if(!target.matches('summary'))target.tabIndex=-1;target.focus({preventScroll:true});}}}catch(error){
    if(/draft changed|no longer pending|no longer waiting/i.test(error.message||'')){
     await onChange();
     const current=document.querySelector('[data-connector-artifact="'+CSS.escape(card.id)+'"]')||root;
@@ -118,7 +131,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   return Object.entries(card.edit_fields||{}).filter(([,f])=>f&&f.text!==undefined&&f.key&&f.editable!==false).map(([key,f])=>({label:f.label||key,key:f.key,text:String(f.text??''),type:f.type||'text',options:Array.isArray(f.options)?f.options:[]}));
  };
  if(pending||retry){
-  const approve=button(card.email_send?'Send email':'Approve action',()=>act('approve'),'primary small-button');if(previewMissing){approve.disabled=true;approve.dataset.previewBlocked='true';}if(!retry)footer.append(approve);
+  const approve=button(card.email_send?'Send email':'Allow',()=>act('approve'),'primary small-button'+(request?' connector-request-allow':''));if(previewMissing){approve.disabled=true;approve.dataset.previewBlocked='true';}if(!retry)footer.append(approve);
   const descriptors=editDescriptors();
   if(descriptors.length)footer.append(button(retry?'Review to send again':card.kind==='email'?'Edit draft':'Edit fields',()=>{
    clearPanel();const form=el('form','connector-card-editor'),inputs={};form.setAttribute('aria-label',card.kind==='email'?'Edit email draft':'Edit connector fields');
@@ -130,7 +143,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
    form.onsubmit=async e=>{e.preventDefault();if(sending||!form.reportValidity())return;form.querySelector('[role=alert]')?.remove();const problem=recipients?.validate();if(problem){showError(form,new Error(problem.message));problem.focus();return;}
     const fields={...recipients?.changes(),...Object.fromEntries(descriptors.filter(f=>!f.recipients&&(inputs[f.label].value!==f.text||(card.body_resave_required&&f.key==='body'))).map(f=>[f.key,inputs[f.label].value]))};if(!retry&&!Object.keys(fields).length){clearPanel();return;}try{await act(retry?'review_again':'edit',{fields,...(retry?{request_id:emailReviewStates.get(card.id)?.requestId||card.id,confirm_unknown:!unknown||confirmUnknown.checked}:{})});clearPanel();}catch(error){showError(form,error);syncActionState();}};openEditor(form);
   },'outline-button'));
-  if(!retry)footer.append(button('Chat about this',()=>{
+  if(!retry)footer.append(button(request?'Ask for changes…':'Chat about this',()=>{
    clearPanel();const form=el('form','connector-card-editor'),label=el('label','','What would you like changed?'),input=el('textarea');input.rows=3;input.maxLength=8000;input.required=true;input.placeholder='Make it shorter, adjust the recipient, or explain what needs another look…';label.append(input);form.append(label);
    const controls=el('div','connector-card-actions'),send=button('Request changes',()=>{},'primary small-button');send.type='submit';controls.append(send,button('Cancel',clearPanel,'subtle-button'));form.append(el('p','muted small','Returns this action to the bot with your feedback. The current draft will not be sent.'),controls);form.onsubmit=async e=>{e.preventDefault();if(form.reportValidity())try{await act('changes',{feedback:input.value});}catch(error){showError(form,error);}};openEditor(form);
   },'outline-button'));
@@ -169,5 +182,5 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   }
   paint();return root;
  }
- if(!inline&&(card.approval_id||card.email_send||['pending','denied'].includes(card.status)))return decisionReceipt(root,{key:'connector:'+card.id,title:card.title,outcome:status,terminal:['approved','executing','completed','denied'].includes(card.status)});return root;
+ if(!inline&&(card.approval_id||card.email_send||['pending','denied'].includes(card.status)))return decisionReceipt(root,{key:'connector:'+card.id,title:request?actionTitle:card.title,outcome:status,terminal:['approved','executing','completed','denied'].includes(card.status)});return root;
 }
