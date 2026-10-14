@@ -18,15 +18,21 @@ const assert=require('node:assert/strict');
  assert(await page.getByText('Final tracker answer',{exact:true}).isVisible());
  await page.locator('.summary-progress-heading').click();await page.waitForTimeout(350);assert(await details.evaluate(n=>n.open),'finished group reopens');
  run.status='running';messages=messages.slice(0,2);await page.reload();await details.waitFor();
- // Deliberately close then reopen while running: that explicit expansion must survive completion.
+ // A running-time reading choice is temporary. Completion always folds the task.
  await page.locator('.summary-progress-heading').click();await page.waitForTimeout(350);assert(!(await details.evaluate(n=>n.open)));
  await page.waitForTimeout(3500);assert(!(await details.evaluate(n=>n.open)),'poll must not undo explicit collapse');
  await page.locator('.summary-progress-heading').click();await page.waitForTimeout(350);
  run.status='completed';messages.push({seq:3,sender:'piper',kind:'result',run_id:run.id,created:now,text:'Final tracker answer'});
  await page.waitForFunction(()=>document.querySelector('[data-progress-finished="true"]'),{},{timeout:15000});await page.waitForTimeout(400);
- assert(await details.evaluate(n=>n.open),'explicit expansion survives completion');
+ assert(!(await details.evaluate(n=>n.open)),'running-time expansion must collapse on completion');
+ await page.locator('.summary-progress-heading').click();await page.waitForTimeout(350);
+ await page.waitForTimeout(3500);assert(await details.evaluate(n=>n.open),'expansion after completion survives polling');
+ // Force a fresh chat render to check the saved reading preference, not only DOM reuse.
+ messages.push({seq:4,sender:'piper',kind:'message',created:now+1,text:'The tracker is available.'});
+ await page.getByText('The tracker is available.',{exact:true}).waitFor();
+ assert(await details.evaluate(n=>n.open),'expansion after completion survives chat updates');
  await page.emulateMedia({reducedMotion:'reduce'});run.status='running';messages=messages.slice(0,2);await page.reload();await details.waitFor();run.status='completed';messages.push({seq:3,sender:'piper',kind:'result',run_id:run.id,created:now,text:'Final tracker answer'});await page.waitForFunction(()=>document.querySelector('.summary-progress-disclosure')?.open===false,{},{timeout:15000});
- console.log(JSON.stringify({passed:true,engine,autoCollapse:true,manualExpansionPreserved:true,manualCollapsePreserved:true,reducedMotion:true}));
+ console.log(JSON.stringify({passed:true,engine,autoCollapse:true,runningExpansionCollapses:true,finishedExpansionPreserved:true,manualCollapsePreserved:true,reducedMotion:true}));
 
  }finally{await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1});
