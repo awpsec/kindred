@@ -48,6 +48,19 @@ fn main() {
     if connection::redirect_installed_version() {
         return;
     }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::runtime::AnyObject;
+        use objc2_foundation::{NSDictionary, NSNumber, NSString, NSUserDefaults, ns_string};
+        // Register before any WKWebView reads its text-checking state. This is
+        // an app-only fallback, so an explicit user spelling preference wins.
+        let enabled = NSNumber::new_bool(true);
+        let defaults = NSDictionary::<NSString, AnyObject>::from_slices(
+            &[ns_string!("WebContinuousSpellCheckingEnabled")],
+            &[&enabled],
+        );
+        unsafe { NSUserDefaults::standardUserDefaults().registerDefaults(&defaults) };
+    }
     // Consume before starting threads or spawning any workers. A temporary
     // sign-in survives this update only, preserving the user's remember choice.
     let update_session = std::env::var(session_handoff::ENV)
@@ -437,6 +450,16 @@ fn main() {
                     .initialization_script("if(window.top===window){window.__KINDRED_MAC_OVERLAY=true;}");
             }
             let window = window.build()?;
+            #[cfg(target_os = "linux")]
+            window.with_webview(|platform| {
+                use webkit2gtk::{WebContextExt, WebViewExt};
+                if let Some(context) = platform.inner().context() {
+                    // WebKitGTK defaults to no spellchecking. An empty language
+                    // list selects the system language from installed dictionaries.
+                    context.set_spell_checking_languages(&[]);
+                    context.set_spell_checking_enabled(true);
+                }
+            })?;
             #[cfg(target_os = "linux")]
             {
                 // Retain GTK client-side resize borders without its separate
