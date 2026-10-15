@@ -84,14 +84,89 @@ export async function renderWordLayout(buffer,name){
  if(fields)notes.push('TOC and fields show saved values; page numbers are not recalculated.');
  if(omitted)notes.push('External or embedded active content was omitted.');
  notes.push('Use a PDF exported by the author for final pagination review.');
- return {page,note:notes.join(' '),dispose:()=>embedded.forEach(face=>document.fonts.delete(face))};
+ // docx-preview emits fixed paper dimensions. Fit the complete paper to the
+ // reading surface so small windows do not turn into horizontal panning.
+ const fitPaper=()=>{const content=root.querySelector('.paper');if(!content)return;const css=getComputedStyle(page),available=page.clientWidth-parseFloat(css.paddingLeft||0)-parseFloat(css.paddingRight||0),paperWidth=Math.max(0,...[...content.querySelectorAll('section.docx')].map(section=>section.offsetWidth));if(available>0&&paperWidth>0)content.style.zoom=String(Math.min(1,available/paperWidth));};
+ const fitObserver=new ResizeObserver(fitPaper);fitObserver.observe(page);fitPaper();
+ return {page,note:notes.join(' '),dispose:()=>{fitObserver.disconnect();embedded.forEach(face=>document.fonts.delete(face));}};
+}
+// Keep the whole document in one scroll surface, but only retain canvases near
+// the reader. Page placeholders preserve scroll position when canvases are freed.
+function renderContinuousPdf(pdf, name, body, foot, paginatedWord) {
+ const viewport=el('div','document-pdf document-pdf-continuous');
+ viewport.tabIndex=0;viewport.setAttribute('role','region');viewport.setAttribute('aria-label',name+' pages');
+ body.replaceChildren(viewport);
+ let disposed=false,frame=0,rendering=false,active=null,width=0,revision=0,resolveReady;
+ const ready=new Promise(resolve=>{resolveReady=resolve;});
+ const pages=[],near=new Set();
+ const release=entry=>{if(entry.canvas){entry.canvas.width=0;entry.canvas.height=0;entry.canvas.remove();entry.canvas=null;}};
+ const schedule=()=>{if(!disposed&&!frame)frame=requestAnimationFrame(update);};
+ const renderNext=async()=>{
+  if(rendering||disposed)return;rendering=true;
+  try{
+   while(!disposed){
+    const mid=viewport.getBoundingClientRect().top+viewport.clientHeight/2;
+    const entry=[...near].filter(p=>!p.canvas&&!p.failed).sort((a,b)=>Math.abs(a.node.getBoundingClientRect().top-mid)-Math.abs(b.node.getBoundingClientRect().top-mid))[0];
+    if(!entry)break;
+    const version=revision;let page=null,canvas=null;
+    entry.node.setAttribute('aria-busy','true');
+    try{
+     page=await pdf.getPage(entry.number);if(disposed||version!==revision||!near.has(entry))continue;
+     const natural=page.getViewport({scale:1});entry.node.style.aspectRatio=natural.width+' / '+natural.height;
+     // Device scale sharpens text while a pixel ceiling bounds each canvas.
+     const scale=Math.min(2,Math.max(1,devicePixelRatio||1))*entry.node.clientWidth/natural.width;
+     const view=page.getViewport({scale:Math.min(scale,2200/natural.height,1800/natural.width)});
+     canvas=el('canvas');canvas.width=Math.ceil(view.width);canvas.height=Math.ceil(view.height);
+     canvas.setAttribute('role','img');canvas.setAttribute('aria-label',`${name}, page ${entry.number}`);
+     active={entry,task:page.render({canvasContext:canvas.getContext('2d'),viewport:view})};
+     await active.task.promise;
+     if(disposed||version!==revision||!near.has(entry))continue;
+     entry.canvas=canvas;entry.node.append(canvas);canvas=null;resolveReady();schedule();
+    }catch(error){
+     if(!disposed&&version===revision&&near.has(entry)&&error.name!=='RenderingCancelledException'){
+      entry.failed=true;entry.node.append(el('p','document-status','Could not render this page. Download to view the original.'));resolveReady();
+     }
+    }finally{
+     if(canvas){canvas.width=0;canvas.height=0;}active=null;page?.cleanup();entry.node.removeAttribute('aria-busy');
+    }
+   }
+  }finally{rendering=false;}
+ };
+ function update(){
+  frame=0;if(disposed)return;
+  const bounds=viewport.getBoundingClientRect(),height=viewport.clientHeight;
+  const candidates=pages.filter(entry=>{const rect=entry.node.getBoundingClientRect();return rect.bottom>bounds.top-height&&rect.top<bounds.bottom+height;});
+  // Render visible pages first; very short pages must not retain hundreds of canvases.
+  candidates.sort((a,b)=>Math.abs(a.node.getBoundingClientRect().top-(bounds.top+height/2))-Math.abs(b.node.getBoundingClientRect().top-(bounds.top+height/2)));
+  near.clear();for(const entry of candidates.slice(0,6))near.add(entry);
+  for(const entry of pages)if(!near.has(entry))release(entry);
+  if(active&&!near.has(active.entry))active.task.cancel();
+  const atEnd=viewport.scrollTop>0&&viewport.scrollTop+height>=viewport.scrollHeight-2;
+  const current=atEnd?pages.at(-1):pages.find(entry=>entry.node.getBoundingClientRect().bottom>bounds.top+Math.min(80,height/3))||pages.at(-1);
+  if(current)foot.textContent=`Page ${current.number} of ${pdf.numPages}`+(paginatedWord?' · Document preview · Font substitutions may differ from Word.':' · PDF preview');
+  void renderNext();
+ }
+ // A single lightweight placeholder per page makes keyboard and touch scrolling
+ // work naturally, including jumping straight to a distant page.
+ for(let number=1;number<=pdf.numPages;number++){
+  const node=el('div','document-pdf-page');node.style.aspectRatio='612 / 792';node.setAttribute('data-page',String(number));
+  node.setAttribute('role','group');node.setAttribute('aria-label',`Page ${number} of ${pdf.numPages}`);
+  viewport.append(node);pages.push({node,number,canvas:null,failed:false});
+ }
+ viewport.addEventListener('scroll',schedule,{passive:true});
+ const resize=new ResizeObserver(()=>{
+  if(disposed)return;
+  if(width!==viewport.clientWidth){width=viewport.clientWidth;revision++;active?.task.cancel();for(const entry of pages)release(entry);}
+  schedule();
+ });resize.observe(viewport);schedule();
+ return {ready,dispose:()=>{if(disposed)return;disposed=true;revision++;resolveReady();cancelAnimationFrame(frame);resize.disconnect();viewport.removeEventListener('scroll',schedule);active?.task.cancel();for(const entry of pages)release(entry);near.clear();}};
 }
 export async function openDocumentPreview({card,name,extension,getBlob,getPagePreview,download,createDownloadButton,renderMarkdown,artifactPreview,mount=null,onMount=null,onUnavailable=()=>{}}){
  const dialog=el(mount?'section':'dialog',mount?'document-inline':'document-dialog'),head=el('header','document-header'),body=el('div','document-body'),foot=el('footer','document-footer','Quick preview · Download for the original formatting.');
  const title=el('strong','',name);dialog.setAttribute('aria-label',name+' preview');
  const conversionAbort=new AbortController(),lifecycleAbort=new AbortController();let paginatedWord=false,conversionFailed=false;
- let closed=false,worker=null,pdfTask=null,timer=null,cancelWork=null,passwordRequired=false,wordDispose=null;
- const cleanup=()=>{if(closed)return;closed=true;lifecycleAbort.abort();conversionAbort.abort();clearTimeout(timer);cancelWork?.();wordDispose?.();worker?.terminate();pdfTask?.destroy().catch(()=>{});observer.disconnect();dialog.remove();};
+ let closed=false,worker=null,pdfTask=null,timer=null,cancelWork=null,passwordRequired=false,wordDispose=null,pagesDispose=null;
+ const cleanup=()=>{if(closed)return;closed=true;lifecycleAbort.abort();conversionAbort.abort();clearTimeout(timer);cancelWork?.();pagesDispose?.();wordDispose?.();worker?.terminate();pdfTask?.destroy().catch(()=>{});observer.disconnect();dialog.remove();};
  const handle={root:dialog,dispose:cleanup};
  // A modal is a reading session, not part of its transient transcript card.
  // Live progress may replace that card while the reader is on another page.
@@ -128,20 +203,8 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
    const data=new Uint8Array(await blob.arrayBuffer());if(closed)return;
    pdfTask=getDocument({data,isEvalSupported:false,useSystemFonts:true,useWasm:false,disableFontFace:false,maxImageSize:16000000,isOffscreenCanvasSupported:false});
    pdfTask.onPassword=()=>{passwordRequired=true;pdfTask.destroy().catch(()=>{});if(!closed)body.replaceChildren(el('p','document-status','This PDF is password protected. Download it to open with your password.'));};
-   timer=setTimeout(()=>pdfTask.destroy().catch(()=>{}),20000);const pdf=await pdfTask.promise;clearTimeout(timer);if(closed)return;body.replaceChildren();let pageNumber=1,busy=false;
-   const controls=el('div','document-pages'),label=el('span'),canvasWrap=el('div','document-pdf');
-   const render=async()=>{
-    if(busy||closed)return;busy=true;previous.setAttribute('aria-disabled','true');next.setAttribute('aria-disabled','true');canvasWrap.setAttribute('aria-busy','true');
-    try{
-     const page=await pdf.getPage(pageNumber);if(closed)return;
-     const viewport=page.getViewport({scale:1}),scale=Math.min(2,1600/viewport.width,2200/viewport.height),view=page.getViewport({scale}),canvas=el('canvas');
-     canvas.width=view.width;canvas.height=view.height;canvas.setAttribute('role','img');canvas.setAttribute('aria-label',`${name}, page ${pageNumber}`);
-     await page.render({canvasContext:canvas.getContext('2d'),viewport:view}).promise;page.cleanup();if(closed)return;
-     canvasWrap.replaceChildren(canvas);canvasWrap.scrollTop=0;label.textContent=`Page ${pageNumber} of ${pdf.numPages}`;
-    }catch(e){if(!closed)body.replaceChildren(el('p','document-status','Could not render this page. Download to view the original.'));}
-    finally{busy=false;canvasWrap.removeAttribute('aria-busy');previous.setAttribute('aria-disabled',String(pageNumber===1));next.setAttribute('aria-disabled',String(pageNumber===pdf.numPages));}
-   };
-   const previous=button('Previous page',()=>{if(busy||closed||pageNumber<=1)return;pageNumber--;render();}),next=button('Next page',()=>{if(busy||closed||pageNumber>=pdf.numPages)return;pageNumber++;render();});controls.append(previous,label,next);body.append(controls,canvasWrap);await render();
+   timer=setTimeout(()=>pdfTask.destroy().catch(()=>{}),20000);const pdf=await pdfTask.promise;clearTimeout(timer);if(closed)return;
+   const pages=renderContinuousPdf(pdf,name,body,foot,paginatedWord);pagesDispose=pages.dispose;await pages.ready;
   }else if(['html','htm','jsx'].includes(extension)){
    if(blob.size>256*1024)throw Error('Interactive preview supports files up to 256 KB.');const text=await blob.text();if(closed)return;const preview=artifactPreview(text,extension==='jsx'?'jsx':'html',name);body.replaceChildren(preview);preview.querySelector('button').click();
   }else if(['png','jpg','jpeg','webp','gif'].includes(extension)){
