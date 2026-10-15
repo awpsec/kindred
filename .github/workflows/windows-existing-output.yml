@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: f8f2dc1f62448c8604f0a4b0618d40afecaa9dc4
+          ref: 0ed07d614d2e2a186a56c188091ae5abb63d5503
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -46,10 +46,10 @@ jobs:
           python - <<'PY'
           import hashlib, os, subprocess
           from pathlib import Path
-          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == 'f8f2dc1f62448c8604f0a4b0618d40afecaa9dc4'
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '0ed07d614d2e2a186a56c188091ae5abb63d5503'
           tools = Path('.verification-tools')
           assert subprocess.check_output(['git', '-C', str(tools), 'rev-parse', 'HEAD'], text=True).strip() == os.environ['GITHUB_SHA']
-          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == 'fdb7d4430acc590c41ecd893f8b1ea1e7117483298d37ac89cf940e22e60aae4'
+          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '125f861ed25f35596e1b8532b20d73c235ab4903ea397a214dd50556acce8a19'
           PY
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
@@ -87,7 +87,7 @@ jobs:
       - name: Upload packages only after every required native gate passed
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: kindred-0.86.10-x86_64-pc-windows-msvc
+          name: kindred-0.86.11-x86_64-pc-windows-msvc
           path: package-artifacts/*
           if-no-files-found: error
           retention-days: 7
