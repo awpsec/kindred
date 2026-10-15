@@ -4770,13 +4770,13 @@ details.bot-chat-section>summary::before{top:calc(50% - 7px)}
 .artifact-studio-library-item:hover{background:var(--hover)}
 .artifact-studio-library-item.selected{background:var(--selected)}
 /* Compact artifact navigation, matching the density of the chat sidebar. */
-.artifact-studio .artifact-studio-library-item{min-height:30px;height:30px;padding:4px 8px 4px 16px;gap:7px;border-radius:7px}
+.artifact-studio .artifact-studio-library-item{min-height:48px;height:auto;padding:6px 8px 6px 16px;gap:7px;border-radius:7px}
 .artifact-studio-library-item>.artifact-kind-icon{width:15px;height:15px}
 .artifact-studio-library-item>.artifact-item-pin{width:12px;height:12px}
 .artifact-studio-library-title{font-size:12px;line-height:20px}
 .artifact-studio .artifact-folder-heading{min-height:28px;padding:6px 8px 4px;margin:6px 0 2px}
 .artifact-folder-more{padding:4px 8px 4px 38px;line-height:20px}
-@media(pointer:coarse){.artifact-studio .artifact-studio-library-item{min-height:40px;height:40px}}
+@media(pointer:coarse){.artifact-studio .artifact-studio-library-item{min-height:48px;height:auto}}
 .artifact-control-icon{width:18px;height:18px;display:block;flex:none}
 .artifact-workbench-actions button,.artifact-library-reveal{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:7px}
 .artifact-context-menu button:has(.artifact-control-icon){display:flex;align-items:center;gap:9px}
@@ -6124,3 +6124,11 @@ html[data-mobile] .request-tray.is-answering .request-tray-bar .icon-button{widt
 .connector-request-write .connector-record-fields>.connector-proposed-content{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px 0;margin:2px 0 5px}
 
 .history-sentinel {height:1px;min-height:0;margin:0;padding:0;overflow:hidden;font-size:0;}
+
+/* Document pages share a continuous, keyboard/touch-scrollable reading surface. */
+.document-pdf-continuous{display:block;overscroll-behavior:contain;overflow-anchor:auto;scrollbar-gutter:stable;outline-offset:-3px}
+.document-pdf-continuous .document-pdf-page{position:relative;width:100%;max-width:1200px;margin:0 auto 20px;background:#fff;color:#20242a;box-shadow:0 2px 12px #0002;flex:none;overflow:hidden}
+.document-pdf-continuous .document-pdf-page:last-child{margin-bottom:0}
+.document-pdf-continuous .document-pdf-page canvas{position:absolute;inset:0;width:100%;height:100%;box-shadow:none}
+.document-pdf-continuous .document-pdf-page .document-status{position:absolute;inset:0;display:grid;place-items:center;padding:24px;color:#555}
+@media(max-width:480px){.document-pdf-continuous .document-pdf-page{margin-bottom:12px}}

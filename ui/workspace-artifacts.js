@@ -42,7 +42,7 @@ function compactDocumentRow(value,baseUrl){
  const preview=btn('Preview',()=>link.click());preview.setAttribute('aria-label','Preview '+value.title);card.append(link,preview);card.hasArtifactDraft=()=>false;card.advanceArtifactTurns=()=>{};card.syncArtifact=next=>{if(next.id!==value.id)return;value=next;link.href=new URL(value.path,baseUrl||location.origin).href;link.setAttribute('aria-label','Open '+value.title+', '+artifactIdentity(value).split(' · ')[0]);copy.firstChild.textContent=value.title;copy.lastChild.textContent=artifactIdentity(value);preview.setAttribute('aria-label','Preview '+value.title);};return card;
 }
 export function workspaceArtifactCard(initial,{api,markdown,baseUrl,onChange=()=>{},onOriginalUnavailable=()=>{},studio=false}){
- if(!studio&&(artifactKind(initial)==='document'||initial.language==='file'))return compactDocumentRow(initial,baseUrl);
+ if(!studio&&(artifactKind(initial)==='document'||visualArtifactKind(initial)==='sheet'||initial.language==='file'))return compactDocumentRow(initial,baseUrl);
  let documentPreview=null,pendingDocument=null;
  let value=initial,frame=null,timer=null,frameTimer=null,editing=false,busy=false,disposed=false,generation=0,frameDirty=false;
  const card=el('section','workspace-artifact'),head=el('header','workspace-artifact-header'),title=el('strong','',value.title),actions=el('div','workspace-artifact-actions'),stage=el('div','workspace-artifact-stage'),status=el('p','workspace-artifact-status');
@@ -82,11 +82,12 @@ export function workspaceArtifactCard(initial,{api,markdown,baseUrl,onChange=()=
   renderFailed=false;beginLoading();stage.querySelectorAll('.artifact-frame-pending').forEach(n=>n.remove());
   if(showing&&!stage.inert){stage.inert=true;}
   resize(()=>{card.classList.add('is-expanded');if(!showing)stage.replaceChildren();});
-  if(value.language==='file'){
+  if(value.language==='file'||visualArtifactKind(value)){
    pendingDocument?.dispose();pendingDocument=null;const snapshot=value,pending=el('div','artifact-document-mount artifact-document-pending');stage.append(pending);
    try{
-    const prefix='/workspace-artifacts/'+encodeURIComponent(snapshot.id),revision=snapshot.revision,file=snapshot.file||{};
-    const next=await openDocumentPreview({card,mount:pending,onMount:handle=>{pendingDocument=handle;},onUnavailable:()=>onOriginalUnavailable(snapshot.id,revision),name:file.name||snapshot.title,extension:file.extension||'',getBlob:(signal)=>api(prefix+'/file/'+revision,'GET',undefined,{responseType:'blob',signal,maxBlobBytes:8*1024*1024}),getPagePreview:file.extension==='docx'?(signal)=>api(prefix+'/preview/'+revision,'GET',undefined,{responseType:'blob',signal,timeoutMs:90000,maxBlobBytes:32*1024*1024}):null});
+    const prefix='/workspace-artifacts/'+encodeURIComponent(snapshot.id),revision=snapshot.revision,file=snapshot.file||{},native=visualArtifactKind(snapshot);
+    const extension=snapshot.language==='file'?file.extension:native==='sheet'?'xlsx':'docx';
+    const next=await openDocumentPreview({card,mount:pending,onMount:handle=>{pendingDocument=handle;},onUnavailable:()=>{if(snapshot.language==='file')onOriginalUnavailable(snapshot.id,revision);},name:file.name||snapshot.title,extension,getBlob:(signal)=>api(prefix+'/file/'+revision,'GET',undefined,{responseType:'blob',signal,maxBlobBytes:8*1024*1024}),getPagePreview:extension==='docx'?(signal)=>api(prefix+'/preview/'+revision,'GET',undefined,{responseType:'blob',signal,timeoutMs:90000,maxBlobBytes:32*1024*1024}):null});
     if(disposed||current!==generation){next?.dispose();pending.remove();return;}
     if(pendingDocument===next)pendingDocument=null;documentPreview?.dispose();documentPreview=next;resize(()=>{show(pending);pending.classList.remove('artifact-document-pending');});
    }catch(e){pending.remove();if(current===generation)report(e);}
