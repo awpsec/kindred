@@ -86,9 +86,12 @@ export async function renderWordLayout(buffer,name){
  notes.push('Use a PDF exported by the author for final pagination review.');
  // docx-preview emits fixed paper dimensions. Fit the complete paper to the
  // reading surface so small windows do not turn into horizontal panning.
- const fitPaper=()=>{const content=root.querySelector('.paper');if(!content)return;const css=getComputedStyle(page),available=page.clientWidth-parseFloat(css.paddingLeft||0)-parseFloat(css.paddingRight||0),paperWidth=Math.max(0,...[...content.querySelectorAll('section.docx')].map(section=>section.offsetWidth));if(available>0&&paperWidth>0)content.style.zoom=String(Math.min(1,available/paperWidth));};
- const fitObserver=new ResizeObserver(fitPaper);fitObserver.observe(page);fitPaper();
- return {page,note:notes.join(' '),dispose:()=>{fitObserver.disconnect();embedded.forEach(face=>document.fonts.delete(face));}};
+ let fitFrame=0,fitDisposed=false;
+ // Resize delivery must not synchronously resize the observed page through zoom.
+ const fitPaper=()=>{fitFrame=0;if(fitDisposed)return;const content=root.querySelector('.paper');if(!content)return;const css=getComputedStyle(page),available=page.clientWidth-parseFloat(css.paddingLeft||0)-parseFloat(css.paddingRight||0),paperWidth=Math.max(0,...[...content.querySelectorAll('section.docx')].map(section=>section.offsetWidth));if(available>0&&paperWidth>0){const zoom=String(Math.min(1,available/paperWidth));if(content.style.zoom!==zoom)content.style.zoom=zoom;}};
+ const scheduleFit=()=>{if(!fitDisposed&&!fitFrame)fitFrame=requestAnimationFrame(fitPaper);};
+ const fitObserver=new ResizeObserver(scheduleFit);fitObserver.observe(page);scheduleFit();
+ return {page,note:notes.join(' '),dispose:()=>{fitDisposed=true;fitObserver.disconnect();if(fitFrame)cancelAnimationFrame(fitFrame);embedded.forEach(face=>document.fonts.delete(face));}};
 }
 // Keep the whole document in one scroll surface, but only retain canvases near
 // the reader. Page placeholders preserve scroll position when canvases are freed.
