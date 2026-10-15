@@ -4788,7 +4788,7 @@ function reminderWhen(reminder){
   return {label:dateLabel+', '+time,zone:zone===Intl.DateTimeFormat().resolvedOptions().timeZone?'':zoneLabel,full:date.toLocaleString([],{timeZone:zone,dateStyle:'full',timeStyle:'short'})+' · '+zone};
 }
 function progressGroups(messages){
-  const groups=new Map();for(const m of messages)if(m.kind==='assistant'&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
+  const groups=new Map();for(const m of messages)if(['assistant','task_progress'].includes(m.kind)&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
   // Summaries is a presentation preference, not a duration or message-count heuristic.
   return groups;
 }
@@ -4851,7 +4851,7 @@ function taskConnectorDisclosure(calls,entry,key){
   toggle.onclick=()=>{entry.taskConnectorDetails.has(anchor)?entry.taskConnectorDetails.delete(anchor):entry.taskConnectorDetails.add(anchor);entry.progressOpen.add(key);paint();};paint();wrap.append(toggle,body);return wrap;
 }
 function summaryProgress(items,entry,runs){
-  const first=items[0],key=first.progress.group_id,questions=taskQuestions(items,entry),calls=taskConnectorCalls(items,entry),parentRunId=questions[0]?.question.run_id||first.run_id,rootRun=runs.find(r=>r.id===parentRunId)||state.allRuns.find(r=>r.id===parentRunId)||state.details.get(parentRunId)?.run;
+  const first=items[0],updates=items.filter(m=>m.kind!=='task_progress'),key=first.progress.group_id,questions=taskQuestions(items,entry),calls=taskConnectorCalls(items,entry),parentRunId=questions[0]?.question.run_id||first.run_id,rootRun=runs.find(r=>r.id===parentRunId)||state.allRuns.find(r=>r.id===parentRunId)||state.details.get(parentRunId)?.run;
   const memberRuns=new Set([...items.map(m=>m.run_id),...questions.map(m=>m.question.continuation_run_id).filter(Boolean)]),run=[...runs,...state.allRuns].find(r=>r.id===[...memberRuns].at(-1))||rootRun;
   const group=node('article','summary-progress');group.dataset.message=String(first.seq);group.dataset.scrollMessages=[...items,...questions,...calls].map(m=>m.seq).join(' ');group.dataset.progressGroup=key;
   entry.progressOpen??=new Set();entry.progressClosed??=new Set();entry.progressFinished??=new Map();
@@ -4870,7 +4870,8 @@ function summaryProgress(items,entry,runs){
   if(bot){const avatar=buddy(bot,20);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
   const taskStarted=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
   entry.progressTimePins??=new Set();
-  const taskEnded=phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||items.at(-1).created):Math.floor(Date.now()/1000));
+  const endedEvent=state.details.get(run?.id)?.events?.findLast(e=>e.kind==='run_finished');
+  const taskEnded=phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||endedEvent?.created||items.at(-1).created):Math.floor(Date.now()/1000));
   const elapsed=taskStarted&&taskStarted<=taskEnded?taskEnded-taskStarted:null;
   const taskName=((first.progress?.work_qualified==null?rootRun?.task_title||first.progress?.task_title:first.progress?.task_title||rootRun?.task_title)||'Task progress').trim()||'Task progress',taskLabel=node('span','summary-progress-task'),taskText=node('span','summary-progress-name',taskName);taskLabel.title=taskName;taskLabel.append(taskText);
   if(!finished&&run?.status==='running'){taskText.classList.add('is-working');taskText.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}
@@ -4882,8 +4883,15 @@ function summaryProgress(items,entry,runs){
     if(!finished)timer.dataset.groupStarted=String(taskStarted);
     title.append(timer);
   }
-  title.append(node('span','muted small summary-progress-count',`Show progress · ${items.length} updates${questions.some(m=>m.question.status==='pending')?' · Waiting for your answer':questions.some(m=>m.question.status==='answered')?' · '+questions.filter(m=>m.question.status==='answered').length+' answer'+(questions.filter(m=>m.question.status==='answered').length===1?'':'s'):''}${finished?' · '+({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):''}`));
-  const body=node('div','summary-progress-body');for(const m of [...items,...questions].sort((a,b)=>(a.question?.created??a.created)-(b.question?.created??b.created)||a.seq-b.seq)){if(m.question){body.append(taskQuestionReceipt(m,entry,key,taskStarted));continue;}const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);const content=markdown(m.text),ownedCalls=calls.filter(call=>call.connector_artifact.progress_message_seq===m.seq);
+  const status=finished?({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):questions.some(m=>m.question.status==='pending')?'Waiting for your answer':'In progress';
+  const counts=updates.length?`Show progress · ${updates.length} update${updates.length===1?'':'s'}`:'';
+  const answers=questions.filter(m=>m.question.status==='answered').length;
+  title.append(node('span','muted small summary-progress-count',[counts,answers?answers+' answer'+(answers===1?'':'s'):'',finished||!counts||questions.some(m=>m.question.status==='pending')?status:''].filter(Boolean).join(' · ')));
+  const body=node('div','summary-progress-body');
+  // Calls may belong to the task marker before any written update exists.
+  const taskCalls=calls.filter(m=>!updates.some(update=>update.seq===m.connector_artifact.progress_message_seq));
+  if(taskCalls.length)body.append(taskConnectorDisclosure(taskCalls,entry,key));
+  for(const m of [...updates,...questions].sort((a,b)=>(a.question?.created??a.created)-(b.question?.created??b.created)||a.seq-b.seq)){if(m.question){body.append(taskQuestionReceipt(m,entry,key,taskStarted));continue;}const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);const content=markdown(m.text),ownedCalls=calls.filter(call=>call.connector_artifact.progress_message_seq===m.seq);
     if(Number.isFinite(m.created)&&m.created>0){
       const date=new Date(m.created*1000),stamp=node('span','progress-update-time'),clock=node('time','progress-update-clock','('+date.toLocaleTimeString([],{timeZone:botTimezone(),hour:'numeric',minute:'2-digit'})+')');
       clock.dateTime=date.toISOString();
@@ -5670,7 +5678,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   if(mode==='sync')await syncChatHistory(entry);
   if(currentConversationId()!==id || !entry.loaded)return;
   renderRequestTray(chat,entry);
-  const data={messages:entry.messages},visibleRuns=new Set(data.messages.filter(m=>['assistant','result'].includes(m.kind)).map(m=>m.run_id).filter(Boolean));
+  const data={messages:entry.messages},visibleRuns=new Set(data.messages.filter(m=>['assistant','result','task_progress'].includes(m.kind)).map(m=>m.run_id).filter(Boolean));
   const listedRuns=state.allRuns.filter(r=>!chat.shared&&r.chat_id===id && (visibleRuns.has(r.id) || entry.workingRuns?.has(r.id) || (!entry.hasAfter && (active(r)||r.status==='queued'))));
   const wanted=[...new Set([...visibleRuns,...listedRuns.map(r=>r.id)])];
   if(mode!=='cached'){
@@ -5750,9 +5758,10 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
   for (const m of data.messages) {
     if(stacked.has(m.seq)||taskQuestionSeqs.has(m.seq)||taskConnectorSeqs.has(m.seq)||m.kind==='continuation')continue;
-    if (!m.text?.trim()) continue;
+    if (!m.text?.trim()&&m.kind!=='task_progress') continue;
+    if(m.kind==='task_progress'&&!summaries.has(m.progress?.group_id))continue;
     if(hiddenCompletionMessage(m) && !runs.find(r=>r.id===m.run_id)?.error)continue;
-    if(boundary&&!unreadInserted&&m.kind!=='connector_artifact'&&(chat.shared?!m.mine:m.sender!=='user')&&m.sender!=='system'&&m.seq>boundary.after&&m.seq<=boundary.through){
+    if(boundary&&!unreadInserted&&!['connector_artifact','task_progress'].includes(m.kind)&&(chat.shared?!m.mine:m.sender!=='user')&&m.sender!=='system'&&m.seq>boundary.after&&m.seq<=boundary.through){
       unreadInserted=true;
       const divider=node('div','unread-divider','New');divider.dataset.chat=id;divider.setAttribute('role','separator');divider.setAttribute('aria-label','New activity since your last visit');
       if(boundary.seenAt&&Date.now()-boundary.seenAt>8000)divider.classList.add('has-faded');
