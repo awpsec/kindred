@@ -10,7 +10,7 @@ const engine=process.env.WEBKIT?'webkit':'chromium';
 const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test-results/native-office-preview');
 (async()=>{
  const files=await createFiles();files['review.docx']=fs.readFileSync(path.join(__dirname,'fixtures/document-originals/original-v1.docx'));fs.mkdirSync(out,{recursive:true});
- const word=text=>{const parts=unzipSync(files['review.docx']);parts['word/document.xml']=strToU8(strFromU8(parts['word/document.xml']).replace('Original Word revision one',text));return Buffer.from(zipSync(parts));};
+ const word=text=>{const parts=unzipSync(files['review.docx']);parts['word/document.xml']=strToU8(strFromU8(parts['word/document.xml']).replace('Original Word revision one',text));return Buffer.from(zipSync(parts,{mtime:new Date(2020,0,1)}));};
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await(process.env.WEBKIT?webkit:chromium).launch(),receipts=[];let activePage;
  try{for(const width of [1000,390]){
   const context=await browser.newContext({viewport:{width,height:900},hasTouch:width<600,acceptDownloads:true}),page=await context.newPage();activePage=page;page.setDefaultTimeout(20000);const errors=[],requests=[],writes=[];page.on('pageerror',e=>errors.push(e.message));
@@ -35,6 +35,11 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test
   },{token,touch:width<600});
   await page.locator('.document-word').getByText('Native report revision one',{exact:true}).waitFor();assert(requests.includes('native/preview/1')&&requests.includes('native/file/1'));assert.equal(await page.locator('.workspace-artifact-stage iframe').count(),0);
   const paper=await page.locator('.document-word').evaluate(n=>{const paper=n.shadowRoot.querySelector('section.docx');return {paper:getComputedStyle(paper).backgroundColor,text:getComputedStyle(paper.querySelector('p')).color};});assert.deepEqual(paper,{paper:'rgb(255, 255, 255)',text:'rgb(0, 0, 0)'});
+  await page.waitForFunction(()=>document.querySelector('.document-zoom-value')?.textContent.endsWith('%'));
+  assert(await page.locator('.document-word').evaluate(n=>{const paper=n.shadowRoot.querySelector('section.docx').getBoundingClientRect();return paper.height<=n.clientHeight+1&&paper.width<=n.clientWidth+1;}),'DOCX fallback fits an entire page');
+  const initialZoom=await page.locator('.document-zoom-value').innerText();
+  await page.getByRole('button',{name:'Zoom in',exact:true}).click();await page.waitForFunction(v=>document.querySelector('.document-zoom-value').textContent!==v,initialZoom);
+  await page.locator('.document-word').focus();await page.keyboard.press('Control+0');await page.waitForFunction(()=>[...document.querySelectorAll('.document-zoom button')].some(n=>n.textContent==='Fit page'&&n.getAttribute('aria-pressed')==='true'));assert(await page.locator('.document-word').evaluate(n=>n.shadowRoot.querySelector('section.docx').getBoundingClientRect().width<=n.clientWidth+1));
   await page.screenshot({path:path.join(out,`${engine}-${width}-native-word.png`)});
   if(width<600)await page.getByRole('button',{name:'Show artifact library',exact:true}).click();
   const rows=page.locator('.artifact-studio-library-item');await rows.first().waitFor({state:'visible'});

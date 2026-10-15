@@ -2,6 +2,39 @@ import {DOMPurify} from './vendor.js';
 const el=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls||'';if(text!==undefined)n.textContent=text;return n;};
 const button=(text,fn)=>{const b=el('button','artifact-action',text);b.type='button';b.onclick=fn;return b;};
 const letters=n=>{let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;};
+// Zoom belongs to the reading surface, never to the surrounding app. Automatic
+// fit is capped at actual size; an explicit zoom remains stable across resizing.
+function documentZoom(body, surface, dimensions, apply, initialMode='page') {
+ const scope=body.parentElement,toolbar=el('div','document-zoom');toolbar.setAttribute('role','group');toolbar.setAttribute('aria-label','Document zoom');
+ let mode=initialMode,scale=1,manual=1,frame=0,disposed=false;
+ const minus=button('−',()=>adjust(-.1)),plus=button('+',()=>adjust(.1)),value=el('output','document-zoom-value');
+ minus.setAttribute('aria-label','Zoom out');plus.setAttribute('aria-label','Zoom in');value.setAttribute('aria-label','Zoom level');
+ const fitPage=button('Fit page',()=>setMode('page')),fitWidth=button('Fit width',()=>setMode('width'));
+ minus.title='Zoom out (Ctrl/Cmd −)';plus.title='Zoom in (Ctrl/Cmd +)';fitPage.title='Fit page (Ctrl/Cmd 0)';
+ toolbar.append(minus,value,plus,fitPage,fitWidth);body.prepend(toolbar);
+ function refresh(){
+  frame=0;if(disposed)return;
+  const size=dimensions(),css=getComputedStyle(surface);
+  const width=surface.clientWidth-(parseFloat(css.paddingLeft)||0)-(parseFloat(css.paddingRight)||0);
+  const height=surface.clientHeight-(parseFloat(css.paddingTop)||0)-(parseFloat(css.paddingBottom)||0);
+  if(width<=0||height<=0||!size.width||!size.height)return;
+  scale=mode==='manual'?manual:Math.max(.05,Math.min(1,width/size.width,mode==='page'?height/size.height:Infinity));
+  apply(scale);value.textContent=Math.round(scale*100)+'%';
+  minus.disabled=scale<=.25;plus.disabled=scale>=3;
+  fitPage.setAttribute('aria-pressed',String(mode==='page'));fitWidth.setAttribute('aria-pressed',String(mode==='width'));
+ }
+ function schedule(){if(!disposed&&!frame)frame=requestAnimationFrame(refresh);}
+ function setMode(next){mode=next;schedule();}
+ function adjust(delta){manual=Math.max(.25,Math.min(3,Math.round(((mode==='manual'?manual:scale)+delta)*100)/100));mode='manual';schedule();}
+ const key=event=>{
+  if(!(event.ctrlKey||event.metaKey)||event.altKey||event.target.closest?.('input,textarea,[contenteditable="true"]'))return;
+  if(['+','=','-','0'].includes(event.key)){event.preventDefault();event.stopPropagation();if(event.key==='0')setMode(initialMode);else adjust(event.key==='-'?-.1:.1);}
+ };
+ const wheel=event=>{if(!event.ctrlKey&&!event.metaKey)return;event.preventDefault();event.stopPropagation();if(event.deltaY)adjust(event.deltaY<0?.1:-.1);};
+ scope.addEventListener('keydown',key);surface.addEventListener('wheel',wheel,{passive:false});
+ const observer=new ResizeObserver(schedule);observer.observe(surface);schedule();
+ return {refresh:schedule,dispose:()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();scope.removeEventListener('keydown',key);surface.removeEventListener('wheel',wheel);toolbar.remove();}};
+}
 // Static Word content never navigates a subframe. WKWebView passes srcdoc
 // navigation through the native origin guard, which correctly rejects it.
 export function renderWordDocument(source,name){
@@ -84,22 +117,23 @@ export async function renderWordLayout(buffer,name){
  if(fields)notes.push('TOC and fields show saved values; page numbers are not recalculated.');
  if(omitted)notes.push('External or embedded active content was omitted.');
  notes.push('Use a PDF exported by the author for final pagination review.');
- // docx-preview emits fixed paper dimensions. Fit the complete paper to the
- // reading surface so small windows do not turn into horizontal panning.
- let fitFrame=0,fitDisposed=false;
- // Resize delivery must not synchronously resize the observed page through zoom.
- const fitPaper=()=>{fitFrame=0;if(fitDisposed)return;const content=root.querySelector('.paper');if(!content)return;const css=getComputedStyle(page),available=page.clientWidth-parseFloat(css.paddingLeft||0)-parseFloat(css.paddingRight||0),paperWidth=Math.max(0,...[...content.querySelectorAll('section.docx')].map(section=>section.offsetWidth));if(available>0&&paperWidth>0){const zoom=String(Math.min(1,available/paperWidth));if(content.style.zoom!==zoom)content.style.zoom=zoom;}};
- const scheduleFit=()=>{if(!fitDisposed&&!fitFrame)fitFrame=requestAnimationFrame(fitPaper);};
- const fitObserver=new ResizeObserver(scheduleFit);fitObserver.observe(page);scheduleFit();
- return {page,note:notes.join(' '),dispose:()=>{fitDisposed=true;fitObserver.disconnect();if(fitFrame)cancelAnimationFrame(fitFrame);embedded.forEach(face=>document.fonts.delete(face));}};
+ // The caller connects zoom after mounting so the available height is real.
+ let zoom=null;
+ return {page,note:notes.join(' '),connectZoom:body=>{
+  page.tabIndex=0;
+  const content=root.querySelector('.paper');
+  if(!content)return;
+  content.style.minWidth='0';content.style.margin='0 auto';
+  zoom=documentZoom(body,page,()=>({width:Math.max(0,...[...content.querySelectorAll('section.docx')].map(n=>n.offsetWidth)),height:Math.max(0,...[...content.querySelectorAll('section.docx')].map(n=>n.offsetHeight))}),scale=>{content.style.zoom=String(scale);});
+ },dispose:()=>{zoom?.dispose();embedded.forEach(face=>document.fonts.delete(face));}};
 }
 // Keep the whole document in one scroll surface, but only retain canvases near
 // the reader. Page placeholders preserve scroll position when canvases are freed.
-function renderContinuousPdf(pdf, name, body, foot, paginatedWord) {
+function renderContinuousPdf(pdf, name, body, foot, paginatedWord, firstSize) {
  const viewport=el('div','document-pdf document-pdf-continuous');
  viewport.tabIndex=0;viewport.setAttribute('role','region');viewport.setAttribute('aria-label',name+' pages');
  body.replaceChildren(viewport);
- let disposed=false,frame=0,rendering=false,active=null,width=0,revision=0,resolveReady;
+ let disposed=false,frame=0,rendering=false,active=null,zoomScale=0,revision=0,resolveReady;
  const ready=new Promise(resolve=>{resolveReady=resolve;});
  const pages=[],near=new Set();
  const release=entry=>{if(entry.canvas){entry.canvas.width=0;entry.canvas.height=0;entry.canvas.remove();entry.canvas=null;}};
@@ -115,7 +149,7 @@ function renderContinuousPdf(pdf, name, body, foot, paginatedWord) {
     entry.node.setAttribute('aria-busy','true');
     try{
      page=await pdf.getPage(entry.number);if(disposed||version!==revision||!near.has(entry))continue;
-     const natural=page.getViewport({scale:1});entry.node.style.aspectRatio=natural.width+' / '+natural.height;
+     const natural=page.getViewport({scale:1});entry.size={width:natural.width*4/3,height:natural.height*4/3};entry.node.style.aspectRatio=natural.width+' / '+natural.height;entry.node.style.width=(entry.size.width*zoomScale)+'px';zoom.refresh();
      // Device scale sharpens text while a pixel ceiling bounds each canvas.
      const scale=Math.min(2,Math.max(1,devicePixelRatio||1))*entry.node.clientWidth/natural.width;
      const view=page.getViewport({scale:Math.min(scale,2200/natural.height,1800/natural.width)});
@@ -152,17 +186,24 @@ function renderContinuousPdf(pdf, name, body, foot, paginatedWord) {
  // A single lightweight placeholder per page makes keyboard and touch scrolling
  // work naturally, including jumping straight to a distant page.
  for(let number=1;number<=pdf.numPages;number++){
-  const node=el('div','document-pdf-page');node.style.aspectRatio='612 / 792';node.setAttribute('data-page',String(number));
+  const node=el('div','document-pdf-page');node.style.aspectRatio=firstSize.width+' / '+firstSize.height;node.setAttribute('data-page',String(number));
   node.setAttribute('role','group');node.setAttribute('aria-label',`Page ${number} of ${pdf.numPages}`);
-  viewport.append(node);pages.push({node,number,canvas:null,failed:false});
+  viewport.append(node);pages.push({node,number,size:firstSize,canvas:null,failed:false});
  }
  viewport.addEventListener('scroll',schedule,{passive:true});
- const resize=new ResizeObserver(()=>{
-  if(disposed)return;
-  if(width!==viewport.clientWidth){width=viewport.clientWidth;revision++;active?.task.cancel();for(const entry of pages)release(entry);}
+ const zoom=documentZoom(body,viewport,()=>({width:Math.max(...pages.map(p=>p.size.width)),height:Math.max(...pages.map(p=>p.size.height))}),scale=>{
+  if(scale!==zoomScale){
+   // Keep the current page and position when zoom changes, including fit on resize.
+   const bounds=viewport.getBoundingClientRect();
+   const anchor=pages.find(p=>p.node.getBoundingClientRect().bottom>bounds.top);
+   const offset=anchor?(bounds.top-anchor.node.getBoundingClientRect().top)/anchor.node.clientHeight:0;
+   zoomScale=scale;revision++;active?.task.cancel();
+   for(const entry of pages){release(entry);entry.node.style.width=(entry.size.width*scale)+'px';}
+   if(anchor)viewport.scrollTop+=anchor.node.getBoundingClientRect().top-bounds.top+offset*anchor.node.clientHeight;
+  }
   schedule();
- });resize.observe(viewport);schedule();
- return {ready,dispose:()=>{if(disposed)return;disposed=true;revision++;resolveReady();cancelAnimationFrame(frame);resize.disconnect();viewport.removeEventListener('scroll',schedule);active?.task.cancel();for(const entry of pages)release(entry);near.clear();}};
+ });
+ return {ready,dispose:()=>{if(disposed)return;disposed=true;revision++;resolveReady();cancelAnimationFrame(frame);zoom.dispose();viewport.removeEventListener('scroll',schedule);active?.task.cancel();for(const entry of pages)release(entry);near.clear();}};
 }
 export async function openDocumentPreview({card,name,extension,getBlob,getPagePreview,download,createDownloadButton,renderMarkdown,artifactPreview,mount=null,onMount=null,onUnavailable=()=>{}}){
  const dialog=el(mount?'section':'dialog',mount?'document-inline':'document-dialog'),head=el('header','document-header'),body=el('div','document-body'),foot=el('footer','document-footer','Quick preview · Download for the original formatting.');
@@ -192,7 +233,7 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
    const result=await new Promise((resolve,reject)=>{cancelWork=()=>reject(Error('Preview closed.'));worker=new Worker(new URL('./document-worker.js',import.meta.url));timer=setTimeout(()=>{worker.terminate();reject(Error('This preview took too long. Download to view the file.'));},20000);worker.onmessage=({data})=>{cancelWork=null;clearTimeout(timer);worker.terminate();data.error?reject(Error(data.error)):resolve(data);};worker.onerror=()=>{cancelWork=null;clearTimeout(timer);worker.terminate();reject(Error('Unable to read this document. You can still download the original.'));};worker.postMessage({buffer,extension},[buffer]);});
    if(closed)return;body.replaceChildren();
    if(extension==='docx'){
-    const rendered=await renderWordLayout(result.buffer,name);if(closed){rendered.dispose();return;}wordDispose=rendered.dispose;body.append(rendered.page);foot.textContent=(conversionFailed?'Quick preview · Page layout unavailable on this server. ':'')+rendered.note;
+    const rendered=await renderWordLayout(result.buffer,name);if(closed){rendered.dispose();return;}wordDispose=rendered.dispose;body.append(rendered.page);rendered.connectZoom(body);foot.textContent=(conversionFailed?'Quick preview · Page layout unavailable on this server. ':'')+rendered.note;
    }else{
     const tabs=el('div','document-sheets'),grid=el('div','document-grid');tabs.setAttribute('aria-label','Worksheets');grid.tabIndex=0;grid.setAttribute('role','region');body.append(tabs,grid);
     if(!result.sheets.length){body.append(el('p','document-status','No visible worksheets.'));return handle;}
@@ -207,7 +248,8 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
    pdfTask=getDocument({data,isEvalSupported:false,useSystemFonts:true,useWasm:false,disableFontFace:false,maxImageSize:16000000,isOffscreenCanvasSupported:false});
    pdfTask.onPassword=()=>{passwordRequired=true;pdfTask.destroy().catch(()=>{});if(!closed)body.replaceChildren(el('p','document-status','This PDF is password protected. Download it to open with your password.'));};
    timer=setTimeout(()=>pdfTask.destroy().catch(()=>{}),20000);const pdf=await pdfTask.promise;clearTimeout(timer);if(closed)return;
-   const pages=renderContinuousPdf(pdf,name,body,foot,paginatedWord);pagesDispose=pages.dispose;await pages.ready;
+   const first=await pdf.getPage(1);if(closed)return;const natural=first.getViewport({scale:4/3});first.cleanup();
+   const pages=renderContinuousPdf(pdf,name,body,foot,paginatedWord,{width:natural.width,height:natural.height});pagesDispose=pages.dispose;await pages.ready;
   }else if(['html','htm','jsx'].includes(extension)){
    if(blob.size>256*1024)throw Error('Interactive preview supports files up to 256 KB.');const text=await blob.text();if(closed)return;const preview=artifactPreview(text,extension==='jsx'?'jsx':'html',name);body.replaceChildren(preview);preview.querySelector('button').click();
   }else if(['png','jpg','jpeg','webp','gif'].includes(extension)){

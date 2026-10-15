@@ -26,6 +26,23 @@ function pdf(count){
   const rendered=n=>page.locator(`.document-pdf-page[data-page="${n}"] canvas`);
   const jump=async n=>{await page.locator(`.document-pdf-page[data-page="${n}"]`).evaluate(node=>node.scrollIntoView({block:'start'}));await rendered(n).waitFor();};
   await rendered(1).waitFor().catch(async error=>{console.error(await page.evaluate(()=>({body:document.body.innerText,html:document.querySelector('.document-dialog')?.outerHTML})));throw error;});assert.equal(await page.locator('.document-pdf-page').count(),40);assert.equal(await page.getByRole('button',{name:/Previous page|Next page/}).count(),0);
+  // Default shows the entire page and never enlarges it beyond actual size.
+  const fits=()=>page.locator('.document-pdf-page').first().evaluate(n=>{const v=n.parentElement,style=getComputedStyle(v);return n.clientHeight<=v.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom)+1&&n.clientWidth<=816;});
+  assert(await fits(),'Default fits a whole page at no more than 100%');
+  const zoom=()=>page.locator('.document-zoom-value').innerText();
+  await page.getByRole('button',{name:'Zoom in',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('button[aria-pressed="true"]')===null);
+  const manual=await zoom();await page.setViewportSize({width:1000,height:740});
+  await page.waitForTimeout(150);assert.equal(await zoom(),manual,'Resize preserves manual zoom');
+  await page.locator('.document-pdf').focus();await page.keyboard.press('Control+0');
+  await page.waitForFunction(()=>[...document.querySelectorAll('.document-zoom button')].some(n=>n.textContent==='Fit page'&&n.getAttribute('aria-pressed')==='true'));assert(await fits());
+  const before=await zoom();await page.keyboard.press('Control+=');await page.waitForFunction(v=>document.querySelector('.document-zoom-value').textContent!==v,before);
+  const keyboard=await zoom();await page.locator('.document-pdf').dispatchEvent('wheel',{deltaY:-100,ctrlKey:true});await page.waitForFunction(v=>document.querySelector('.document-zoom-value').textContent!==v,keyboard);
+  await page.keyboard.press('Meta+0');await page.waitForFunction(()=>[...document.querySelectorAll('.document-zoom button')].some(n=>n.textContent==='Fit page'&&n.getAttribute('aria-pressed')==='true'));
+  await page.locator('.document-pdf').focus();await page.locator('.document-pdf').evaluate(n=>{for(let i=0;i<40;i++)n.dispatchEvent(new KeyboardEvent('keydown',{key:'=',ctrlKey:true,bubbles:true,cancelable:true}));});await page.waitForFunction(()=>document.querySelector('.document-zoom-value').textContent==='300%');assert(await page.getByRole('button',{name:'Zoom in',exact:true}).isDisabled());
+  await page.getByRole('button',{name:'Fit width',exact:true}).click();await page.waitForFunction(()=>parseInt(document.querySelector('.document-zoom-value').textContent)<=100);assert(parseInt(await zoom())<=100);
+  await page.getByRole('button',{name:'Fit page',exact:true}).click();await page.setViewportSize({width:1260,height:1000});await page.waitForTimeout(100);
+  await page.setViewportSize({width:2000,height:1600});await page.waitForFunction(()=>document.querySelector('.document-zoom-value').textContent==='100%');assert(await fits(),'Large windows do not automatically enlarge documents');await page.setViewportSize({width:1260,height:1000});await page.waitForTimeout(150);
   await jump(13);assert(await page.locator('.document-pdf-page[data-page="13"]').evaluate(n=>n.clientWidth>n.clientHeight),'Landscape page preserves its dimensions');
   await jump(40);await page.waitForFunction(()=>document.querySelector('.document-footer').textContent.startsWith('Page 40 of 40'));
   assert(await page.locator('.document-pdf canvas').count()<=6,'Only nearby page canvases are retained');assert.equal(await rendered(1).count(),0,'Distant first page canvas released');
@@ -42,6 +59,6 @@ function pdf(count){
   await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('.document-dialog'));
   await page.evaluate(()=>window.openPages(true));await rendered(1).waitFor();await jump(40);assert(await page.locator('.document-inline .document-pdf').evaluate(n=>n.scrollTop>0));
   await page.evaluate(()=>window.handle.dispose());await page.waitForFunction(()=>!document.querySelector('.document-inline'));await page.waitForTimeout(150);assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({passed:true,engine:process.env.WEBKIT?'webkit':'chromium',continuous:true,mixedOrientation:true,boundedCanvases:true,responsive:true,inline:true,lifecycle:true}));
+  console.log(JSON.stringify({passed:true,engine:process.env.WEBKIT?'webkit':'chromium',continuous:true,mixedOrientation:true,boundedCanvases:true,responsive:true,inline:true,lifecycle:true,fitPage:true,zoomControls:true,keyboard:true,wheel:true,manualResize:true}));
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});
