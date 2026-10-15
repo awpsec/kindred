@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: 34d24a544a63c5699dc993c0b0cad7a124beb6e9
+          ref: a9f8ef5342acec3568f01f05f84167efd7ad8e14
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -46,10 +46,10 @@ jobs:
           python - <<'PY'
           import hashlib, os, subprocess
           from pathlib import Path
-          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '34d24a544a63c5699dc993c0b0cad7a124beb6e9'
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == 'a9f8ef5342acec3568f01f05f84167efd7ad8e14'
           tools = Path('.verification-tools')
           assert subprocess.check_output(['git', '-C', str(tools), 'rev-parse', 'HEAD'], text=True).strip() == os.environ['GITHUB_SHA']
-          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '3b2c09327851ee9a548593d04c903bb75d121e70c968dffd123fd757ea2cecfe'
+          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '77a267989850ac687a22564173a96e8858a6426da3f00fc357a2f3251c0cd41a'
           PY
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
