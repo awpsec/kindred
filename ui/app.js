@@ -5321,7 +5321,7 @@ function showConversationOpening(id){
 }
 function finishConversationOpening(id){
   if(!chatOpening||!chatOpening.ready||chatOpening.id!==id||currentConversationId()!==id||state.renderedChatId!==id||chatOpening.failed)return;
-  clearConversationOpening();scheduleReadReceipt();
+  clearConversationOpening();scheduleReadReceipt();requestAnimationFrame(loadVisibleHistoryEdge);
 }
 function clearConversationOpening(){
   if(!chatOpening)return;
@@ -5416,8 +5416,15 @@ async function loadHistoryPage(direction,fromScroll=false){
 }
 function historyEdge(entry,direction){
   const failed=entry.error?.direction===direction;
-  const b=button(failed?'Could not load messages · Retry':direction==='older'?'Earlier messages':'Newer messages',()=>loadHistoryPage(direction),'history-edge');
-  b.dataset.history=direction;if(failed)b.title=entry.error.message;return b;
+  const b=failed?button('Could not load messages · Retry',()=>loadHistoryPage(direction),'history-edge'):node('div','history-edge history-sentinel');
+  b.dataset.history=direction;if(failed)b.title=entry.error.message;else b.setAttribute('role','status');return b;
+}
+function loadVisibleHistoryEdge(){
+  if(chatOpening||chatScroll.rendering||state.renderedChatId!==currentConversationId())return;
+  const area=$('content'),entry=chatHistory.get(currentConversationId());
+  if(!entry?.loaded||entry.pending||entry.error)return;
+  if(entry.hasBefore&&area.scrollTop<180)void perform(()=>loadHistoryPage('older',true));
+  else if(entry.hasAfter&&area.scrollHeight-area.scrollTop-area.clientHeight<180)void perform(()=>loadHistoryPage('newer',true));
 }
 function positionNotice(){
   const composer=$('composer-area'),top=composer?.getBoundingClientRect().top;
@@ -7820,6 +7827,7 @@ function endChatRender(){
   if(!chatHistory.get(currentConversationId())?.hasAfter&&$('content').scrollHeight-$('content').scrollTop-$('content').clientHeight<80)chatScroll.follow=true;
   chatScroll.rendering=false;
   scheduleChatPosition();
+  requestAnimationFrame(loadVisibleHistoryEdge);
   if(messageActionFocus){const group=$('content').querySelector('[data-message="'+messageActionFocus.seq+'"]');(group?.querySelector('[data-message-focus="'+messageActionFocus.control+'"]')||group)?.focus({preventScroll:true});messageActionFocus=null;}
   positionMessageMenu();
   if(questionFocus){const card=[...$('content').querySelectorAll('.question-card')].find(c=>c.dataset.questionId===questionFocus.id),control=card&&[...card.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===questionFocus.target);(control||card)?.focus({preventScroll:true});if(control?.tagName==='TEXTAREA'&&questionFocus.start!==null)control.setSelectionRange(questionFocus.start,questionFocus.end);questionFocus=null;}
@@ -7851,12 +7859,14 @@ $('content').addEventListener('scroll',()=>{
 function readingGesture(e){
   if(chatOpening)return;
   if(e.type==='wheel'&&e.deltaY===0)return;
+  // At a clamped edge a wheel/key gesture may produce no scroll event.
+  if(e.type==='wheel'||e.type==='touchmove'||e.type==='keydown')requestAnimationFrame(loadVisibleHistoryEdge);
   if((e.type==='pointerdown'||e.type==='keydown'&&e.key===' ')&&chatScroll.follow&&e.target.closest('summary,button[aria-expanded]')===chatScroll.disclosureSummary)return;
   if(e.type==='keydown'&&(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(e.key)||e.target.closest('input,textarea,[contenteditable=true]')))return;
   chatScroll.disclosure=null;chatScroll.disclosureSummary=null;chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
 }
-for(const name of ['wheel','touchstart','pointerdown','keydown'])$('content').addEventListener(name,readingGesture,{passive:true});
+for(const name of ['wheel','touchstart','touchmove','pointerdown','keydown'])$('content').addEventListener(name,readingGesture,{passive:true});
 // Capture the position before a disclosure changes layout. Pointer/keyboard
 // focus is a reading gesture above, but expanding at the bottom should keep
 // following. ResizeObserver then moves the viewport with each animation frame;

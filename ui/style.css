@@ -6122,3 +6122,5 @@ html[data-mobile] .request-tray.is-answering .request-tray-bar .icon-button{widt
 
 .connector-request-write .connector-record-fields>dt:has(+.connector-proposed-content),.connector-request-write .connector-record-fields>.connector-proposed-content{grid-column:1 / -1}
 .connector-request-write .connector-record-fields>.connector-proposed-content{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px 0;margin:2px 0 5px}
+
+.history-sentinel {height:1px;min-height:0;margin:0;padding:0;overflow:hidden;font-size:0;}

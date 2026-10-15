@@ -34,6 +34,14 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   await context.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);await p.goto(origin);
   const area=p.locator('#content'),first=()=>area.locator('[data-message]').first().getAttribute('data-message'),last=()=>area.locator('[data-message]').last().getAttribute('data-message');
   await area.locator('[data-message="1000"]').waitFor();assert.equal(await area.locator('[data-message]').count(),50);assert.equal(await first(),'951');
+  assert.equal(await p.getByRole('button',{name:'Earlier messages',exact:true}).count(),0);
+  // Clamped scrolling can produce no scroll event. A reading gesture must still
+  // fetch the earlier page, without an obsolete manual pagination button.
+  await area.evaluate(n=>{window.blockHistoryScroll=e=>e.stopImmediatePropagation();n.addEventListener('scroll',window.blockHistoryScroll,true);n.scrollTop=0;});
+  await p.waitForTimeout(50);
+  await area.evaluate(n=>n.dispatchEvent(new WheelEvent('wheel',{deltaY:-100})));
+  await p.waitForFunction(()=>Number(document.querySelector('#content [data-message]').dataset.message)<951);
+  await area.evaluate(n=>n.removeEventListener('scroll',window.blockHistoryScroll,true));
   const anchor=()=>area.evaluate(n=>{const top=n.getBoundingClientRect().top,m=[...n.querySelectorAll('[data-message]')].find(m=>m.getBoundingClientRect().bottom>top+1);return {seq:m.dataset.message,y:m.getBoundingClientRect().top-top};});
   // Prepending must keep the same visible message, even as pages leave the opposite end.
   delay=120;
