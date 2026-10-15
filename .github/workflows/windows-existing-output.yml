@@ -87,7 +87,7 @@ jobs:
       - name: Upload packages only after every required native gate passed
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: kindred-0.86.8-x86_64-pc-windows-msvc
+          name: kindred-0.86.9-x86_64-pc-windows-msvc
           path: package-artifacts/*
           if-no-files-found: error
           retention-days: 7
