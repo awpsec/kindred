@@ -57,6 +57,7 @@ const state = {
   pendingSends: new Map(),
   queueEdits: new Map(),
   draftRecipients: new Map(),
+  draftModes: new Map(),
   bot: null,
   status: {},
   allRuns: [],
@@ -103,7 +104,7 @@ const profilesUI = createProfileUI({
     if(previous)sessionStorage.setItem('kindred-profile-draft-'+previous,JSON.stringify(conversationSnapshot()));
     if(window.__KINDRED_MOBILE)persistConversation();
     let saved={};try{saved=JSON.parse(sessionStorage.getItem('kindred-profile-draft-'+next)||(mobileConversationKey(next)&&localStorage.getItem(mobileConversationKey(next)))||'{}');}catch{}
-    for(const [key,value] of Object.entries({drafts:saved.drafts||[],replies:saved.replies||[],files:saved.files||[],sends:saved.sends||[],queueEdits:saved.queueEdits||[],draftRecipients:saved.draftRecipients||[],questionDrafts:saved.questionDrafts||[],selection:saved.selection||{}}))sessionStorage.setItem('kindred-reload-'+key,JSON.stringify(value));
+    for(const [key,value] of Object.entries({drafts:saved.drafts||[],replies:saved.replies||[],files:saved.files||[],sends:saved.sends||[],queueEdits:saved.queueEdits||[],draftRecipients:saved.draftRecipients||[],draftModes:saved.draftModes||[],questionDrafts:saved.questionDrafts||[],selection:saved.selection||{}}))sessionStorage.setItem('kindred-reload-'+key,JSON.stringify(value));
     disconnectDesktop();
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:''});
   }
@@ -598,7 +599,7 @@ async function refresh(force = false) {
         state.reloadResumeKey=updateKey.replace('kindred-update-resume-','kindred-tab-resume-');
         state.mobileDraftKey=mobileConversationKey();
         const stored=localStorage.getItem(updateKey)||(!sessionStorage.getItem('kindred-reload-selection')&&(sessionStorage.getItem(state.reloadResumeKey)||(mobileConversationKey()&&localStorage.getItem(mobileConversationKey()))));
-        if(stored){const resume=JSON.parse(stored);for(const key of ["drafts","replies","files","sends","queueEdits","draftRecipients","questionDrafts","selection"])sessionStorage.setItem("kindred-reload-"+key,JSON.stringify(resume[key]||(key==="selection"?{}:[])));localStorage.removeItem(updateKey);}
+        if(stored){const resume=JSON.parse(stored);for(const key of ["drafts","replies","files","sends","queueEdits","draftRecipients","draftModes","questionDrafts","selection"])sessionStorage.setItem("kindred-reload-"+key,JSON.stringify(resume[key]||(key==="selection"?{}:[])));localStorage.removeItem(updateKey);}
         questionComposerModes.clear();questionDrafts.clear();
         for(const [id,text] of JSON.parse(sessionStorage.getItem('kindred-reload-questionDrafts')||'[]'))if(typeof id==='string'&&typeof text==='string')questionDrafts.set(id,text);
         state.drafts = new Map(
@@ -612,6 +613,7 @@ async function refresh(force = false) {
         state.replyDrafts=new Map(JSON.parse(sessionStorage.getItem("kindred-reload-replies")||"[]"));
         state.pendingSends=new Map(JSON.parse(sessionStorage.getItem("kindred-reload-sends")||"[]"));
         state.queueEdits=new Map(JSON.parse(sessionStorage.getItem("kindred-reload-queueEdits")||"[]"));
+        state.draftModes=new Map(JSON.parse(sessionStorage.getItem("kindred-reload-draftModes")||"[]"));
         state.draftRecipients=new Map(JSON.parse(sessionStorage.getItem("kindred-reload-draftRecipients")||"[]"));
         for(const [id,files] of JSON.parse(sessionStorage.getItem("kindred-reload-files")||"[]"))pendingFiles.set(id,files);
         restoreDraft();
@@ -624,7 +626,7 @@ async function refresh(force = false) {
       sessionStorage.removeItem("kindred-reload-sends");
       sessionStorage.removeItem("kindred-reload-files");
       sessionStorage.removeItem("kindred-reload-queueEdits");
-      sessionStorage.removeItem("kindred-reload-draftRecipients");sessionStorage.removeItem("kindred-reload-questionDrafts");
+      sessionStorage.removeItem("kindred-reload-draftModes");sessionStorage.removeItem("kindred-reload-draftRecipients");sessionStorage.removeItem("kindred-reload-questionDrafts");
     }
     state.bot =
       bots.find((b) => b.id === state.bot?.id && !profile(b).archived) ||
@@ -3971,6 +3973,7 @@ $("composer").onsubmit = (e) => {
     const selectedChatId = composerChatId();
     if(queueEditBusy.has(state.token+':'+selectedChatId))throw new Error('Wait for the queued message to be restored before sending.');
     const files = [...(pendingFiles.get(selectedChatId) || [])];
+    if(files.length>5)throw new Error('A message can have up to five files. Remove a file before sending.');
     if(files.some(f=>f.loading))throw new Error('Wait for your files to finish uploading.');
     const submittedDraft = $("prompt").value;
     const submittedReply = state.replyDrafts.get(selectedChatId);
@@ -3985,7 +3988,7 @@ $("composer").onsubmit = (e) => {
       state.chat || state.chats.find((c) => c.id === `dm-${state.bot.id}`);
     followChatLatest();
     if (chat) {
-      const payload={prompt,delivery_mode:state.general.message_delivery||'steer',mentions:state.chat?[...new Set([...mentions,...(state.draftRecipients.get(selectedChatId)||[])])]:[],files:files.map(f=>f.id),reply_to:submittedReply?.seq??null};
+      const payload={prompt,delivery_mode:state.draftModes.get(selectedChatId)||state.general.message_delivery||'steer',mentions:state.chat?[...new Set([...mentions,...(state.draftRecipients.get(selectedChatId)||[])])]:[],files:files.map(f=>f.id),reply_to:submittedReply?.seq??null};
       const signature=JSON.stringify(payload),old=state.pendingSends.get(selectedChatId);
       const send=old?.signature===signature?old:{signature,request_id:crypto.randomUUID()};
       state.pendingSends.set(selectedChatId,send);persistConversation();
@@ -4008,7 +4011,7 @@ $("composer").onsubmit = (e) => {
     renderPendingFiles();
     if(state.replyDrafts.get(selectedChatId)===submittedReply)state.replyDrafts.delete(selectedChatId);
     renderReplyDraft();
-    if(state.drafts?.get(selectedChatId)===submittedDraft)state.draftRecipients.delete(selectedChatId);
+    if(state.drafts?.get(selectedChatId)===submittedDraft){state.draftRecipients.delete(selectedChatId);state.draftModes.delete(selectedChatId);}
     if(state.drafts?.get(selectedChatId)===submittedDraft)state.drafts.delete(selectedChatId);
     if(composerChatId()===selectedChatId && $("prompt").value===submittedDraft){
       $("prompt").value = "";
@@ -5471,7 +5474,7 @@ function connectorMessage(m,id){
 }
 const simpleApprovalTools=new Set(['bot_instructions_update','guest_exec','computer_open_url','computer_click','computer_type','computer_key','computer_scroll','computer_browser_task','routine_create','routine_update','routine_control','inbox_monitor_save','share_file']);
 function simpleApproval(a){return simpleApprovalTools.has(a.tool)&&!a.args?.artifact_id&&!a.connector_artifact;}
-const trayState=new Map(),queueEditBusy=new Set();
+const trayState=new Map(),queueEditBusy=new Set(),withdrawnQueueMessages=new Set();
 function approvalChat(run){const source=state.chats.find(c=>c.id===run?.chat_id);return source&&!source.bot_only&&!source.archived?source.id:run?'dm-'+run.bot_id:'';}
 function renderRequestTray(chat,entry){
   const holder=$('composer-area');let tray=$('request-tray');
@@ -5558,51 +5561,70 @@ function queuedMessageWaiting(message){
  const deliveries=message.delivery||[];
  return deliveries.length>0&&deliveries.every(d=>d.status==='queued');
 }
+function withdrawnQueueMessage(message,chatId){
+  return message.kind==='withdrawn'||withdrawnQueueMessages.has(state.token+':'+chatId+':'+message.seq)||
+    (message.sender==='user'&&(message.delivery||[]).length>0&&message.delivery.every(d=>d.status==='withdrawn'));
+}
+function applyQueuedEdit(claim,payload){
+  const chatId=claim.chat_id,key=chatId+':'+claim.seq,visible=composerChatId()===chatId&&!questionComposerMode();
+  if(visible)saveDraft();
+  state.drafts??=new Map();
+  const base=state.drafts.get(chatId)||'';
+  state.drafts.set(chatId,base?base+'\n\n'+payload.text:payload.text);
+  pendingFiles.set(chatId,[...new Map([...(pendingFiles.get(chatId)||[]),...(payload.files||[])].map(f=>[f.id,f])).values()]);
+  if(!state.replyDrafts.has(chatId)&&payload.reply_to){
+    const quoted=conversationHistory(chatId).messages?.find(m=>m.seq===payload.reply_to);
+    state.replyDrafts.set(chatId,{seq:payload.reply_to,sender:quoted?.sender||'',text:quoted?plainMessage(quoted.text).slice(0,500):'Quoted message'});
+  }
+  state.draftRecipients.set(chatId,[...new Set([...(state.draftRecipients.get(chatId)||[]),...(payload.mentions||[])])]);
+  state.draftModes.set(chatId,'queue');
+  withdrawnQueueMessages.add(state.token+':'+key);
+  const old=conversationHistory(chatId).messages?.find(m=>m.seq===claim.seq);if(old)old.kind='withdrawn';
+  state.queueEdits.delete(key);
+  if(visible){$('prompt').value=state.drafts.get(chatId);normalizePromptMentions();renderPendingFiles();renderReplyDraft();resizeComposer();}
+  persistConversation();
+}
+async function restoreQueuedEdit(claim,focus=false){
+  const originalToken=state.token,chatId=claim.chat_id,key=chatId+':'+claim.seq,busyKey=originalToken+':'+chatId;
+  if(queueEditBusy.has(busyKey))return;
+  queueEditBusy.add(busyKey);
+  try{
+    const payload=claim.payload||await api('/chats/'+encodeURIComponent(chatId)+'/messages/'+claim.seq,'PATCH',{restore_to_composer:true,expected_text:claim.expected_text,request_id:claim.request_id});
+    if(state.token!==originalToken)return;
+    // Persist the receipt before applying it, so reloads can finish a successful withdrawal.
+    claim.payload=payload;persistConversation();applyQueuedEdit(claim,payload);
+    if(focus&&composerChatId()===chatId&&!questionComposerMode())$('prompt').focus();
+  }catch(error){
+    if(state.token!==originalToken)return;
+    if([400,409].includes(error.status)&&error.message.includes('already reached')){state.queueEdits.delete(key);persistConversation();}
+    notice(error.message,true);return;
+  }finally{queueEditBusy.delete(busyKey);}
+  // Refresh errors must not turn a successful restore into another edit attempt.
+  if(state.token===originalToken)try{
+    const chat=state.chats.find(c=>c.id===chatId);
+    if(chat&&currentConversationId()===chatId)await renderPreparedSharedChat(chat,true,'cached');
+    await refresh(true);
+  }catch(error){notice(error.message,true);}
+}
+function resumeQueuedEdits(chatId){
+  const token=state.token;
+  queueMicrotask(async()=>{
+    for(const claim of [...state.queueEdits.values()]){
+      if(state.token!==token||composerChatId()!==chatId)return;
+      if(claim.chat_id===chatId)await restoreQueuedEdit(claim);
+    }
+  });
+}
 function editQueuedMessage(message,chatId){
-  const key=chatId+':'+message.seq,originalToken=state.token;
-  if(composerChatId()!==chatId)return;
-  let prompt=document.getElementById('queued-edit-prompt');if(prompt)prompt.remove();
-  prompt=node('section','queued-edit-prompt');prompt.id='queued-edit-prompt';prompt.setAttribute('aria-label','Edit queued message');
-  const status=node('p','muted small'),actions=node('div','row-actions');prompt.append(status,actions);$('composer').before(prompt);
-  const hasDraft=()=>!!$('prompt').value.trim()||(pendingFiles.get(chatId)||[]).length>0||state.replyDrafts.has(chatId);
-  status.textContent=hasDraft()?'You have a draft. Add the queued message below it, or replace the draft?':'Remove this message from the queue and edit it here?';
-  const restore=async(mode)=>{
-    if(state.token!==originalToken||composerChatId()!==chatId){prompt.remove();return;}
-    const before=$('prompt').value,beforeFiles=[...(pendingFiles.get(chatId)||[])],beforeReply=state.replyDrafts.get(chatId);
-    if(beforeFiles.some(f=>f.loading)){status.textContent='Wait for your files to finish uploading.';return;}
-    if(mode==='add'&&beforeFiles.length+(message.files||[]).length>5){status.textContent='A message can have up to five files. Choose Replace draft, or remove a file first.';return;}
-    const busyKey=originalToken+':'+chatId;if(queueEditBusy.has(busyKey))return;queueEditBusy.add(busyKey);
-    let claim=state.queueEdits.get(key);
-    if(!claim){claim={request_id:crypto.randomUUID(),expected_text:message.text,seq:message.seq,chat_id:chatId};state.queueEdits.set(key,claim);persistConversation();}
-    for(const action of actions.children)action.disabled=true;status.textContent='Removing from the queue…';
-    try{
-      const payload=await api('/chats/'+encodeURIComponent(chatId)+'/messages/'+message.seq,'PATCH',{restore_to_composer:true,expected_text:claim.expected_text,request_id:claim.request_id});
-      if(state.token!==originalToken)return;
-      claim.payload=payload;persistConversation();
-      // A changed draft is merged rather than overwritten. A changed chat keeps
-      // the successful claim for an explicit Restore action in its own chat.
-      if(composerChatId()!==chatId){notice('Removed from the queue. Open its chat to restore the edit.');return;}
-      const changed=$('prompt').value!==before||JSON.stringify(pendingFiles.get(chatId)||[])!==JSON.stringify(beforeFiles)||state.replyDrafts.get(chatId)!==beforeReply;
-      const merge=mode==='add'||changed,base=$('prompt').value;
-      if(merge&&(pendingFiles.get(chatId)||[]).length+payload.files.length>5){status.textContent='Removed from the queue. Remove a draft attachment, then restore this edit. A message can have up to five files.';for(const action of actions.children)action.disabled=false;return;}
-      $('prompt').value=merge&&base?base+'\n\n'+payload.text:payload.text;
-      pendingFiles.set(chatId,merge?[...new Map([...(pendingFiles.get(chatId)||[]),...payload.files].map(f=>[f.id,f])).values()]:payload.files);
-      if(!merge||!state.replyDrafts.has(chatId)){const entry=conversationHistory(chatId),quoted=entry.messages?.find(m=>m.seq===payload.reply_to);if(quoted)state.replyDrafts.set(chatId,{seq:quoted.seq,sender:quoted.sender,text:plainMessage(quoted.text).slice(0,500)});else if(payload.reply_to)state.replyDrafts.set(chatId,{seq:payload.reply_to,sender:'',text:'Quoted message'});else if(!merge)state.replyDrafts.delete(chatId);}
-      const recipients=merge?state.draftRecipients.get(chatId)||[]:[];state.draftRecipients.set(chatId,[...new Set([...recipients,...payload.mentions])]);
-      state.queueEdits.delete(key);saveDraft();persistConversation();normalizePromptMentions();renderPendingFiles();renderReplyDraft();resizeComposer();prompt.remove();$('prompt').focus();
-      notice('Removed from the queue. Send to submit it again.');await refresh(true);
-    }catch(error){
-      status.textContent=error.message;
-      if([400,409].includes(error.status)&&error.message.includes('already reached')){
-        // The server refused the claim because delivery is no longer queued.
-        // Preserve the draft and dismiss; these choices cannot restore it now.
-        state.queueEdits.delete(key);persistConversation();actions.replaceChildren(button('OK',()=>{prompt.remove();$('prompt').focus();},'outline-button'));actions.firstChild.focus();
-      }else for(const action of actions.children)action.disabled=false;
-    }finally{queueEditBusy.delete(busyKey);}
-  };
-  actions.append(button(hasDraft()?'Add below':'Edit in composer',()=>restore('add'),'primary'));
-  if(hasDraft())actions.append(button('Replace draft',()=>restore('replace'),'outline-button'));
-  actions.append(button('Cancel',()=>{prompt.remove();$('prompt').focus();},'subtle-button'));actions.firstChild.focus();
+  if(composerChatId()!==chatId||queueEditBusy.has(state.token+':'+chatId))return;
+  if(questionComposerMode())leaveQuestionComposer();
+  const files=pendingFiles.get(chatId)||[];
+  if(files.some(f=>f.loading)){notice('Wait for your files to finish uploading.',true);return;}
+  if(files.length+(message.files||[]).length>5){notice('A message can have up to five files. Remove a draft attachment before editing this message.',true);return;}
+  const key=chatId+':'+message.seq;
+  let claim=state.queueEdits.get(key);
+  if(!claim){claim={request_id:crypto.randomUUID(),expected_text:message.text,seq:message.seq,chat_id:chatId};state.queueEdits.set(key,claim);persistConversation();}
+  void restoreQueuedEdit(claim,true);
 }
 
 function connectorCallSummary(card){
@@ -5678,7 +5700,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   if(mode==='sync')await syncChatHistory(entry);
   if(currentConversationId()!==id || !entry.loaded)return;
   renderRequestTray(chat,entry);
-  const data={messages:entry.messages},visibleRuns=new Set(data.messages.filter(m=>['assistant','result','task_progress'].includes(m.kind)).map(m=>m.run_id).filter(Boolean));
+  const data={messages:entry.messages.filter(m=>!withdrawnQueueMessage(m,id))},visibleRuns=new Set(data.messages.filter(m=>['assistant','result','task_progress'].includes(m.kind)).map(m=>m.run_id).filter(Boolean));
   const listedRuns=state.allRuns.filter(r=>!chat.shared&&r.chat_id===id && (visibleRuns.has(r.id) || entry.workingRuns?.has(r.id) || (!entry.hasAfter && (active(r)||r.status==='queued'))));
   const wanted=[...new Set([...visibleRuns,...listedRuns.map(r=>r.id)])];
   if(mode!=='cached'){
@@ -5697,7 +5719,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   if(mode==='sync' && durableReplies && !entry.hasAfter) {
     const persisted=new Set(data.messages.map(m=>m.source_event_seq)),latest=data.messages.at(-1)?.created||0;
     if(listedRuns.some(r=>(state.details.get(r.id)?.events||[]).some(e=>e.kind==='assistant' && e.created>=latest && !persisted.has(e.seq)))) {
-      await syncChatHistory(entry);data.messages=entry.messages;
+      await syncChatHistory(entry);data.messages=entry.messages.filter(m=>!withdrawnQueueMessage(m,id));
       if(currentConversationId()!==id)return;
     }
   }
@@ -5896,16 +5918,13 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       if(quietCompletionMarker(m.text))formatted.textContent=m.text;
       if(!attachmentOnly){bubble.append(...formatted.childNodes);foldLongMessage(bubble,String(m.seq),entry);}
       else {bubble.classList.add("attachment-only");bubble.append(fileLinks(m.files));}
-      // Routine delivery belongs in the work indicator and composer queue.
-      // Retain an explicit withdrawal receipt so an edited message is not mistaken for sent.
-      if((m.delivery||[]).some(d=>d.status==='withdrawn'))bubble.append(node('span','message-delivery','Removed from the queue'));
       row.append(bubble);
     } else row.append(markdown(m.text));
     const bubble=row.lastElementChild;
     if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));
-    if(['message','withdrawn','assistant','result','handoff'].includes(m.kind)){
+    if(['message','assistant','result','handoff'].includes(m.kind)){
       group.tabIndex=0;group.dataset.messageFocus='group';
       const actions=messageActions(chat.id,m);if(attachmentOnly)actions.querySelector('[data-message-action="copy"]')?.remove();row.classList.add('has-message-actions');
       if(isUser&&!chat.shared&&(queuedMessageWaiting(m)||state.queueEdits.has(chat.id+':'+m.seq))){
@@ -6714,6 +6733,7 @@ function saveDraft() {
   state.drafts.set(state.chat?.id || `dm-${state.bot?.id}`, $("prompt").value);
 }
 function restoreDraft() {
+  resumeQueuedEdits(composerChatId());
   const answer=questionComposerMode();
   if(answer){$('prompt').value=questionDrafts.get(answer.q.id)||'';renderReplyDraft();renderPendingFiles();syncQuestionComposer();return;}
   syncQuestionComposer();
@@ -7068,7 +7088,7 @@ addEventListener("beforeunload",()=>{
 });
 function conversationSnapshot(){
   saveDraft();
-  return {questionDrafts:[...questionDrafts],drafts:[...state.drafts],replies:[...state.replyDrafts],sends:[...state.pendingSends],queueEdits:[...state.queueEdits],draftRecipients:[...state.draftRecipients],files:[...pendingFiles].map(([id,files])=>[id,files.filter(f=>!f.loading)]),selection:{bot:state.bot?.id,chat:state.chat?.id}};
+  return {questionDrafts:[...questionDrafts],drafts:[...state.drafts],replies:[...state.replyDrafts],sends:[...state.pendingSends],queueEdits:[...state.queueEdits],draftRecipients:[...state.draftRecipients],draftModes:[...state.draftModes],files:[...pendingFiles].map(([id,files])=>[id,files.filter(f=>!f.loading)]),selection:{bot:state.bot?.id,chat:state.chat?.id}};
 }
 function persistConversation(){
   if(!state.reloadResumeKey)return;

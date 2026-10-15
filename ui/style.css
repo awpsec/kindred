@@ -5513,7 +5513,7 @@ html[data-ios-short=true] .control-notice-context {display:inline;}
 html[data-ios-short=true] .control-notice-copy strong {display:inline-block;max-width:8em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
 
 /* Composer-attached decisions; dimensions of the composer remain owned by its layout. */
-.request-tray,.queued-edit-prompt{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:12px;max-width:100%;min-width:0;margin-bottom:8px;text-align:left;overflow-wrap:anywhere}
+.request-tray{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:12px;max-width:100%;min-width:0;margin-bottom:8px;text-align:left;overflow-wrap:anywhere}
 .request-tray{padding:14px 16px;border-radius:12px;background:color-mix(in srgb,var(--fg) 4%,var(--bg));max-height:min(52dvh,460px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .request-tray[hidden]{display:none}
 .request-tray-header{display:flex;align-items:flex-start;gap:16px;margin-bottom:10px}
@@ -5545,7 +5545,7 @@ html[data-ios-short=true] .control-notice-copy strong {display:inline-block;max-
 .request-tray .question-option{transition:none}}
 html[data-motion=off] .request-tray .question-choices{gap:8px}
 .request-tray .question-option{transition:none}
-.queued-edit-prompt .row-actions{flex-wrap:wrap}.queued-edit-prompt p{margin:0 0 8px}.decision-receipt[data-receipt-tone=denied] .decision-receipt-outcome{color:var(--danger,#c73b4b)}
+.decision-receipt[data-receipt-tone=denied] .decision-receipt-outcome{color:var(--danger,#c73b4b)}
 
 /* Compact notices preserve their individual records and touch/keyboard actions. */
 /* Match the approved notice surface: tint alone separates it from the chat. */
