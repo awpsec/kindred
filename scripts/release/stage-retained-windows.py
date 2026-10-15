@@ -8,16 +8,16 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-SOURCE = '34d24a544a63c5699dc993c0b0cad7a124beb6e9'
-SERVER = '5467781f80c05185e40b08ec6aa2dfc1aa3d5a63'
-ARTIFACT = 11934072115
-RUN = 38649169062
-ARCHIVE = '33b5c0ef227eb8a326f25ea8f7c71a4d6702ebb63fce3ebe9465f10c3534b319'
-EXE = '2d67397ea751c872808ff9aa74d18e9c82e07f327b0138d37dfd4ff2684c6e12'
+SOURCE = 'a9f8ef5342acec3568f01f05f84167efd7ad8e14'
+SERVER = 'ff1c3bf8d3ce68416df8bf26e4908403f60cffb6'
+ARTIFACT = 11985909620
+RUN = 38763804785
+ARCHIVE = '60a4dd98671f5b65ca766a7a0c0d485aadabd89a172c378d60682206ede1055b'
+EXE = '3ac00a1fd68fa76d827594d1641cccfad4a456192a8f407bfdad8dd2b978dadf'
 MEMBER = 'desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe'
-ASSET = 641899384
-BUNDLE = '7efd6c0068d9c37c6d2fe3039bf7385a90658502d8e46a49d056a5b910b8e6ed'
-RUNTIME = '67bba27af39ee44aabc3ac32e45f74fa7329221ba726a568c2495ca59035cc00'
+ASSET = 644353656
+BUNDLE = '81e52349e1ba2681b1bbe3d3b1775abbf849c330eb678b939521e4410ee5049a'
+RUNTIME = 'cd2d435b950f02690580aee19147d7b422e1d47f4911a5873ad63873d635fec9'
 HELPER = '2a06c326557974f776aedf1ab8faaf4e9f9235f10be4d4e88aabf9cb1f65eefb'
 
 
@@ -37,7 +37,7 @@ def get(path, binary=False):
 
 def verify_artifact(meta, blob):
     assert meta['id'] == ARTIFACT and meta['expired'] is False
-    assert meta['name'] == 'unverified-kindred-0.86.8-x86_64-pc-windows-msvc'
+    assert meta['name'] == 'unverified-kindred-0.86.9-x86_64-pc-windows-msvc'
     assert meta['workflow_run']['id'] == RUN and meta['workflow_run']['head_sha'] == SOURCE
     assert meta['digest'] == 'sha256:' + ARCHIVE and meta['size_in_bytes'] == len(blob)
     assert sha(blob) == ARCHIVE
@@ -46,20 +46,20 @@ def verify_artifact(meta, blob):
         info = archive.getinfo(MEMBER)
         assert not stat.S_ISLNK(info.external_attr >> 16) and not (info.flag_bits & 1)
         exe = archive.read(MEMBER)
-    assert len(exe) == 36834304 and sha(exe) == EXE and exe.startswith(b'MZ')
+    assert len(exe) == 36838400 and sha(exe) == EXE and exe.startswith(b'MZ')
     return exe
 
 
 def verify_bundle(meta, blob, exe):
     assert meta['id'] == ASSET and meta['name'] == 'standalone.zip'
-    assert meta['digest'] == 'sha256:' + BUNDLE and meta['size'] == len(blob) == 27130239
+    assert meta['digest'] == 'sha256:' + BUNDLE and meta['size'] == len(blob) == 27154696
     assert sha(blob) == BUNDLE
     # Windows ships standalone.zip as an adjacent resource; it is not an EXE section.
     assert sha(exe) == EXE, 'Retained native executable changed'
     with zipfile.ZipFile(io.BytesIO(blob)) as bundle:
         assert bundle.testzip() is None
         source = json.loads(bundle.read('bundle.json'))
-        assert source['version'] == '0.86.8' and source['source_commit'] == SERVER
+        assert source['version'] == '0.86.9' and source['source_commit'] == SERVER
         assert source['server_sha256'] == RUNTIME and sha(bundle.read('kindred')) == RUNTIME
         assert sha(bundle.read('deploy/provider-connectors.py')) == HELPER
     return source
@@ -85,7 +85,7 @@ def main():
     root = args.source.resolve()
     assert subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip() == SOURCE
     assert not subprocess.check_output(['git', '-C', str(root), 'status', '--porcelain', '--untracked-files=no'], text=True).strip()
-    assert json.loads((root / 'desktop/tauri.conf.json').read_text())['version'] == '0.86.8'
+    assert json.loads((root / 'desktop/tauri.conf.json').read_text())['version'] == '0.86.9'
     args.output.mkdir(parents=True, exist_ok=True)
     receipt_path = args.output / 'retained-inputs.json'
     assert not receipt_path.exists(), 'Refuse to overwrite prior custody receipt'
@@ -98,8 +98,8 @@ def main():
         artifact = get('actions/artifacts/' + str(ARTIFACT))
         exe = verify_artifact(artifact, get('actions/artifacts/' + str(ARTIFACT) + '/zip', True))
         stage = 'bundle'
-        release = get('releases/413245106')
-        assert release['draft'] is True and release['tag_name'] == 'build-inputs-0.86.8-complete-final'
+        release = get('releases/413993560')
+        assert release['draft'] is True and release['tag_name'] == 'build-inputs-0.86.9-complete-final'
         assert release['target_commitish'] == SOURCE and any(a['id'] == ASSET for a in release['assets'])
         asset = get('releases/assets/' + str(ASSET))
         bundle = get('releases/assets/' + str(ASSET), True)
