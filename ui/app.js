@@ -1661,16 +1661,28 @@ function preparePreview(img) {
   img.onload=()=>{img.style.opacity="1";fallback.hidden=true;};
   img.onerror=()=>previewUnavailable(img);
 }
+function computerPower(){return state.computerPower?.token===state.token?state.computerPower:null;}
+function computerIsOff(){return ['shut off','stopped','not started'].includes(computerPower()?.power);}
+function renderComputerPower(){
+ const value=computerPower(),label=$('computer-power-status');
+ if(label)label.textContent=!value?'Checking computer power…':computerIsOff()?'Computer is off. Choose Start computer to turn it on.':value.power==='paused'?'Computer is paused. Resume it from the server before reconnecting.':value.power==='running'?(value.ready?'Computer is running.':'Computer is running. Waiting for the guest connection…'):'Computer power state is unavailable. Check the server connection.';
+ for(const control of document.querySelectorAll('[data-computer-action]')){
+  const busy=control.parentElement.dataset.busy==='true',action=control.dataset.computerAction;
+  control.disabled=busy||(action==='start'&&['running','paused'].includes(value?.power))||(['shutdown','reboot'].includes(action)&&computerIsOff());
+ }
+ renderComputerMaintenance();
+}
 function previewUnavailable(img) {
   img.style.opacity="0";
   const fallback=img.parentElement?.querySelector(".preview-fallback");
-  if(fallback){fallback.hidden=false;fallback.lastElementChild.textContent="Preview unavailable · Open computer to reconnect";}
+  if(fallback){fallback.hidden=false;fallback.lastElementChild.textContent=computerIsOff()?'Computer is off · Choose Start computer':computerPower()?.power==='running'?'Computer is on · Screen starting or unavailable · Open computer':'Preview unavailable · Open computer to check its status';}
 }
 async function refreshPreview() {
   const images = [
     ...document.querySelectorAll("[data-computer-preview]"),
   ].filter((img) => img.offsetParent !== null);
   if (!images.length) return;
+  if(computerIsOff()){for(const img of images)previewUnavailable(img);return;}
   if(state.previewBusy){state.previewPending=true;return;}
   state.previewBusy = true;
   try {
@@ -3319,7 +3331,7 @@ async function settingsBotComputer() {
   let machineControlBusy=false, computerStartCheck=0;
   async function controlComputer(action){
     if(machineControlBusy)return;
-    machineControlBusy=true;
+    machineControlBusy=true;machineActions.dataset.busy='true';
     const check=++computerStartCheck;
     const context={token:state.token,chat:currentConversationId(),bot:screenBotId(),generation:state.desktopGeneration,panelOpen:!$('computer-panel').hidden};
     const current=()=>check===computerStartCheck&&machineStatus.isConnected&&$('settings-dialog').open
@@ -3353,7 +3365,7 @@ async function settingsBotComputer() {
         },
       });
     }catch(error){if(current()){machineStatus.className='run-error small';machineStatus.textContent=error.message;}}
-    finally{machineControlBusy=false;for(const control of machineActions.children)control.disabled=false;}
+    finally{machineControlBusy=false;delete machineActions.dataset.busy;renderComputerPower();void refreshResources();}
   }
   machineActions.append(
     button(
@@ -3378,7 +3390,9 @@ async function settingsBotComputer() {
     }),
   );
   for(const action of machineActions.children)action.classList.add('outline-button');
-  machine.append(machineActions,machineStatus);
+  for(const [i,control] of [...machineActions.children].entries())control.dataset.computerAction=['open','start','reboot','shutdown'][i];
+  const powerStatus=node('p','muted small','Checking computer power…');powerStatus.id='computer-power-status';powerStatus.setAttribute('role','status');
+  machine.append(powerStatus,machineActions,machineStatus);renderComputerPower();
   root.append(machine);
   const maintenance=section('Computer updates'),updateStatus=node('p','muted small');maintenance.classList.add('computer-settings-section');updateStatus.id='computer-maintenance-status';
   const updateSwitch=settingSwitch('Update automatically',true),updateLabel=updateSwitch.label,updateToggle=updateSwitch.input;updateToggle.id='computer-maintenance-enabled';updateToggle.setAttribute('aria-label','Update the bot computer automatically');
@@ -3669,7 +3683,7 @@ function renderComputerMaintenance(){
   if(!toggle.disabled)toggle.checked=value.enabled;
   const updateNow=$('computer-maintenance-now');if(updateNow){updateNow.disabled=!!updateNow.dataset.submitting||!!value.requested||['starting','updating','checking','rebooting'].includes(value.phase);}
   const progress=$('computer-maintenance-progress');if(progress)progress.hidden=!['starting','updating','checking','rebooting'].includes(value.phase);
-  status.textContent=value.error||(value.phase==='rebooting'?'Restarting the computer…':['starting','updating','checking','rebooting'].includes(value.phase)?(value.detail||'Updating the computer. New tasks are queued.'):value.requested?'Update queued. Waiting for the computer to be available.':value.reboot_recommended?'Updates installed · reboot recommended.':value.last_success?'Last updated '+new Date(value.last_success*1000).toLocaleString():value.enabled?'Waiting for downtime.':'Automatic updates off.');
+  status.textContent=value.error||(value.phase==='rebooting'?'Restarting the computer…':['starting','updating','checking','rebooting'].includes(value.phase)?(value.detail||'Updating the computer. New tasks are queued.'):value.requested?(computerIsOff()?'Update queued. Computer is off; choose Start computer to install it.':value.detail||'Update queued. Waiting for the computer to be available.'):value.reboot_recommended?'Updates installed · reboot recommended.':value.last_success?'Last updated '+new Date(value.last_success*1000).toLocaleString():value.enabled?'Waiting for downtime.':'Automatic updates off.');
 }
 function updateDesktopState() {
   renderComputerMaintenance();
@@ -6559,9 +6573,16 @@ async function refreshResources() {
   );
   if (!targets.length || state.resourcesLoading) return;
   state.resourcesLoading = true;
+  const token=state.token;
   try {
+    try{const value=await api('/computer/state');if(state.token!==token)return;state.computerPower={token,power:value.state,ready:value.state==='running'&&computerPower()?.ready===true};}
+    catch{if(state.token!==token)return;state.computerPower={token,power:'unknown',ready:false};}
+    renderComputerPower();
+    if(computerIsOff()){for(const target of targets)target.replaceChildren(node('p','muted small','Computer is off. Resources will appear after it starts.'));for(const img of document.querySelectorAll('[data-computer-preview]'))previewUnavailable(img);return;}
     const r = await api("/computer/resources");
+    if(state.token!==token)return;
     if(!["cpu_percent","cpus","memory_used","memory_total","disk_used","disk_total","uptime_seconds","sampled_at"].every(key=>Number.isFinite(r?.[key]))||r.memory_total<=0||r.disk_total<=0)throw new Error("Resource usage unavailable");
+    state.computerPower={token,power:'running',ready:true};renderComputerPower();
     const size = (n) => (n / 1024 ** 3).toFixed(1) + " GB";
     for (const target of targets) {
       target.replaceChildren(node("h3", "", "Resources"));
@@ -6598,9 +6619,11 @@ async function refreshResources() {
     }
     renderComputerRoutines();
   } catch (e) {
+    if(state.token!==token)return;
+    if(state.computerPower)state.computerPower.ready=false;renderComputerPower();
     for (const n of targets)
       n.replaceChildren(
-        node("p", "muted small", "Resource usage unavailable"),
+        node("p", "muted small", computerPower()?.power==='running'?"Computer is running; waiting for guest resources.":"Resource usage unavailable. Power state could not be verified."),
       );
   } finally {
     state.resourcesLoading = false;
