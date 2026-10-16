@@ -195,11 +195,14 @@ function renderContinuousPdf(pdf, name, body, foot, paginatedWord, firstSize) {
   if(scale!==zoomScale){
    // Keep the current page and position when zoom changes, including fit on resize.
    const bounds=viewport.getBoundingClientRect();
+   const atEnd=viewport.scrollTop>0&&viewport.scrollTop+viewport.clientHeight>=viewport.scrollHeight-2;
    const anchor=pages.find(p=>p.node.getBoundingClientRect().bottom>bounds.top);
    const offset=anchor?(bounds.top-anchor.node.getBoundingClientRect().top)/anchor.node.clientHeight:0;
    zoomScale=scale;revision++;active?.task.cancel();
    for(const entry of pages){release(entry);entry.node.style.width=(entry.size.width*scale)+'px';}
-   if(anchor)viewport.scrollTop+=anchor.node.getBoundingClientRect().top-bounds.top+offset*anchor.node.clientHeight;
+   // A pending fit must not move an end-of-document navigation back a page.
+   if(atEnd)viewport.scrollTop=viewport.scrollHeight;
+   else if(anchor)viewport.scrollTop+=anchor.node.getBoundingClientRect().top-bounds.top+offset*anchor.node.clientHeight;
   }
   schedule();
  });
