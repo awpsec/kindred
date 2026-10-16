@@ -3629,7 +3629,7 @@ async function retryDesktop(generation, message, allowRetry=true, explicitPhase=
     1000 * 2 ** Math.min(state.desktopRetry || 0, 4),
   );
   state.desktopRetry = (state.desktopRetry || 0) + 1;
-  state.desktopRetryTimer = setTimeout(() => perform(connectDesktop), delay);
+  state.desktopRetryTimer = setTimeout(() => perform(() => connectDesktop({wake:false})), delay);
 }
 async function openComputer(controlRequested = false, expanded = false) {
   if(state.desktopNavigationHidden && state.rfb && state.desktopConnected && state.desktopNavigationBot===screenBotId() && (!controlRequested||state.desktopControlRequested)){
