@@ -4857,7 +4857,13 @@ function reminderWhen(reminder){
 }
 function progressGroups(messages){
   const groups=new Map();for(const m of messages)if(['assistant','task_progress'].includes(m.kind)&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
-  // Summaries is a presentation preference, not a duration or message-count heuristic.
+  // A work marker is an anchor, not proof of a long job. Require useful
+  // narration or sustained multi-action work, including for historical anchors.
+  for(const [key,items] of groups){
+    const updates=items.filter(m=>m.kind!=='task_progress'&&m.text?.trim()),activity=items.map(m=>m.progress.activity).filter(Boolean);
+    const sustained=activity.some(a=>a.actions>=3&&a.seconds>=120);
+    if(activity.length?updates.length<3&&!sustained:updates.length===0)groups.delete(key);
+  }
   return groups;
 }
 // Only persisted, same-conversation question links join a rendered task.
@@ -4920,6 +4926,7 @@ function taskConnectorDisclosure(calls,entry,key){
 }
 function summaryProgress(items,entry,runs){
   const first=items[0],updates=items.filter(m=>m.kind!=='task_progress'),key=first.progress.group_id,questions=taskQuestions(items,entry),calls=taskConnectorCalls(items,entry),parentRunId=questions[0]?.question.run_id||first.run_id,rootRun=runs.find(r=>r.id===parentRunId)||state.allRuns.find(r=>r.id===parentRunId)||state.details.get(parentRunId)?.run;
+  const activity=items.map(m=>m.progress.activity).filter(Boolean).at(-1);
   const memberRuns=new Set([...items.map(m=>m.run_id),...questions.map(m=>m.question.continuation_run_id).filter(Boolean)]),run=[...runs,...state.allRuns].find(r=>r.id===[...memberRuns].at(-1))||rootRun;
   const group=node('article','summary-progress');group.dataset.message=String(first.seq);group.dataset.scrollMessages=[...items,...questions,...calls].map(m=>m.seq).join(' ');group.dataset.progressGroup=key;
   entry.progressOpen??=new Set();entry.progressClosed??=new Set();entry.progressFinished??=new Map();
@@ -4939,7 +4946,7 @@ function summaryProgress(items,entry,runs){
   const taskStarted=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
   entry.progressTimePins??=new Set();
   const endedEvent=state.details.get(run?.id)?.events?.findLast(e=>e.kind==='run_finished');
-  const taskEnded=phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||endedEvent?.created||items.at(-1).created):Math.floor(Date.now()/1000));
+  const taskEnded=phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||endedEvent?.created||activity?.last_at||items.at(-1).created):Math.floor(Date.now()/1000));
   const elapsed=taskStarted&&taskStarted<=taskEnded?taskEnded-taskStarted:null;
   const taskName=((first.progress?.work_qualified==null?rootRun?.task_title||first.progress?.task_title:first.progress?.task_title||rootRun?.task_title)||'Task progress').trim()||'Task progress',taskLabel=node('span','summary-progress-task'),taskText=node('span','summary-progress-name',taskName);taskLabel.title=taskName;taskLabel.append(taskText);
   if(!finished&&run?.status==='running'){taskText.classList.add('is-working');taskText.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}
@@ -4956,6 +4963,15 @@ function summaryProgress(items,entry,runs){
   const answers=questions.filter(m=>m.question.status==='answered').length;
   title.append(node('span','muted small summary-progress-count',[counts,answers?answers+' answer'+(answers===1?'':'s'):'',finished||!counts||questions.some(m=>m.question.status==='pending')?status:''].filter(Boolean).join(' · ')));
   const body=node('div','summary-progress-body');
+  // Factual receipts remain visible when a model supplies no milestones. These
+  // are labelled system activity, never invented assistant updates or reasoning.
+  if(activity&&(!updates.length||(!finished&&Date.now()/1000-updates.at(-1).created>=120))){
+    const receipt=node('div','summary-progress-activity');receipt.setAttribute('aria-label','Recorded activity');
+    receipt.append(node('div','muted small','Recorded activity · '+activity.completed+' completed action'+(activity.completed===1?'':'s')+(activity.failed?' · '+activity.failed+' failed':'')));
+    for(const item of activity.recent||[]){const row=node('div','summary-progress-update',item.label+(item.count>1?' × '+item.count:'')+(item.failed?' · Failed':''));if(taskStarted&&item.created>=taskStarted)row.append(node('span','progress-update-time',' '+elapsedTime(item.created-taskStarted)));receipt.append(row);}
+    if(!finished){const phase={preparing:'Preparing the next action…',thinking:'Thinking through the next step…',writing:'Writing a response…',waiting:'Waiting for the model…'}[activity.phase];if(phase)receipt.append(node('div','muted small',phase));}
+    body.append(receipt);
+  }
   // Calls may belong to the task marker before any written update exists.
   const taskCalls=calls.filter(m=>!updates.some(update=>update.seq===m.connector_artifact.progress_message_seq));
   if(taskCalls.length)body.append(taskConnectorDisclosure(taskCalls,entry,key));

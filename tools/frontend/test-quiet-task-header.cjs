@@ -13,7 +13,7 @@ fs.mkdirSync(out,{recursive:true});
   await page.addInitScript(({token,mobile})=>{sessionStorage.setItem('kindred-token',token);if(mobile){window.__KINDRED_MOBILE=true;window.__KINDRED_MOBILE_PLATFORM='ios';document.addEventListener('DOMContentLoaded',()=>document.documentElement.dataset.mobile='ios',{once:true});}},{token,mobile:width<600});
   const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};
   let run={id:'quiet-run',bot_id:'piper',chat_id:chat.id,status:'running',created:now-2160,progress_started:now-2160,task_title:'Review monthly reports',prompt:'Review the reports and prepare a tracker.',output:'',error:''};
-  const progress={mode:'summaries',phase:'commentary',run_id:run.id,group_id:'quiet-task',work_qualified:true,task_title:run.task_title};
+  const progress={mode:'summaries',phase:'commentary',run_id:run.id,group_id:'quiet-task',work_qualified:true,task_title:run.task_title,activity:{actions:28,completed:28,failed:0,seconds:2160,recent:[],phase:'thinking'}};
   const prompt={seq:1,sender:'user',kind:'message',created:now-2161,text:run.prompt};
   const marker={seq:2,sender:'piper',kind:'task_progress',text:'',run_id:run.id,created:now-2159,progress:{...progress}};
   let messages=[prompt,marker],events=[],gate=null;
