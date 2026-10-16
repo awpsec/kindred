@@ -6145,3 +6145,5 @@ html[data-mobile] .request-tray.is-answering .request-tray-bar .icon-button{widt
 /* Expired accounts remain available as sign-in destinations. */
 .profile-account-row.is-signed-out .profile-menu-avatar{opacity:.45}
 .profile-account-row.is-signed-out .profile-menu-name{color:var(--muted)}
+
+.desktop > .desktop-sleep-still{position:absolute;inset:0;z-index:3;pointer-events:none;object-fit:contain}

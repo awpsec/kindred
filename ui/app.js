@@ -268,7 +268,7 @@ async function api(path, method = "GET", body, options = {}) {
   } catch {
     throw new Error("The server did not return a valid response.");
   }
-  if (!res.ok) {const error=new Error(res.status===401&&profilesUI.signedOut()?"Your session has ended.":data.error || `Request failed (${res.status})`);error.status=res.status;throw error;}
+  if (!res.ok) {const error=new Error(res.status===401&&profilesUI.signedOut()?"Your session has ended.":data.error || `Request failed (${res.status})`);error.status=res.status;error.screenState=data.screen_state;throw error;}
   return data;
   } catch(e) {
     if(timeout.signal.reason==='pagehide'){if(method==='GET')throw 'pagehide';const error=new Error('The page closed before the server confirmed the change. Check whether it completed before trying again.');error.uncertain=true;throw error;}
@@ -1694,7 +1694,7 @@ async function refreshPreview() {
     for(const img of images){const id=img.dataset.computerPreview||screenBotId();if(!groups.has(id))groups.set(id,[]);groups.get(id).push(img);}
     await Promise.all([...groups].map(async([id,targets])=>{
       const current=img=>img.isConnected&&(img.dataset.computerPreview||screenBotId())===id;
-      try{const result=await api('/computer?bot_id='+encodeURIComponent(id));for(const img of targets)if(current(img))img.src=result.image;}
+      try{const phase=await readScreenPhase(id);if(phase&&phase!=='ready'){for(const img of targets)if(current(img)){previewUnavailable(img);const fallback=img.parentElement?.querySelector('.preview-fallback');if(fallback)fallback.lastElementChild.textContent=(screenPhaseLabels[phase]||'Screen unavailable')+(phase==='asleep'?' · Open computer to wake it':'');}return;}const result=await api('/computer?bot_id='+encodeURIComponent(id));for(const img of targets)if(current(img))img.src=result.image;}
       catch{for(const img of targets)if(current(img))previewUnavailable(img);}
     }));
   } finally {
@@ -3511,6 +3511,7 @@ function disconnectDesktop() {
   clearTimeout(state.desktopTimeout);
   state.desktopGeneration++;
   state.desktopConnected = false;
+  state.desktopConnecting = null;
   state.rfb?.disconnect();
   state.rfb = null;
   $("desktop").replaceChildren();
@@ -3569,14 +3570,52 @@ function desktopLoading(label = "Connecting") {
   $("desktop").append(loading);
   $("desktop-mode").textContent = label;
 }
-function retryDesktop(generation, message, allowRetry=true) {
-  if (generation !== state.desktopGeneration || $("computer-panel").hidden)
+const screenPhaseLabels={asleep:'Computer screen asleep…',waking:'Computer screen waking…',sleeping:'Computer screen sleeping…',off:'Computer is off',paused:'Computer is paused',failed:'Computer screen couldn’t start',unavailable:'Checking screen connection…'};
+async function readScreenPhase(bot=screenBotId()) {
+  if(state.screenStateUnsupported===state.token)return null;
+  try{const value=await api('/computer/screen-state?bot_id='+encodeURIComponent(bot));return ['ready',...Object.keys(screenPhaseLabels)].includes(value.state)?value.state:null;}
+  catch(error){if(error.status===404){state.screenStateUnsupported=state.token;return null;}return 'unavailable';}
+}
+function showScreenPhase(phase) {
+  if($('desktop').dataset.screenState===phase&&$('desktop-mode').textContent===screenPhaseLabels[phase]&&$('desktop-loading')&&!state.rfb)return;
+  const still=desktopStill();disconnectDesktop();state.desktopScreenPhase=phase;
+  desktopLoading(screenPhaseLabels[phase]||'Screen disconnected');
+  $('desktop').dataset.screenState=phase;
+  const loading=$('desktop-loading');loading.querySelector('.working-glimmer')?.classList.toggle('working-glimmer',['waking','sleeping'].includes(phase));
+  if(['asleep','failed'].includes(phase))loading.append(button('Wake screen',()=>{state.desktopRetry=0;return connectDesktop({wake:true});},'outline-button'));
+  if(phase==='off')loading.append(node('span','muted','Start the computer in Bot Computer settings.'));
+  if(phase==='paused')loading.append(node('span','muted','Resume the computer before waking its screen.'));
+  $('desktop-error').hidden=phase!=='failed';
+  if(phase==='failed')$('desktop-error').textContent='The screen service failed. The computer may still be running. Try Wake screen again.';
+  if(still){still.classList.add('desktop-sleep-still');$('desktop').append(still);trackMotion(still.animate([{opacity:1},{opacity:0}],{duration:220,easing:'ease-out',fill:'forwards'}),220,()=>still.remove());}
+}
+async function refreshScreenPhase() {
+  if(($('computer-panel').hidden||$('computer-panel').inert)||document.hidden||state.desktopConnected||state.rfb||state.desktopConnecting!=null||state.screenProbePending)return;
+  const generation=state.desktopGeneration,bot=screenBotId(),token=state.token;
+  state.screenProbePending=true;
+  try{
+    const phase=await readScreenPhase(bot);
+    if(generation!==state.desktopGeneration||bot!==screenBotId()||token!==state.token||($('computer-panel').hidden||$('computer-panel').inert)||!phase)return;
+    const previous=state.desktopScreenPhase;
+    if(phase==='ready'){
+      if(['asleep','sleeping','waking','off','paused','failed'].includes(previous)){state.desktopRetry=0;await connectDesktop({wake:false});}
+    }else if(phase!=='unavailable'&&!(previous==='failed'&&phase==='asleep'))showScreenPhase(phase);
+  }finally{state.screenProbePending=false;}
+}
+setInterval(()=>{if(state.token)void refreshScreenPhase();},2500);
+async function retryDesktop(generation, message, allowRetry=true, explicitPhase=null) {
+  if (generation !== state.desktopGeneration || ($("computer-panel").hidden||$("computer-panel").inert))
     return;
   clearTimeout(state.desktopTimeout);
   clearTimeout(state.desktopRetryTimer);
   state.desktopConnected = false;
   state.stopDesktopGlass?.();state.stopDesktopGlass=null;
-  const reason=message || "The screen connection closed before it was ready.";
+  let phase=explicitPhase||await readScreenPhase();
+  if(generation!==state.desktopGeneration||($('computer-panel').hidden||$('computer-panel').inert))return;
+  if(message&&['asleep','waking'].includes(phase))phase='failed';
+  if(['asleep','sleeping','waking','off','paused','failed'].includes(phase)){showScreenPhase(phase);if(phase==='failed'&&message)$('desktop-error').textContent=message;return;}
+  state.desktopScreenPhase=phase;
+  const reason=message || (phase==='ready'?'The computer screen is running, but the viewer disconnected. Reconnecting the viewer…':'The screen connection was lost. Checking its connection…');
   $("desktop-error").textContent=reason;
   $("desktop-error").hidden=false;
   if (!allowRetry || (state.desktopRetry || 0) >= 3) {
@@ -3611,9 +3650,9 @@ async function openComputer(controlRequested = false, expanded = false) {
   setComputerExpanded(expanded);
   renderComputerRoutines();
   renderScreenPicker();
-  await Promise.all([connectDesktop(), refreshResources()]);
+  await Promise.all([connectDesktop({wake:controlRequested===true}), refreshResources()]);
 }
-async function connectDesktop({isCurrent=()=>true,allowRetry=true}={}) {
+async function connectDesktop({isCurrent=()=>true,allowRetry=true,wake=true}={}) {
   disconnectDesktop();
   const candidates=chatScreenBots();
   if(!candidates.some(b=>b.id===screenBotId()))state.screenBotId=candidates[0]?.id||'';
@@ -3621,9 +3660,15 @@ async function connectDesktop({isCurrent=()=>true,allowRetry=true}={}) {
   renderScreenPicker();
   if(!candidates.length){desktopLoading('No screens in this chat');return;}
   const generation = state.desktopGeneration;
+  state.desktopConnecting=generation;
   $("desktop-error").hidden = true;
   desktopLoading();
   try {
+    const phase=await readScreenPhase();
+    if(generation!==state.desktopGeneration||!isCurrent()||($('computer-panel').hidden||$('computer-panel').inert))return;
+    state.desktopScreenPhase=phase;
+    if(['off','paused','sleeping'].includes(phase)||(!wake&&['asleep','failed','waking'].includes(phase))){showScreenPhase(phase);return;}
+    if(['asleep','waking','failed'].includes(phase)){desktopLoading(screenPhaseLabels.waking);$('desktop').dataset.screenState='waking';}
     // Read the selected screen directly; a concurrent chat refresh may still be in flight.
     const status = await api("/status");
     if (generation !== state.desktopGeneration || !isCurrent()) return;
@@ -3632,8 +3677,9 @@ async function connectDesktop({isCurrent=()=>true,allowRetry=true}={}) {
     if(!isCurrent())return;
     const control = !!state.desktopControlRequested && !!state.status.takeover;
     if(!state.status.takeover)state.desktopControlRequested=false;
-    const result = await api("/computer/session", "POST", { control });
-    if (generation !== state.desktopGeneration || $("computer-panel").hidden || !isCurrent())
+    // Screen startup completes before the server issues the 30-second ticket.
+    const result = await api("/computer/session", "POST", { control }, {timeoutMs:180000});
+    if (generation !== state.desktopGeneration || ($("computer-panel").hidden||$("computer-panel").inert) || !isCurrent())
       return;
     const url = new URL("/vnc", location.href);
     url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -3644,7 +3690,7 @@ async function connectDesktop({isCurrent=()=>true,allowRetry=true}={}) {
     const previewOpen=button('',()=>setComputerExpanded(true),'desktop-preview-open');
     previewOpen.setAttribute('aria-label','Open computer screen');const openLabel=node('span');openLabel.append(icon('expand'),node('span','','Open'));previewOpen.append(openLabel);previewOpen.hidden=true;host.append(previewOpen);
     let failed=false;
-    const fail=message=>{if(failed||generation!==state.desktopGeneration)return;failed=true;rfb.disconnect();retryDesktop(generation,message,allowRetry);};
+    const fail=message=>{if(failed||generation!==state.desktopGeneration)return;failed=true;rfb.disconnect();if(state.rfb===rfb)state.rfb=null;void retryDesktop(generation,message,allowRetry);};
     state.rfb = rfb;
     state.stopComputerPointer?.();
     state.stopComputerPointer = computerClickIndicator(host, () => state.status, () => screenBotId());
@@ -3669,17 +3715,18 @@ async function connectDesktop({isCurrent=()=>true,allowRetry=true}={}) {
       clearTimeout(state.desktopTimeout);
       state.desktopRetry = 0;
       state.desktopConnected = true;
+      state.desktopScreenPhase='ready';$('desktop').dataset.screenState='ready';
       state.stopDesktopGlass?.();state.stopDesktopGlass=desktopGlass(host);
       revealDesktop(host);
       $("desktop-error").hidden = true;
       updateDesktopState();
     });
-    rfb.addEventListener("disconnect", () => fail("The screen connection closed. The computer may be offline or its screen service unavailable."));
+    rfb.addEventListener("disconnect", () => fail());
     rfb.addEventListener("securityfailure", () => fail("The computer rejected the screen connection. Check its screen service and retry."));
   } catch (e) {
     if (generation !== state.desktopGeneration || !isCurrent()) return;
-    retryDesktop(generation,e.message,allowRetry);
-  }
+    await retryDesktop(generation,e.message,allowRetry,e.screenState);
+  }finally{if(state.desktopConnecting===generation)state.desktopConnecting=null;}
   updateDesktopState();
 }
 function renderComputerMaintenance(){

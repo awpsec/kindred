@@ -25,7 +25,8 @@ export class RFB extends EventTarget {
   assert.equal(await p.locator('#desktop-mode').innerText(),'Screen unavailable');
   assert((await p.locator('#desktop-error').innerText()).includes('cannot be reached'));
   await p.clock.fastForward(60000);assert.equal(sessions,4,'A failed viewer must stop retrying');
-  failApi=false;await p.locator('#desktop-reconnect').click();await p.clock.runFor(100);
+  failApi=false;await p.locator('#desktop-reconnect').click();await p.waitForFunction(()=>window.fixtureGeneration>0);await p.clock.runFor(100);
+  await p.waitForFunction(()=>document.querySelector('#desktop-error').textContent.includes('rejected'));
   assert((await p.locator('#desktop-error').innerText()).includes('rejected'));
   await p.clock.runFor(1100);assert.equal(sessions,6,'Security and disconnect events must schedule one retry');
   const prior=await p.evaluate(()=>{window.fixtureReady=true;return window.fixtureGeneration;});await p.locator('#desktop-reconnect').click();await p.waitForFunction(prior=>window.fixtureGeneration>prior,prior);await p.clock.runFor(100);
