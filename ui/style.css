@@ -6141,3 +6141,7 @@ html[data-mobile] .request-tray.is-answering .request-tray-bar .icon-button{widt
 .document-body:has(>.document-zoom){overflow:hidden}
 .document-body:has(>.document-zoom)>.document-word{flex:1;min-height:0;flex-shrink:1}
 @media(pointer:coarse){.document-zoom .artifact-action{min-height:44px;min-width:44px}}
+
+/* Expired accounts remain available as sign-in destinations. */
+.profile-account-row.is-signed-out .profile-menu-avatar{opacity:.45}
+.profile-account-row.is-signed-out .profile-menu-name{color:var(--muted)}

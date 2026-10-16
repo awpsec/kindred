@@ -130,6 +130,7 @@ function iconButton(symbol, label, action) {
   return b;
 }
 function notice(text, error = false, action = null) {
+  if(profilesUI.signedOut()&&!action)action=profilesUI.signinAction();
   $("notice").classList.remove("continuation-confirmation");
   $("notice").textContent = text;
   if(action){const control=document.createElement('button');control.type='button';control.className='subtle-button notice-action';control.textContent=action.label;control.onpointerdown=event=>event.preventDefault();control.onclick=action.run;$("notice").append(' ',control);}
@@ -137,6 +138,7 @@ function notice(text, error = false, action = null) {
   $("notice").hidden = false;
   positionNotice();
   clearTimeout(state.noticeTimer);
+  if(action?.persistent)return;
   state.noticeTimer = setTimeout(
     () => ($("notice").hidden = true),
     error ? 9000 : 4000,
@@ -226,6 +228,7 @@ async function perform(action, control) {
 const pendingApiRequests=new Map();
 let pageSuspended=false,pageHidden=false,navigationGeneration=0,navigationRecovery=null;
 async function api(path, method = "GET", body, options = {}) {
+  if(profilesUI.signedOut()){const error=new Error("Your session has ended.");error.status=401;throw error;}
   const requestToken=state.token,bot_id=screenBotId();
   if(pageSuspended&&navigationRecovery&&!pageHidden){
     const recovery=navigationRecovery,recovered=await recovery.promise;
@@ -257,6 +260,7 @@ async function api(path, method = "GET", body, options = {}) {
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if(res.status===401)await profilesUI.checkSession(requestToken);
   if(options.responseType==='blob'&&res.ok){if(state.token!==requestToken)throw new Error('Workspace changed');const blob=await res.blob();if(state.token!==requestToken)throw new Error('Workspace changed');if(blob.size>(options.maxBlobBytes??8*1024*1024))throw new Error('Preview exceeds the supported size');return blob;}
   let data;
   try {
@@ -264,7 +268,7 @@ async function api(path, method = "GET", body, options = {}) {
   } catch {
     throw new Error("The server did not return a valid response.");
   }
-  if (!res.ok) {const error=new Error(data.error || `Request failed (${res.status})`);error.status=res.status;throw error;}
+  if (!res.ok) {const error=new Error(res.status===401&&profilesUI.signedOut()?"Your session has ended.":data.error || `Request failed (${res.status})`);error.status=res.status;throw error;}
   return data;
   } catch(e) {
     if(timeout.signal.reason==='pagehide'){if(method==='GET')throw 'pagehide';const error=new Error('The page closed before the server confirmed the change. Check whether it completed before trying again.');error.uncertain=true;throw error;}

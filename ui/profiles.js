@@ -14,16 +14,50 @@ export function savedAccounts(entries,last) {
 // That releases every chat, provider, image, VNC and native-operation cache.
 export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreAfterSwitch,nativeInvoke,notice,getServerAddress=()=>location.origin,getServerVersion=()=>'',workingBots=()=>0}) {
   let enabled=false, projection=null, polling=false, meta=null, invitation='', nativeProfiles=[], nativeCounts={},nativeLast=null;
+  let signedOut=false, sessionCheck=null;
   const $=id=>document.getElementById(id);
   const el=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
   const run=async(action,control)=>{if(control?.disabled)return;if(control)control.disabled=true;try{return await action();}catch(e){notice(e.message,true);}finally{if(control)control.disabled=false;}};
   const button=(text,action,cls='subtle-button')=>{const b=el('button',cls,text);b.type='button';b.onclick=()=>run(action,b);return b;};
   async function api(path,body) {
-    const response=await fetch('/identity/'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getToken()},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store',signal:AbortSignal.timeout(path==='admin/remove'?900000:30000)});
+    const requestToken=getToken();
+    const response=await fetch('/identity/'+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+requestToken},body:body===undefined?undefined:JSON.stringify(body),cache:'no-store',signal:AbortSignal.timeout(path==='admin/remove'?900000:30000)});
+    if(response.status===401&&path==='profiles')expireSession(requestToken);
     const value=await response.json();if(!response.ok){const error=new Error(value.error||'The server could not complete this request.');error.status=response.status;throw error;}return value;
   }
+  function currentAccount() {
+    return nativeProfiles.find(p=>p.server===location.origin&&p.profile_id===(projection?.active||window.__KINDRED_INITIAL_PROFILE))
+      ||nativeProfiles.find(p=>p.server===location.origin&&p.key===nativeLast);
+  }
+  function rememberIdentity() {
+    if(projection&&!projection.legacy)sessionStorage.setItem('kindred-signin-identity',JSON.stringify({username:projection.username,profileId:projection.active}));
+  }
+  function signinSelection() {
+    let saved={};try{saved=JSON.parse(sessionStorage.getItem('kindred-signin-identity')||'{}');}catch{}
+    const account=currentAccount();
+    return {username:projection?.username||account?.username||saved.username||'',profileId:projection?.active||account?.profile_id||saved.profileId};
+  }
+  function expireSession(token) {
+    if(!enabled||!token||token!==getToken()||signedOut)return;
+    rememberIdentity();signedOut=true;setToken('');++refreshRevision;
+    sessionStorage.removeItem('kindred-token');localStorage.removeItem('kindred-token');
+    closeMenu();paint();notice('Your session has ended.',true,signinAction());
+  }
+  async function checkSession(token) {
+    if(!enabled||!token||token!==getToken())return;
+    if(!sessionCheck)sessionCheck=api('profiles').catch(()=>{}).finally(()=>{sessionCheck=null;});
+    await sessionCheck;
+  }
+  function signinAction(){return {label:'Sign in again…',run:()=>run(signInAgain),persistent:true};}
+  async function signInAgain() {
+    closeMenu();
+    const existing=document.querySelector('dialog[data-session-signin]');
+    if(existing){existing.querySelector('input[type=password]')?.focus();return;}
+    const host=dialog('Sign in again');host.dataset.sessionSignin='true';
+    await authentication('login',host,signinSelection());
+  }
   function saveToken(token) {
-    setToken(token);sessionStorage.setItem('kindred-token',token);
+    signedOut=false;setToken(token);$('notice')?.setAttribute('hidden','');sessionStorage.setItem('kindred-token',token);
     mobileSession(token);
     if(window.__KINDRED_PROFILE_HOST||window.__KINDRED_MOBILE)localStorage.removeItem('kindred-token');
     else if($('remember-device').checked||localStorage.getItem('kindred-token'))localStorage.setItem('kindred-token',token);
@@ -56,10 +90,11 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     let claimCheck=null;if(claiming){const row=el('label','remember-device');claimCheck=el('input');claimCheck.type='checkbox';claimCheck.required=true;row.append(claimCheck,document.createTextNode('Make this account the owner of my existing workspace'));fields.append(row);}
     const submit=el('button','primary',claiming?'Claim workspace':mode==='register'?'Create account':'Sign in');submit.type='submit';const error=el('output','profile-form-error');error.setAttribute('role','alert');fields.append(submit,error);
     fields.onsubmit=async event=>{event.preventDefault();submit.disabled=true;error.textContent='';try{
-      const value=await api(mode,{login:username.value,password:password.value,...(claiming?{claim_legacy:claimCheck.checked}:{}),profile_id:selection.newAccount?undefined:window.__KINDRED_INITIAL_PROFILE||undefined,...(name?{name:name.value}:{}),...((invite||invitation)?{invite:invite?.value||invitation}:{})});
+      const value=await api(mode,{login:username.value,password:password.value,...(claiming?{claim_legacy:claimCheck.checked}:{}),profile_id:selection.newAccount?undefined:selection.profileId||window.__KINDRED_INITIAL_PROFILE||undefined,...(name?{name:name.value}:{}),...((invite||invitation)?{invite:invite?.value||invitation}:{})});
       password.value='';$('remember-device').checked=check.checked;
       if(!check.checked)localStorage.removeItem('kindred-token');
-      invitation='';const replacing=!!getToken();if(replacing)await beforeSwitch(projection?.active,value.profile_id);
+      invitation='';const replacing=!!getToken()||signedOut;if(replacing)await beforeSwitch(projection?.active,value.profile_id);
+      sessionStorage.setItem('kindred-signin-identity',JSON.stringify({username:username.value,profileId:value.profile_id}));
       saveToken(value.token);
       if(window.__KINDRED_PROFILE_HOST)await nativeInvoke('remember_profile',{theme:document.documentElement.dataset.theme||'dark',token:value.token,profileId:value.profile_id,name:name?.value||'Kindred',remember:check.checked});
       if(form.tagName==='DIALOG')form.close();if(replacing)location.reload();else await connect();
@@ -68,7 +103,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     if(mode==='login')fields.append(button(sessionStorage.getItem('kindred-password-reset')?'Resume password reset':'Forgot password?',()=>passwordReset(username.value)));
     if(mode==='register')fields.append(button('Already have an account? Sign in',()=>authentication('login',form,selection)));
     if(form.id==='account-connect'&&window.__KINDRED_PROFILE_HOST&&nativeProfiles.length)fields.append(button('Choose a saved account',()=>accountChooser(form)));
-    form.append(fields);username.focus();
+    form.append(fields);(selection.username?password:username).focus();
   }
   function accountChooser(host) {
     host.querySelector('.profile-auth')?.remove();host.querySelector('h1').textContent='Choose an account';
@@ -105,7 +140,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   async function refresh() {
     if(!enabled||!getToken()||polling)return;polling=true;const session=getToken(),revision=++refreshRevision;
     try{await Promise.allSettled([
-      api('profiles').then(value=>{if(session===getToken()&&revision===refreshRevision){projection=value;paint();}}),
+      api('profiles').then(value=>{if(session===getToken()&&revision===refreshRevision){projection=value;rememberIdentity();paint();}}),
       refreshNativeAccounts(),
       window.__KINDRED_PROFILE_HOST?nativeInvoke('profile_activity',{}).then(value=>{nativeCounts=value;paint();}):Promise.resolve()
     ]);}finally{polling=false;}
@@ -356,24 +391,27 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     root.append(el('div','profile-menu-label','Accounts'));
     const current=projection?.profiles?.find(p=>p.active);
     const accountRow=(name,server,action)=>{const row=button('',action,'profile-menu-row profile-account-row'),avatar=el('span','profile-menu-avatar',name.trim().split(/\s+/).filter(n=>/[a-zA-Z0-9\p{L}]/u.test(n)).slice(0,2).map(n=>n[0]||'').join('').toUpperCase()),copy=el('span','profile-menu-copy');let host=server;try{host=new URL(server).host;}catch{}copy.append(el('span','profile-menu-name',name),el('span','profile-menu-server',host));copy.title=name+' · '+server;row.append(avatar,copy);row.setAttribute('role','menuitem');return row;};
-    if(current){const row=accountRow(projection.username?projection.username+' · '+current.name:current.name,location.origin,()=>{});row.setAttribute('aria-current','true');row.setAttribute('aria-disabled','true');row.tabIndex=-1;row.append(el('span','profile-current','Current'));root.append(row);}
-    for(const profile of projection?.profiles||[])if(!profile.active&&!projection?.legacy){const row=accountRow(profile.name,location.origin,()=>{closeMenu();return switchProfile(profile);});row.classList.remove('profile-account-row');row.classList.add('profile-workspace-row');if(profile.unread)row.append(el('span','profile-notification',profile.unread>9?'9+':String(profile.unread)));root.append(row);}
+    if(current){const row=accountRow(projection.username?projection.username+' · '+current.name:current.name,location.origin,signedOut?signInAgain:()=>{});row.setAttribute('aria-current','true');if(signedOut)row.classList.add('is-signed-out');else{row.setAttribute('aria-disabled','true');row.tabIndex=-1;}row.append(el('span','profile-current',signedOut?'Signed out':'Current'));root.append(row);}
+    for(const profile of projection?.profiles||[])if(!signedOut&&!profile.active&&!projection?.legacy){const row=accountRow(profile.name,location.origin,()=>{closeMenu();return switchProfile(profile);});row.classList.remove('profile-account-row');row.classList.add('profile-workspace-row');if(profile.unread)row.append(el('span','profile-notification',profile.unread>9?'9+':String(profile.unread)));root.append(row);}
     for(const account of savedAccounts(nativeProfiles,nativeLast).filter(a=>!a.workspaces.some(p=>p.server===location.origin&&p.profile_id===projection?.active))){
       const row=accountRow(account.name||account.username,account.server,()=>openSavedAccount(account,row));
+      if(account.session_available===false){row.classList.add('is-signed-out');row.append(el('span','profile-current','Signed out'));}
       const n=account.workspaces.reduce((sum,p)=>sum+(nativeCounts[p.key]||0),0);if(n>0){const count=el('span','profile-notification',n>9?'9+':String(n));count.setAttribute('aria-label',n+' unread notifications');row.append(count);}root.append(row);
     }
     const actions=el('div','profile-menu-actions');
     const action=(name,fn,path,help='')=>{const row=button('',()=>{closeMenu();return fn();},'profile-menu-row');row.setAttribute('role','menuitem');row.append(menuIcon(path),el('span','',name));if(help){row.title=help;row.setAttribute('aria-label',name);const copy=row.lastChild;copy.append(el('small','muted',help));}actions.append(row);};
     actions.append(el('div','profile-menu-label','Add'));
-    if(!projection?.legacy)action('Add profile',createProfile,'M12 5v14 M5 12h14','New workspace for '+(projection?.username||'this account'));
+    if(!signedOut&&!projection?.legacy)action('Add profile',createProfile,'M12 5v14 M5 12h14','New workspace for '+(projection?.username||'this account'));
     action('Add account',addAccount,'M12 5v14 M5 12h14','Sign in on this or another server');
+    if(!signedOut){
     actions.append(el('div','profile-menu-label','This account'));
     action('Connect mobile app',connectMobile,'M7 2h10v20H7z M11 18h2');
     if(!projection?.legacy)action('Account settings',profileSettings,'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2');
     if(!projection?.legacy)action('Change password',changePassword,'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2');
+    }
     actions.append(el('div','profile-menu-label','Manage'));
     if(window.__KINDRED_PROFILE_HOST)action('Manage saved accounts',serverPicker,'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M20 8v6 M17 11h6');
-    if(projection?.admin)action('Server administration',admin,'M4 3h16v7H4z M4 14h16v7H4z M8 6h.01 M8 17h.01');
+    if(!signedOut&&projection?.admin)action('Server administration',admin,'M4 3h16v7H4z M4 14h16v7H4z M8 6h.01 M8 17h.01');
     if(projection?.legacy)action(projection.claim_available?'Set up your account':'Sign in to your account',()=>authentication(projection.claim_available?'register':'login'),'M10 17l5-5-5-5 M3 12h12 M15 3h6v18h-6');
     root.append(actions);document.body.append(root);$('switch-profiles').setAttribute('aria-expanded','true');positionMenu();menuObserver=new ResizeObserver(positionMenu);menuObserver.observe(root);
     root.querySelector('button:not([aria-disabled=true])')?.focus({preventScroll:true});
@@ -385,7 +423,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     try{if(window.__KINDRED_PROFILE_HOST){const directory=await nativeInvoke('profile_home_state',{});nativeProfiles=directory.entries||[];nativeLast=directory.last;}}catch{}
     // Old create-profile links now lead to account sign-in, never a hidden workspace creation.
     if(new URLSearchParams(location.search).has('new_profile')){const clean=new URL(location.href);clean.searchParams.delete('new_profile');clean.searchParams.delete('request_id');history.replaceState(null,'',clean.href);}
-    if(getToken()){try{projection=await api('profiles');}catch(e){if(e.status===401){setToken('');sessionStorage.removeItem('kindred-token');localStorage.removeItem('kindred-token');}else throw e;}}
+    if(getToken()){try{projection=await api('profiles');rememberIdentity();}catch(e){if(e.status===401){setToken('');sessionStorage.removeItem('kindred-token');localStorage.removeItem('kindred-token');}else throw e;}}
     if(!$('switch-profiles')){
     const control=button('',menu,'profile-switch-button');control.append(menuIcon('M4 7h16m-4-4 4 4-4 4 M20 17H4m4-4-4 4 4 4'));control.setAttribute('aria-expanded','false');control.setAttribute('aria-controls','profile-menu');control.id='switch-profiles';control.setAttribute('aria-haspopup','menu');$('identity-row').append(control);paint();
     document.addEventListener('click',e=>{if(!e.target.closest('#profile-menu,#switch-profiles'))closeMenu();});
@@ -397,8 +435,8 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       const host=$('connect-form')||$('account-connect');host.onsubmit=e=>e.preventDefault();for(const element of [...host.children])if(element.id!=='connect-character'&&element.tagName!=='H1')element.hidden=true;
       // Form nesting is invalid HTML: replace only the original token form's tag.
       const container=el('div','connect-card');container.id='account-connect';for(const child of [...host.children])container.append(child);host.replaceWith(container);
-      if(window.__KINDRED_PROFILE_HOST&&nativeProfiles.length&&!window.__KINDRED_EXPLICIT_PROFILE&&(!window.__KINDRED_NEW_ACCOUNT||nativeProfiles.some(p=>p.server===location.origin)))accountChooser(container);
-      else await authentication(invitation||(meta.first_user&&!meta.legacy_claim)?'register':'login',container,{newAccount:!!window.__KINDRED_NEW_ACCOUNT,username:nativeProfiles.find(p=>p.server===location.origin&&p.profile_id===window.__KINDRED_INITIAL_PROFILE)?.username||''});
+      if(!signedOut&&window.__KINDRED_PROFILE_HOST&&nativeProfiles.length&&!window.__KINDRED_EXPLICIT_PROFILE&&(!window.__KINDRED_NEW_ACCOUNT||nativeProfiles.some(p=>p.server===location.origin)))accountChooser(container);
+      else await authentication(invitation||(meta.first_user&&!meta.legacy_claim)?'register':'login',container,window.__KINDRED_NEW_ACCOUNT?{newAccount:true}:signinSelection());
       if(meta.legacy_claim)container.append(button('Connect an existing device',()=>location.assign('/?legacy=1')));
     }
   }
@@ -458,5 +496,5 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
   }
 
   async function disconnect(){if(enabled&&projection&&!projection.legacy)await api('logout',{});}
-  return {init,connected,refresh,disconnect,connectMobile,enabled:()=>enabled,projection:()=>projection};
+  return {init,connected,refresh,disconnect,connectMobile,checkSession,signinAction,signedOut:()=>signedOut,enabled:()=>enabled,projection:()=>projection};
 }
