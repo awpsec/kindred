@@ -3376,7 +3376,7 @@ html[data-motion='off'] .color-option {transition:none;scale:1;}
 .macos .window-fullscreen:hover:not(:disabled){background:#28c840;}
 /* Keep chat position under one owner across live refreshes and image loading. */
 #content { overflow-anchor: none; scroll-behavior: auto; }
-.bot-text-button { display:flex;justify-content:space-between;width:100%;padding:12px 0;border-bottom:1px solid var(--line); }
+.bot-text-button { display:flex;justify-content:space-between;width:100%;padding:12px;border-bottom:1px solid var(--line); }
 .bot-text-button svg { order:2; }
 .bot-text-dialog { width:min(800px,94vw);max-height:90dvh; }
 .bot-text-dialog form { display:flex;flex-direction:column;gap:14px; }
