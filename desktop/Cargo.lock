@@ -2009,7 +2009,7 @@ dependencies = [
 
 [[package]]
 name = "kindred-desktop"
-version = "0.86.14"
+version = "0.86.15"
 dependencies = [
  "base64 0.22.1",
  "fs2",
