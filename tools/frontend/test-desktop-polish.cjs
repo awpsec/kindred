@@ -17,36 +17,26 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   const p=await context.newPage();p.setDefaultTimeout(12000);p.on('pageerror',e=>errors.push(e.message));
   await context.route('**/*',r=>r.request().url().startsWith(origin)||r.request().url().startsWith('blob:')?r.continue():r.abort());
   await p.setViewportSize({width:640,height:360});await p.goto(origin+'/fixture/site');const png=await p.screenshot();setScreenshot(png);
-  await p.setViewportSize({width:1320,height:860});await p.goto(origin);await p.locator('.screenshot-attachment img').waitFor();
-  await p.waitForFunction(()=>document.querySelector('.screenshot-attachment img')?.naturalWidth===640);
+  await p.setViewportSize({width:1320,height:860});await p.goto(origin);await p.locator('.chat-media-thumbnail img').waitFor();
+  await p.waitForFunction(()=>document.querySelector('.chat-media-thumbnail img')?.naturalWidth===640);
   await p.locator('#identity-button').hover();
   const identity=await p.locator('#identity-button').evaluate(row=>{
    const center=node=>{const r=node.getBoundingClientRect();return r.y+r.height/2;};
    return {row:center(row),avatar:center(row.querySelector('.user-avatar')),name:center(row.querySelector('#identity-name'))};
   });
   assert(Math.abs(identity.row-identity.avatar)<1&&Math.abs(identity.row-identity.name)<1,JSON.stringify(identity));
-  const screenshotControl=p.getByRole('link',{name:'Download screenshot',exact:true});
-  await p.waitForFunction(()=>getComputedStyle(document.querySelector('.screenshot-download')).opacity==='0');
-  await p.locator('.screenshot-frame').hover();
-  await p.waitForFunction(()=>getComputedStyle(document.querySelector('.screenshot-download')).opacity==='1');
-  const control=await screenshotControl.evaluate(n=>{const r=n.getBoundingClientRect();return {width:r.width,height:r.height,radius:getComputedStyle(n).borderRadius,text:n.textContent,svg:!!n.querySelector('svg')}});
-  assert.equal(control.width,32);assert.equal(control.height,32);assert.equal(control.radius,'50%');assert.equal(control.text,'');assert(control.svg);
-  await p.screenshot({path:path.join(artifacts,`${engine}-${platform}-screenshot-hover.png`)});
-  await p.locator('#identity-button').hover();
-  await p.locator('.screenshot-open').focus();await p.keyboard.press('Tab');
-  assert(await screenshotControl.evaluate(n=>n===document.activeElement));
-  await p.waitForFunction(()=>getComputedStyle(document.querySelector('.screenshot-download')).opacity==='1');
-  await p.locator('#identity-button').focus();
-  await p.waitForFunction(()=>getComputedStyle(document.querySelector('.screenshot-download')).opacity==='0');
+  const screenshotControl=p.locator('.chat-media-dialog').getByRole('button',{name:'Download',exact:true});
   for(const width of [1320,390]) {
    await p.setViewportSize({width,height:860});
-   const placement=await p.locator('.screenshot-frame').evaluate(frame=>{
-    const image=frame.querySelector('img').getBoundingClientRect(),link=frame.querySelector('.screenshot-download').getBoundingClientRect();
-    return {inside:link.x>=image.x&&link.y>=image.y&&link.right<=image.right&&link.bottom<=image.bottom,right:image.right-link.right,bottom:image.bottom-link.bottom,nested:!!frame.querySelector('button a')};
-   });
-   assert(placement.inside&&!placement.nested&&placement.right<=12&&placement.bottom<=12,JSON.stringify(placement));
+   await p.getByRole('button',{name:'Open image: Website screenshot',exact:true}).click();
+   await p.waitForFunction(()=>document.querySelector('.chat-media-dialog img')?.naturalWidth===640);
+   const placement=await p.locator('.chat-media-dialog img').evaluate(image=>{const r=image.getBoundingClientRect();return {inside:r.x>=0&&r.right<=innerWidth&&r.y>=0&&r.bottom<=innerHeight};});
+   assert(placement.inside,JSON.stringify(placement));
+   assert(await screenshotControl.locator('svg').count());
+   await screenshotControl.focus();assert(await screenshotControl.evaluate(n=>n===document.activeElement));
+   await p.screenshot({path:path.join(artifacts,`${engine}-${platform}-${width}-media.png`)});
+   await p.keyboard.press('Escape');
   }
-  await p.screenshot({path:path.join(artifacts,`${engine}-${platform}-mobile-screenshot.png`)});
   await p.setViewportSize({width:1320,height:860});
   assert.equal(await p.locator('.window-control').count(),3);assert.equal(await p.locator('.desktop-titlebar.macos').count(),platform==='macos'?1:0);
   if(platform==='macos')await p.getByRole('button',{name:'Toggle full screen',exact:true}).click();
@@ -65,13 +55,12 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   });
   assert(dragResult.dragged&&!dragResult.controlDragged&&dragResult.width>=48,JSON.stringify(dragResult));
 
-  await p.locator('.screenshot-frame').hover();
+  await p.getByRole('button',{name:'Open image: Website screenshot',exact:true}).click();
   const downloaded=p.waitForEvent('download');await screenshotControl.click();
   const download=await downloaded,downloadPath=path.join(artifacts,`${engine}-${platform}-screenshot.png`);await download.saveAs(downloadPath);assert.deepEqual(fs.readFileSync(downloadPath),png);
-  await p.getByRole('button',{name:'Open screenshot: Website screenshot',exact:true}).click();
-  await p.waitForFunction(()=>document.querySelector('.screenshot-dialog img')?.naturalWidth===640);
-  await p.locator('.screenshot-dialog').getByRole('button',{name:'Close',exact:true}).click();
-  await p.reload();await p.waitForFunction(()=>document.querySelector('.screenshot-attachment img')?.naturalWidth===640);
+  await p.waitForFunction(()=>document.querySelector('.chat-media-dialog img')?.naturalWidth===640);
+  await p.locator('.chat-media-dialog').getByRole('button',{name:'Close',exact:true}).click();
+  await p.reload();await p.waitForFunction(()=>document.querySelector('.chat-media-thumbnail img')?.naturalWidth===640);
   await p.screenshot({path:path.join(artifacts,`${engine}-${platform}-chat.png`)});
   await p.locator('#bot-details').click();await p.locator('.avatar-customize').hover();
   await p.waitForFunction(()=>getComputedStyle(document.querySelector('.avatar-customize .character-body > path')).strokeWidth==='6px');
@@ -118,12 +107,12 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
  const touchContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,acceptDownloads:true});
  await touchContext.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
  const touchPage=await touchContext.newPage();touchPage.on('pageerror',e=>errors.push(e.message));
- await touchPage.goto(origin);const touchDownload=touchPage.getByRole('link',{name:'Download screenshot',exact:true});await touchDownload.waitFor();
+ await touchPage.goto(origin);await touchPage.locator('.chat-media-open').first().tap();const touchDialog=touchPage.locator('.chat-media-dialog');const touchDownload=touchDialog.getByRole('button',{name:'Download',exact:true});await touchDownload.waitFor();
  assert(await touchPage.evaluate(()=>matchMedia('(hover:none)').matches));
- await touchPage.waitForFunction(()=>getComputedStyle(document.querySelector('.screenshot-download')).opacity==='1');
- const touched=touchPage.waitForEvent('download');await touchDownload.tap();assert.equal((await touched).suggestedFilename(),'kindred-screenshot.png');
+ assert(await touchDownload.isVisible());
+ const touched=touchPage.waitForEvent('download');await touchDownload.tap();assert.equal((await touched).suggestedFilename(),'Website screenshot.png');
   await touchPage.screenshot({path:path.join(artifacts,`${engine}-touch-screenshot-control.png`)});
-  await touchPage.locator('#bot-details').tap();await touchPage.locator('.avatar-customize').tap();
+  await touchDialog.getByRole('button',{name:'Close',exact:true}).tap();await touchPage.locator('#bot-details').tap();await touchPage.locator('.avatar-customize').tap();
   await touchPage.locator('.quick-shapes').getByRole('button',{name:'pebble',exact:true}).tap();
   await touchPage.waitForFunction(()=>document.querySelector('.quick-shapes .selected')?.getAttribute('aria-label')==='pebble');
   const touchBounds=await touchPage.locator('.avatar-popover').evaluate(n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right,bottom:r.bottom,width:innerWidth,height:innerHeight,visible:getComputedStyle(n).visibility};});
@@ -147,5 +136,5 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
  await webPage.waitForTimeout(4200);assert.equal(await webPage.evaluate(()=>browserNotices.length),1);
  await webContext.close();
  assert.deepEqual(errors,[]);await browser.close();server.close();
- console.log(JSON.stringify({passed:true,engine,checks:['authenticated image display, download, enlarge and reload','hover-only circular SVG download control with keyboard and touch access','black/white eyes and darker background','eight shapes and silhouette hover outline','no expression or reaction test controls','notification preference persistence','Windows, Linux and macOS chrome rendering and command dispatch']}));
+ console.log(JSON.stringify({passed:true,engine,checks:['authenticated image display, download, enlarge and reload','media viewer download control with keyboard and touch access','black/white eyes and darker background','eight shapes and silhouette hover outline','no expression or reaction test controls','notification preference persistence','Windows, Linux and macOS chrome rendering and command dispatch']}));
 })().catch(e=>{console.error(e);server.close();process.exit(1);});

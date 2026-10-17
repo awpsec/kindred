@@ -6,6 +6,7 @@ import {groupActivity,transitionGroupActivity,visibleGroupWorkers,sharedConversa
 import { decisionReceipt } from './decision-receipts.js';
 import {installThemedSelects} from "./select-menu.js";
 import {enhanceMarkdown,fileCard,artifactPreview,inlineShard} from "./artifacts.js";
+import {chatMedia,chatMediaType,resetChatMedia,collectChatMedia} from "./chat-media.js";
 import {connectorCatalog} from "./connector-catalog.js";
 import {connectorCard,connectorCardSignature} from "./connector-cards.js";
 installThemedSelects();
@@ -89,7 +90,7 @@ const workspaceUI = createWorkspaceImportUI({api,node,button,field,select,modal,
 const profilesUI = createProfileUI({
   getServerVersion:()=>state.status.version,
   workingBots:()=>new Set(state.allRuns.filter(r=>active(r)||delegationContext(r)?.waiting||(r.status==='queued'&&r.delegation?.resuming)).map(r=>r.bot_id)).size,
-  getServerAddress:()=>state.status?.public_url||location.origin, getToken:()=>state.token, setToken:token=>{state.token=token;}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
+  getServerAddress:()=>state.status?.public_url||location.origin, getToken:()=>state.token, setToken:token=>{if(state.token!==token)resetChatMedia();state.token=token;}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
   restoreAfterSwitch:async()=>{
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:state.token});
     if(!$('computer-panel').hidden)await connectDesktop();
@@ -2451,7 +2452,7 @@ async function settingsGeneral(revision) {
         mobileSession("");
         commandsUI?.reset();
         browserNotificationCursor=null;
-        screenshotCache.clear();releaseScreenshotUrls();
+        screenshotCache.clear();releaseScreenshotUrls();resetChatMedia();
         if(window.__KINDRED_DESKTOP)await nativeInvoke("start_desktop",{token:""});
         location.reload();
       },
@@ -3910,6 +3911,7 @@ if (pairCode) {
 }
 $("connect-form").onsubmit = (e) => {
   e.preventDefault();
+  resetChatMedia();
   state.token = $("token").value.trim();
   perform(async () => {
     try {
@@ -4302,7 +4304,7 @@ async function openInitialWorkspace(){
         delete document.documentElement.dataset.starting;status.hidden=true;break;
       }catch(e){
         if(window.__KINDRED_STARTUP?.failed)return;
-        if(e.status===401){$('app').hidden=true;$('connect').hidden=false;state.token='';sessionStorage.removeItem('kindred-token');localStorage.removeItem('kindred-token');continue;}
+        if(e.status===401){$('app').hidden=true;$('connect').hidden=false;state.token='';resetChatMedia();sessionStorage.removeItem('kindred-token');localStorage.removeItem('kindred-token');continue;}
         if(attempt<3){status.replaceChildren(node('span','','Reconnecting to your workspace…'));await new Promise(r=>setTimeout(r,1500));continue;}
         if(window.__KINDRED_STARTUP){window.__KINDRED_STARTUP.fail();break;}
         status.replaceChildren(node('span','','Your server isn’t responding.'),button('Try again',()=>location.reload(),'outline-button'));
@@ -8009,9 +8011,9 @@ $('content').addEventListener('scroll',updateJumpLatest,{passive:true});new Muta
 const pendingFiles=new Map(),pendingPreviewUrls=new WeakMap(),uploadPreviewCache=new Map();
 function releasePendingPreview(file){const url=pendingPreviewUrls.get(file);if(url){URL.revokeObjectURL(url);pendingPreviewUrls.delete(file);}}
 function uploadPreview(file){
-  const key=state.token+'|'+file.id;
+  const key=state.token+'|'+(file.shared?'shared':'private')+'|'+file.id;
   if(!uploadPreviewCache.has(key)){
-    const token=state.token,promise=fetch('/api/'+(file.shared?'server-uploads/':'uploads/')+encodeURIComponent(file.id),{headers:{Authorization:'Bearer '+token},cache:'no-store'}).then(async response=>{if(!response.ok)throw new Error('Image unavailable');const blob=await response.blob();if(blob.size>8*1024*1024)throw new Error('Image too large');return new Blob([blob],{type:file.mime});});
+    const token=state.token,promise=fetch('/api/'+(file.shared?'server-uploads/':'uploads/')+encodeURIComponent(file.id),{headers:{Authorization:'Bearer '+token},cache:'no-store'}).then(async response=>{if(!response.ok)throw new Error('Image unavailable');const blob=await response.blob();if(blob.size>8*1024*1024)throw new Error('Image too large');if(state.token!==token)throw new Error('Connection changed');return new Blob([blob],{type:file.mime||'application/octet-stream'});});
     uploadPreviewCache.set(key,promise);promise.catch(()=>uploadPreviewCache.delete(key));if(uploadPreviewCache.size>16)uploadPreviewCache.delete(uploadPreviewCache.keys().next().value);
   }
   return uploadPreviewCache.get(key);
@@ -8124,30 +8126,24 @@ async function queueFiles(chosen,destination=attachmentDestination()){
   }
 }
 function fileLinks(files, expanded=false){
-  const row=node('div','message-files'),images=files.filter(imageUpload);
-  if(!expanded&&images.length===files.length)row.classList.add('message-images');
+  const row=node('div','message-files'),media=files.filter(chatMediaType),token=state.token;
+  if(!expanded&&media.length===files.length)row.classList.add('message-images');
   let shown=0;
   for(const file of files){
-    if(imageUpload(file)&&!expanded&&++shown>3){
-      if(shown===4){
-        const more=button('+'+(images.length-3),()=>{
-          const dialog=modal('Attached images','attachment-gallery');
-          dialog.append(fileLinks(images,true));
-        },'uploaded-image-open message-images-more');
-        more.setAttribute('aria-label','View all '+images.length+' attached images');row.append(more);
+    if(chatMediaType(file)){
+      if(!expanded&&++shown>3){
+        if(shown===4){const more=button('+'+(media.length-3),()=>{const dialog=modal('Attached media','attachment-gallery');dialog.append(fileLinks(media,true));},'uploaded-image-open message-images-more');more.setAttribute('aria-label','View all '+media.length+' attached media');row.append(more);}
+        continue;
       }
-      continue;
+      const tile=chatMedia(file,{scope:file.shared?'server-upload':'upload',getBlob:async()=>{if(state.token!==token)throw new Error('Connection changed');return uploadPreview(file);},notice,icon});tile.classList.add('message-file-image');tile.querySelector('.chat-media-open').classList.add('uploaded-image-open');tile.querySelector('figcaption').hidden=true;row.append(tile);continue;
     }
-    const download=button(file.name,async()=>{
-      const response=await fetch('/api/'+(file.shared?'server-uploads/':'uploads/')+encodeURIComponent(file.id),{headers:{Authorization:'Bearer '+state.token},cache:'no-store'});
+    row.append(button(file.name,async()=>{
+      if(state.token!==token)throw new Error('Connection changed');
+      const response=await fetch('/api/'+(file.shared?'server-uploads/':'uploads/')+encodeURIComponent(file.id),{headers:{Authorization:'Bearer '+token},cache:'no-store'});
       if(!response.ok)throw new Error('This file could not be downloaded.');
-      const url=URL.createObjectURL(await response.blob()),a=node('a');a.href=url;a.download=file.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
-    },'message-file','paperclip');
-    if(imageUpload(file)){
-      download.title=file.name;
-      const figure=node('figure','message-file-image'),image=node('img');image.alt=file.name;
-      const open=button('',async()=>{const blob=await uploadPreview(file),url=URL.createObjectURL(blob),dialog=modal(file.name,'screenshot-dialog'),full=node('img');full.src=url;full.alt=file.name;dialog.append(full);dialog.addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});},'uploaded-image-open');open.setAttribute('aria-label','Open image: '+file.name);open.append(image);figure.append(open);row.append(figure);fillUploadImage(image,file);
-    }else row.append(download);
+      const blob=await response.blob();if(state.token!==token)throw new Error('Connection changed');
+      const url=URL.createObjectURL(blob),a=node('a');a.href=url;a.download=file.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+    },'message-file','paperclip'));
   }
   return row;
 }
@@ -8487,53 +8483,44 @@ async function screenshotBlob(id) {
   return screenshotCache.get(id);
 }
 function releaseScreenshotUrls(keepVisible=false) {
+  collectChatMedia();
   const visible=keepVisible?new Set([...document.querySelectorAll('img[src],a[href]')].map(n=>n.src||n.href)):new Set();
   for(const url of screenshotUrls)if(!visible.has(url)){URL.revokeObjectURL(url);screenshotUrls.delete(url);}
 }
 function renderAttachments(target, attachments) {
+  const token=state.token;
+  const getBlob=async id=>{
+    if(state.token!==token)throw new Error('Connection changed');
+    const response=await fetch('/api/deliverables/'+encodeURIComponent(id),{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+    if(!response.ok)throw new Error('This file could not be downloaded. Try again.');
+    const blob=await response.blob();if(state.token!==token)throw new Error('Connection changed');if(blob.size>8*1024*1024)throw new Error('File exceeds the chat download limit');return blob;
+  };
+  const nativeSave=window.__KINDRED_FILE_DELIVERY?async id=>{if(state.token!==token)throw new Error('Connection changed');return nativeInvoke('save_chat_file',{id});}:null;
   for(let index=0;index<attachments.length;index++) {
     const attachment=attachments[index];
-    if(attachment.kind==='file'){
-      let end=index+1;while(end<attachments.length&&attachments[end].kind==='file')end++;
-      if(end-index>3){
-        const stack=node('details','document-stack'),summary=node('summary','document-stack-summary'),copy=node('span','document-stack-copy'),body=node('div','document-stack-body chat-disclosure-body');
-        copy.append(node('strong','',(end-index)+' files'),node('span','muted',attachments.slice(index,end).map(a=>a.name||a.title||'File').join(' · ')));
-        summary.append(icon('paperclip',18),copy,icon('chevron',16));stack.append(summary,body);
-        for(let at=index;at<end;at++)renderAttachments(body,[attachments[at]]);
-        body.inert=true;animateChatDisclosure(stack,body,true);target.append(stack);index=end-1;continue;
+    if(attachment.kind!=='file'||chatMediaType(attachment)){
+      let end=index+1;while(end<attachments.length&&(attachments[end].kind!=='file'||chatMediaType(attachments[end])))end++;
+      const holder=end-index>1?node('div','chat-media-grid'+((end-index)%2?' has-lead':'')):target;
+      for(let at=index;at<end;at++){
+        const file=attachments[at];
+        if(file.kind==='file')holder.append(chatMedia(file,{scope:'deliverable',getBlob,nativeSave,notice,icon}));
+        else holder.append(chatMedia({...file,name:file.title||'Screenshot',mime:'image/png'}, {scope:'screenshot',getBlob:async id=>{if(state.token!==token)throw new Error('Connection changed');return screenshotBlob(id);},notice,icon}));
       }
-      target.append(fileCard(attachment,{getBlob:async id=>{
-        const token=state.token,response=await fetch('/api/deliverables/'+encodeURIComponent(id),{headers:{Authorization:'Bearer '+token},cache:'no-store'});
-        if(!response.ok)throw new Error('This file could not be downloaded. Try again.');const blob=await response.blob();if(state.token!==token)throw new Error('Connection changed');if(blob.size>8*1024*1024)throw new Error('File exceeds the chat download limit');return blob;
-      },getPagePreview:async(id,signal)=>{
-        const token=state.token,response=await fetch('/api/deliverables/'+encodeURIComponent(id)+'/preview',{headers:{Authorization:'Bearer '+token},cache:'no-store',signal});
-        if(!response.ok||!response.headers.get('Content-Type')?.startsWith('application/pdf'))throw new Error('Page preview unavailable');const blob=await response.blob();if(state.token!==token)throw new Error('Connection changed');if(blob.size>32*1024*1024)throw new Error('Preview exceeds limit');return blob;
-      },nativeSave:window.__KINDRED_FILE_DELIVERY?id=>nativeInvoke('save_chat_file',{id}):null,nativeReveal:window.__KINDRED_FILE_DELIVERY?receipt=>nativeInvoke('reveal_chat_file',{receipt}):null,notice,renderMarkdown:markdown}));continue;
+      if(holder!==target)target.append(holder);index=end-1;continue;
     }
-    const figure=node('figure','screenshot-attachment'),frame=node('div','screenshot-frame'),image=node('img'),caption=node('figcaption');
-    const open=button('',async()=>{
-      const url=URL.createObjectURL(await screenshotBlob(attachment.id));
-      const dialog=modal(attachment.title||'Screenshot','screenshot-dialog');
-      const full=node('img');full.src=url;full.alt=attachment.title||'Screenshot';dialog.append(full);
-      dialog.addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});
-    },'screenshot-open');
-    open.setAttribute('aria-label','Open screenshot: '+(attachment.title||'Screenshot'));
-    image.alt=attachment.title||'Screenshot';open.append(image);
-    const download=node('a','screenshot-download');download.append(icon('download',16));download.setAttribute('aria-label','Download screenshot');download.title='Download screenshot';download.tabIndex=0;download.download='kindred-screenshot.png';download.hidden=true;
-    frame.append(open,download);figure.append(frame,caption);target.append(figure);
-    const load=async()=>{
-      try {
-        const blob=await screenshotBlob(attachment.id);
-        if(!figure.isConnected)return;
-        const url=URL.createObjectURL(blob);screenshotUrls.add(url);image.src=url;download.href=url;download.hidden=false;
-      } catch(error) {
-        if(!figure.isConnected)return;
-        const retry=button('Reload screenshot',async()=>{retry.remove();await load();},'subtle-button');
-        caption.append(retry);image.alt=error.message;
-      }
-    };
-    // The figure is inserted into the live conversation at the end of this render.
-    queueMicrotask(load);
+    let end=index+1;while(end<attachments.length&&attachments[end].kind==='file'&&!chatMediaType(attachments[end]))end++;
+    if(end-index>3){
+      const stack=node('details','document-stack'),summary=node('summary','document-stack-summary'),copy=node('span','document-stack-copy'),body=node('div','document-stack-body chat-disclosure-body');
+      copy.append(node('strong','',(end-index)+' files'),node('span','muted',attachments.slice(index,end).map(a=>a.name||a.title||'File').join(' · ')));
+      summary.append(icon('paperclip',18),copy,icon('chevron',16));stack.append(summary,body);
+      for(let at=index;at<end;at++)renderAttachments(body,[attachments[at]]);
+      body.inert=true;animateChatDisclosure(stack,body,true);target.append(stack);index=end-1;continue;
+    }
+    target.append(fileCard(attachment,{getBlob,getPagePreview:async(id,signal)=>{
+      if(state.token!==token)throw new Error('Connection changed');
+      const response=await fetch('/api/deliverables/'+encodeURIComponent(id)+'/preview',{headers:{Authorization:'Bearer '+token},cache:'no-store',signal});
+      if(!response.ok||!response.headers.get('Content-Type')?.startsWith('application/pdf'))throw new Error('Page preview unavailable');const blob=await response.blob();if(state.token!==token)throw new Error('Connection changed');if(blob.size>32*1024*1024)throw new Error('Preview exceeds limit');return blob;
+    },nativeSave,nativeReveal:window.__KINDRED_FILE_DELIVERY?receipt=>nativeInvoke('reveal_chat_file',{receipt}):null,notice,renderMarkdown:markdown}));
   }
 }
 
