@@ -2665,7 +2665,7 @@ async function settingsConnections(revision) {
         const refresh=button('Refresh '+source+' connectors',refreshConnectors);
         const heading=node('div','connection-section-heading');heading.append(node('strong','',source+' account connectors'),refresh);
         inherited.append(heading,status,items);
-        if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Each connector call requires review.'));
+        if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Verified connections follow your bot’s access settings; provider restrictions and email-send reviews still apply.'));
         else{const manage=node('a','outline-button','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';inherited.append(manage);}
         row.body.append(inherited);
         if(codex)row.body.append(await decisionsConnection());
