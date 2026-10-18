@@ -13,7 +13,11 @@ self.onmessage=async({data:{buffer,extension}})=>{try{
  if(extension==='docx'){
   self.postMessage({buffer},[buffer]);
  }else{
-  const book=new ExcelJS();await book.xlsx.load(buffer,{ignoreNodes:['drawing','picture','dataValidations','conditionalFormatting','extLst']});
+  // Preview reads worksheet cells, not structured-table metadata. ExcelJS
+  // cannot resolve valid package-root table targets (for example /xl/tables/table1.xml).
+  // Skip tableParts so those references cannot break otherwise readable cells;
+  // the original workbook and its tables remain unchanged for download.
+  const book=new ExcelJS();await book.xlsx.load(buffer,{ignoreNodes:['drawing','picture','dataValidations','conditionalFormatting','extLst','tableParts']});
   const sheets=book.worksheets.filter(s=>s.state==='visible').slice(0,30).map(sheet=>{
    const rows=[];const rowCount=Math.min(sheet.rowCount,200),columnCount=Math.min(sheet.columnCount,40),merges=(sheet.model.merges||[]).map(range=>{const parts=range.split(':').map(ref=>{const m=/^([A-Z]+)([0-9]+)$/.exec(ref);let col=0;for(const ch of m[1])col=col*26+ch.charCodeAt(0)-64;return {row:Number(m[2]),col};});return {top:parts[0].row,left:parts[0].col,bottom:parts[1]?.row||parts[0].row,right:parts[1]?.col||parts[0].col};}).filter(m=>m.top<=rowCount&&m.left<=columnCount);
    for(let r=1;r<=rowCount;r++){const row=[];for(let c=1;c<=columnCount;c++){

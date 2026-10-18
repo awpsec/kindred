@@ -5016,6 +5016,7 @@ html[data-motion=off] #notice.continuation-confirmation{animation:none}
 .server-update-settings{padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid var(--line)}
 .server-update-settings h3{font-size:14px;margin:0 0 12px}
 html[data-starting] #connect,html[data-starting] #app{visibility:hidden}
+html[data-starting].mac-desktop .desktop-titlebar.macos{background:var(--bg,#111)}
 #startup-status{position:fixed;inset:0;display:grid;place-content:center;justify-items:center;gap:16px;background:var(--bg,#111);color:var(--muted,#aaa);z-index:20}
 #startup-status[hidden]{display:none}
 
