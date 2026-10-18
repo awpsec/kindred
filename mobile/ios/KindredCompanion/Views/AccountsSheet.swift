@@ -19,6 +19,14 @@ struct AccountsSheet: View {
                     Section {
                         CurrentAccountHeader(account: current, signedIn: model.isSignedIn(current.id))
                             .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
+                        if model.isSignedIn(current.id) {
+                            Button {
+                                model.reloadActive()
+                                dismiss()
+                            } label: {
+                                Label("Reload Conversation", systemImage: "arrow.clockwise")
+                            }
+                        }
                     }
                 }
                 ForEach(model.groups) { group in
@@ -95,6 +103,7 @@ struct AccountsSheet: View {
             }
         }
         .task { await model.refreshAccountIdentities() }
+        .tint(.primary)
     }
 
     private func choose(_ account: Account) {
@@ -147,7 +156,7 @@ private struct ServerHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "server.rack")
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(.secondary)
             Text(origin.displayName)
                 .textCase(nil)
                 .lineLimit(1)
@@ -214,7 +223,7 @@ private struct AccountRow: View {
                     if isActive {
                         Image(systemName: "checkmark")
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(.secondary)
                             .accessibilityLabel("Current account")
                     }
                 }
@@ -227,7 +236,7 @@ private struct AccountRow: View {
                     .font(.title3)
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(Theme.accent)
+            .foregroundStyle(.secondary)
             .accessibilityLabel("Details for \(account.title)")
         }
         .padding(.vertical, 2)
@@ -282,7 +291,7 @@ private struct AccountRow: View {
                 if isActive {
                     Image(systemName: "checkmark")
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(.secondary)
                         .accessibilityLabel("Current account")
                 }
                 Spacer(minLength: 8)
@@ -292,7 +301,7 @@ private struct AccountRow: View {
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 .buttonStyle(.borderless)
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(.secondary)
                 .accessibilityLabel("Details for \(account.title)")
             }
         }

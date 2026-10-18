@@ -28,41 +28,95 @@ struct WebContainerView: UIViewRepresentable {
 @MainActor
 final class WebHostView: UIView {
     private weak var session: WebSession?
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if window == nil { session?.detachVisibleHost() }
-        else { publishGeometry() }
-    }
+    private var hasDivision = false
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        publishGeometry()
+        updateEnvironment()
     }
 
     override func safeAreaInsetsDidChange() {
         super.safeAreaInsetsDidChange()
-        publishGeometry()
+        setNeedsLayout()
     }
+
+    private func updateEnvironment() {
+        var isDuoInner = false
+        if #available(iOS 27.1, *) {
+            isDuoInner = !(window?.reservedRegions(kind: .division, options: .includeInactive).isEmpty ?? true)
+            hasDivision = hasDivision || isDuoInner
+        }
+        guard let session else { return }
+        let keyboardVisible = session.webView.frame.maxY < bounds.maxY - safeAreaInsets.bottom - 1
+        let insets = session.webView.safeAreaInsets
+        let windowBounds = window?.bounds ?? bounds
+        session.updateLayout(topInset: insets.top, bottomInset: keyboardVisible ? 0 : insets.bottom,
+                             leftInset: insets.left, rightInset: insets.right, isDuo: hasDivision,
+                             isDuoInner: isDuoInner, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
+                             viewportHeight: session.webView.bounds.height,
+                             isPortrait: windowBounds.height >= windowBounds.width)
+        session.refreshSystemTextSize()
+        publishGeometry()
+        session.restoreComputerKeyboard()
+    }
+
+    @objc private func keyboardDidHide() {
+        session?.restoreComputerKeyboard(force: true)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        session?.computerHostAttachmentChanged()
+        if window == nil { session?.detachVisibleHost() }
+        setNeedsLayout()
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     private func publishGeometry() {
         guard let window else { return }
-        session?.updateGeometry(width: bounds.width, height: bounds.height,
+        var regions: [[String: Any]] = []
+        if #available(iOS 27.1, *), let webView = session?.webView {
+            for (kind, name) in [(UIView.ReservedRegion.Kind.division, "division"), (.occlusion, "occlusion")] {
+                for region in webView.reservedRegions(kind: kind) {
+                    let rect = region.frame.intersection(webView.bounds)
+                    guard !rect.isNull else { continue }
+                    regions.append(["kind": name, "x": rect.minX, "y": rect.minY,
+                                    "width": rect.width, "height": rect.height])
+                }
+            }
+        }
+        session?.updateGeometry(width: session?.webView.bounds.width ?? bounds.width,
+            height: session?.webView.bounds.height ?? bounds.height,
             windowWidth: window.bounds.width, windowHeight: window.bounds.height,
-            safeArea: window.safeAreaInsets)
+            safeArea: session?.webView.safeAreaInsets ?? safeAreaInsets, reservedRegions: regions)
     }
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = UIColor(named: "Canvas")
+        keyboardLayoutGuide.usesBottomSafeArea = false
+        observeTextSize()
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardDidHide), name: UIResponder.keyboardDidHideNotification, object: nil)
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         backgroundColor = UIColor(named: "Canvas")
+        keyboardLayoutGuide.usesBottomSafeArea = false
+        observeTextSize()
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardDidHide), name: UIResponder.keyboardDidHideNotification, object: nil)
+    }
+
+    private func observeTextSize() {
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: WebHostView, _: UITraitCollection) in
+            view.session?.refreshSystemTextSize()
+            view.setNeedsLayout()
+        }
     }
 
     func attach(_ session: WebSession) {
         self.session = session
+        hasDivision = hasDivision || session.presentation.isDuo
         let webView = session.webView
         guard webView.superview !== self else { return }
         subviews.forEach { $0.removeFromSuperview() }
@@ -73,7 +127,10 @@ final class WebHostView: UIView {
             webView.leadingAnchor.constraint(equalTo: leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: trailingAnchor),
             webView.topAnchor.constraint(equalTo: topAnchor),
-            webView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            // UIKit tracks the real keyboard edge, including focus/rotation
+            // animations. WebKit no longer has to subtract its height in CSS.
+            webView.bottomAnchor.constraint(equalTo: keyboardLayoutGuide.topAnchor),
         ])
+        setNeedsLayout()
     }
 }

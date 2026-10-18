@@ -10,7 +10,7 @@ const encode = text => wrapped ? `{\n${text}\n}` : text;
 const lines = source.split('func testNativeDictationComposerStatesKeepDraftAndKeyboard()')[1].split('private func js')[0].split('\n');
 const snippets = lines.filter(line => line.includes('try await js("const p=document.querySelector') || line.includes('try await js("const m=document.querySelector'))
   .map(line => JSON.parse(line.match(/js\((".*")\)/)[1]));
-assert.equal(snippets.length, 3);
+assert.equal(snippets.length, 4);
 let clicks = 0;
 const element = {firstChild:{}, textContent:'', dispatchEvent(){}, focus(){}, click(){clicks++}};
 const selection = {removeAllRanges(){}, addRange(){}};
