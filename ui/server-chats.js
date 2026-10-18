@@ -1,11 +1,17 @@
 // People and explicitly shared bots on the connected Kindred server.
 export function createServerChatsUI({api,state,node,button,field,select,modal,icon,buddy,notice,refresh,chooseChat,chooseBot}) {
   let support;
-  async function available(){
-    if(support===undefined){const response=await fetch('/identity/meta');support=response.ok&&(await response.json()).server_chats===true;if(support){const identity=await fetch('/identity/profiles',{headers:{Authorization:'Bearer '+state.token}});if(identity.ok&&(await identity.json()).legacy===true)support=false;}}
+  async function available({signal}={}){
+    if(support===undefined){
+      const response=await fetch('/identity/meta',{signal});
+      let detected=response.ok&&(await response.json()).server_chats===true;
+      if(detected){const identity=await fetch('/identity/profiles',{signal,headers:{Authorization:'Bearer '+state.token}});if(identity.ok&&(await identity.json()).legacy===true)detected=false;}
+      if(signal?.aborted)throw signal.reason;
+      support=detected;
+    }
     return support;
   }
-  async function list(){return await available()?api('/server-chats'):[];}
+  async function list(options={}){return await available(options)?api('/server-chats','GET',undefined,options):[];}
   function avatar(member,size=30){
     if(member.kind==='bot')return buddy({...member,profile:member.avatar||{}},size);
     const face=node('span','person-avatar');face.style.width=face.style.height=size+'px';face.append(icon('user',Math.round(size*.62)));face.setAttribute('aria-label','Person');return face;

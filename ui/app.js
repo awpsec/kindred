@@ -219,7 +219,7 @@ async function perform(action, control) {
   try {
     return await action();
   } catch (e) {
-    if(e==='pagehide')return;
+    if(e==='pagehide'||e==='foreground-refresh')return;
     if(e?.controlFeedbackShown)return;
     notice(e.message || "Something went wrong.", true);
   } finally {
@@ -270,8 +270,10 @@ async function api(path, method = "GET", body, options = {}) {
     throw new Error("The server did not return a valid response.");
   }
   if (!res.ok) {const error=new Error(res.status===401&&profilesUI.signedOut()?"Your session has ended.":data.error || `Request failed (${res.status})`);error.status=res.status;error.screenState=data.screen_state;throw error;}
+  if(options.signal?.aborted)throw options.signal.reason;
   return data;
   } catch(e) {
+    if(options.signal?.reason==='foreground-refresh')throw 'foreground-refresh';
     if(timeout.signal.reason==='pagehide'){if(method==='GET')throw 'pagehide';const error=new Error('The page closed before the server confirmed the change. Check whether it completed before trying again.');error.uncertain=true;throw error;}
     if(timeout.signal.aborted && timeout.signal.reason!=='pagehide')throw new Error(method==='GET'?'The server took too long to respond. Try again.':'The response timed out. Check whether the change completed before retrying.');
     throw e;
@@ -557,23 +559,25 @@ async function refresh(force = false) {
     return;
   }
   state.refreshing = true;
+  const controller=new AbortController(),signal=controller.signal,token=state.token;state.refreshController=controller;
   let renderingId=null;
   const statusEpoch=state.statusEpoch||0,botEpoch=state.botWriteEpoch||0;
   try {
     const [fetchedBots, status, runs, approvals, routines, activities, privateChats, userTasks, attention, serverChats, questions] =
       await Promise.all([
-        api("/bots"),
-        api("/status"),
-        api("/runs"),
-        api("/approvals"),
-        api("/routines"),
-        api("/activity"),
-        api("/chats"),
-        api("/user-tasks"),
-        api("/attention"),
-        serverChatsUI.list(),
-        api("/questions").catch(error=>{if(error.status===404)return [];throw error;}),
+        api("/bots", "GET", undefined, {signal}),
+        api("/status", "GET", undefined, {signal}),
+        api("/runs", "GET", undefined, {signal}),
+        api("/approvals", "GET", undefined, {signal}),
+        api("/routines", "GET", undefined, {signal}),
+        api("/activity", "GET", undefined, {signal}),
+        api("/chats", "GET", undefined, {signal}),
+        api("/user-tasks", "GET", undefined, {signal}),
+        api("/attention", "GET", undefined, {signal}),
+        serverChatsUI.list({signal}),
+        api("/questions", "GET", undefined, {signal}).catch(error=>{if(error.status===404)return [];throw error;}),
       ]);
+    if(signal.aborted||token!==state.token)return;
     const chats=[...privateChats,...serverChats];
     for(const chat of serverChats){attention.chats??={};attention.chats[chat.id]={unread:chat.unread,cursor:chat.cursor,read_cursor:chat.unread?chat.read_cursor:chat.cursor,latest_message_seq:chat.cursor};}
     const bots=botEpoch===(state.botWriteEpoch||0)?fetchedBots:state.bots;
@@ -650,16 +654,18 @@ async function refresh(force = false) {
     renderSidebar();
     renderHeader();
     syncArtifactRoute();
-    renderingId=currentConversationId();await renderChat(force);
+    renderingId=currentConversationId();await renderChat(force,'sync',signal);
     if (!$("details-panel").hidden && state.view === "details") renderDetails();
     updateDesktopState();
     if(!$("computer-panel").hidden){renderScreenPicker();renderComputerRoutines();}
     updateReactions();
     scheduleReadReceipt();
   } catch(error) {
+    if(signal.aborted||error==='foreground-refresh')return;
     failConversationOpening(renderingId||currentConversationId(),error);
     throw error;
   } finally {
+    if(state.refreshController===controller)state.refreshController=null;
     state.refreshing = false;
     if (state.pendingRefresh) {
       state.pendingRefresh = false;
@@ -1368,10 +1374,10 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden)void check
 void checkUpdates(true);
 window.addEventListener('kindred-server-update',()=>browserUpdater.open());
 
-async function renderChat(force, mode='sync') {
+async function renderChat(force, mode='sync', signal) {
   const currentChat =
     state.chat || state.chats.find((c) => c.id === `dm-${state.bot?.id}`);
-  if (currentChat) return renderSharedChat(currentChat, force, mode);
+  if (currentChat) return renderSharedChat(currentChat, force, mode, signal);
   clearConversationOpening();
   const bot = state.bot,
     area = $("content");
@@ -1397,7 +1403,7 @@ async function renderChat(force, mode='sync') {
           !state.details.has(r.id) ||
           state.details.get(r.id).run.status !== r.status,
       )
-      .map(async (r) => state.details.set(r.id, await api("/runs/" + r.id))),
+      .map(async (r) => state.details.set(r.id, await api("/runs/" + r.id,"GET",undefined,{signal}))),
   );
   if (state.bot?.id !== bot.id) return;
   const key = JSON.stringify([
@@ -4274,6 +4280,18 @@ matchMedia("(prefers-color-scheme:dark)").addEventListener(
   "change",
   applyGeneral,
 );
+let lastForegroundRefresh=-Infinity;
+function refreshOnForeground(){
+  if(!state.token||document.hidden||pageSuspended||performance.now()-lastForegroundRefresh<400)return;
+  lastForegroundRefresh=performance.now();
+  // Discard a suspended polling snapshot, never an approval/send or other write.
+  state.refreshController?.abort('foreground-refresh');
+  void perform(()=>refresh(true));
+}
+window.addEventListener('focus',refreshOnForeground);
+window.addEventListener('kindred-desktop-resume',refreshOnForeground);
+window.addEventListener('online',refreshOnForeground);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshOnForeground();});
 setInterval(() => {
   if (state.token && !document.hidden) perform(() => refresh());
 }, 2500);
@@ -4919,6 +4937,7 @@ function taskConnectorCalls(items,entry){
 }
 function taskConnectorDisclosure(calls,entry,key){
   entry.taskConnectorDetails??=new Set();const anchor=String(calls[0].connector_artifact.progress_message_seq),id='task-call-details-'+anchor,wrap=node('span','task-connector-disclosure'),brands=[...new Map(calls.map(m=>{const c=m.connector_artifact,b=connectorBrand(c.connection||c.connector,c.tool);return [b.key,b];})).values()];
+  wrap.dataset.connectorIds=calls.map(m=>m.connector_artifact.id).join(' ');
   const toggle=button('',()=>{},'task-connector-toggle'),body=node('span','task-connector-detail');body.id=id;
   const label=brands.map(b=>b.name).join(' and ')+': '+calls.length+' completed call'+(calls.length===1?'':'s');toggle.setAttribute('aria-label',label);toggle.title=label;toggle.setAttribute('aria-controls',id);
   for(const brand of brands){const logo=connectorLogo(brand);logo.setAttribute('aria-hidden','true');wrap.dataset.theme=document.documentElement.dataset.theme;toggle.append(logo);}
@@ -5431,15 +5450,15 @@ function failConversationOpening(id,error){
   },'subtle-button'));
   $('content').setAttribute('aria-busy','false');
 }
-function messagePage(entry,query={}){
-  return api('/chats/'+entry.id+'?'+new URLSearchParams({limit:CHAT_PAGE_SIZE,...query}));
+function messagePage(entry,query={},signal){
+  return api('/chats/'+entry.id+'?'+new URLSearchParams({limit:CHAT_PAGE_SIZE,...query}),'GET',undefined,{signal});
 }
 function acceptHistoryPage(entry,data){
   entry.pendingWaits=data.pending_waits||[];entry.commands=data.commands||[];entry.sharedWorkers=data.workers||[];
   entry.messages=data.messages.slice(-CHAT_WINDOW_SIZE);entry.loaded=true;
   entry.hasBefore=!!data.page?.has_before;entry.hasAfter=!!data.page?.has_after;entry.error=null;entry.wantLatest=false;
 }
-async function syncChatHistory(entry){
+async function syncChatHistory(entry,signal){
   if(entry.pending){await entry.pending;return;}
   const query={limit:Math.max(CHAT_PAGE_SIZE,entry.messages.length)};
   if(entry.loaded && entry.messages.length && !(chatScroll.follow && (!entry.hasAfter || entry.wantLatest))){
@@ -5450,7 +5469,7 @@ async function syncChatHistory(entry){
   const boundary=unreadBoundaries.get(entry.id),opening=boundary&&!boundary.fetched;
   if(opening){delete query.before;query.after=boundary.first||boundary.after;query.inclusive=!!boundary.first;query.limit=CHAT_PAGE_SIZE;}
   entry.pending=(async()=>{
-    const data=await messagePage(entry,query);
+    const data=await messagePage(entry,query,signal);
     if(opening)boundary.fetched=true;
     entry.pendingWaits=data.pending_waits||[];entry.commands=data.commands||[];
     // A reading gesture during a tail refresh takes precedence over removing its anchor.
@@ -5467,7 +5486,7 @@ async function syncChatHistory(entry){
     // Opening on the latest unread item can return only one message. Include
     // the preceding page before exposing the conversation and its scroll area.
     if((opening||!entry.ready||chatOpening?.id===entry.id)&&entry.hasBefore&&entry.messages.length<CHAT_PAGE_SIZE&&entry.messages.length){
-      const older=await messagePage(entry,{before:entry.messages[0].seq,limit:CHAT_PAGE_SIZE-entry.messages.length});
+      const older=await messagePage(entry,{before:entry.messages[0].seq,limit:CHAT_PAGE_SIZE-entry.messages.length},signal);
       entry.messages=[...older.messages,...entry.messages].filter((m,i,all)=>all.findIndex(other=>other.seq===m.seq)===i);
       entry.hasBefore=!!older.page?.has_before;
     }
@@ -5738,7 +5757,7 @@ function connectorStack(messages,entry){
   const latest=node('div','connector-stack-current');latest.append(connectorMessage(last,entry.id));
   group.append(details,latest);return group;
 }
-async function renderSharedChat(chat, force, mode='sync') {
+async function renderSharedChat(chat, force, mode='sync', signal) {
   const entry=conversationHistory(chat.id);
   // Use the refreshed unread cursor on initial load and each explicit visit,
   // without moving a reader when background activity arrives.
@@ -5746,8 +5765,8 @@ async function renderSharedChat(chat, force, mode='sync') {
   if(chatOpening?.id===chat.id&&chatOpening.failed)return;
   if((state.renderedChatId!==chat.id||chatOpening)&&!cachedConversationReady(entry))showConversationOpening(chat.id);
   if(mode==='cached'&&!cachedConversationReady(entry))return;
-  try{await renderPreparedSharedChat(chat,force,mode);}
-  catch(error){failConversationOpening(chat.id,error);throw error;}
+  try{await renderPreparedSharedChat(chat,force,mode,signal);}
+  catch(error){if(error!=='foreground-refresh')failConversationOpening(chat.id,error);throw error;}
 }
 // Keep queued direct-message turns together without rewriting send timestamps or
 // storage cursors. Explicit steering remains interleaved with its active turn.
@@ -5778,9 +5797,9 @@ function orderedDirectMessages(messages,runs){
   }
   return ordered;
 }
-async function renderPreparedSharedChat(chat, force, mode='sync') {
+async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   const id=chat.id,entry=conversationHistory(id),liveArea=$('content'),area=node('div');
-  if(mode==='sync')await syncChatHistory(entry);
+  if(mode==='sync')await syncChatHistory(entry,signal);
   if(currentConversationId()!==id || !entry.loaded)return;
   renderRequestTray(chat,entry);
   const data={messages:entry.messages.filter(m=>!withdrawnQueueMessage(m,id))},visibleRuns=new Set(data.messages.filter(m=>['assistant','result','task_progress'].includes(m.kind)).map(m=>m.run_id).filter(Boolean));
@@ -5794,7 +5813,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     // Old visible results may no longer be in the recent-runs feed.
     for(let i=0;i<pending.length;i+=8){
       if(currentConversationId()!==id)return;
-      await Promise.all(pending.slice(i,i+8).map(async runId=>state.details.set(runId,await api('/runs/'+runId))));
+      await Promise.all(pending.slice(i,i+8).map(async runId=>state.details.set(runId,await api('/runs/'+runId,'GET',undefined,{signal}))));
     }
   }
   if (currentConversationId() !== id) return;
@@ -5802,7 +5821,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   if(mode==='sync' && durableReplies && !entry.hasAfter) {
     const persisted=new Set(data.messages.map(m=>m.source_event_seq)),latest=data.messages.at(-1)?.created||0;
     if(listedRuns.some(r=>(state.details.get(r.id)?.events||[]).some(e=>e.kind==='assistant' && e.created>=latest && !persisted.has(e.seq)))) {
-      await syncChatHistory(entry);data.messages=entry.messages.filter(m=>!withdrawnQueueMessage(m,id));
+      await syncChatHistory(entry,signal);data.messages=entry.messages.filter(m=>!withdrawnQueueMessage(m,id));
       if(currentConversationId()!==id)return;
     }
   }
@@ -6247,7 +6266,61 @@ function connectorAdvance(group,next){
     const control=trackMotion(group.animate([{opacity:1},{opacity:1}],{duration}),duration,finish);group.finishConnectorAdvance=()=>control.finish();
   };
 }
+// Keep the outgoing row's space while its receipt moves to the owning task.
+// Only live transitions animate; history loads and reduced motion settle directly.
+function connectorTaskTransfers(target,desired){
+  const transfers=[];
+  for(const row of target.querySelectorAll('.connector-message')){
+    const card=row.querySelector('[data-connector-artifact]'),id=card?.dataset.connectorArtifact;
+    if(!id)continue;
+    const destination=[...desired.querySelectorAll('[data-connector-ids]')].find(n=>n.dataset.connectorIds.split(' ').includes(id));
+    const incoming=[...desired.querySelectorAll('.connector-message')].find(n=>n.querySelector('[data-connector-artifact]')?.dataset.connectorArtifact===id);
+    const collapsing=incoming&&!row.querySelector('.connector-call')&&incoming.querySelector('.connector-call');
+    if(!destination&&!collapsing)continue;
+    const rect=row.getBoundingClientRect(),viewport=target.getBoundingClientRect();
+    if((!rect.height||rect.bottom<viewport.top||rect.top>viewport.bottom)&&!row.contains(document.activeElement))continue;
+    const ghost=row.cloneNode(true);
+    for(const n of [ghost,...ghost.querySelectorAll('*')])for(const name of [...n.getAttributeNames()])if(name==='id'||name.startsWith('data-'))n.removeAttribute(name);
+    ghost.classList.add('connector-transfer-ghost');ghost.inert=true;ghost.setAttribute('aria-hidden','true');
+    Object.assign(ghost.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',margin:'0',pointerEvents:'none',overflow:'hidden',zIndex:'30',transformOrigin:'top left'});
+    transfers.push({id,rect,ghost,source:row,collapsing:!!collapsing,focused:row.contains(document.activeElement)});
+  }
+  return transfers;
+}
+function connectorTransferArrival(target,{id,collapsing}){
+  const destination=[...target.querySelectorAll('[data-connector-ids]')].find(n=>n.dataset.connectorIds.split(' ').includes(id));
+  const row=[...target.querySelectorAll('.connector-message')].find(n=>n.querySelector('[data-connector-artifact]')?.dataset.connectorArtifact===id);
+  return [collapsing?row?.querySelector('.connector-call>summary'):destination?.querySelector('button'),destination?.closest('.summary-progress')?.querySelector('summary'),row?.closest('.connector-stack')?.querySelector(':scope>summary')].find(n=>n?.getClientRects().length);
+}
+function animateConnectorTaskTransfers(target,transfers){
+  const controls=[],duration=300,easing='cubic-bezier(.2,.8,.2,1)';
+  for(const transfer of transfers){
+    const {id,rect,ghost,collapsing,focused,placeholder}=transfer;
+    const row=[...target.querySelectorAll('.connector-message')].find(n=>n.querySelector('[data-connector-artifact]')?.dataset.connectorArtifact===id);
+    const arrival=connectorTransferArrival(target,transfer);
+    if(!arrival){placeholder?.remove();continue;}
+    const end=arrival.getBoundingClientRect(),motions=[];
+    if(focused)arrival.focus({preventScroll:true});
+    document.body.append(ghost);
+    const dx=collapsing?0:Math.max(-rect.width,Math.min(rect.width,end.left-rect.left));
+    const dy=collapsing?0:Math.max(-240,Math.min(240,end.top-rect.top));
+    motions.push(ghost.animate([{opacity:1,transform:'none'},{opacity:0,transform:`translate(${dx}px,${dy}px) scale(${collapsing ? .96 : .3})`}],{duration:240,easing,fill:'both'}));
+    motions.push(arrival.animate([{opacity:0},{opacity:1}],{duration:180,delay:120,easing,fill:'both'}));
+    if(collapsing&&!row.getClientRects().length){ghost.remove();for(const motion of motions)motion.cancel();continue;}
+    const subject=collapsing?row:placeholder;
+    const height=collapsing?row.getBoundingClientRect().height:0;
+    subject.style.overflow='hidden';
+    const finish=()=>{for(const motion of motions)motion.cancel();ghost.remove();if(placeholder)placeholder.remove();else subject.style.removeProperty('overflow');};
+    controls.push(trackMotion(subject.animate([{height:rect.height+'px'},{height:height+'px'}],{duration,easing,fill:'both'}),duration,finish));
+  }
+  const finish=()=>{for(const control of controls)control.finish();target.removeEventListener('pointerdown',finish,true);target.removeEventListener('keydown',finish,true);if(target.finishConnectorTransfers===finish)delete target.finishConnectorTransfers;};
+  target.finishConnectorTransfers=finish;
+  target.addEventListener('pointerdown',finish,true);target.addEventListener('keydown',finish,true);
+  setTimeout(finish,duration+150);
+}
 function reconcileConversation(target,desired,animate=true){
+  target.finishConnectorTransfers?.();
+  const transfers=connectorTaskTransfers(target,desired),animateTransfers=animate&&motionAllowed();
   const focusedQuestion=target.contains(document.activeElement)?document.activeElement?.closest('[data-task-question]')?.dataset.taskQuestion:null;
   const formations=animate?connectorStackFormation(target,desired):[];
   for(const next of desired.querySelectorAll('.command-progress')){
@@ -6276,10 +6349,20 @@ function reconcileConversation(target,desired,animate=true){
     if(previous&&preserveShardMessage(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     conversationRenderSignatures.set(next,signature);return next;
   });
+  for(const transfer of transfers)if(animateTransfers&&!transfer.collapsing){
+    const placeholder=node('div','connector-transfer-space');placeholder.inert=true;placeholder.setAttribute('aria-hidden','true');
+    placeholder.style.height=transfer.rect.height+'px';transfer.placeholder=placeholder;
+    const source=transfer.source.closest('.connector-stack-group')||transfer.source;
+    let following=source.nextElementSibling,index=-1;
+    while(following&&index<0){index=nodes.findIndex(n=>n.dataset.message===following.dataset.message);following=following.nextElementSibling;}
+    nodes.splice(index<0?nodes.length:index,0,placeholder);
+  }
   const keep=new Set(nodes);for(const child of [...target.children])if(!keep.has(child))child.remove();
   let cursor=target.firstChild;
   for(const next of nodes){if(next===cursor){cursor=cursor.nextSibling;continue;}target.insertBefore(next,cursor);}
   for(const formation of formations)animateConnectorFormation(formation);
+  for(const transfer of transfers)if(transfer.focused)connectorTransferArrival(target,transfer)?.focus({preventScroll:true});
+  if(animateTransfers&&transfers.length)animateConnectorTaskTransfers(target,transfers);
   if(focusedQuestion&&!target.contains(document.activeElement))target.querySelector('[data-task-question="'+CSS.escape(focusedQuestion)+'"]>summary')?.focus({preventScroll:true});
   observeLongMessages(target);
   continueLoops(target);
