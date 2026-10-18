@@ -1756,7 +1756,7 @@ function renderBotSettings() {
     pinned = switchField("Pin in sidebar", profile(b).pinned),
     notifications = switchField("Notifications", profile(b).notifications !== false),
     progress = botProgressControl(b);
-  const local = botLocalAccess(b);
+  const local = botLocalAccess(b), initiative = botInitiativeControl(b);
   notifications.input.addEventListener("change", () => {if(notifications.input.checked) void enableNotifications();});
   form.append(
     avatar,
@@ -1773,6 +1773,7 @@ function renderBotSettings() {
     button("Memory", () => editBotText(b.id, "memory"), "bot-text-button", "chevron"),
     button("Workspace origin", () => workspaceUI.origin(b), "bot-text-button", "chevron"),
     automatic.label,
+    initiative.root,
     pinned.label,
   );
   const saver = livePreferences(form, () => ({
@@ -1781,6 +1782,7 @@ function renderBotSettings() {
     preserve_text: true,
     auto_approve: false, approval_mode: automatic.input.value,
     profile: {...profile(draft), label: label.input.value, description: description.input.value,
+      initiative: initiative.input.checked, initiative_instructions: initiative.instructions(profile(draft).initiative_instructions||''),
       progress_updates:progress.input.value, pinned: pinned.input.checked, notifications: notifications.input.checked, animated: true, local_access: local.input.checked, local_device_id: local.device.value},
   }), value => api("/bots/" + b.id, "PUT", value), value => {
     Object.assign(draft, value);connectors.setProvider(value.provider,true);
@@ -1793,6 +1795,22 @@ function renderBotSettings() {
     connectors,
     button("Archive bot", () => archiveBot(b.id), "danger-text"),
   );
+}
+function botInitiativeControl(bot) {
+  const root=node('section','bot-initiative-settings'),toggle=switchField('Take initiative',profile(bot).initiative===true);
+  const help=node('p','muted small','Do useful background research, prepare drafts, and bring you updates. Your existing permissions still apply. Turning this off leaves routines, monitoring, and teammate updates unchanged.');
+  help.id='bot-initiative-help';toggle.input.setAttribute('aria-describedby',help.id);
+  const details=node('div'),guidance=field('What should this bot keep an eye on?',profile(bot).initiative_instructions||'','textarea',{rows:3,maxLength:2000,placeholder:'For example, follow up on project plans and delivery updates. Bring useful results to our DM.'});
+  const budget=node('p','muted small'),zone=String(state.general.timezone||'').trim();
+  budget.textContent='Up to 2 background checks a day, up to 15 minutes each. '+(zone?'Checks run between 08:00 and 20:00 ('+zone+'), using your Settings timezone.':'Set your timezone in Settings → General before background checks can start. Checks run between 08:00 and 20:00 in that timezone.');
+  budget.id='bot-initiative-budget';toggle.input.setAttribute('aria-describedby',help.id+' '+budget.id);
+  const validate=()=>guidance.input.setCustomValidity(toggle.input.checked&&new TextEncoder().encode(guidance.input.value).length>2000?'Shorten this guidance to 2,000 bytes or less.':'');
+  const paint=()=>{details.hidden=!toggle.input.checked;guidance.input.disabled=!toggle.input.checked;validate();};
+  toggle.input.addEventListener('change',paint);guidance.input.addEventListener('input',validate);paint();
+  details.append(guidance.label,budget);root.append(toggle.label,help,details);
+  // Disabling must work even when an unsaved guidance edit exceeds the byte limit.
+  const instructions=saved=>!toggle.input.checked&&new TextEncoder().encode(guidance.input.value).length>2000?saved:guidance.input.value;
+  return {root,input:toggle.input,instructions};
 }
 async function editBotText(id, key) {
   const latest = (await api('/bots')).find(b => b.id === id);
