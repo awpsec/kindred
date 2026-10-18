@@ -16,7 +16,23 @@ const probe=`\n;(()=>{let events=0;const delay=ms=>new Promise(r=>setTimeout(r,m
  addEventListener('kindred-desktop-resume',()=>{events++;setTimeout(()=>void report('native-resume'),700);});
  void(async()=>{for(let i=0;i<150&&!document.body.textContent.includes('Native reading fixture');i++)await delay(100);
  const prompt=document.querySelector('#prompt');if(!prompt)throw Error('No native composer');prompt.value='Keep native unsent draft';prompt.dispatchEvent(new Event('input',{bubbles:true}));
- const content=document.querySelector('#content');if(content){content.scrollTop=Math.min(400,Math.max(0,content.scrollHeight-content.clientHeight-400));content.dispatchEvent(new WheelEvent('wheel',{deltaY:-1,bubbles:true}));}await delay(300);await report('ready');
+ const content=document.querySelector('#content');if(!content)throw Error('No native chat content');
+ // Message text can appear before conversation opening and its scheduled restore finish.
+ // Use the production reading gesture only after opening/rendering have settled.
+ const frame=()=>new Promise(r=>requestAnimationFrame(r));
+ const setupDeadline=Date.now()+4000;let readerReady=false;
+ while(Date.now()<setupDeadline){
+  if(chatOpening||chatScroll.rendering||chatScroll.frame){await delay(50);continue;}
+  await frame();await frame();
+  if(chatOpening||chatScroll.rendering||chatScroll.frame)continue;
+  content.scrollTop=Math.min(400,Math.max(0,content.scrollHeight-content.clientHeight-400));
+  content.dispatchEvent(new WheelEvent('wheel',{deltaY:-1,bubbles:true}));
+  await frame();await frame();await delay(300);
+  const snapshot=state();await report('reader-setup');
+  if(!snapshot.reading.follow&&!snapshot.reading.opening&&!snapshot.reading.rendering&&snapshot.reading.anchors.length&&snapshot.reading.scrollHeight-snapshot.scroll-snapshot.reading.clientHeight>150){readerReady=true;break;}
+ }
+ if(!readerReady)throw Error('Native reader setup did not establish settled anchored mode');
+ await report('ready');
  for(let i=0;i<300;i++){let v=await(await fetch('/fixture/native-command')).json();if(v.action==='minimize'||v.action==='fullscreen'){await window.__TAURI__.core.invoke('window_action',{action:v.action});await report(v.action+'-dispatched');}await delay(100);}
  })().catch(e=>void fetch('/fixture/native-report',{method:'POST',body:JSON.stringify({phase:'error',error:String(e)})}));})();\n`;
 function send(res,obj){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(obj));}
@@ -30,6 +46,9 @@ server.on('request',async(req,res)=>{const p=new URL(req.url,'http://localhost')
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function waitFor(test,ms=12000){const end=Date.now()+ms;while(Date.now()<end){assert(child.exitCode===null,'Native app exited');const bad=reports.find(r=>r.error);assert(!bad,bad?.error);const r=reports.find(test);if(r)return r;await sleep(100);}throw Error('Native foreground receipt timeout');}
 function assertReadingPreserved(before,after){
+ assert(before.reading&&after.reading,'Reading state missing');
+ if(before.reading.follow===true){assert(after.reading.follow===true,'Follower mode changed');assert(Number.isFinite(after.scroll)&&Number.isFinite(after.reading.scrollHeight)&&Number.isFinite(after.reading.clientHeight),'Follower geometry missing');assert(Math.abs(after.reading.scrollHeight-after.reading.clientHeight-after.scroll)<=2,'Follower left latest messages');return;}
+ assert(before.reading.follow===false&&after.reading.follow===false,'Reader mode not preserved');
  const anchor=before.reading?.anchors?.[0];assert(anchor&&typeof anchor.key==='string'&&Number.isFinite(anchor.offset),'Initial reading anchor missing');
  const matched=after.reading?.anchors?.find(a=>a.key===anchor.key);assert(matched&&Number.isFinite(matched.offset),'Visible reading message changed');
  assert(Math.abs(matched.offset-anchor.offset)<=32,'Native logical reading position changed');
@@ -43,7 +62,7 @@ const app=exe.slice(0,exe.indexOf('.app/')+4);
 const native=(action)=>JSON.parse(execFileSync(focus,[action,String(child.pid)],{encoding:'utf8',timeout:6000}));
 (async()=>{const root=fs.mkdtempSync(path.join(os.tmpdir(),'kindred-native-focus-'));let result={passed:false,nativePlatform:'darwin',syntheticResumeDispatched:false,physicalSpacesGestureVerified:false};
  try{await new Promise(r=>server.listen(0,'127.0.0.1',r));child=spawn(exe,['http://127.0.0.1:'+server.address().port],{env:{...process.env,HOME:root,CFFIXED_USER_HOME:root,KINDRED_ACCESS_TOKEN:token,KINDRED_PROFILE_ID:'fixture',KINDRED_LEGACY_LOCAL_ACCESS:'0'},detached:true,stdio:['ignore',fs.openSync(path.join(out,'process.log'),'w'),fs.openSync(path.join(out,'process-errors.log'),'w')]});
- const initial=await waitFor(r=>r.phase==='ready',20000);const bg=native('background');assert.equal(bg.active,false);messages.push({seq:46,sender:'piper',kind:'message',text:'Native foreground updated message',created:200});await sleep(400);const fg=native('foreground');assert.equal(fg.active,true);
+ const initial=await waitFor(r=>r.phase==='ready',20000);assert.equal(initial.reading.follow,false,'Native reader baseline required');assert.equal(initial.reading.opening,false);assert.equal(initial.reading.rendering,false);assert(initial.reading.scrollHeight-initial.scroll-initial.reading.clientHeight>150,'Native reader baseline must be away from latest');const bg=native('background');assert.equal(bg.active,false);messages.push({seq:46,sender:'piper',kind:'message',text:'Native foreground updated message',created:200});await sleep(400);const fg=native('foreground');assert.equal(fg.active,true);
  const fresh=await waitFor(r=>r.phase==='native-resume'&&r.events>initial.events&&r.text.includes('Native foreground updated message'));assert.equal(fresh.draft,initial.draft);checkReading('foreground',initial,fresh);
  result={...result,passed:true,nativeFocusedResume:true,foregroundFreshness:true,draftPreserved:true,readingPositionPreserved:true,minimizeRestore:{attempted:true,verified:false},spacesReturn:{physicalGestureVerified:false,nativeFocusReturnVerified:true,reason:'AppKit focus return is observed; no physical Spaces gesture is asserted'}};
  // Minimize through the production native command; restore through normal LaunchServices reopen.
