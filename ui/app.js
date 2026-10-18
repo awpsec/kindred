@@ -8417,7 +8417,7 @@ function connectorApprovalCard(a,run) {
     box.append(node('p','task-description',action.charAt(0).toUpperCase()+action.slice(1)),node('p','muted small',args.forced?`${source} or this connector requires your approval for this specific action.`:`Allow this action once, or always allow ${bot} to use the entire ${connection?.replace(/^claude.ai /,'')||'selected'} connection, including changes.`));
     if(!claude)box.append(node('p','muted small',`Account: ${args.account_name||args.account_id||'Connected account'}`));
     choices=args.forced?[['Allow',true,''],['Deny',false,'']]:[['Always allow',true,'always_allow'],['Allow',true,''],['Deny',false,'']];
-    const details=node('details','task-details');details.append(node('summary','','Action details'),node('pre','',JSON.stringify(args.input??args.arguments??{},null,2)));box.append(details);
+    const details=node('details','task-details');details.append(node('summary','','Action details'),node('pre','',JSON.stringify(claude?args.input:args.arguments,null,2)));box.append(details);
   }
   if(pending){const actions=node('div','task-card-actions connector-card-actions');for(const [label,approved,choice] of choices)actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved,choice});await refresh(true);},approved?'primary small-button connector-request-allow':'outline-button'));box.append(actions);}
   return decisionReceipt(box,{key:'approval:'+a.id,title:box.querySelector('.task-description')?.textContent||'Connector approval',outcome:status==='approved'?'Allowed':status==='denied'?'Declined':status==='cancelled'?'Cancelled':'Expired',terminal:!pending});

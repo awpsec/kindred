@@ -13,7 +13,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.evaluate(async source=>{
    const {approvalCard,connectorMessage}=await import('/app.js'),run={id:'run-screenshot',bot_id:'piper',chat_id:'dm-piper'};
    const provider=source==='Kindred'?'connector_execute':source==='Codex'?'codex_connector':'claude_connector',tool=source==='Kindred'?'GMAIL_GET_MESSAGE':'gmail__get_message';
-   const args={toolkit:'gmail',connection:'Gmail',tool_name:tool,tool_slug:tool,forced:true,[source==='Kindred'?'arguments':'input']:{message_id:'message-42',include_body:true}};
+   const args={toolkit:'gmail',connection:'Gmail',tool_name:tool,tool_slug:tool,forced:true,[source==='Claude'?'input':'arguments']:{message_id:'message-42',include_body:true}};
    const cards=['pending','completed','failed'].map(status=>connectorMessage({seq:status,connector_artifact:{id:status,bot_id:'piper',kind:'email',connection:'Gmail',connector:'gmail',source,tool,title:'Read message',status,revision:1,input:args.input||args.arguments,records:[]}},run.chat_id));
    const email=connectorMessage({seq:'email',connector_artifact:{id:'email',bot_id:'piper',kind:'email',email_send:true,connection:'Gmail',connector:'gmail',source,tool:'send_email',title:'Review email',status:'pending',revision:1,forced:true,input:{to:'recipient@example.invalid',body:'Draft for review'},email:{to:{key:'to',text:'recipient@example.invalid'},body:{key:'body',text:'Draft for review'},subject:{key:'subject',text:'Review email'}}}},run.chat_id);
    const legacy=approvalCard({id:'legacy',tool:provider,status:'pending',args},run);
