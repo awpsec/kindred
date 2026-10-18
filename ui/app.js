@@ -8315,8 +8315,8 @@ function approvalCard(a,run) {
   a={...a,status:a.status||'pending'};
   if(a.connector_artifact)return connectorMessage({seq:'approval-'+a.id,connector_artifact:a.connector_artifact},run.chat_id);
   if(a.args?.artifact_id){
-    const box=node('div','task-card approval');box.dataset.approval=a.id;
-    box.append(node('strong','','Email review unavailable'),node('p','muted','Reload the conversation to review this action.'),button('Reload',()=>refresh(true),'outline-button'));
+    const box=node('div','connector-artifact connector-request connector-approval');box.dataset.approval=a.id;
+    box.append(node('strong','connector-request-title','Action review unavailable'),node('p','muted','Reload the conversation to review this action.'),button('Reload',()=>refresh(true),'outline-button'));
     return box;
   }
   if(a.tool==='chat_update')return chatEditApprovalCard(a,run);
@@ -8388,9 +8388,10 @@ function connectorActivityLabel(body) {
   return '';
 }
 function connectorApprovalCard(a,run) {
-  const box=node('div','task-card approval connector-approval');box.dataset.approval=a.id;
+  const box=node('div','connector-artifact connector-request approval connector-approval');box.dataset.approval=a.id;box.setAttribute('role','group');box.setAttribute('aria-label','Connector permission request');
   const args=a.args||{},status=a.status||'pending',pending=status==='pending',config=a.tool==='connector_configure',preference=config&&args.request==='source_preference';
-  const title=node('div','task-card-title');title.append(node('span','connector-eyebrow',preference?'Connector preference':'Connector approval'),node('span','task-badge '+(status==='approved'?'done':''),status==='approved'?'Approved':status==='denied'?'Denied':status==='expired'?'Expired':status==='cancelled'?'Cancelled':'Needs your okay'));box.append(title);
+  box.classList.toggle('connector-request-pending',pending);
+  const title=node('div','task-card-title connector-artifact-header');title.append(node('span','connector-eyebrow',preference?'Connector preference':'Connector approval'),node('span','task-badge '+(status==='approved'?'done':''),status==='approved'?'Approved':status==='denied'?'Denied':status==='expired'?'Expired':status==='cancelled'?'Cancelled':'Needs your okay'));box.append(title);
   const bot=state.bots.find(b=>b.id===run.bot_id)?.name||'This bot';
   let choices=[];
   if(preference){
@@ -8415,10 +8416,10 @@ function connectorApprovalCard(a,run) {
     const action=friendly[leaf]||leaf.replace(/([a-z0-9])([A-Z])/g,'$1 $2').replaceAll('_',' ').replace(/\s+/g,' ').trim();
     box.append(node('p','task-description',action.charAt(0).toUpperCase()+action.slice(1)),node('p','muted small',args.forced?`${source} or this connector requires your approval for this specific action.`:`Allow this action once, or always allow ${bot} to use the entire ${connection?.replace(/^claude.ai /,'')||'selected'} connection, including changes.`));
     if(!claude)box.append(node('p','muted small',`Account: ${args.account_name||args.account_id||'Connected account'}`));
-    choices=args.forced?[['Allow once',true,''],['Deny',false,'']]:[['Always allow',true,'always_allow'],['Allow once',true,''],['Deny',false,'']];
-    const details=node('details','task-details');details.append(node('summary','','Action details'),node('pre','',JSON.stringify(claude?args.input:args.arguments,null,2)));box.append(details);
+    choices=args.forced?[['Allow',true,''],['Deny',false,'']]:[['Always allow',true,'always_allow'],['Allow',true,''],['Deny',false,'']];
+    const details=node('details','task-details');details.append(node('summary','','Action details'),node('pre','',JSON.stringify(args.input??args.arguments??{},null,2)));box.append(details);
   }
-  if(pending){const actions=node('div','task-card-actions');for(const [label,approved,choice] of choices)actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved,choice});await refresh(true);},approved?'primary small-button':'outline-button'));box.append(actions);}
+  if(pending){const actions=node('div','task-card-actions connector-card-actions');for(const [label,approved,choice] of choices)actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved,choice});await refresh(true);},approved?'primary small-button connector-request-allow':'outline-button'));box.append(actions);}
   return decisionReceipt(box,{key:'approval:'+a.id,title:box.querySelector('.task-description')?.textContent||'Connector approval',outcome:status==='approved'?'Allowed':status==='denied'?'Declined':status==='cancelled'?'Cancelled':'Expired',terminal:!pending});
 }
 const expandedBotConnectors=new Set();

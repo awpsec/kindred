@@ -6199,3 +6199,12 @@ html[data-mobile] .request-tray.is-answering .request-tray-bar .icon-button{widt
 .chat-media-grid>.chat-media{margin:0;align-self:start}
 .chat-media-grid.has-lead>.chat-media:first-child{grid-column:1/-1;max-width:450px}
 @media(max-width:400px){.chat-media-grid{gap:10px}}
+
+/* Permission setup and historical connector approvals use the same open layout. */
+.connector-request.connector-approval .task-badge{background:transparent;color:var(--muted);padding:0;border-radius:0;white-space:normal}
+.connector-request.connector-approval .task-badge::before{display:none}
+.connector-request.connector-approval .connector-heading{margin:8px 0}
+.connector-request.connector-approval .connector-heading .connector-logo{background:transparent;box-shadow:none}
+.connector-request.connector-approval .task-description{font-size:calc(14px * var(--text-scale,1));font-weight:500}
+.connector-request.connector-approval .task-details{max-width:100%}
+.connector-request.connector-approval .task-details pre{white-space:pre-wrap;overflow-wrap:anywhere}
