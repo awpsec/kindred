@@ -15,7 +15,7 @@ import {createProfileUI} from "./profiles.js";
 import {createWorkspaceImportUI} from "./workspace-import.js";
 import {createServerChatsUI} from "./server-chats.js";
 import {createCommandsUI} from "./commands.js";
-import {composerText,createComposerLists} from "./composer-text.js";
+import {composerText,createComposerLists,createComposerLinks} from "./composer-text.js";
 import {availableRelease, newerVersion} from "./updates.js";
 import {createMarkupCache} from "./markup-cache.js";
 import { RFB, marked, DOMPurify } from "./vendor.js";
@@ -6708,6 +6708,7 @@ Object.defineProperty($("prompt"), "value", {
     commandsUI?.refresh();
   },
 });
+createComposerLinks($("prompt"));
 composerLists=createComposerLists($("prompt"),chip=>{
   // Native list formatting can omit the decorative SVG; retain the live chip.
   if(!chip.querySelector('.character')){const bot=state.bots.find(b=>b.id===chip.dataset.mention);if(bot)chip.replaceChildren(...mentionBadge(bot).childNodes);}

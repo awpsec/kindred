@@ -2355,6 +2355,7 @@ input[type="checkbox"]:checked::after {
 }
 #prompt ul, #prompt ol { margin:0; padding-left:1.5em; }
 #prompt li, #prompt p { margin:0; }
+::highlight(kindred-composer-link) {text-decoration:underline;text-decoration-color:var(--fg);}
 #prompt.is-formatting-list .mention-badge { display:inline; }
 #prompt.is-formatting-list .mention-badge .character { display:inline-block; }
 .artifact-library-toolbar > .icon-button { flex:none; width:34px; height:34px; }
