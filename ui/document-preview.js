@@ -1,6 +1,7 @@
 import {DOMPurify} from './vendor.js';
 const el=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls||'';if(text!==undefined)n.textContent=text;return n;};
 const button=(text,fn)=>{const b=el('button','artifact-action',text);b.type='button';b.onclick=fn;return b;};
+const iconButton=(label,path,action)=>{const b=button('',action);b.classList.add('document-icon-button');b.title=label;b.setAttribute('aria-label',label);const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');for(const [key,value] of Object.entries({viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':'1.7','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true'}))svg.setAttribute(key,value);const line=document.createElementNS(svg.namespaceURI,'path');line.setAttribute('d',path);svg.append(line);b.append(svg);return b;};
 const letters=n=>{let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;};
 // Zoom belongs to the reading surface, never to the surrounding app. Automatic
 // fit is capped at actual size; an explicit zoom remains stable across resizing.
@@ -219,7 +220,7 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
  // Live progress may replace that card while the reader is on another page.
  // Inline studio previews still belong to their card and its lifecycle.
  const observer=new MutationObserver(()=>{if(!dialog.isConnected||(mount&&!card.isConnected))cleanup();});observer.observe(document.body,{childList:true,subtree:true});onMount?.(handle);
- const close=button('Close',()=>dialog.close());head.append(title,createDownloadButton?createDownloadButton():button('Download',download),close);if(!mount)dialog.append(head);dialog.append(body,foot);(mount||document.body).append(dialog);
+ const close=iconButton('Close','m6 6 12 12M6 18 18 6',()=>dialog.close());head.append(title,createDownloadButton?createDownloadButton({iconOnly:true}):iconButton('Download','M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5',download),close);if(!mount)dialog.append(head);dialog.append(body,foot);(mount||document.body).append(dialog);
  dialog.addEventListener('close',cleanup,{once:true});dialog.addEventListener('click',e=>{if(!mount&&e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
  if(!mount){dialog.showModal();close.focus();}body.append(el('p','document-status','Preparing preview…'));
  try{

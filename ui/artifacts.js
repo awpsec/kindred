@@ -132,7 +132,7 @@ export function fileCard(attachment,{getBlob,getPagePreview,nativeSave,nativeRev
  const folderLabel=/Mac/.test(navigator.platform)?'Show in Finder':'Show in folder',reveal=control('',async()=>{try{await nativeReveal(saved);}catch(e){notice(String(e.message||e),true);}});reveal.classList.add('deliverable-reveal');reveal.setAttribute('aria-label',folderLabel);reveal.title=folderLabel;reveal.append(fileSvg('M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z'));reveal.hidden=!saved;
  const paintDownload=b=>{
   b.dataset.state=phase;b.disabled=phase==='saving'||phase==='saved';b.setAttribute('aria-busy',String(phase==='saving'));
-  const label=phase==='saving'?'Downloading':phase==='saved'?(nativeSave?'Saved':'Download started'):phase==='error'?'Retry download':'Download';b.setAttribute('aria-label',label);b.replaceChildren(element('span','',label));
+  const label=phase==='saving'?'Downloading':phase==='saved'?(nativeSave?'Saved':'Download started'):phase==='error'?'Retry download':'Download';b.setAttribute('aria-label',label);const iconOnly=b.classList.contains('document-icon-button');b.replaceChildren(...(iconOnly?[]:[element('span','',label)]));if(iconOnly&&phase!=='saved'&&phase!=='saving')b.append(fileSvg('M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5'));
   if(phase==='saving'){const dots=element('span','download-dots');dots.setAttribute('aria-hidden','true');for(let i=0;i<3;i++)dots.append(element('span','','.'));b.append(dots);}
   if(phase==='saved'){const check=fileSvg('m5 12 4 4L19 6');check.classList.add('download-check');b.append(check);}
   b.title=phase==='saved'?(nativeSave?'Saved to Downloads '+new Date(savedAt).toLocaleString()+'. Use Download again for another copy.':'Sent to your browser. Check browser downloads for the saved file.'):phase==='saving'?'Downloading '+name:label+' '+name;
@@ -153,7 +153,7 @@ export function fileCard(attachment,{getBlob,getPagePreview,nativeSave,nativeRev
   }catch(e){phase=confirmed?'saved':'error';announcement.textContent='Could not download '+name+'. '+String(e.message||e);notice(announcement.textContent,true);}
   finally{updateDownloads();}
  };
- const createDownloadButton=()=>{for(const b of downloadControls)if(!b.isConnected)downloadControls.delete(b);const b=element('button','artifact-action file-download');b.type='button';b.onclick=()=>void save();downloadControls.add(b);paintDownload(b);return b;};
+ const createDownloadButton=({iconOnly=false}={})=>{for(const b of downloadControls)if(!b.isConnected)downloadControls.delete(b);const b=element('button','artifact-action file-download'+(iconOnly?' document-icon-button':''));b.type='button';b.onclick=()=>void save();downloadControls.add(b);paintDownload(b);return b;};
  const downloadButton=createDownloadButton();split.append(downloadButton);actions.append(split);if(nativeReveal)actions.append(reveal);heading.append(actions);
  const menu=element('div','deliverable-menu');menu.setAttribute('popover','auto');menu.setAttribute('aria-label','File actions');
  const more=element('button','artifact-action deliverable-more');more.type='button';more.title='More file actions';more.setAttribute('aria-label','More file actions');more.setAttribute('aria-expanded','false');more.popoverTargetElement=menu;more.append(fileSvg('m7 10 5 5 5-5'));
