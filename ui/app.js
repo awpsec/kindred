@@ -1709,6 +1709,9 @@ async function refreshPreview() {
     if(state.previewPending){state.previewPending=false;void refreshPreview();}
   }
 }
+// One pending editor per bot: reopening must not create a competing autosave
+// pipeline from stale server data while an enable/disable request is in flight.
+const botSettingsDrafts = new Map();
 function renderBotSettings() {
   const b = state.bot;
   if (!b) return;
@@ -1716,7 +1719,17 @@ function renderBotSettings() {
   $("details-back").hidden = false;
   $("bot-settings").hidden = true;
   const root = $("details-content");
+  for (const [id, entry] of botSettingsDrafts) {
+    if (!entry.saver.dirty || entry.token !== state.token) botSettingsDrafts.delete(id);
+  }
+  const pending = botSettingsDrafts.get(b.id);
+  if (pending) {
+    pending.initiative.refreshTimezone();
+    root.replaceChildren(...pending.nodes);
+    return;
+  }
   root.replaceChildren();
+  const editorToken = state.token;
   const draft = structuredClone(b),
     avatar = button(
       "",
@@ -1784,7 +1797,11 @@ function renderBotSettings() {
     profile: {...profile(draft), label: label.input.value, description: description.input.value,
       initiative: initiative.input.checked, initiative_instructions: initiative.instructions(profile(draft).initiative_instructions||''),
       progress_updates:progress.input.value, pinned: pinned.input.checked, notifications: notifications.input.checked, animated: true, local_access: local.input.checked, local_device_id: local.device.value},
-  }), value => api("/bots/" + b.id, "PUT", value), value => {
+  }), value => {
+    if (state.token !== editorToken) throw new Error('Workspace changed. Reopen this bot’s settings to make changes.');
+    return api("/bots/" + b.id, "PUT", value);
+  }, value => {
+    if (state.token !== editorToken) return;
     Object.assign(draft, value);connectors.setProvider(value.provider,true);
     state.bots = state.bots.map(bot => bot.id === b.id ? value : bot);
     if (state.bot?.id === b.id) state.bot = value;
@@ -1795,14 +1812,16 @@ function renderBotSettings() {
     connectors,
     button("Archive bot", () => archiveBot(b.id), "danger-text"),
   );
+  botSettingsDrafts.set(b.id, {saver, initiative, token: editorToken, nodes: [...root.childNodes]});
 }
 function botInitiativeControl(bot) {
   const root=node('section','bot-initiative-settings'),toggle=switchField('Take initiative',profile(bot).initiative===true);
   const help=node('p','muted small','Do useful background research, prepare drafts, and bring you updates. Your existing permissions still apply. Turning this off leaves routines, monitoring, and teammate updates unchanged.');
   help.id='bot-initiative-help';toggle.input.setAttribute('aria-describedby',help.id);
   const details=node('div'),guidance=field('What should this bot keep an eye on?',profile(bot).initiative_instructions||'','textarea',{rows:3,maxLength:2000,placeholder:'For example, follow up on project plans and delivery updates. Bring useful results to our DM.'});
-  const budget=node('p','muted small'),zone=String(state.general.timezone||'').trim();
-  budget.textContent='Up to 2 background checks a day, up to 15 minutes each. '+(zone?'Checks run between 08:00 and 20:00 ('+zone+'), using your Settings timezone.':'Set your timezone in Settings → General before background checks can start. Checks run between 08:00 and 20:00 in that timezone.');
+  const budget=node('p','muted small');
+  const refreshTimezone=()=>{const zone=String(state.general.timezone||'').trim();budget.textContent='Up to 2 background checks a day, up to 15 minutes each. '+(zone?'Checks run between 08:00 and 20:00 ('+zone+'), using your Settings timezone.':'Set your timezone in Settings → General before background checks can start. Checks run between 08:00 and 20:00 in that timezone.');};
+  refreshTimezone();
   budget.id='bot-initiative-budget';toggle.input.setAttribute('aria-describedby',help.id+' '+budget.id);
   const validate=()=>guidance.input.setCustomValidity(toggle.input.checked&&new TextEncoder().encode(guidance.input.value).length>2000?'Shorten this guidance to 2,000 bytes or less.':'');
   const paint=()=>{details.hidden=!toggle.input.checked;guidance.input.disabled=!toggle.input.checked;validate();};
@@ -1810,7 +1829,7 @@ function botInitiativeControl(bot) {
   details.append(guidance.label,budget);root.append(toggle.label,help,details);
   // Disabling must work even when an unsaved guidance edit exceeds the byte limit.
   const instructions=saved=>!toggle.input.checked&&new TextEncoder().encode(guidance.input.value).length>2000?saved:guidance.input.value;
-  return {root,input:toggle.input,instructions};
+  return {root,input:toggle.input,instructions,refreshTimezone};
 }
 async function editBotText(id, key) {
   const latest = (await api('/bots')).find(b => b.id === id);
