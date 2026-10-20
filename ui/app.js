@@ -5010,17 +5010,19 @@ function summaryProgress(items,entry,runs){
   const activity=items.map(m=>m.progress.activity).filter(Boolean).at(-1);
   const phaseFinal=entry.messages.findLast(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer'&&m.run_id===currentRunId);
   const waiting=questions.some(m=>m.question.status==='pending');
-  entry.progressOpen??=new Set();entry.progressClosed??=new Set();entry.progressFinished??=new Map();entry.taskTerminalRuns??=new Map();
+  entry.progressOpen??=new Set();entry.progressClosed??=new Set();entry.taskTerminalRuns??=new Map();
   // Terminal state is sticky for this phase. A delayed reconnect snapshot must
   // not resurrect it; an explicit continuation has its own live run evidence.
-  const wasFinished=entry.progressFinished.get(key)===true;
-  const storedTerminal=entry.taskTerminalRuns.get(key),terminal=storedTerminal&&currentRunId===storedTerminal.id?storedTerminal:null,endedEvent=state.details.get(run?.id)?.events?.findLast(e=>e.kind==='run_finished');
-  if(storedTerminal&&!terminal)entry.taskTerminalRuns.delete(key);
+  const terminalKey=JSON.stringify([key,currentRunId]),terminal=entry.taskTerminalRuns.get(terminalKey),endedEvent=state.details.get(run?.id)?.events?.findLast(e=>e.kind==='run_finished');
   const finished=!!terminal||(!waiting&&(!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued')));
-  if(finished&&!terminal)entry.taskTerminalRuns.set(key,{id:currentRunId,status:['completed','failed','cancelled','interrupted'].includes(run?.status)?run.status:phaseFinal?'completed':run?.status,ended:phaseFinal?.created||endedEvent?.created||activity?.last_at||items.at(-1).created});
-  else if(!finished&&terminal)entry.taskTerminalRuns.delete(key);
-  if(finished&&(!wasFinished||storedTerminal?.id!==currentRunId)){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
-  entry.progressFinished.set(key,finished);
+  // Parent-only history pages must not erase a child's terminal receipt. Keep
+  // recent phase/run pairs within the existing conversation-window bound.
+  if(finished){
+    entry.taskTerminalRuns.delete(terminalKey);
+    entry.taskTerminalRuns.set(terminalKey,terminal||{id:currentRunId,status:['completed','failed','cancelled','interrupted'].includes(run?.status)?run.status:phaseFinal?'completed':run?.status,ended:phaseFinal?.created||endedEvent?.created||activity?.last_at||items.at(-1).created});
+    while(entry.taskTerminalRuns.size>CHAT_WINDOW_SIZE)entry.taskTerminalRuns.delete(entry.taskTerminalRuns.keys().next().value);
+  }
+  if(finished&&!terminal){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
   if(finished&&!staged)return null;
   const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
