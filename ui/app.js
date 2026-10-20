@@ -4913,15 +4913,21 @@ function reminderWhen(reminder){
   return {label:dateLabel+', '+time,zone:zone===Intl.DateTimeFormat().resolvedOptions().timeZone?'':zoneLabel,full:date.toLocaleString([],{timeZone:zone,dateStyle:'full',timeStyle:'short'})+' · '+zone};
 }
 function progressGroups(messages){
-  const groups=new Map();for(const m of messages)if(['assistant','task_progress'].includes(m.kind)&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
-  // A work marker is an anchor, not proof of a long job. Require useful
-  // narration or sustained multi-action work, including for historical anchors.
-  for(const [key,items] of groups){
-    const updates=items.filter(m=>m.kind!=='task_progress'&&m.text?.trim()),activity=items.map(m=>m.progress.activity).filter(Boolean);
-    const sustained=activity.some(a=>a.actions>=3&&a.seconds>=120);
-    if(activity.length?updates.length<3&&!sustained:updates.length===0)groups.delete(key);
-  }
+  const groups=new Map();
+  for(const m of messages)if(['assistant','task_progress'].includes(m.kind)&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
+  // A persisted marker owns the activity disclosure. Neither elapsed time nor
+  // narration/tool counts establish a staged task. Historical prose stays put.
+  for(const [key,items] of groups)if(!items.some(m=>m.kind==='task_progress'))groups.delete(key);
   return groups;
+}
+function taskPresentation(items,entry){
+  entry.taskPresentations??=new Map();const key=items[0].progress.group_id;
+  const candidate=items.map(m=>m.progress.presentation).filter(p=>p?.mode==='staged'&&p.promoted===true&&Array.isArray(p.stages)&&p.stages.length>=2&&p.stages.length<=8&&p.stages.every(s=>typeof s==='string'&&s.trim())&&Number.isInteger(p.current_stage)&&p.current_stage>=0&&p.current_stage<p.stages.length).at(-1);
+  const saved=entry.taskPresentations.get(key);
+  // An incomplete reconnect snapshot must not demote a verified tracker. Stage
+  // progress is monotonic only for the same persisted plan; never infer steps.
+  if(candidate){const same=saved&&JSON.stringify(saved.stages)===JSON.stringify(candidate.stages);entry.taskPresentations.set(key,{...candidate,current_stage:same?Math.max(saved.current_stage,candidate.current_stage):candidate.current_stage});}
+  return entry.taskPresentations.get(key)||{mode:'compact'};
 }
 // Only persisted, same-conversation question links join a rendered task.
 function taskQuestions(items,entry){
@@ -4963,98 +4969,84 @@ function taskQuestionReceipt(m,entry,key,taskStarted){
     heading.addEventListener('click',()=>{
       const opening=!receipt.open||receipt.classList.contains('is-collapsing');
       opening?entry.questionDetails.add(q.id):entry.questionDetails.delete(q.id);
-      // Opening a read-only receipt is explicit expansion of its parent task.
-      entry.progressOpen.add(key);heading.setAttribute('aria-expanded',String(opening));
+      // Receipt expansion is independent of the activity tracker.
+      heading.setAttribute('aria-expanded',String(opening));
     },{capture:true});
   }
   return receipt;
 }
-function taskConnectorCalls(items,entry){
-  return (entry.messages||[]).filter(m=>{const c=m.connector_artifact;return c?.status==='completed'&&c.chat_id===entry.id&&items.some(i=>i.seq===c.progress_message_seq&&i.run_id===c.run_id&&i.sender===c.bot_id);});
+function appendProgressTimestamp(content,m,entry,run){
+  if(!Number.isFinite(m.created)||m.created<=0)return;
+  entry.progressTimePins??=new Set();
+  const date=new Date(m.created*1000),stamp=node('span','progress-update-time'),clock=node('time','progress-update-clock','('+date.toLocaleTimeString([],{timeZone:botTimezone(),hour:'numeric',minute:'2-digit'})+')');
+  clock.dateTime=date.toISOString();const fullDate=date.toLocaleString([],{timeZone:botTimezone(),dateStyle:'full',timeStyle:'short'});clock.setAttribute('aria-label',fullDate);clock.title=fullDate;
+  const started=[run?.progress_started,run?.created].find(value=>Number.isFinite(value)&&value>0);
+  if(started&&started<=m.created){const key=String(m.seq),elapsed=elapsedTime(m.created-started),toggle=button(elapsed,()=>{},'progress-update-time-toggle');toggle.setAttribute('aria-label',elapsed+' after task start. '+fullDate+'. Toggle timestamp.');
+    const paint=()=>{const pinned=entry.progressTimePins.has(key);stamp.dataset.pinned=String(pinned);toggle.setAttribute('aria-pressed',String(pinned));};
+    toggle.onclick=()=>{if(!toggle.isConnected||currentConversationId()!==entry.id)return;entry.progressTimePins.has(key)?entry.progressTimePins.delete(key):entry.progressTimePins.add(key);paint();};paint();stamp.append(toggle);
+  }else stamp.dataset.pinned='true';
+  stamp.append(clock);const last=content.lastElementChild;(last?.tagName==='P'?last:content).append(document.createTextNode(' '),stamp);
 }
-function taskConnectorDisclosure(calls,entry,key){
-  entry.taskConnectorDetails??=new Set();const anchor=String(calls[0].connector_artifact.progress_message_seq),id='task-call-details-'+anchor,wrap=node('span','task-connector-disclosure'),brands=[...new Map(calls.map(m=>{const c=m.connector_artifact,b=connectorBrand(c.connection||c.connector,c.tool);return [b.key,b];})).values()];
-  wrap.dataset.connectorIds=calls.map(m=>m.connector_artifact.id).join(' ');
-  const toggle=button('',()=>{},'task-connector-toggle'),body=node('span','task-connector-detail');body.id=id;
-  const label=brands.map(b=>b.name).join(' and ')+': '+calls.length+' completed call'+(calls.length===1?'':'s');toggle.setAttribute('aria-label',label);toggle.title=label;toggle.setAttribute('aria-controls',id);
-  for(const brand of brands){const logo=connectorLogo(brand);logo.setAttribute('aria-hidden','true');wrap.dataset.theme=document.documentElement.dataset.theme;toggle.append(logo);}
-  body.textContent=brands.map(brand=>{const owned=calls.filter(m=>{const c=m.connector_artifact;return connectorBrand(c.connection||c.connector,c.tool).key===brand.key;}),actions=[...new Set(owned.map(m=>String(m.connector_artifact.tool||'').split('__').at(-1).replaceAll('_',' ')))];return brand.name+' · '+actions.join(', ')+' · '+owned.length+' completed call'+(owned.length===1?'':'s');}).join('\n');
-  const paint=()=>{const open=entry.taskConnectorDetails.has(anchor);toggle.setAttribute('aria-expanded',String(open));body.hidden=!open;};
-  toggle.onclick=()=>{entry.taskConnectorDetails.has(anchor)?entry.taskConnectorDetails.delete(anchor):entry.taskConnectorDetails.add(anchor);entry.progressOpen.add(key);paint();};paint();wrap.append(toggle,body);return wrap;
+function setTaskCommentaryExpanded(key,expanded,animate=true){
+  const rows=[...$('content').querySelectorAll('[data-task-commentary]')].filter(n=>n.dataset.taskCommentary===key);
+  for(const row of rows){
+    const height=row.hidden?0:row.getBoundingClientRect().height;
+    row.finishTaskCommentary?.();
+    row.hidden=false;
+    const target=row.getBoundingClientRect().height,margin=getComputedStyle(row).marginBlock;
+    if(!expanded&&row.contains(document.activeElement))$('content').querySelector('[data-progress-group="'+CSS.escape(key)+'"]>details>summary')?.focus({preventScroll:true});
+    if(!animate||!motionAllowed()){row.hidden=!expanded;continue;}
+    row.style.overflow='hidden';
+    const motion=row.animate([{height:height+'px',opacity:height?1:0,marginBlock:height?margin:'0px'},{height:(expanded?target:0)+'px',opacity:expanded?1:0,marginBlock:expanded?margin:'0px'}],{duration:220,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});
+    const finish=()=>{motion.cancel();row.hidden=!expanded;row.style.removeProperty('overflow');delete row.finishTaskCommentary;};
+    const control=trackMotion(motion,220,finish);row.finishTaskCommentary=()=>control.finish();
+  }
 }
 function summaryProgress(items,entry,runs){
-  const first=items[0],updates=items.filter(m=>m.kind!=='task_progress'),key=first.progress.group_id,questions=taskQuestions(items,entry),calls=taskConnectorCalls(items,entry),parentRunId=questions[0]?.question.run_id||first.run_id,rootRun=runs.find(r=>r.id===parentRunId)||state.allRuns.find(r=>r.id===parentRunId)||state.details.get(parentRunId)?.run;
+  const first=items.find(m=>m.kind==='task_progress'),key=first.progress.group_id,presentation=taskPresentation(items,entry),staged=presentation.mode==='staged',questions=taskQuestions(items,entry);
+  const rootRun=runs.find(r=>r.id===first.run_id)||state.allRuns.find(r=>r.id===first.run_id)||state.details.get(first.run_id)?.run;
+  const memberRuns=[...new Set([...items.map(m=>m.run_id),...questions.map(m=>m.question.continuation_run_id).filter(Boolean)])];
+  const currentRunId=memberRuns.at(-1)||first.run_id,run=[...runs,...state.allRuns].find(r=>r.id===currentRunId)||state.details.get(currentRunId)?.run;
   const activity=items.map(m=>m.progress.activity).filter(Boolean).at(-1);
-  const memberRuns=new Set([...items.map(m=>m.run_id),...questions.map(m=>m.question.continuation_run_id).filter(Boolean)]),run=[...runs,...state.allRuns].find(r=>r.id===[...memberRuns].at(-1))||rootRun;
-  const group=node('article','summary-progress');group.dataset.message=String(first.seq);group.dataset.scrollMessages=[...items,...questions,...calls].map(m=>m.seq).join(' ');group.dataset.progressGroup=key;
-  entry.progressOpen??=new Set();entry.progressClosed??=new Set();entry.progressFinished??=new Map();
-  const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key);
-  const phaseFinal=entry.messages.findLast(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer'&&(!run||m.run_id===run.id));
-  const finished=!questions.some(m=>m.question.status==='pending')&&(!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued'));
-  // Reading choices made while running expire on completion. Keep later,
-  // finished-task expansions across polling and conversation remounts.
-  if(finished&&entry.progressFinished.get(key)!==true){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
+  const phaseFinal=entry.messages.findLast(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer'&&m.run_id===currentRunId);
+  const waiting=questions.some(m=>m.question.status==='pending');
+  entry.progressOpen??=new Set();entry.progressClosed??=new Set();entry.progressFinished??=new Map();entry.taskTerminalRuns??=new Map();
+  // Terminal state is sticky for this phase. A delayed reconnect snapshot must
+  // not resurrect it; an explicit continuation has its own live run evidence.
+  const wasFinished=entry.progressFinished.get(key)===true;
+  const storedTerminal=entry.taskTerminalRuns.get(key),terminal=storedTerminal&&currentRunId===storedTerminal.id?storedTerminal:null,endedEvent=state.details.get(run?.id)?.events?.findLast(e=>e.kind==='run_finished');
+  if(storedTerminal&&!terminal)entry.taskTerminalRuns.delete(key);
+  const finished=!!terminal||(!waiting&&(!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued')));
+  if(finished&&!terminal)entry.taskTerminalRuns.set(key,{id:currentRunId,status:['completed','failed','cancelled','interrupted'].includes(run?.status)?run.status:phaseFinal?'completed':run?.status,ended:phaseFinal?.created||endedEvent?.created||activity?.last_at||items.at(-1).created});
+  else if(!finished&&terminal)entry.taskTerminalRuns.delete(key);
+  if(finished&&(!wasFinished||storedTerminal?.id!==currentRunId)){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
   entry.progressFinished.set(key,finished);
-  const manual=entry.progressOpen.has(key);
+  if(finished&&!staged)return null;
+  const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
+  const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
   const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open;
-  group.dataset.progressFinished=String(finished);
-  const details=node('details','summary-progress-disclosure');details.open=completing||manual||(!finished&&!entry.progressClosed.has(key));
-  const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender),name=bot?.name||'Bot';
-  if(bot){const avatar=buddy(bot,20);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
-  const taskStarted=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
-  entry.progressTimePins??=new Set();
-  const endedEvent=state.details.get(run?.id)?.events?.findLast(e=>e.kind==='run_finished');
-  const taskEnded=phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||endedEvent?.created||activity?.last_at||items.at(-1).created):Math.floor(Date.now()/1000));
-  const elapsed=taskStarted&&taskStarted<=taskEnded?taskEnded-taskStarted:null;
-  const taskName=((first.progress?.work_qualified==null?rootRun?.task_title||first.progress?.task_title:first.progress?.task_title||rootRun?.task_title)||'Task progress').trim()||'Task progress',taskLabel=node('span','summary-progress-task'),taskText=node('span','summary-progress-name',taskName);taskLabel.title=taskName;taskLabel.append(taskText);
-  if(!finished&&run?.status==='running'){taskText.classList.add('is-working');taskText.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}
-  const taskChevron=node('span','summary-progress-chevron','⌄');taskChevron.setAttribute('aria-hidden','true');title.prepend(taskChevron);
-  title.append(node('strong','',name),taskLabel);
-  if(elapsed!==null){
-    const timer=node('span','muted small summary-progress-time',elapsedTime(elapsed));
-    // Tick locally with the existing one-second clock, independent of chat redraws.
-    if(!finished)timer.dataset.groupStarted=String(taskStarted);
-    title.append(timer);
-  }
-  const status=finished?({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):questions.some(m=>m.question.status==='pending')?'Waiting for your answer':'In progress';
-  const counts=updates.length?`Show progress · ${updates.length} update${updates.length===1?'':'s'}`:'';
-  const answers=questions.filter(m=>m.question.status==='answered').length;
-  title.append(node('span','muted small summary-progress-count',[counts,answers?answers+' answer'+(answers===1?'':'s'):'',finished||!counts||questions.some(m=>m.question.status==='pending')?status:''].filter(Boolean).join(' · ')));
+  const details=node('details','summary-progress-disclosure');details.open=completing||manual||(staged&&!finished&&!entry.progressClosed.has(key));
+  const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender);
+  const chevron=node('span','summary-progress-chevron','⌄');chevron.setAttribute('aria-hidden','true');title.append(chevron);
+  if(bot){const avatar=buddy(bot,18);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
+  const status=finished?({completed:'Finished',failed:'Failed',cancelled:'Stopped',interrupted:'Interrupted'}[(terminal?.status||run?.status)]||'Finished'):!run?'Recorded activity':(waiting||run?.status==='awaiting_user')?'Waiting for your answer':run?.status==='cancelling'?'Stopping':run?.status==='awaiting_approval'?'Waiting for your approval':run?.status==='queued'?'Queued':null;
+  const phase={preparing:'Preparing the next action',thinking:'Thinking through the next step',writing:'Writing a response',waiting:'Waiting for the model'}[activity?.phase];
+  const current=activity?.current?.label||activity?.current_label;
+  const taskName=(first.progress.task_title||rootRun?.task_title||'Task progress').trim();
+  const label=staged?taskName:(status||current||phase||'Working');
+  const task=node('span','summary-progress-task'),text=node('span','summary-progress-name',label);if(staged&&!finished&&run?.status==='running'){text.classList.add('is-working');text.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}task.title=label;task.append(text);title.append(task);
+  const started=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
+  const ended=terminal?.ended||phaseFinal?.created||(finished?(endedEvent?.created||activity?.last_at||items.at(-1).created):run?Math.floor(Date.now()/1000):(activity?.last_at||items.at(-1).created));
+  if(started&&ended>=started){const timer=node('span','muted small summary-progress-time',elapsedTime(ended-started));if(!finished&&run)timer.dataset.groupStarted=String(started);title.append(timer);}
+  if(staged)title.append(node('span','muted small summary-progress-count',status||presentation.stages[presentation.current_stage]));
   const body=node('div','summary-progress-body');
-  // Factual receipts remain visible when a model supplies no milestones. These
-  // are labelled system activity, never invented assistant updates or reasoning.
-  if(activity&&(!updates.length||(!finished&&Date.now()/1000-updates.at(-1).created>=120))){
-    const receipt=node('div','summary-progress-activity');receipt.setAttribute('aria-label','Recorded activity');
-    receipt.append(node('div','muted small','Recorded activity · '+activity.completed+' completed action'+(activity.completed===1?'':'s')+(activity.failed?' · '+activity.failed+' failed':'')));
-    for(const item of activity.recent||[]){const row=node('div','summary-progress-update',item.label+(item.count>1?' × '+item.count:'')+(item.failed?' · Failed':''));if(taskStarted&&item.created>=taskStarted)row.append(node('span','progress-update-time',' '+elapsedTime(item.created-taskStarted)));receipt.append(row);}
-    if(!finished){const phase={preparing:'Preparing the next action…',thinking:'Thinking through the next step…',writing:'Writing a response…',waiting:'Waiting for the model…'}[activity.phase];if(phase)receipt.append(node('div','muted small',phase));}
-    body.append(receipt);
-  }
-  // Calls may belong to the task marker before any written update exists.
-  const taskCalls=calls.filter(m=>!updates.some(update=>update.seq===m.connector_artifact.progress_message_seq));
-  if(taskCalls.length)body.append(taskConnectorDisclosure(taskCalls,entry,key));
-  for(const m of [...updates,...questions].sort((a,b)=>(a.question?.created??a.created)-(b.question?.created??b.created)||a.seq-b.seq)){if(m.question){body.append(taskQuestionReceipt(m,entry,key,taskStarted));continue;}const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);const content=markdown(m.text),ownedCalls=calls.filter(call=>call.connector_artifact.progress_message_seq===m.seq);
-    if(Number.isFinite(m.created)&&m.created>0){
-      const date=new Date(m.created*1000),stamp=node('span','progress-update-time'),clock=node('time','progress-update-clock','('+date.toLocaleTimeString([],{timeZone:botTimezone(),hour:'numeric',minute:'2-digit'})+')');
-      clock.dateTime=date.toISOString();
-      const fullDate=date.toLocaleString([],{timeZone:botTimezone(),dateStyle:'full',timeStyle:'short'});clock.setAttribute('aria-label',fullDate);clock.title=fullDate;
-      const knownStart=Number.isFinite(taskStarted)&&taskStarted>0&&taskStarted<=m.created;
-      if(knownStart){
-        const messageKey=String(m.seq),elapsed=elapsedTime(m.created-taskStarted),toggle=button(elapsed,()=>{},'progress-update-time-toggle');
-        toggle.setAttribute('aria-label',elapsed+' after task start. '+fullDate+'. Toggle timestamp.');
-        const paint=()=>{const pinned=entry.progressTimePins.has(messageKey);stamp.dataset.pinned=String(pinned);toggle.setAttribute('aria-pressed',String(pinned));};
-        toggle.onclick=()=>{if(!toggle.isConnected||currentConversationId()!==entry.id)return;entry.progressTimePins.has(messageKey)?entry.progressTimePins.delete(messageKey):entry.progressTimePins.add(messageKey);paint();};paint();stamp.append(toggle);
-      }else stamp.dataset.pinned='true'; // Historical run unavailable: never invent elapsed time.
-      if(ownedCalls.length)stamp.append(document.createTextNode(' '),taskConnectorDisclosure(ownedCalls,entry,key));
-      stamp.append(clock);const last=content.lastElementChild;
-      (last?.tagName==='P'?last:content).append(document.createTextNode(' '),stamp);
-    }
-    else if(ownedCalls.length){const last=content.lastElementChild;(last?.tagName==='P'?last:content).append(document.createTextNode(' '),taskConnectorDisclosure(ownedCalls,entry,key));}
-    update.append(content);body.append(update);}
-  details.append(title,body);group.append(details);animateChatDisclosure(details,body);
-  title.addEventListener('click',()=>{if(details.open){entry.progressOpen.delete(key);entry.progressClosed.add(key);}else{entry.progressOpen.add(key);entry.progressClosed.delete(key);}},{capture:true});
-  // Use the same clipped disclosure motion as a user collapse, without recording a user choice.
-  if(completing)requestAnimationFrame(()=>{if(group.isConnected&&!entry.progressOpen.has(key)&&details.open){if(body.contains(document.activeElement))title.focus({preventScroll:true});title.onclick({preventDefault(){}});}});
+  if(staged){const stages=node('ol','task-stages');stages.setAttribute('aria-label','Task stages');presentation.stages.forEach((label,index)=>{const stage=node('li','task-stage',label);if(index<presentation.current_stage)stage.dataset.state='done';else if(index===presentation.current_stage){stage.dataset.state=finished?'ended':'current';stage.setAttribute('aria-current','step');if(finished)stage.setAttribute('aria-label',label+' · '+status);}else stage.dataset.state='pending';stages.append(stage);});body.append(stages);}
+  const receipt=node('div','summary-progress-activity');receipt.setAttribute('aria-label','Recorded activity');
+  if(activity){receipt.append(node('div','muted small','Recorded activity · '+(Number(activity.completed)||0)+' completed call'+(activity.completed===1?'':'s')+(activity.failed?' · '+activity.failed+' failed':'')));for(const item of activity.recent||[]){const row=node('div','summary-progress-update',item.label+(item.count>1?' × '+item.count:'')+(item.failed?' · Failed':''));if(started&&item.created>=started)row.append(node('span','progress-update-time',' '+elapsedTime(item.created-started)));receipt.append(row);}}
+  else receipt.append(node('div','muted small','No recorded actions yet.'));
+  body.append(receipt);details.append(title,body);group.append(details);animateChatDisclosure(details,body);
+  title.addEventListener('click',()=>{const opening=!details.open||details.classList.contains('is-collapsing');if(opening){entry.progressOpen.add(key);entry.progressClosed.delete(key);}else{entry.progressOpen.delete(key);entry.progressClosed.add(key);}if(staged)setTaskCommentaryExpanded(key,opening);},{capture:true});
+  if(completing)requestAnimationFrame(()=>{if(group.isConnected&&!entry.progressOpen.has(key)&&details.open){if(body.contains(document.activeElement))title.focus({preventScroll:true});if(staged)setTaskCommentaryExpanded(key,false);title.onclick({preventDefault(){}});}});
   return group;
 }
 function reminderBatch(messages,entry){
@@ -5915,10 +5907,11 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   let sequenceAvatar = null, previousSender = null,
     previousTime = 0;
   const boundary=unreadBoundaries.get(id);let unreadInserted=false;
-  const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq))),taskConnectorSeqs=new Set([...summaries.values()].flatMap(items=>taskConnectorCalls(items,entry).map(m=>m.seq)));
+  const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
+  const taskTrackers=new Map([...summaries].map(([key,items])=>[key,summaryProgress(items,entry,runs)]));
   for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
   for (const m of data.messages) {
-    if(stacked.has(m.seq)||taskQuestionSeqs.has(m.seq)||taskConnectorSeqs.has(m.seq)||m.kind==='continuation')continue;
+    if(stacked.has(m.seq)||m.kind==='continuation')continue;
     if (!m.text?.trim()&&m.kind!=='task_progress') continue;
     if(m.kind==='task_progress'&&!summaries.has(m.progress?.group_id))continue;
     if(hiddenCompletionMessage(m) && !runs.find(r=>r.id===m.run_id)?.error)continue;
@@ -5928,7 +5921,8 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       if(boundary.seenAt&&Date.now()-boundary.seenAt>8000)divider.classList.add('has-faded');
       area.append(divider);unreadObserver.observe(divider);
     }
-    if(m.progress?.phase==='commentary'&&m.progress.group_id&&summaries.has(m.progress.group_id)){const items=summaries.get(m.progress.group_id);for(const item of items)stacked.add(item.seq);area.append(summaryProgress(items,entry,runs));previousSender=null;continue;}
+    if(m.kind==='task_progress'){const items=summaries.get(m.progress.group_id);if(items&&items.find(i=>i.kind==='task_progress').seq===m.seq){const tracker=taskTrackers.get(m.progress.group_id);if(tracker)area.append(tracker);}previousSender=null;continue;}
+    if(taskQuestionSeqs.has(m.seq)){const owner=runs.find(r=>r.id===m.question.run_id)||state.allRuns.find(r=>r.id===m.question.run_id)||state.details.get(m.question.run_id)?.run;area.append(taskQuestionReceipt(m,entry,m.question.task_group_id,owner?.progress_started||owner?.created||0));previousSender=null;continue;}
     if(m.kind==='connection_card'&&validConnectionCard(m.text)){
       const group=node('article','message-group connection-message');group.dataset.message=String(m.seq);group.append(chatConnectionCard(m.text));area.append(group);previousSender=null;continue;
     }
@@ -6060,6 +6054,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       row.append(bubble);
     } else row.append(markdown(m.text));
     const bubble=row.lastElementChild;
+    if(!isUser&&m.kind==='assistant'&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false){group.classList.add('progress-commentary');if(summaries.has(m.progress.group_id)){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker?.classList.contains('task-staged'))group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
     if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));

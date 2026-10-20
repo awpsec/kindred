@@ -71,6 +71,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    progress(5,now-450,4),progress(6,now-400,5),progress(7,now-350,6),
    {seq:8,sender:'piper',kind:'assistant',text:hidden==='quiet'?'<finish_quietly/>':'',run_id:run.id,source_event_seq:7,created:now-320},
    {seq:9,sender:'piper',kind:'result',text:run.output,run_id:run.id,source_event_seq:8,created:now-300});
+  const markerSeq=placement==='spanning'?1.5:4.5;messages.push({...progress(markerSeq,placement==='spanning'?now-590:now-451,placement==='spanning'?1:4),kind:'task_progress',text:'',progress:{...progress(markerSeq,now-590,1).progress,work_qualified:true,presentation:{mode:'staged',promoted:true,stages:['Inspect accounts','Verify records'],current_stage:1}}});messages.sort((a,b)=>a.seq-b.seq);
   const label=placement+'-'+hidden;
   await page.setViewportSize({width:hidden==='quiet'?390:1100,height:850});await page.goto('http://127.0.0.1:'+server.address().port);
   await page.locator('#content > [data-message="9"]').waitFor();await page.locator('.summary-progress').waitFor();
@@ -78,14 +79,14 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    const ids=await page.locator('#content > [data-message]').evaluateAll(ns=>ns.map(n=>n.dataset.message));snapshots.push({label:label+'-'+stage,ids});
    const receipt=ids.indexOf('human-task-human-step');assert.equal(ids.filter(x=>x==='human-task-human-step').length,1);
    assert(ids.indexOf('4')<receipt,'Grouped handoff receipt must follow its sign-in request');assert(receipt<ids.indexOf('9'),'Grouped handoff receipt must precede the final answer');
-   const group=placement==='spanning'?'2':'5';assert(ids.indexOf(group)<ids.indexOf('9'));if(placement==='after-request')assert(receipt<ids.indexOf(group),'Entire later summary follows the receipt');else assert(ids.indexOf(group)<ids.indexOf('4'),'Earlier summary keeps its original position');
+   const group=String(markerSeq);assert(ids.indexOf(group)<ids.indexOf('9'));if(placement==='after-request')assert(receipt<ids.indexOf(group),'Entire later summary follows the receipt');else assert(ids.indexOf(group)<ids.indexOf('4'),'Earlier summary keeps its original position');
    assert(!ids.includes('8'),'Hidden history has no invented visible anchor');
    for(const m of messages.filter(m=>m.seq>9))assert(receipt<ids.indexOf(String(m.seq)),'Later arrivals follow original handoff');
   }
   await groupedCheck('loaded');
-  const progressCount=await page.locator('.progress-update-time-toggle').count();assert.equal(progressCount,placement==='spanning'?5:3,'Inline elapsed controls preserved');
+  const progressCount=await page.locator('.progress-update-time-toggle').count();assert.equal(progressCount,placement==='spanning'?5:3,'Inline elapsed controls preserved outside tracker');
   await page.screenshot({path:path.join(out,engine+'-'+label+'-loaded.png')});
-  await page.locator('.summary-progress-heading').click();await page.waitForTimeout(450);
+  assert.equal(await page.locator('.summary-progress .progress-commentary').count(),0,'Tracker never swallows commentary');await page.locator('.summary-progress-heading').click();await page.waitForTimeout(450);
   const contentBox=await page.locator('#content').boundingBox();
   await page.mouse.move(contentBox.x+contentBox.width/2,contentBox.y+contentBox.height/2);await page.mouse.wheel(0,-300);
   await page.waitForTimeout(150);await page.locator('#content').evaluate(n=>n.scrollTop=40);await page.waitForTimeout(100);

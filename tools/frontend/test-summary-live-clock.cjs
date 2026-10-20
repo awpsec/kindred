@@ -13,6 +13,7 @@ const assert=require('node:assert/strict');
    const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};
    const run={id:'clock-run',bot_id:'piper',chat_id:chat.id,status:'running',created:now-60,progress_started:now-60,task_title:'Check email filters',output:'',error:''};
    const messages=[{seq:1,sender:'piper',kind:'assistant',run_id:run.id,created:now-50,text:'Checking the saved filters.',progress:{mode:'summaries',phase:'commentary',run_id:run.id,group_id:'clock-group',task_title:run.task_title}}];
+   messages.unshift({...messages[0],seq:0,kind:'task_progress',text:'',created:run.created,progress:{...messages[0].progress,presentation:{mode:'staged',promoted:true,stages:['Read filters','Verify settings'],current_stage:1},activity:{completed:1,recent:[{label:'Read filters',created:now-50}]}}});
    let hold=false;
    await page.route(origin+'/api/**',r=>{
     if(hold)return r.abort();

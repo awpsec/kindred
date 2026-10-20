@@ -5,3 +5,22 @@ progress[value]{appearance:none;-webkit-appearance:none;border:0;overflow:hidden
 progress::-webkit-progress-bar{background:var(--line,#303030)}
 progress::-webkit-progress-value{background:var(--progress-accent)}
 progress::-moz-progress-bar{background:var(--progress-accent)}
+/* Activity stays in its own persisted slot; chat and review cards never move
+   into the tracker when work earns a staged presentation. */
+.task-activity.task-compact{margin-block:8px; font-size:calc(12px * var(--text-scale,1))}
+.task-activity.task-compact .summary-progress-heading{border:0;padding-bottom:0;flex-wrap:nowrap;color:var(--muted)}
+.task-activity.task-compact .summary-progress-task{min-width:0}
+.task-activity.task-compact .summary-progress-time{flex:none;white-space:nowrap}
+.task-activity .summary-progress-activity{padding:10px 0 4px 24px}
+.task-activity .task-stages{list-style:none;margin:12px 0 4px;padding:0 0 0 24px}
+.task-activity .task-stage{position:relative;padding:5px 0 5px 18px;color:var(--muted);overflow-wrap:anywhere}
+.task-activity .task-stage::before{position:absolute;left:0;content:'·'}
+.task-activity .task-stage[data-state="done"]::before{content:'✓'}
+.task-activity .task-stage[data-state="current"]{color:var(--fg)}
+.task-activity .task-stage[data-state="current"]::before{content:'›'}
+@media(hover:hover){.progress-commentary:hover .progress-update-clock{opacity:1}}
+@media(pointer:coarse){.task-question-receipt>.task-question-heading{min-height:44px}}
+/* Interim narration keeps its own sequence and geometry during promotion. */
+.message-group.task-commentary{margin-block:4px;padding-inline-start:24px}
+.message-group.task-commentary .message-row>.message-bubble{background:transparent;border:0;border-radius:0;box-shadow:none;padding:0;font-size:calc(12px * var(--text-scale,1));line-height:1.5;max-width:100%}
+.message-group.task-commentary .message-bubble p{margin:4px 0}
