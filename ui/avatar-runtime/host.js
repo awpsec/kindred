@@ -23,13 +23,14 @@ export function mountArtwork(box,profile,size=44){
  const id='kindred-art-'+(++nextId),seed=hash(p.bot_id||p.id||p.seed||JSON.stringify([a.body,a.expression,p.name||'']));
  const engine=createMotionEngine({body:resolveBody(a.body)}),controller=createStateController(engine,state,{seed,isCompact:size<48});
  let renderPaint,renderAppearance,idleTime=0;
- function hold(){engine.holdFace(animationStates[controller.state]?.face||(a.expression==='neutral'?null:a.expression));}
+ // A seek/rest can hold an expression morph at t=0; release it through the authored face API.
+ function hold(release=false){const face=animationStates[controller.state]?.face||(a.expression==='neutral'?null:a.expression);engine.holdFace(face);if(release)engine.setExpression(face||'neutral');}
  function draw(){const ink=paint(a,document.documentElement.dataset.theme==='dark');if(ink!==renderPaint){renderPaint=ink;renderAppearance=createAppearance(ink);}commitSvgTree(canvas,renderSvgTree(engine.frame(),renderAppearance,size*fillScale(.6),id,{displaySize:size,extent:'100%'}));dirty=false;}
  function isStill(){return reducedMotion()||p.animated===false;}
- function staticPose(){engine.pause();engine.seek(0);for(let j=0;j<60;j++)engine.advance(.1);settled=true;draw();}
+ function staticPose(){engine.pause();engine.seek(0);hold(true);for(let j=0;j<60;j++)engine.advance(.1);settled=true;draw();}
  const i={box,visible:false,
   active(){return connected&&!dead&&box.isConnected&&i.visible&&!document.hidden&&!isStill()&&!settled;},
-  step(dt){const before=controller.state;controller.advance(dt);if(before!==controller.state){idleTime=0;hold();}if(controller.state==='idle'){idleTime+=dt;if(idleTime>=1.4)controller.setResting(true);}else idleTime=0;engine.advance(dt);draw();settled=engine.isSettled;},
+  step(dt){const before=controller.state;controller.advance(dt);if(before!==controller.state){idleTime=0;hold();}if(controller.state==='idle'){idleTime+=dt;if(idleTime>=1.4)controller.setResting(true);}else idleTime=0;const playing=engine.isPlaying;engine.advance(dt);if(playing&&!engine.isPlaying)hold(true);draw();settled=engine.isSettled;},
   refresh(){if(dead||!connected)return;if(paint(a,document.documentElement.dataset.theme==='dark')!==renderPaint)dirty=true;const next=isStill();if(next!==still){still=next;if(still){hold();staticPose();}else {controller.setResting(true);controller.setResting(false);hold();settled=false;}}
    if(!document.hidden&&i.visible&&dirty){if(still)staticPose();else draw();}if(![...instances].some(v=>v.active()))cancel();else wake();},
   detach(){if(!connected)return;connected=false;instances.delete(i);observer?.unobserve(box);disconnectGlobals();},

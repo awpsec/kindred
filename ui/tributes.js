@@ -11,8 +11,8 @@ export function tributeIdentity(profile={}) {
   return Object.entries(avatarData.tributes).find(([,a])=>a.name.toLowerCase()===name&&a.shape===profile.shape&&a.color===color)?.[0]||'';
 }
 export function tributeState(action) {
-  if(action==='rest'||action==='sleep')return 'rest';
-  if(['idle','success','worry','waiting','queued'].includes(action))return 'idle';
+  if(['rest','sleep','sleeping','offline'].includes(action))return 'rest';
+  if(['idle','success','worry','waiting','queued','blocked','finished','failed','confused','powering-down'].includes(action))return 'idle';
   return 'working';
 }
 export function createTribute(box,p,kind,busy) {
