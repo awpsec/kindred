@@ -7,6 +7,7 @@ import { decisionReceipt } from './decision-receipts.js';
 import {installThemedSelects} from "./select-menu.js";
 import {enhanceMarkdown,fileCard,artifactPreview,inlineShard} from "./artifacts.js";
 import {chatMedia,chatMediaType,resetChatMedia,collectChatMedia} from "./chat-media.js";
+import {createRoutineFlights} from './routine-flight.js';
 import {connectorCatalog} from "./connector-catalog.js";
 import {connectorCard,connectorCardSignature} from "./connector-cards.js";
 installThemedSelects();
@@ -368,6 +369,7 @@ function foldLongMessage(bubble, key, entry) {
       else if(link.hasAttribute('data-fold-tabindex')){const value=link.dataset.foldTabindex;if(value)link.setAttribute('tabindex',value);else link.removeAttribute('tabindex');delete link.dataset.foldTabindex;}
     }
   }
+  viewport._updateLongMessage=update;
   viewport._observeLongMessage=()=>{const observer=new ResizeObserver(update);observer.observe(text);longMessageObservers.set(viewport,observer);update();};
 }
 function observeLongMessages(target){
@@ -561,6 +563,7 @@ async function refresh(force = false) {
   state.refreshing = true;
   const controller=new AbortController(),signal=controller.signal,token=state.token;state.refreshController=controller;
   let renderingId=null;
+  const routineRead=routineFlights.beginRead();
   const statusEpoch=state.statusEpoch||0,botEpoch=state.botWriteEpoch||0;
   try {
     const [fetchedBots, status, runs, approvals, routines, activities, privateChats, userTasks, attention, serverChats, questions] =
@@ -598,6 +601,7 @@ async function refresh(force = false) {
     state.userTasks = userTasks;
     state.questions = questions;
     state.routines = routines;
+    routineFlights.observe(routines,routineRead);
     state.activities = activities;
     state.activityReadAt = Date.now();
     acceptAttention(attention);
@@ -1590,30 +1594,35 @@ function renderDetails() {
   renderBotDetailRoutines(routineSection,routines,focusedChoice);
   if(focusedChoice&&routineSection.contains(focusedChoice))focusedChoice.focus({preventScroll:true});
 }
-const pendingDetailRoutines=new Set();
+const pendingDetailRoutines=new Set(),routineActionErrors=new Map();
 function renderBotDetailRoutines(root,routines,focused){
   const key=JSON.stringify(routines);if(root.dataset.key===key)return;root.dataset.key=key;
-  const focusedId=focused?.closest('[data-routine-id]')?.dataset.routineId,focusedAction=focused?.dataset.routineAction;
-  const heading=node('h3','','Routines');heading.id='bot-detail-routines-title';root.setAttribute('aria-labelledby',heading.id);
-  root.replaceChildren(heading);
-  if(!routines.length){root.append(node('p','muted small','No routines yet.'));return;}
-  const list=node('ul','bot-detail-routine-list');root.append(list);
-  for(const r of routines){
-    const row=node('li','bot-detail-routine');row.dataset.routineId=r.id;row.classList.toggle('is-paused',!r.enabled);
-    const overview=node('div','bot-detail-routine-overview'),cadence=(r.enabled?'':'Paused · ')+routineScheduleLabel(r);
-    overview.append(node('strong','',r.name),node('span','muted small',cadence));
-    const actions=node('div','bot-detail-routine-actions');
-    const toggle=iconButton(r.enabled?'pause':'play',(r.enabled?'Pause ':'Resume ')+r.name,()=>changeDetailRoutine(r,'toggle'));
-    const edit=iconButton('edit','Edit '+r.name,()=>editRoutine(r));
-    const remove=iconButton('trash','Delete '+r.name,()=>changeDetailRoutine(r,'delete'));
-    for(const [control,action] of [[toggle,'toggle'],[edit,'edit'],[remove,'delete']]){control.dataset.routineAction=action;control.disabled=pendingDetailRoutines.has(r.id);actions.append(control);}
-    row.append(overview,actions);list.append(row);
-    if(r.monitor?.error){const status=node('span','small run-error','Needs attention');status.title=r.monitor.error;overview.append(status);}
-    if(focusedId===r.id&&focusedAction)actions.querySelector('[data-routine-action="'+focusedAction+'"]')?.focus({preventScroll:true});
+  const old=new Map([...root.querySelectorAll('[data-routine-id]')].map(row=>[row.dataset.routineId,row])),restore=routineFocus(root);
+  const heading=root.querySelector('h3')||node('h3','','Routines');heading.id='bot-detail-routines-title';root.setAttribute('aria-labelledby',heading.id);
+  const list=root.querySelector('ul')||node('ul','bot-detail-routine-list');
+  root.replaceChildren(heading,list);
+  const keep=new Set();
+  for(const value of routines){
+    let row=old.get(value.id);
+    if(!row){
+      let r=value;row=node('li','bot-detail-routine');row.dataset.routineId=r.id;row.dataset.botId=r.bot_id;
+      const overview=node('div','bot-detail-routine-overview'),name=node('strong'),cadence=node('span','muted small'),status=node('span','small routine-flight-status'),error=node('span','small run-error');overview.append(name,cadence,status,error);
+      const actions=node('div','bot-detail-routine-actions');
+      const toggle=iconButton('pause','Pause '+r.name,()=>changeDetailRoutine(r,'toggle')),edit=iconButton('edit','Edit '+r.name,()=>editRoutine(r)),remove=iconButton('trash','Delete '+r.name,()=>changeDetailRoutine(r,'delete'));
+      for(const [control,action] of [[toggle,'toggle'],[edit,'edit'],[remove,'delete']]){control.dataset.routineAction=action;actions.append(control);}
+      row.append(overview,actions);
+      row.updateFlight=()=>{const flight=routineFlights.view(r),pending=routinePending(r);row.setAttribute('aria-busy',String(pending||flight.blocked));for(const control of actions.children)control.disabled=pending;status.textContent=flight.label;status.hidden=!flight.label;error.textContent=routineActionErrors.get(routineIdentity(r))||flight.error||r.monitor?.error||'';error.hidden=!error.textContent;};
+      row.updateRoutine=value=>{r=value;row.classList.toggle('is-paused',!r.enabled);routineText(name,r.name);routineText(cadence,(r.enabled?'':'Paused · ')+routineScheduleLabel(r));toggle.replaceChildren(icon(r.enabled?'pause':'play',16));for(const [control,label] of [[toggle,(r.enabled?'Pause ':'Resume ')+r.name],[edit,'Edit '+r.name],[remove,'Delete '+r.name]]){control.title=label;control.setAttribute('aria-label',label);}row.updateFlight();};
+    }
+    row.updateRoutine(value);keep.add(row);if(list.children[[...keep].length-1]!==row)list.insertBefore(row,list.children[[...keep].length-1]||null);
   }
+  for(const row of [...list.children])if(!keep.has(row))row.remove();
+  if(!routines.length)root.append(node('p','muted small','No routines yet.'));
+  restore();if(focused?.isConnected)focused.focus({preventScroll:true});
 }
+
 async function changeDetailRoutine(r,action){
-  if(pendingDetailRoutines.has(r.id))return;
+  if(routinePending(r))return;
   if(action==='delete'&&!confirm('Delete routine “'+r.name+'”? Its chat and task history will remain.'))return;
   if(action==='toggle'&&!r.enabled&&r.run_at&&r.run_at<=Date.now()/1000){editRoutine(r);return;}
   const setPending=pending=>{
@@ -1621,7 +1630,8 @@ async function changeDetailRoutine(r,action){
       row.setAttribute('aria-busy',String(pending));for(const control of row.querySelectorAll('button'))control.disabled=pending;
     }
   };
-  pendingDetailRoutines.add(r.id);setPending(true);
+  const pendingKey=routineIdentity(r);routineActionErrors.delete(pendingKey);pendingDetailRoutines.add(pendingKey);setPending(true);
+  for(const row of document.querySelectorAll('[data-routine-id]'))row.updateFlight?.();
   try{
     if(r.trigger==='activity'){
       if(action==='delete'){
@@ -1633,7 +1643,8 @@ async function changeDetailRoutine(r,action){
       else await api('/inbox-monitors','POST',inboxWatchInput(r.monitor,{enabled:true}));
     }else await api('/routines/'+r.id,action==='delete'?'DELETE':'PATCH',action==='delete'?undefined:{enabled:!r.enabled});
     await refresh(true);
-  }finally{pendingDetailRoutines.delete(r.id);setPending(false);}
+  }catch(error){routineActionErrors.set(pendingKey,error.message||'Could not change this routine. Try again.');throw error;}finally{pendingDetailRoutines.delete(pendingKey);setPending(false);for(const row of document.querySelectorAll('[data-routine-id]'))row.updateFlight?.();}
+  renderComputerRoutines();if(state.settings==='routines'&&$('settings-dialog').open)await settingsRoutines();
 }
 function botIdentityForm(bot){
   const form=node('form','bot-identity-form');form.dataset.botId=bot.id;
@@ -2112,6 +2123,8 @@ function modelControls(initialProvider, initialModel, initialEffort, configuring
 function editRoutine(r) {
   if(r?.trigger==='activity')return openActivityRoutine(r);
   if (!state.bots.some(b=>!profile(b).archived)) return notice('Add an active bot first.');
+  const opener=document.activeElement;
+  $('routine-dialog').addEventListener('close',()=>{if(opener?.isConnected)opener.focus({preventScroll:true});else {const heading=$('details-content')?.querySelector('h3')||$('settings-content')?.querySelector('h3');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}}},{once:true});
   state.editRoutine = r || null;
   state.editRoutineBotId = r?.bot_id || screenBotId() || state.bots.find(b=>!profile(b).archived)?.id;
   const f = $("routine-form");
@@ -2196,6 +2209,7 @@ function settingsWait(promise, message, milliseconds=5000){
 }
 let closePermissionPage=null,settingsRevision=0,settingsRequest=null,settingsMotion=null;
 async function openSettings(page = "general") {
+  if((page==='routines'||page==='monitors')&&state.settings==='routines'&&$('settings-dialog').open)return settingsRoutines();
   settingsMotion?.cancel();settingsMotion=null;
   const revision=++settingsRevision;settingsRequest?.abort('settings-navigation');settingsRequest=new AbortController();
   if(closePermissionPage){const close=closePermissionPage;closePermissionPage=null;void settingsWait(close(),'The device permissions view is taking too long to close.').catch(e=>notice(e.message,true));}
@@ -2901,21 +2915,26 @@ async function settingsRoutines(revision) {
   if(state.settings!=='routines'||!$('settings-dialog').open)return;
   revision??=++settingsRevision;
   clearTimeout(monitorRefreshTimer);
-  const [data,connections,routines]=await Promise.all([api('/inbox-monitors'),api('/composio'),api('/routines')]);
-  if(settingsRevision!==revision||state.settings!=='routines'||!$('settings-dialog').open)return;
-  const root=$('settings-content'),expanded=new Set([...root.querySelectorAll('.monitor-row[open]')].map(row=>row.dataset.monitorId));root.replaceChildren();
+  const account=state.token,routineRead=routineFlights.beginRead();let data,connections,routines;
+  try{[data,connections,routines]=await Promise.all([api('/inbox-monitors'),api('/composio'),api('/routines')]);}
+  catch(error){if(settingsRevision!==revision||state.token!==account||state.settings!=='routines'||!$('settings-dialog').open)return;const root=$('settings-content');let feedback=root.querySelector('.routine-refresh-error');if(!feedback){feedback=node('div','routine-refresh-error run-error');feedback.append(node('span','','Could not refresh routines. Previous results are still shown. '),button('Retry',()=>settingsRoutines(),'subtle-button'));root.prepend(feedback);}monitorRefreshTimer=setTimeout(()=>void settingsRoutines(),15000);return;}
+  if(state.token!==account||settingsRevision!==revision||state.settings!=='routines'||!$('settings-dialog').open)return;
+  routineFlights.observe(routines,routineRead);
+  const root=$('settings-content'),restore=routineFocus(root),rows=new Map([...root.querySelectorAll('.routine-card[data-routine-id]')].map(row=>[row.dataset.routineId,row])),expanded=new Set([...root.querySelectorAll('.monitor-row[open]')].map(row=>row.dataset.monitorId)),monitors=new Map([...root.querySelectorAll('.monitor-row')].map(row=>[row.dataset.monitorId,row]));root.replaceChildren();
   const top=node('div','section-toolbar monitor-toolbar');
   top.append(node('h3','','Scheduled'),button('Add routine',()=>editRoutine(),'subtle-button','plus'));
   root.append(top);
   const accounts=(connections.apps||[]).filter(a=>a.id==='gmail').flatMap(a=>a.accounts||[]);
   const scheduled=routines.filter(r=>r.trigger!=='activity');
-  for(const r of scheduled)root.append(scheduledRoutineCard(r,true));
+  for(const r of scheduled)root.append(retainRoutineCard(rows,r,true));
   if(!scheduled.length)root.append(node('p','muted small','No scheduled routines.'));
   root.append(node('h3','monitor-section-title','Monitors'));
   const gmail=node('p','monitor-empty-line');gmail.append(node('strong','','Gmail'),node('span','',data.items.length?'Inbox monitoring':'No active monitors'));root.append(gmail);
   const labels={starting:'Starting',fast:'Fast checks · every 15 seconds',push:'Gmail push · backup checks every 5 minutes',waiting_for_push:'Waiting for push · fast checks active',error:'Needs attention',paused:'Paused'};
   for(const watch of data.items){
-    const row=node('details','monitor-row');row.open=expanded.has(watch.id);row.classList.toggle('is-disabled',!watch.enabled);row.dataset.monitorId=watch.id;
+    const previous=monitors.get(watch.id),snapshot=JSON.stringify([watch,state.bots.find(b=>b.id===watch.bot_id),accounts,state.general.notifications,Math.floor(Date.now()/60000)]);
+    if(previous?.dataset.snapshot===snapshot){root.append(previous);continue;}
+    const row=node('details','monitor-row');row.dataset.snapshot=snapshot;row.open=expanded.has(watch.id);row.classList.toggle('is-disabled',!watch.enabled);row.dataset.monitorId=watch.id;
     const heading=node('summary','monitor-heading'),body=node('div','monitor-body');
     const bot=state.bots.find(b=>b.id===watch.bot_id),account=accounts.find(a=>a.id===watch.account_id);
     const overdue=watch.enabled&&watch.checked_at&&Date.now()/1000>watch.next_check+60;
@@ -2929,7 +2948,7 @@ async function settingsRoutines(revision) {
     if(watch.error)body.append(node('p','run-error',watch.error));
     if(bot?.profile?.notifications===false||['none','input_needed'].includes(state.general.notifications))body.append(node('p','run-error','Inbox result notifications are muted by your global or bot settings. The bot can still post its findings in chat.'));
     if(watch.mode==='push'&&watch.callback_url){
-      const setup=node('details','monitor-push-details');setup.append(node('summary','','Google Cloud delivery setup'));
+      const setup=node('details','monitor-push-details');setup.open=!!previous?.querySelector('.monitor-push-details')?.open;setup.append(node('summary','','Google Cloud delivery setup'));
       setup.append(node('p','muted small','Use this push endpoint in your Pub/Sub subscription. Enable authentication with the configured service account and set the audience to this exact URL.'));
       const url=field('Push endpoint',watch.callback_url,'input',{readOnly:true});url.input.onclick=()=>url.input.select();setup.append(url.label,button('Copy endpoint',async()=>{await navigator.clipboard.writeText(watch.callback_url);notice('Push endpoint copied.');},'outline-button','copy'));
       const help=node('a','detail-link','Gmail push setup guide');help.href='https://developers.google.com/workspace/gmail/api/guides/push';help.target='_blank';help.rel='noopener noreferrer';setup.append(help);body.append(setup);
@@ -2940,6 +2959,7 @@ async function settingsRoutines(revision) {
     }else actions.append(button('Resume',async()=>{await api('/inbox-monitors','POST',inboxWatchInput(watch,{enabled:true}));await settingsRoutines();},'outline-button','play'),button('Remove',async()=>{if(!confirm('Remove this paused inbox monitor? Its chat and task history will remain.'))return;await api('/inbox-monitors/'+watch.id,'DELETE');await settingsRoutines();},'outline-button','trash'));
     body.append(actions);root.append(row);
   }
+  restore();
   monitorRefreshTimer=setTimeout(()=>{if(state.settings==='routines'&&$('settings-dialog').open)settingsRoutines().catch(()=>{});},15000);
 }
 function inboxWatchInput(w,overrides={}){
@@ -4991,18 +5011,19 @@ function appendProgressTimestamp(content,m,entry,run){
 }
 function setTaskCommentaryExpanded(key,expanded,animate=true){
   const rows=[...$('content').querySelectorAll('[data-task-commentary]')].filter(n=>n.dataset.taskCommentary===key);
-  for(const row of rows){
-    const height=row.hidden?0:row.getBoundingClientRect().height;
+  for(const row of rows)setTaskCommentaryRowExpanded(row,key,expanded,animate);
+}
+function setTaskCommentaryRowExpanded(row,key,expanded,animate=true){
+    const height=row.hidden?0:row.getBoundingClientRect().height,fromOpacity=row.hidden?0:getComputedStyle(row).opacity,fromMargin=row.hidden?'0px':getComputedStyle(row).marginBlock;
     row.finishTaskCommentary?.();
     row.hidden=false;
     const target=row.getBoundingClientRect().height,margin=getComputedStyle(row).marginBlock;
     if(!expanded&&row.contains(document.activeElement))$('content').querySelector('[data-progress-group="'+CSS.escape(key)+'"]>details>summary')?.focus({preventScroll:true});
-    if(!animate||!motionAllowed()){row.hidden=!expanded;continue;}
+    if(!animate||!motionAllowed()){row.hidden=!expanded;return;}
     row.style.overflow='hidden';
-    const motion=row.animate([{height:height+'px',opacity:height?1:0,marginBlock:height?margin:'0px'},{height:(expanded?target:0)+'px',opacity:expanded?1:0,marginBlock:expanded?margin:'0px'}],{duration:220,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});
-    const finish=()=>{motion.cancel();row.hidden=!expanded;row.style.removeProperty('overflow');delete row.finishTaskCommentary;};
-    const control=trackMotion(motion,220,finish);row.finishTaskCommentary=()=>control.finish();
-  }
+    const motion=row.animate([{height:height+'px',opacity:fromOpacity,marginBlock:fromMargin},{height:(expanded?target:0)+'px',opacity:expanded?1:0,marginBlock:expanded?margin:'0px'}],{duration:220,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});
+    const finish=()=>{motion.cancel();row.hidden=!expanded;row.style.removeProperty('overflow');delete row.finishTaskCommentary;delete row.refreshTaskCommentary;};
+    const control=trackMotion(motion,220,finish);row.finishTaskCommentary=()=>control.finish();row.refreshTaskCommentary=()=>setTaskCommentaryRowExpanded(row,key,expanded);
 }
 function summaryProgress(items,entry,runs){
   const first=items.find(m=>m.kind==='task_progress'),key=first.progress.group_id,presentation=taskPresentation(items,entry),staged=presentation.mode==='staged',questions=taskQuestions(items,entry);
@@ -5028,7 +5049,8 @@ function summaryProgress(items,entry,runs){
   if(finished&&!staged)return null;
   const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
-  const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open;
+  const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open&&!previous.querySelector('details').classList.contains('is-collapsing');
+  group._progressCompleting=completing;group._progressEntry=entry;
   const details=node('details','summary-progress-disclosure');details.open=completing||manual||(staged&&!finished&&!entry.progressClosed.has(key));
   const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender);
   const chevron=node('span','summary-progress-chevron','⌄');chevron.setAttribute('aria-hidden','true');title.append(chevron);
@@ -6240,6 +6262,77 @@ function conversationSignature(node){
   for(const shard of copy.querySelectorAll('[data-shard-signature]')){const marker=document.createElement('span');marker.dataset.shardSignature=shard.dataset.shardSignature;shard.replaceWith(marker);}
   return JSON.stringify([copy.outerHTML,connectors]);
 }
+// Patch prose and static activity labels without remounting their reader-owned
+// containers. Stateful rich cards and controls keep their own render contracts.
+function patchConversationText(before,after){
+  if(before.nodeType!==after.nodeType||before.nodeName!==after.nodeName){before.replaceWith(after);return;}
+  if(before.nodeType===Node.TEXT_NODE){if(before.data!==after.data)before.data=after.data;return;}
+  if(before.nodeType!==Node.ELEMENT_NODE)return;
+  if(before.matches('.markdown-code')){const code=before.querySelector('pre'),freshCode=after.querySelector('pre');if(code&&freshCode){if(code.textContent!==freshCode.textContent||before.querySelector('.code-language')?.textContent!==after.querySelector('.code-language')?.textContent){before.querySelector('.code-toolbar')?.replaceWith(after.querySelector('.code-toolbar'));patchConversationText(code,freshCode);}return;}}
+  if(before._character&&after._character){if(JSON.stringify(before._character.p)!==JSON.stringify(after._character.p))before.replaceWith(after);return;}
+  if(before.isEqualNode(after))return;
+  if(before.matches('button,a,input,select,textarea,[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media')){
+    // Closures on newly rendered controls refer to the latest message text.
+    // Rich attachments are left to preserveShardMessage/the artifact renderer.
+    before.replaceWith(after);return;
+  }
+  for(const attr of [...before.attributes])if(!after.hasAttribute(attr.name))before.removeAttribute(attr.name);
+  for(const attr of after.attributes)if(before.getAttribute(attr.name)!==attr.value)before.setAttribute(attr.name,attr.value);
+  const old=[...before.childNodes];let cursor=before.firstChild;
+  for(const fresh of [...after.childNodes]){
+    const candidate=old.find(n=>n===cursor&&n.nodeType===fresh.nodeType&&n.nodeName===fresh.nodeName)
+      ||old.find(n=>n.parentNode===before&&n.nodeType===fresh.nodeType&&n.nodeName===fresh.nodeName&&n.isEqualNode(fresh));
+    if(candidate){if(candidate!==cursor)before.insertBefore(candidate,cursor);const following=candidate.nextSibling;patchConversationText(candidate,fresh);cursor=following;old.splice(old.indexOf(candidate),1);}
+    else before.insertBefore(fresh,cursor);
+  }
+  for(const extra of old)extra.remove();
+}
+function preserveOrdinaryMessage(previous,next){
+  if(!previous.classList.contains('message-group')||!next.classList.contains('message-group'))return false;
+  const before=previous.querySelector('.message-text-content'),after=next.querySelector('.message-text-content');
+  if(!before||!after)return false;
+  // Iframes, previews and other live cards have separate ownership. Do not
+  // move them merely because adjacent Markdown changed.
+  if(before.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media')||after.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media'))return false;
+  const shell=n=>{const copy=n.cloneNode(true);copy.removeAttribute('aria-description');copy.classList.remove('message-menu-open','reply-arriving');if(previous.refreshTaskCommentary){copy.removeAttribute('hidden');copy.style.removeProperty('overflow');if(!copy.getAttribute('style'))copy.removeAttribute('style');}copy.querySelector('.mobile-message-time')?.remove();copy.querySelector('.message-text-content').replaceChildren();for(const a of copy.querySelectorAll('.message-actions'))a.replaceChildren();const viewport=copy.querySelector('.message-text-viewport');viewport.removeAttribute('style');viewport.classList.remove('is-truncated');const toggle=copy.querySelector('.message-expand');if(toggle)toggle.replaceWith(document.createElement('button'));return copy.outerHTML;};
+  if(shell(previous)!==shell(next))return false;
+  const focused=document.activeElement,action=previous.contains(focused)?focused.dataset.messageAction:null,focusPath=[];
+  if(before.contains(focused))for(let n=focused;n!==before;n=n.parentNode)focusPath.unshift([...n.parentNode.childNodes].indexOf(n));
+  patchConversationText(before,after);
+  previous.querySelector('.message-text-viewport')._updateLongMessage?.();
+  previous.refreshTaskCommentary?.();
+  const oldActions=previous.querySelector('.message-actions'),newActions=next.querySelector('.message-actions');
+  if(oldActions&&newActions)oldActions.replaceChildren(...newActions.childNodes);
+  if(action)previous.querySelector('[data-message-action="'+CSS.escape(action)+'"]')?.focus({preventScroll:true});
+  else if(focusPath.length&&!focused.isConnected){let replacement=before;for(const index of focusPath)replacement=replacement?.childNodes[index];replacement?.focus?.({preventScroll:true});}
+  return true;
+}
+function retainConversationSelection(target){
+  const selection=getSelection();if(!selection||selection.isCollapsed||!target.contains(selection.anchorNode)||!target.contains(selection.focusNode))return ()=>{};
+  const endpoint=(node,offset)=>{const row=(node.nodeType===Node.ELEMENT_NODE?node:node.parentElement)?.closest('[data-message]');if(!row)return null;const range=document.createRange();range.selectNodeContents(row);range.setEnd(node,offset);return {row,id:row.dataset.message,node,nodeOffset:offset,nodeText:node.textContent,offset:range.toString().length,text:row.textContent};};
+  const anchor=endpoint(selection.anchorNode,selection.anchorOffset),focus=endpoint(selection.focusNode,selection.focusOffset);if(!anchor||!focus)return ()=>{};
+  return ()=>{
+    const resolve=saved=>{
+      if(saved.node.nodeType===Node.TEXT_NODE&&target.contains(saved.node)&&saved.node.textContent===saved.nodeText)return [saved.node,saved.nodeOffset];
+      const row=target.contains(saved.row)?saved.row:[...target.querySelectorAll('[data-message]')].find(n=>n.dataset.message===saved.id);if(!row)return null;
+      const text=row.textContent;let offset=saved.offset;
+      if(text!==saved.text){let prefix=0,suffix=0;while(prefix<Math.min(text.length,saved.text.length)&&text[prefix]===saved.text[prefix])prefix++;while(suffix<Math.min(text.length,saved.text.length)-prefix&&text[text.length-1-suffix]===saved.text[saved.text.length-1-suffix])suffix++;if(offset>prefix)offset=offset>=saved.text.length-suffix?offset+text.length-saved.text.length:Math.min(offset,prefix);}
+      const walker=document.createTreeWalker(row,NodeFilter.SHOW_TEXT);let node,last;while(node=walker.nextNode()){last=node;if(offset<=node.length)return [node,offset];offset-=node.length;}return last?[last,last.length]:[row,0];
+    };
+    const a=resolve(anchor),f=resolve(focus);if(a&&f)selection.setBaseAndExtent(...a,...f);
+  };
+}
+function preserveProgressGroup(previous,next){
+  if(!previous.classList.contains('summary-progress')||!next.classList.contains('summary-progress')||previous.dataset.progressGroup!==next.dataset.progressGroup||previous.classList.contains('task-staged')!==next.classList.contains('task-staged'))return false;
+  const details=previous.querySelector('.summary-progress-disclosure'),body=details.querySelector('.summary-progress-body'),restarting=previous.dataset.progressFinished==='true'&&next.dataset.progressFinished==='false';
+  previous.dataset.message=next.dataset.message;previous.dataset.scrollMessages=next.dataset.scrollMessages;previous.dataset.progressFinished=next.dataset.progressFinished;
+  patchConversationText(details.querySelector('summary'),next.querySelector('summary'));
+  patchConversationText(body,next.querySelector('.summary-progress-body'));
+  details.refreshDisclosure?.();
+  if(restarting&&!details.open&&next.querySelector('details').open)details.querySelector('summary').onclick({preventDefault(){}});
+  if(next._progressCompleting)requestAnimationFrame(()=>{if(previous.isConnected&&details.open&&!details.classList.contains('is-collapsing')&&!next._progressEntry.progressOpen.has(previous.dataset.progressGroup)){if(body.contains(document.activeElement))details.querySelector('summary').focus({preventScroll:true});setTaskCommentaryExpanded(previous.dataset.progressGroup,false);details.querySelector('summary').onclick({preventDefault(){}});}});
+  return true;
+}
 function preserveShardMessage(previous,next){
   const before=previous.querySelector('.message-bubble'),after=next.querySelector('.message-bubble');
   if(!before||!after)return false;
@@ -6355,6 +6448,7 @@ function animateConnectorTaskTransfers(target,transfers){
   setTimeout(finish,duration+150);
 }
 function reconcileConversation(target,desired,animate=true){
+  const restoreSelection=retainConversationSelection(target);
   target.finishConnectorTransfers?.();
   const transfers=connectorTaskTransfers(target,desired),animateTransfers=animate&&motionAllowed();
   const focusedQuestion=target.contains(document.activeElement)?document.activeElement?.closest('[data-task-question]')?.dataset.taskQuestion:null;
@@ -6367,8 +6461,8 @@ function reconcileConversation(target,desired,animate=true){
   const nodes=[...desired.children].map(next=>{
     const artifact=next.querySelector('.workspace-artifact[data-workspace-artifact]');
     if(artifact){const previous=[...target.children].find(n=>n.querySelector('.workspace-artifact[data-workspace-artifact]')?.dataset.workspaceArtifact===artifact.dataset.workspaceArtifact);if(previous){previous.dataset.message=next.dataset.message;const data=conversationHistory(currentConversationId()).messages.find(m=>String(m.seq)===next.dataset.message)?.workspace_artifact;if(data)void previous.querySelector('[data-workspace-artifact]').syncArtifact(data);return previous;}}
-    const signature=conversationSignature(next),previous=old.get(next.dataset.message);
-    if(previous&&conversationRenderSignatures.get(previous)===signature)return previous;
+    const signature=conversationSignature(next),previous=old.get(next.dataset.message)||[...target.children].find(n=>(next.dataset.progressGroup&&n.dataset.progressGroup===next.dataset.progressGroup)||(next.dataset.recovery&&n.dataset.recovery===next.dataset.recovery));
+    if(previous&&(conversationRenderSignatures.get(previous)??conversationSignature(previous))===signature)return previous;
     if(previous?.classList.contains('group-activity')&&next.classList.contains('group-activity')){transitionGroupActivity(previous,next,motionAllowed(),a=>trackMotion(a,280));conversationRenderSignatures.set(previous,signature);return previous;}
     if(previous?.classList.contains('connector-stack-group')&&next.classList.contains('connector-stack-group')){
       const advance=animate?connectorAdvance(previous,next):null;
@@ -6380,8 +6474,10 @@ function reconcileConversation(target,desired,animate=true){
       reconcileConversation(previous.querySelector('.connector-stack-current'),next.querySelector('.connector-stack-current'),animate);advance?.();
       conversationRenderSignatures.set(previous,signature);return previous;
     }
+    if(previous&&preserveProgressGroup(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     const beforeHistory=previous?.querySelector('.task-recovery-history'),afterHistory=next.querySelector('.task-recovery-history');
-    if(beforeHistory&&afterHistory)afterHistory.open=beforeHistory.open;
+    if(beforeHistory&&afterHistory){previous.dataset.message=next.dataset.message;reconcileConversation(beforeHistory.querySelector('.task-recovery-body'),afterHistory.querySelector('.task-recovery-body'),animate);beforeHistory.refreshDisclosure?.();conversationRenderSignatures.set(previous,signature);return previous;}
+    if(previous&&preserveOrdinaryMessage(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     if(previous&&preserveShardMessage(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     conversationRenderSignatures.set(next,signature);return next;
   });
@@ -6401,15 +6497,15 @@ function reconcileConversation(target,desired,animate=true){
   if(animateTransfers&&transfers.length)animateConnectorTaskTransfers(target,transfers);
   if(focusedQuestion&&!target.contains(document.activeElement))target.querySelector('[data-task-question="'+CSS.escape(focusedQuestion)+'"]>summary')?.focus({preventScroll:true});
   observeLongMessages(target);
+  restoreSelection();
   continueLoops(target);
 }
 function animateChatDisclosure(history,body,falling=false){
   const summary=history.querySelector(':scope>summary');
   const inline=history.classList.contains('connector-call');
   let motion=null,expanded=false,cards=[];
-  summary.onclick=e=>{
-    e.preventDefault();
-    expanded=motion?!expanded:!history.open;
+  const transition=opening=>{
+    expanded=opening;
     const start=history.open?body.getBoundingClientRect().height:0;
     const starts=falling?[...body.children].map(n=>({opacity:getComputedStyle(n).opacity,transform:getComputedStyle(n).transform})):[];
     motion?.cancel();motion=null;cards.forEach(a=>a.cancel());cards=[];
@@ -6426,6 +6522,10 @@ function animateChatDisclosure(history,body,falling=false){
     const animation=body.animate([{height:start+'px'},{height:(expanded?body.scrollHeight:0)+'px'}],{duration,easing,fill:'both'});
     motion=trackMotion(animation,duration,complete=>{if(complete)finish();});
   };
+  summary.onclick=e=>{e.preventDefault();transition(motion?!expanded:!history.open);};
+  // A live activity refresh can change the destination while a disclosure is
+  // moving. Continue from its visible height, keeping the latest user intent.
+  history.refreshDisclosure=()=>{if(motion)transition(expanded);};
 }
 function taskRecoveryHistory(){
   const history=node('details','task-recovery-history'),summary=node('summary'),body=node('div','task-recovery-body chat-disclosure-body');
@@ -7730,29 +7830,60 @@ function routineAssignee(id) {
   row.append(node('span','',bot?.name||'Assigned bot'));
   return row;
 }
+const routineFlights=createRoutineFlights({
+  scope:()=>state.token,
+  failed:error=>notice(error,true),
+  post:(r,signal)=>api('/routines/'+r.id+'/run','POST',{}, {signal}),
+  read:signal=>api('/routines','GET',undefined,{signal}),
+  changed:()=>{for(const row of document.querySelectorAll('[data-routine-id]'))row.updateFlight?.();},
+});
+function routineIdentity(r){return JSON.stringify([state.token,r.bot_id,r.id]);}
+function routinePending(r){return pendingDetailRoutines.has(routineIdentity(r));}
 function scheduledRoutineCard(r,showBot=false){
-  const row=node('div','routine-card'),copy=node('div','routine-copy');row.classList.toggle('is-disabled',!r.enabled);
-  copy.append(button(r.name,()=>editRoutine(r),'routine-name'),node('span','muted small',(r.enabled?'':r.run_at&&r.last_run?'One-time check '+r.last_run.status+' · ':'Paused · ')+routineScheduleLabel(r)));
+  const row=node('div','routine-card'),copy=node('div','routine-copy');
+  row.dataset.routineId=r.id;row.dataset.botId=r.bot_id;
+  const name=button('',()=>editRoutine(r),'routine-name');name.dataset.routineAction='edit';
+  const cadence=node('span','muted small'),next=node('span','muted small'),inbox=node('span','muted small');
+  const status=node('span','muted small routine-flight-status'),error=node('span','run-error small routine-flight-error');
+  copy.append(name,cadence,inbox,next,status,error);
   if(showBot){
-    row.classList.add('routine-card-assigned');
-    const bot=state.bots.find(b=>b.id===r.bot_id),avatar=node('span','routine-avatar');
+    row.classList.add('routine-card-assigned');const bot=state.bots.find(b=>b.id===r.bot_id),avatar=node('span','routine-avatar');
     avatar.title=bot?.name||'Assigned bot';avatar.setAttribute('role','img');avatar.setAttribute('aria-label',avatar.title);avatar.tabIndex=0;
     if(bot)avatar.append(buddy(bot,38));else avatar.append(icon('bot',28));
     const label=node('span','routine-avatar-tooltip',avatar.title);label.setAttribute('role','tooltip');avatar.append(label);row.append(avatar);
   }
-  if(r.provider_inbox)copy.append(node('span','muted small',(r.provider_inbox.name||'Connected inbox')+' · scheduled AI review'));
-  if(r.enabled&&r.next_run)copy.append(node('span','muted small','Next: '+new Date(r.next_run*1000).toLocaleString(undefined,{timeZone:r.schedule?.timezone||botTimezone(),timeZoneName:'short'})));
-  row.append(copy);const actions=node('div','row-actions');
-  const reload=async()=>{await refresh();renderComputerRoutines();if(state.settings==='routines'&&$('settings-dialog').open)await settingsRoutines();};
-  actions.append(button('Run now',async()=>{await api('/routines/'+r.id+'/run','POST',{});notice('Routine queued.');await reload();},'outline-button','play'),button(r.enabled?'Pause':'Enable',async()=>{if(!r.enabled&&r.run_at&&r.run_at<=Date.now()/1000){editRoutine(r);return;}await api('/routines/'+r.id,'PATCH',{enabled:!r.enabled});await reload();},'outline-button',r.enabled?'pause':'play'),iconButton('trash','Delete routine',async()=>{if(!confirm('Delete routine “'+r.name+'”?'))return;await api('/routines/'+r.id,'DELETE');await reload();}));
-  row.append(actions);return row;
+  const actions=node('div','row-actions');
+  // The shared flight owns disabled state. perform(button) would re-enable the
+  // temporary clicked button as soon as the RPC acknowledges the request.
+  const runLabel=node('span','','Run now'),run=button('',()=>{},'outline-button','play');run.append(runLabel);run.onclick=()=>void routineFlights.run(r);run.dataset.routineAction='run';
+  const toggle=button('',()=>changeDetailRoutine(r,'toggle'),'outline-button');toggle.dataset.routineAction='toggle';
+  const remove=iconButton('trash','Delete routine',()=>changeDetailRoutine(r,'delete'));remove.dataset.routineAction='delete';
+  actions.append(run,toggle,remove);row.append(copy,actions);
+  row.updateFlight=()=>{const flight=routineFlights.view(r),pending=routinePending(r);run.disabled=flight.blocked||pending;run.setAttribute('aria-busy',String(flight.blocked));
+    routineText(runLabel,flight.blocked?flight.label:'Run now');routineText(status,flight.label);status.hidden=!flight.label;
+    error.textContent=routineActionErrors.get(routineIdentity(r))||flight.error;error.hidden=!error.textContent;toggle.disabled=remove.disabled=name.disabled=pending;
+    row.setAttribute('aria-busy',String(pending||flight.blocked));};
+  row.updateRoutine=value=>{r=value;row.classList.toggle('is-disabled',!r.enabled);routineText(name,r.name);
+    routineText(cadence,(r.enabled?'':r.run_at&&r.last_run?'One-time check '+r.last_run.status+' · ':'Paused · ')+routineScheduleLabel(r));
+    inbox.hidden=!r.provider_inbox;inbox.textContent=r.provider_inbox?(r.provider_inbox.name||'Connected inbox')+' · scheduled AI review':'';
+    next.hidden=!(r.enabled&&r.next_run);next.textContent=r.next_run?'Next: '+new Date(r.next_run*1000).toLocaleString(undefined,{timeZone:r.schedule?.timezone||botTimezone(),timeZoneName:'short'}):'';
+    toggle.textContent=r.enabled?'Pause':'Enable';row.updateFlight();};
+  row.updateRoutine(r);return row;
 }
+function routineText(element,text){if(element.textContent!==text)element.textContent=text;}
+function retainRoutineCard(rows,r,showBot=false){const row=rows.get(r.id);if(row?.updateRoutine&&row.dataset.botId===r.bot_id){row.updateRoutine(r);return row;}return scheduledRoutineCard(r,showBot);}
+function routineFocus(root){const focused=root.contains(document.activeElement)?document.activeElement:null,scroll=root.scrollTop,selection=getSelection();
+  const selected=selection&&!selection.isCollapsed&&root.contains(selection.anchorNode)&&root.contains(selection.focusNode)?[selection.anchorNode,selection.anchorOffset,selection.focusNode,selection.focusOffset]:null;
+  return ()=>{root.scrollTop=scroll;if(focused?.isConnected)focused.focus({preventScroll:true});if(selected&&selected[0].isConnected&&selected[2].isConnected)selection.setBaseAndExtent(...selected);};
+}
+
 function renderComputerRoutines() {
   const root=$('computer-routines'),routines=state.routines.filter(r=>r.bot_id===screenBotId());
   const key=JSON.stringify([screenBotId(),routines]);if(root.dataset.key===key)return;root.dataset.key=key;
+  const rows=new Map([...root.querySelectorAll('.routine-card[data-routine-id]')].map(row=>[row.dataset.routineId,row])),restore=routineFocus(root);
   const head=node('div','section-toolbar');head.append(node('h3','','Routines'),iconButton('plus','Create routine',()=>editRoutine()));root.replaceChildren(head);
   for(const r of routines) {
-    if(r.trigger!=='activity'){root.append(scheduledRoutineCard(r));continue;}
+    if(r.trigger!=='activity'){root.append(retainRoutineCard(rows,r));continue;}
     const row=node('div','routine-card'),copy=node('div','routine-copy');row.classList.toggle('is-disabled',!r.enabled);
     copy.append(button(r.name,()=>openActivityRoutine(r),'routine-name'),node('span','muted small',(r.enabled?'':'Paused · ')+'Constant'));
     if(r.monitor.error)copy.append(node('span','run-error small',r.monitor.error));
@@ -7760,6 +7891,7 @@ function renderComputerRoutines() {
     actions.append(button('Details',()=>openSettings('routines')),button(r.enabled?'Pause':'Resume',async()=>{if(r.enabled)await api('/inbox-monitors/'+r.id+'/pause','POST',{});else await api('/inbox-monitors','POST',inboxWatchInput(r.monitor,{enabled:true}));await refresh();renderComputerRoutines();}));
     row.append(copy,actions);root.append(row);
   }
+  restore();
 }
 async function openAppDetails(app) {
   const d=modal(app.name||app.id,'app-detail-dialog');
@@ -8678,14 +8810,22 @@ function initDesktopChrome() {
   if(!window.__KINDRED_DESKTOP)return;
   if(window.__KINDRED_NATIVE_FRAME)return;
   const mac=window.__KINDRED_DESKTOP.platform==='macos',linux=window.__KINDRED_DESKTOP.platform==='linux';
-  if(linux)document.documentElement.classList.add('linux-desktop');
+  if(linux){
+    document.documentElement.classList.add('linux-desktop');
+    const top=document.querySelector('.sidebar-top'),search=document.querySelector('.sidebar > .search');
+    top?.querySelector('.wordmark')?.remove();
+    if(top&&search)top.prepend(search);
+  }
   document.documentElement.classList.add('native-desktop');
   if(mac)document.documentElement.classList.add('mac-desktop');
   if(mac&&window.__KINDRED_MAC_OVERLAY)document.documentElement.classList.add('mac-overlay');
   const bar=node('header','desktop-titlebar'+(mac?' macos':''));bar.setAttribute('aria-label','Window title bar');
   const title=node('span','desktop-window-title','Kindred'),controls=node('div','window-controls');
+  let windowStateRevision=0;
   async function action(name) {
+    const revision=++windowStateRevision;
     const maximized=await nativeInvoke('window_action',{action:name});
+    if(revision!==windowStateRevision)return;
     const max=controls.querySelector('[data-window-action="maximize"]');
     if(max){max.title=maximized?'Restore window':'Maximize window';max.setAttribute('aria-label',max.title);max.classList.toggle('maximized',maximized);}
   }
@@ -8694,7 +8834,8 @@ function initDesktopChrome() {
     const control=button('',()=>action(name),'window-control window-'+name);control.dataset.windowAction=name;control.title=label;control.setAttribute('aria-label',label);
     const mark=node('span','window-symbol',name==='close'?'×':name==='minimize'?'−':name==='fullscreen'?'+':'□');control.append(mark);controls.append(control);
   }
-  bar.append(title,controls);document.body.prepend(bar);
+  if(!linux)bar.append(title);
+  bar.append(controls);document.body.prepend(bar);
   const chatDrag=node('div','chat-window-drag');chatDrag.setAttribute('aria-hidden','true');
   $('bot-details').after(chatDrag);
   const computerDrag=node('div','computer-window-drag');computerDrag.setAttribute('aria-hidden','true');
@@ -8703,7 +8844,7 @@ function initDesktopChrome() {
   const dragSelector=mac||linux?'.desktop-titlebar,.sidebar-top,.conversation-header,.artifact-workbench-header,.artifact-library-brand-row':'.desktop-titlebar,.conversation-header,.artifact-workbench-header,.artifact-library-brand-row';
   const computerDragSelector='#computer-panel.expanded > .panel-header';
   const draggable=event=>{
-    if(event.target.closest?.('button,a,input,textarea,select,[contenteditable],[role="button"],[role="link"]'))return false;
+    if(event.target.closest?.('button,a,input,textarea,select,label,[contenteditable],[role="button"],[role="link"]'))return false;
     if(event.target.closest?.(dragSelector+','+computerDragSelector))return true;
     // Include the sidebar's top padding, without making the library list draggable.
     const sidebar=event.target.closest?.('.artifact-studio-library');
@@ -8711,7 +8852,10 @@ function initDesktopChrome() {
   };
   document.addEventListener('mousedown',event=>{if(event.button===0&&event.detail===1&&draggable(event))void nativeInvoke('window_action',{action:'drag'}).catch(()=>{});});
   document.addEventListener('dblclick',event=>{if(event.button===0&&draggable(event))void action('maximize');});
-  window.addEventListener('resize',()=>void action('state').catch(()=>{}));
+  const readWindowState=()=>void action('state').catch(()=>{});
+  window.addEventListener('resize',readWindowState);
+  window.addEventListener('focus',readWindowState);
+  readWindowState();
 }
 async function enableNotifications() {
   if(window.__KINDRED_DESKTOP){await nativeInvoke('start_desktop',{token:state.token});return;}

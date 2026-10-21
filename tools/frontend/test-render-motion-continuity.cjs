@@ -14,14 +14,15 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test
   const context=await browser.newContext({viewport:{width:1100,height:760}}),page=await context.newPage(),errors=[];
   page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
   // WebKit may acknowledge emulation before delivering the media preference.
-  // Wait for the stimulus itself, then still require motion to be skipped immediately.
-  const reduced=async mode=>{await page.emulateMedia({reducedMotion:mode});await page.waitForFunction(expected=>matchMedia('(prefers-reduced-motion: reduce)').matches===expected,mode==='reduce');};
+  // Wait for the app's subscribed query to receive the stimulus; a freshly
+  // constructed query can lead WebKit's existing listeners by a frame.
+  const reduced=async mode=>{await page.emulateMedia({reducedMotion:mode});await page.waitForFunction(expected=>window.app?.motionPreference.matches===expected,mode==='reduce');};
   const now=Math.floor(Date.now()/1000),colors=['#2475ff','#a9df20','#ffc900','#ff684d','#7956ff','#16867c'];
   const bots=Array.from({length:8},(_,i)=>({id:'b'+i,name:'Bot '+i,provider:'codex',model:'test',profile:{shape:'round',color:colors[i%colors.length],eyes:'curious'}}));
   const chats=bots.map((b,i)=>({id:'dm-'+b.id,name:b.name,members:[b.id],last_message:{text:'Note '+i,created:now-100-i*60,sender:b.id}}));
   const runs=[{id:'r1',bot_id:'b0',chat_id:'dm-b0',prompt:'Check',status:'running',output:'',error:'',created:now-5}];
   let v={id:'brief',title:'Daily brief',path:'/#artifact=brief',language:'html',source:'<h2>Daily brief</h2><p>Ready for review</p>',state:{},revision:1,updated:now,archived:false};
-  await page.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nexport {state,renderSidebar,node,buddy,elapsedTime,reconcileConversation};'}));
+  await page.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nexport {state,renderSidebar,node,buddy,elapsedTime,reconcileConversation,motionPreference};'}));
   await page.route(origin+'/api/bots',r=>r.fulfill({json:bots}));
   await page.route(origin+'/api/chats',r=>r.fulfill({json:chats}));
   await page.route(origin+'/api/runs',r=>r.fulfill({json:runs}));
@@ -112,11 +113,12 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test
   assert.equal(group.settled.rows,2);assert.equal(group.settled.left,0,'Rapid updates must settle');
   assert.equal(group.blurred,0,'Blur settles group motion');assert.equal(group.off,0,'App reduced motion disables group motion');
 
-  // 6a. A stalled refresh keeps the previous preview visible but inert, then dims it.
-  // Markdown previews need no fonts, so the first HTML revision waits on this font.
+  // 6a. A stalled refresh keeps the previous preview visible but inert, with loading status.
+  // Use an app preview: document artifacts now open the native document viewer.
+  // Its initial Markdown needs no fonts, so the first HTML revision waits here.
   let releaseFont,fontRequested,holdFont=true;const fontStarted=new Promise(r=>fontRequested=r);
   await page.route(url=>url.pathname==='/fonts/LiberationMono-BoldItalic.ttf',async r=>{if(holdFont){holdFont=false;fontRequested();await new Promise(res=>releaseFont=res);}return r.continue();});
-  let notes={id:'notes',title:'Notes',path:'/#artifact=notes',language:'markdown',source:'# Notes\n\nFirst draft',state:{},revision:1,updated:now,archived:false};
+  let notes={id:'notes',title:'Notes',kind:'app',path:'/#artifact=notes',language:'markdown',source:'# Notes\n\nFirst draft',state:{},revision:1,updated:now,archived:false};
   await page.route(origin+'/api/workspace-artifacts/notes',r=>r.fulfill({json:notes}));
   await page.evaluate(async()=>{
    const {workspaceArtifactCard}=await import('/workspace-artifacts.js'),markdown=s=>{const n=document.createElement('div');n.className='message-bubble';n.textContent=s;return n;};
@@ -129,13 +131,13 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test
   await page.evaluate(next=>{window.notesSync=notesCard.syncArtifact(next);},notes);await fontStarted;
   const held=await page.evaluate(async()=>{
    const stage=notesCard.querySelector('.workspace-artifact-stage'),early={inert:stage.inert,text:stage.textContent,frames:stage.querySelectorAll('iframe').length,draft:notesCard.hasArtifactDraft()};
-   await new Promise(r=>setTimeout(r,800));return {early,inert:stage.inert,opacity:Number(getComputedStyle(stage).opacity)};
+   await new Promise(r=>setTimeout(r,800));return {early,inert:stage.inert,opacity:Number(getComputedStyle(stage).opacity),busy:notesCard.getAttribute('aria-busy'),loading:!!notesCard.querySelector('.artifact-loading[role="status"]')};
   });
   assert(held.early.inert&&held.early.text.includes('First draft')&&held.early.frames===0&&!held.early.draft,'The previous preview stays visible and inert while the next prepares: '+JSON.stringify(held));
-  assert(held.inert&&held.opacity<.9,'A stalled refresh dims the retained preview: '+JSON.stringify(held));
+  assert(held.inert&&held.busy==='true'&&held.loading,'A stalled refresh announces loading while retaining the inert preview: '+JSON.stringify(held));
   await page.screenshot({path:path.join(out,engine+'-artifact-refreshing.png')});
   releaseFont();await page.locator('#notes-host iframe').waitFor();
-  const refreshed=await page.evaluate(async()=>{await notesSync;await new Promise(r=>setTimeout(r,400));const stage=notesCard.querySelector('.workspace-artifact-stage');return {inert:stage.inert,refreshing:stage.classList.contains('is-refreshing'),opacity:Number(getComputedStyle(stage).opacity),bubbles:stage.querySelectorAll('.message-bubble').length};});
+  const refreshed=await page.evaluate(async()=>{await notesSync;await new Promise(r=>setTimeout(r,400));const stage=notesCard.querySelector('.workspace-artifact-stage');return {inert:stage.inert,refreshing:notesCard.classList.contains('artifact-loading-active')||notesCard.hasAttribute('aria-busy')||!!notesCard.querySelector('.artifact-loading'),opacity:Number(getComputedStyle(stage).opacity),bubbles:stage.querySelectorAll('.message-bubble').length};});
   assert.deepEqual(refreshed,{inert:false,refreshing:false,opacity:1,bubbles:0},'The new preview replaces the retained one interactively');
   await page.evaluate(()=>document.getElementById('notes-host').remove());
 
@@ -176,12 +178,12 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test
   await page.locator('#artifact-host iframe').waitFor();await page.waitForTimeout(450);
   v={...v,revision:2,source:'<h2>Daily brief</h2><p>Updated by a teammate</p>'};
   const sync=await page.evaluate(async next=>{
-   const samples=[];const watch=setInterval(()=>samples.push({text:card.querySelector('.workspace-artifact-stage').textContent,height:card.getBoundingClientRect().height,frames:card.querySelectorAll('iframe').length}),10);
+   const samples=[];const watch=setInterval(()=>samples.push({text:card.querySelector('.workspace-artifact-stage').textContent,height:card.getBoundingClientRect().height,frames:[...card.querySelectorAll('iframe')].filter(n=>getComputedStyle(n).visibility!=='hidden').length}),10);
    const before=card.querySelector('iframe');await card.syncArtifact(next);await new Promise(r=>setTimeout(r,250));clearInterval(watch);
    return {samples,replaced:card.querySelector('iframe')!==before};
   },v);
   assert(sync.replaced,'The newer revision must render');
-  assert(sync.samples.every(s=>!s.text.includes('Loading')&&s.frames===1),'A revision sync must not flash the loading state');
+  assert(sync.samples.every(s=>!s.text.includes('Loading')&&s.frames===1),'A revision sync must retain exactly one painted frame while the pending replacement prepares');
   assert(Math.max(...sync.samples.map(s=>Math.abs(s.height-expanded)))<2,'A revision sync must not change the card height');
   await page.screenshot({path:path.join(out,engine+'-artifact-card.png')});
   const artifactOff=await page.evaluate(async()=>{

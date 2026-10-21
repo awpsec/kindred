@@ -476,7 +476,7 @@ fn main() {
             #[cfg(target_os = "linux")]
             {
                 // Retain GTK client-side resize borders without its separate
-                // title row. Kindred renders controls in the conversation header.
+                // title row. Kindred renders its full-width window-control strip.
                 use gtk::prelude::*;
                 let titlebar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
                 titlebar.set_size_request(-1, 0);
