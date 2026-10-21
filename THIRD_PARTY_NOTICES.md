@@ -136,3 +136,7 @@ The optional desktop interface fonts DM Sans and Manrope are bundled under the
 SIL Open Font License 1.1. Full licenses and pinned source/hash receipts are in
 ui/fonts/DMSans-LICENSE.txt, ui/fonts/DMSans-SOURCE.json,
 ui/fonts/Manrope-LICENSE.txt and ui/fonts/Manrope-SOURCE.json.
+
+## Supplied Grok Bot artwork and renderer
+
+Kindred incorporates the owner-supplied Grok Bot artwork pack recovered from the shipped Grok Bot 0.75.0 client: body geometry, motion recipes, expressions, morphs and recovered rendering code. These are incorporated third-party material, not original Kindred artwork. Exact archive and recovered-file hashes are recorded in `ui/avatar-runtime/PROVENANCE.json`. Kindred provides the shipping catalog, legacy compatibility, activity classification and lifecycle adapter. The original pack remains unchanged in intake evidence; production exposes only 25 regular bodies and has no seasonal selection or switching. This attribution does not assert a new license grant. Existing Kindred tribute artwork remains separate.

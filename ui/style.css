@@ -6237,3 +6237,12 @@ html[data-ios-inner=true] .computer-panel.expanded>.ios-duo-resizer {display:non
 .ios-duo-resizer:focus-visible {outline:2px solid var(--fg);outline-offset:-8px}
 
 html[data-ios-reserved=true] :is(.conversation-header,.composer-area,.computer-panel .panel-header) {padding-left:max(16px,var(--ios-camera-left,0px));padding-right:max(16px,var(--ios-camera-right,0px))}
+
+/* Recovered artwork owns its pose; legacy character CSS must not animate its SVG. */
+.artwork-character {position:relative;display:inline-block;flex-shrink:0;line-height:0;}
+.artwork-character .avatar-canvas {display:block;width:100%;height:100%;}
+.artwork-character .avatar-canvas svg {width:100%;height:100%;overflow:visible;animation:none;}
+.expression-options {display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;}
+.expression-option[aria-pressed="true"] {background:var(--fg);color:var(--bg);}
+.avatar-custom-color {display:flex;align-items:center;gap:12px;margin:12px 0;}
+.avatar-popover .quick-shapes {max-height:260px;overflow:auto;}

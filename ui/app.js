@@ -29,6 +29,7 @@ import {
   shapes,
   colors,
   defaultProfile,
+  newAvatarProfile, updateCharacter, avatarAppearance, selectAppearance, expressions, palettes,
   setActivity,
   activityState,
   syncCharacter,
@@ -320,7 +321,7 @@ function modelChangeNotice(message) {
 function profile(b) {
   return { ...defaultProfile, ...b?.profile };
 }
-function portrait(b) { return {...profile(b),name:b?.name||""}; }
+function portrait(b) { return {...profile(b),name:b?.name||"",bot_id:b?.id||""}; }
 function plain(text = "") {
   return text
     .replace(/[`*_#]/g, "")
@@ -696,7 +697,7 @@ function botActivity(id) {
 }
 function reaction(id) {
   return activityState(
-    botActivity(id),
+    {...botActivity(id),stale:!!(state.activityReadAt&&Date.now()-state.activityReadAt>15000)},
     Date.now() / 1000,
     Math.max(state.attention.bots[id]?.last_active_at||0,(botArrivals.get(id)||0)/1000),
   );
@@ -706,10 +707,10 @@ function buddy(b, size, busy = false, key = "") {
   let avatar = key ? avatarCache.get(key) : null;
   if (!avatar || avatar.dataset.profile !== signature) {
     const previous=avatar;
-    avatar = character(portrait(b), size, busy);
+    avatar = previous?updateCharacter(previous,portrait(b),size):character(portrait(b), size, busy);
     avatar.dataset.profile = signature;
     if (b) avatar.dataset.botId = b.id;
-    if (b) setActivity(avatar, reaction(b.id).action, { immediate: true,startedAt:(state.activities[b.id]?.run_created_at??state.activities[b.id]?.started_at)*1000 });
+    if (b) setActivity(avatar, reaction(b.id).action, { ...reaction(b.id),immediate: true,startedAt:(state.activities[b.id]?.run_created_at??state.activities[b.id]?.started_at)*1000 });
     if (b && botArrivals.has(b.id) && Date.now()-botArrivals.get(b.id)<1150) arriveCharacter(avatar,botArrivals.get(b.id));
     else if (avatar.dataset.tribute && previous && previous.dataset.tribute!==avatar.dataset.tribute) revealCharacter(avatar);
     else if (key.startsWith("work-") && !avatar.dataset.tribute) arriveCharacter(avatar);
@@ -893,7 +894,7 @@ function updateReactions() {
     if(avatar.classList.contains('has-presence')){avatar.classList.toggle('is-online',r.online);avatar.title=r.online?'Recently active':'Resting';}
     const stale=state.activityReadAt&&Date.now()-state.activityReadAt>15000;
     if(avatar.closest('.archive-burial'))continue;
-    setActivity(avatar, stale&&botActivity(avatar.dataset.botId)?.status==='running'?'waiting':r.action,{startedAt:(state.activities[avatar.dataset.botId]?.run_created_at??state.activities[avatar.dataset.botId]?.started_at)*1000});
+    setActivity(avatar, r.action,{...r,startedAt:(state.activities[avatar.dataset.botId]?.run_created_at??state.activities[avatar.dataset.botId]?.started_at)*1000});
     syncCharacter(avatar);
   }
   for(const timer of document.querySelectorAll('[data-group-started]'))timer.textContent=elapsedTime(Math.max(0,Date.now()/1000-Number(timer.dataset.groupStarted)));
@@ -1857,6 +1858,7 @@ async function editBotText(id, key) {
 }
 function pickAvatar(value, save) {
   state.avatarDraft = { ...defaultProfile, ...value };
+  state.avatarBodySelected=false;
   state.avatarSave = save;
   renderAvatar();
   $("avatar-dialog").showModal();
@@ -1869,29 +1871,38 @@ function renderAvatar() {
     const b = button(
       "",
       () => {
-        state.avatarDraft.shape = shape;
-        state.avatarSave({...state.avatarDraft, animated: true});
+        state.avatarBodySelected=true;
+        state.avatarDraft = selectAppearance(state.avatarDraft,{body:shape});
+        state.avatarSave({...state.avatarDraft});
         renderAvatar();
       },
-      "shape-option" + (p.shape === shape ? " selected" : ""),
+      "shape-option" + (avatarAppearance(p).body === shape ? " selected" : ""),
     );
     b.title = shape;
     b.setAttribute("aria-label", shape);
-    b.append(character({ ...p, name:"", shape, animated: false }, 48));
+    b.append(character({...selectAppearance(p,{body:shape}),name:"",animated:false},48));
     $("shape-options").append(b);
   }
+  let expressionOptions=$('expression-options');
+  if(!expressionOptions){expressionOptions=node('div','expression-options');expressionOptions.id='expression-options';expressionOptions.setAttribute('role','group');expressionOptions.setAttribute('aria-label','Expression');$('shape-options').after(expressionOptions);}
+  expressionOptions.replaceChildren(...expressions.map(expression=>{const b=button(expression,()=>{state.avatarDraft=selectAppearance(state.avatarDraft,{expression});state.avatarSave({...state.avatarDraft});renderAvatar();},'expression-option');b.setAttribute('aria-pressed',String(avatarAppearance(p).expression===expression));return b;}));
+  let custom=$('avatar-custom-color');
+  if(!custom){const label=node('label','avatar-custom-color','Custom color');custom=document.createElement('input');custom.type='color';custom.id='avatar-custom-color';label.append(custom);$('color-options').after(label);}
+  custom.parentElement.classList.toggle('selected',avatarAppearance(p).palette===null);
+  custom.parentElement.title=avatarAppearance(p).palette===null?'Custom (selected)':'Custom color';
+  custom.value=p.color;custom.oninput=()=>{state.avatarDraft=selectAppearance(state.avatarDraft,{palette:null,custom_color:custom.value});state.avatarSave({...state.avatarDraft});renderAvatar();};
   $("color-options").replaceChildren();
   for (const [name, color] of colors) {
     const b = button(
       "",
       () => {
-        state.avatarDraft.color = color;
-        state.avatarSave({...state.avatarDraft, animated: true});
+        state.avatarDraft = selectAppearance(state.avatarDraft,{palette:palettes.find(p=>p.label===name).id,custom_color:null});
+        state.avatarSave({...state.avatarDraft});
         renderAvatar();
       },
-      "color-option" + (p.color === color ? " selected" : ""),
+      "color-option" + (avatarAppearance(p).palette === palettes.find(p=>p.label===name).id ? " selected" : ""),
     );
-    b.style.backgroundColor = color === '#ffffff' ? 'var(--fg)' : color;
+    b.style.backgroundColor = color;
     b.title = name;
     b.setAttribute("aria-label", name);
     $("color-options").append(b);
@@ -1904,7 +1915,8 @@ async function newBot(proposal = null) {
   $("bot-form").elements.provider.replaceChildren(...providerOptions(state.general.default_provider).map(([id,name])=>new Option(name,id)));
   state.botProposal = proposal;
   const draft = proposal?.bot;
-  state.newProfile = { ...defaultProfile, ...draft?.profile };
+  state.newProfile = draft?{...defaultProfile,...draft.profile}:newAvatarProfile();
+  state.newAvatarExplicit=!!draft;
   $("bot-form").reset();
   const fields = $("bot-form").elements;
   fields.name.value = draft?.name || '';
@@ -3264,7 +3276,7 @@ async function settingsComputer(){
       card.append(details);
       const assigned=state.bots.filter(b=>!profile(b).archived&&profile(b).local_access&&(profile(b).local_device_id===d.id||profile(b).local_device_id==='*'));
       const badges=node('div','assigned-computer-bots');
-      if(assigned.length){badges.append(node('span','muted small','Enabled for:'));for(const bot of assigned){const badge=node('span','assigned-bot-badge');badge.append(character(profile(bot),18),node('span','',bot.name));badges.append(badge);}}else badges.append(node('span','muted small','No bots have local access enabled for this computer.'));
+      if(assigned.length){badges.append(node('span','muted small','Enabled for:'));for(const bot of assigned){const badge=node('span','assigned-bot-badge');badge.append(character(portrait(bot),18),node('span','',bot.name));badges.append(badge);}}else badges.append(node('span','muted small','No bots have local access enabled for this computer.'));
       card.append(badges);
       list.append(card);
     }
@@ -4247,7 +4259,7 @@ $("prompt").onkeydown = (e) => {
 };
 $("new-avatar-button").onclick = () =>
   pickAvatar({...state.newProfile,name:$("bot-form").elements.name.value}, (p) => {
-    const {name:_,...appearance}=p;state.newProfile = appearance;
+    const {name:_,...appearance}=p;state.newProfile = appearance;state.newAvatarExplicit ||= state.avatarBodySelected;
     replaceCharacter($("new-avatar-button"),{...p,name:$("bot-form").elements.name.value},90);
   });
 $("bot-form").elements.name.addEventListener("change",()=>replaceCharacter($("new-avatar-button"),{...state.newProfile,name:$("bot-form").elements.name.value},90));
@@ -4259,6 +4271,7 @@ $("bot-form").onsubmit = (e) => {
   perform(async () => {
     const f = e.target.elements;
     const draft = {
+      avatar_default:!state.newAvatarExplicit,
       id: "",
       name: f.name.value,
       instructions: f.instructions.value,
@@ -4618,46 +4631,13 @@ async function animateBotArchive(id) {
       await Promise.all([out.finished,incoming.finished].map(p=>p.catch(()=>{})));
       original.remove();out.cancel();avatar=ordinary;
     }
-    stage.classList.add('archive-coffin');
-    stage.append(node('span','archive-ground'));
-    setActivity(avatar,'coffin');
-    // After the existing silhouette morph, project a solid lid and six side
-    // walls together. Tilting a single SVG plane makes it look like cardboard.
-    const ns='http://www.w3.org/2000/svg',mesh=document.createElementNS(ns,'svg');
-    mesh.setAttribute('viewBox','0 0 100 110');mesh.classList.add('archive-coffin-solid');mesh.setAttribute('aria-hidden','true');
-    const color=getComputedStyle(avatar).getPropertyValue('--bot-fill').trim()||'#7956ff';
-    const vertices=[[34,6],[66,6],[80,28],[69,94],[31,94],[20,28]];
-    const polygon=(fill,opacity=1)=>{const p=document.createElementNS(ns,'polygon');p.setAttribute('fill',fill);p.setAttribute('opacity',opacity);mesh.append(p);return p;};
-    const walls=vertices.map(()=>{const base=polygon(color),shade=polygon('#000',.48);base.setAttribute('stroke','#141820');base.setAttribute('stroke-width','1.5');base.setAttribute('stroke-linejoin','round');return {base,shade};});
-    const lid=polygon(color);
-    const cross=document.createElementNS(ns,'path');cross.setAttribute('fill','none');cross.setAttribute('stroke','var(--bot-ink)');cross.setAttribute('stroke-width','4');cross.setAttribute('stroke-linecap','round');mesh.append(cross);
-    stage.append(mesh);mesh.style.opacity=0;
-    const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
-    const motion=stage.animate([{opacity:1},{opacity:1}],{duration:2100,fill:'forwards'});
-    let frame;
-    const draw=()=>{
-      const time=Number(motion.currentTime)||0,tilt=smooth((time-620)/650),lower=smooth((time-1530)/570);
-      if(time>=560){avatar.style.visibility='hidden';mesh.style.opacity=String(1-smooth((lower-.65)/.35));}
-      const az=tilt*Math.PI*.46,ax=tilt*Math.PI*.40;
-      const project=([x,y],z=0)=>{
-        x-=50;y-=55;const rx=x*Math.cos(az)-y*Math.sin(az),ry=x*Math.sin(az)+y*Math.cos(az);
-        const depth=ry*Math.sin(ax)+z*Math.cos(ax),scale=320/(320-depth);
-        return [50+rx*scale,55+(ry*Math.cos(ax)-z*Math.sin(ax))*scale+tilt*4+lower*105];
-      };
-      const top=vertices.map(v=>project(v)),bottom=vertices.map(v=>project(v,-25));
-      const points=vs=>vs.map(v=>v.join(',')).join(' ');
-      walls.forEach((wall,i)=>{const next=(i+1)%vertices.length,d=points([top[i],top[next],bottom[next],bottom[i]]);wall.base.setAttribute('points',d);wall.shade.setAttribute('points',d);wall.shade.setAttribute('opacity',String(.30+.24*Math.abs(Math.cos(i*Math.PI/3+az))));});
-      lid.setAttribute('points',points(top));
-      const line=(vs)=>vs.map((v,i)=>(i?'L':'M')+project(v).join(' ')).join('');
-      cross.setAttribute('d',line([[50,35],[50,58]])+line([[42,43],[58,43]]));
-      if(time<2100&&stage.isConnected)frame=requestAnimationFrame(draw);
-    };
-    frame=requestAnimationFrame(draw);
-    await motion.finished.catch(()=>{});cancelAnimationFrame(frame);
+    setActivity(avatar,'powering-down');
+    const fade=stage.animate([{opacity:1},{opacity:0}],{duration:700,easing:'ease-out',fill:'forwards'});
+    await fade.finished.catch(()=>{});
     const height=entry.getBoundingClientRect().height;
     entry.style.overflow='hidden';
     await entry.animate([{height:height+'px',opacity:1},{height:'0px',opacity:0,marginTop:'0px',marginBottom:'0px'}],{duration:240,easing:'cubic-bezier(.2,.8,.2,1)',fill:'forwards'}).finished.catch(()=>{});
-    motion.cancel();avatar.style.visibility='';mesh.remove();setActivity(avatar,'idle',{immediate:true});
+    fade.cancel();setActivity(avatar,'idle',{immediate:true});
   }));
 }
 async function archiveBot(id){
@@ -7697,31 +7677,32 @@ function avatarMenu(bot) {
   shapeChoices.setAttribute('role','group');shapeChoices.setAttribute('aria-label','Shape');
   const choose=async patch=>{wrap.classList.add('menu-open');await saveAvatarChoice(bot,patch);};
   for(const shape of shapes) {
-    const b=button('',()=>choose({shape}),'shape-option');
-    b.onclick=()=>perform(()=>choose({shape}));
+    const b=button('',()=>choose({avatarPatch:{body:shape}}),'shape-option');
+    b.onclick=()=>perform(()=>choose({avatarPatch:{body:shape}}));
     b.title=shape;b.setAttribute('aria-label',shape);b.dataset.shape=shape;shapeChoices.append(b);
   }
   const swatches=node('div','quick-colors');
   swatches.setAttribute('role','group');swatches.setAttribute('aria-label','Color');
   for(const [name,color] of colors) {
-    const b=button('',()=>choose({color}),'color-option');
-    b.onclick=()=>perform(()=>choose({color}));
-    b.dataset.color=color;
-    b.style.backgroundColor=color==='#ffffff'?'var(--fg)':color;b.title=name;b.setAttribute('aria-label',name);swatches.append(b);
+    const b=button('',()=>choose({avatarPatch:{palette:palettes.find(p=>p.label===name).id,custom_color:null}}),'color-option');
+    b.onclick=()=>perform(()=>choose({avatarPatch:{palette:palettes.find(p=>p.label===name).id,custom_color:null}}));
+    b.dataset.color=color;b.dataset.palette=palettes.find(p=>p.label===name).id;
+    b.style.backgroundColor=color;b.title=name;b.setAttribute('aria-label',name);swatches.append(b);
   }
   wrap.updateProfile=updated=>{
     bot=updated;const p=portrait(bot);
     trigger.setAttribute('aria-label','Customize '+bot.name);replaceCharacter(trigger,p,82);
     for(const b of shapeChoices.children) {
-      const selected=b.dataset.shape===p.shape;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));
-      b.replaceChildren(character({...p,name:'',shape:b.dataset.shape,animated:false},44));
+      const selected=b.dataset.shape===avatarAppearance(p).body;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));
+      b.replaceChildren(character({...selectAppearance(p,{body:b.dataset.shape}),name:'',animated:false},44));
     }
     for(const b of swatches.children) {
-      const selected=b.dataset.color===p.color;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));
+      const selected=b.dataset.palette===avatarAppearance(p).palette;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));
     }
   };
   wrap.updateProfile(bot);
-  menu.append(shapeChoices,swatches);
+  const more=button('Expressions and custom color',()=>{wrap.classList.remove('menu-open');pickAvatar(portrait(bot),p=>perform(()=>choose({avatar:p.avatar,shape:p.shape,eyes:p.eyes,color:p.color})));},'outline-button');
+  menu.append(shapeChoices,swatches,more);
   wrap.append(trigger,menu);return wrap;
 }
 function routineAssignee(id) {
@@ -7973,7 +7954,7 @@ const avatarQueues=new Map();
 function queueAvatarWrite(id,write){const next=(avatarQueues.get(id)||Promise.resolve()).catch(()=>{}).then(write);avatarQueues.set(id,next);return next;}
 function saveAvatarChoice(bot,patch){
   const previous=avatarQueues.get(bot.id)||Promise.resolve();
-  const next=previous.catch(()=>{}).then(async()=>{const current=state.bots.find(b=>b.id===bot.id)||bot;state.botWriteEpoch=(state.botWriteEpoch||0)+1;const updated=await api('/bots/'+bot.id,'PUT',{...current,preserve_text:true,profile:{...profile(current),...patch}});state.botWriteEpoch++;state.bots=state.bots.map(b=>b.id===bot.id?updated:b);if(state.bot?.id===bot.id)state.bot=updated;renderSidebar();renderHeader();state.panelKey='';if(state.view==='details')renderDetails();await renderChat(true,'cached');});
+  const next=previous.catch(()=>{}).then(async()=>{const current=state.bots.find(b=>b.id===bot.id)||bot;state.botWriteEpoch=(state.botWriteEpoch||0)+1;const updated=await api('/bots/'+bot.id,'PUT',{...current,preserve_text:true,profile:patch.avatarPatch?selectAppearance(profile(current),patch.avatarPatch):{...profile(current),...patch}});state.botWriteEpoch++;state.bots=state.bots.map(b=>b.id===bot.id?updated:b);if(state.bot?.id===bot.id)state.bot=updated;renderSidebar();renderHeader();state.panelKey='';if(state.view==='details')renderDetails();await renderChat(true,'cached');});
   avatarQueues.set(bot.id,next);return next;
 }
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.avatar-menu'))document.querySelectorAll('.avatar-menu.menu-open').forEach(n=>n.classList.remove('menu-open'));});

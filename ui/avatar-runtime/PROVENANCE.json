@@ -1,0 +1,9 @@
+{
+  "origin": "Owner-supplied KINDRED_GROK_BOT_ARTWORK_PACK.zip, recovered Grok Bot 0.75.0 artwork/renderer",
+  "archive_sha256": "8fa902ae386881fb0fb73728e88559d0c2820000e28a64a67b2db3625b67de8f",
+  "files": {
+    "grok-avatar-engine.mjs": "9319abec672bc80865c93eadeb0241bfb25034fff9440101276ddb495fc3d75d",
+    "rolldown-runtime.mjs": "e0a79ad36c6ca1ffbc796c80aa5661803a9d1bc684e29d1587f48b4ba9a82714"
+  },
+  "integration": "Kindred owns catalog, compatibility, semantic classification and scheduling. Seasonal geometry in the unchanged recovered engine is unreachable from the shipping 25-body catalog; no seasonal selection or switching."
+}

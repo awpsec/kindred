@@ -1,0 +1,19 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');const{server,token}=require('./fixtures/desktop.cjs');
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await(process.env.WEBKIT?webkit:chromium).launch({headless:true});
+const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve('test-results/avatar');fs.mkdirSync(out,{recursive:true});
+try{const p=await browser.newPage({viewport:{width:1320,height:900}}),errors=[],writes=[];p.on('pageerror',e=>{errors.push(e.message);console.error('pageerror:',e.message)});p.setDefaultTimeout(12000);await p.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
+await p.route('**/api/bots/piper',async r=>{if(r.request().method()!=='PUT')return r.continue();const b=r.request().postDataJSON();writes.push(b);await r.fulfill({json:b});});
+const base='http://127.0.0.1:'+server.address().port;await p.goto(base,{waitUntil:'domcontentloaded'});await p.locator('#bot-details').waitFor();await p.locator('#bot-details').click();await p.locator('.avatar-customize').waitFor();await p.locator('.avatar-customize').click();
+assert.equal(await p.locator('.quick-shapes .shape-option').count(),25);assert.equal(await p.locator('.quick-colors .color-option').count(),11);
+const swatches=await p.evaluate(async()=>{const c=await import('/avatar-runtime/catalog.js');return [...document.querySelectorAll('.quick-colors .color-option')].map((n,i)=>{const x=document.createElement('span');x.style.backgroundColor=c.palettes[i].value;return {actual:n.style.backgroundColor,expected:x.style.backgroundColor,id:n.dataset.palette};});});
+for(const s of swatches)assert.equal(s.actual,s.expected,s.id);
+
+const bodies=await p.locator('.quick-shapes .shape-option').evaluateAll(ns=>ns.map(n=>n.dataset.shape));
+for(const body of bodies){const choice=p.locator('.quick-shapes button[data-shape="'+body+'"]');if(!await choice.isVisible())await p.locator('.avatar-customize').click();await choice.click();await p.waitForFunction(body=>document.querySelector('.avatar-customize .character')?._character.p.avatar?.body===body,body);assert.equal(writes.at(-1).profile.avatar.body,body);assert.equal(writes.at(-1).profile.local_access,undefined);}
+await p.getByRole('button',{name:'Expressions and custom color',exact:true}).click();const dialog=p.locator('#avatar-dialog');await dialog.waitFor();assert.equal(await dialog.locator('.expression-option').count(),9);
+const expressionSaved=p.waitForResponse(async r=>r.url().endsWith('/api/bots/piper')&&r.request().method()==='PUT'&&(await r.json()).profile?.avatar?.expression==='surprised');await dialog.getByRole('button',{name:'surprised',exact:true}).click();await expressionSaved;
+assert.equal(writes.at(-1).profile.avatar.expression,'surprised');const customSaved=p.waitForResponse(async r=>r.url().endsWith('/api/bots/piper')&&r.request().method()==='PUT'&&(await r.json()).profile?.avatar?.custom_color==='#123456');await dialog.locator('#avatar-custom-color').fill('#123456');await customSaved;await p.waitForFunction(()=>document.querySelector('#avatar-preview .character')?._character.p.color==='#123456');assert.equal(writes.at(-1).profile.avatar.custom_color,'#123456');assert.equal(writes.at(-1).profile.avatar.palette,null);
+await dialog.evaluate(d=>d.close());await p.screenshot({path:path.join(out,(process.env.WEBKIT?'webkit':'chromium')+'-actual-customization.png')});
+assert.deepEqual(errors,[]);console.log(JSON.stringify({bodies:25,palettes:11,expressions:9,customColor:true,writes:writes.length,scope:'Actual UI with fixture HTTP persistence; backend SQLite round-trip is separately tested.'}));
+}finally{await browser.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1});

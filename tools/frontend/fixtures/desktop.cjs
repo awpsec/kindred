@@ -47,6 +47,7 @@ const server=http.createServer(async(req,res)=>{
  if(['/fonts/InterVariable.woff2','/fonts/InterVariable-Italic.woff2'].includes(route)){
   res.writeHead(200,{'Content-Type':'font/woff2'});return res.end(fs.readFileSync(path.join(ui,route.slice(1))));
  }
+ if(/^\/avatar-runtime\/(catalog\.js|host\.js|grok-avatar-engine\.mjs|rolldown-runtime\.mjs)$/.test(route)){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8'});return res.end(fs.readFileSync(path.join(ui,route.slice(1))));}
  const file=route==='/'?'index.html':route.slice(1);
  if(!file.includes('/')&&/^[a-z0-9-]+\.(html|js|css|svg)$/.test(file)&&fs.existsSync(path.join(ui,file))) {
   res.writeHead(200,{'Content-Type':file.endsWith('.css')?'text/css':file.endsWith('.html')?'text/html':file.endsWith('.svg')?'image/svg+xml':'text/javascript','Cache-Control':'no-store'});return res.end(fs.readFileSync(path.join(ui,file)));

@@ -63,16 +63,16 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   });
   // Exercise the actual create dialog: name + shape + color, in either order.
   await p.locator('#new-bot').click();await p.locator('#new-menu').getByRole('button',{name:'New bot',exact:true}).click();
-  await p.locator('#bot-form input[name="name"]').fill('Oliver');
+  await p.locator('#bot-form input[name="name"]').fill('Oliver');await p.locator('#bot-form input[name="name"]').press('Tab');
   await p.locator('#new-avatar-button').click();
   await p.locator('#shape-options button[title="pebble"]').click();
-  await p.locator('#color-options button[title="Honey"]').click();
+  await p.locator('#avatar-custom-color').fill('#ffbe16');
   await p.locator('#avatar-preview [data-tribute="oliver"]').waitFor();
   await p.locator('#save-avatar').click();
   await p.locator('#new-avatar-button [data-tribute="oliver"]').waitFor();
-  await p.locator('#bot-form input[name="name"]').fill('Different');
+  await p.locator('#bot-form input[name="name"]').fill('Different');await p.locator('#bot-form input[name="name"]').press('Tab');
   assert.equal(await p.locator('#new-avatar-button [data-tribute]').count(),0);
-  await p.locator('#bot-form input[name="name"]').fill('Oliver');
+  await p.locator('#bot-form input[name="name"]').fill('Oliver');await p.locator('#bot-form input[name="name"]').press('Tab');
   await p.locator('#new-avatar-button [data-tribute="oliver"]').waitFor();
   await p.waitForTimeout(650);
   await p.screenshot({path:path.join(artifacts,engine+'-tribute-create.png')});
@@ -88,7 +88,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   await p.reload();await p.locator('#bots .character[data-tribute="oliver"]').waitFor();
   assert.equal(await p.locator('#bots .character[data-revealing]').count(),0,'Reload must not replay the discovery');
   await p.locator('#bot-details').click();await p.locator('.avatar-customize').hover();
-  await p.locator('.avatar-popover').getByRole('button',{name:'round',exact:true}).click();
+  await p.locator('.avatar-popover').getByRole('button',{name:'blob',exact:true}).click();
   await p.waitForFunction(()=>!document.querySelector('#bots .character[data-tribute]'));
   assert.deepEqual(errors,[]);
   await p.goto(origin+'/fixture/site');await p.addStyleTag({url:origin+'/style.css'});
@@ -100,7 +100,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
     const cell=document.createElement('div');cell.style.textAlign='center';const p={name,shape:name==='Oliver'?'pebble':'triangle',color:name==='Oliver'?'#ffbe16':'#2ec767'};
     const large=m.character(p,150);cell.append(large);m.setActivity(large,state);m.renderCharacterMotion(large,1120);
     const label=document.createElement('div');label.textContent=name+' · '+state;cell.append(label);const small=m.character(p,32);cell.append(small);m.setActivity(small,state);m.renderCharacterMotion(small,1120);sheet.append(cell);
-    large._character=null;small._character=null;
+    large._character.p.animated=false;small._character.p.animated=false;m.renderCharacterMotion(large,1120);m.renderCharacterMotion(small,1120);
    }
   });
   for(const theme of ['dark','light']){await p.evaluate(t=>document.documentElement.dataset.theme=t,theme);await p.locator('#tribute-sheet').screenshot({path:path.join(artifacts,engine+'-tribute-states-'+theme+'.png')});}

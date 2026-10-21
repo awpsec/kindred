@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const origin='http://127.0.0.1:'+server.address().port;
- const browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true,channel:'msedge'});
+ const browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true,channel:process.env.KINDRED_BROWSER_CHANNEL||undefined});
  try{
   const context=await browser.newContext(),p=await context.newPage(),errors=[],writes=[];
   p.on('pageerror',e=>errors.push(e.message));p.on('request',r=>{if(r.method()==='PUT')writes.push(r.url());});
