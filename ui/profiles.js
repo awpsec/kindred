@@ -1,3 +1,4 @@
+import {mountDockerNetwork} from './docker-network.js';
 import {isLocalStandalone,mountPhoneAccess,mountLocalServer} from './standalone-access.js';
 import {mobileSession,mobileAccounts} from './mobile.js';
 // Older installations may retain several workspaces under one sign-in.
@@ -284,10 +285,11 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const localNetwork=isLocalStandalone();
     const identity=el('p','server-admin-identity',localNetwork?'Standalone (this machine)':(meta?.deployment==='standalone'?'Standalone':'Hosted')+' ('+location.host+')');identity.title=location.origin;nav.append(identity);
     let accessController=null;head.lastChild.onclick=()=>{if(!accessController||accessController.canLeave())d.close();};
-    const pages={};for(const name of ['Users','Password resets','Computers',...((localNetwork||meta?.deployment==='standalone')?['Networking']:[]),'Updates']){const page=el('div','server-admin-page');page.dataset.page=name;page.hidden=name!==selectedPage;pages[name]=page;content.append(page);const tab=button(name,()=>{if(name!=='Networking'&&!pages['Networking']?.hidden&&accessController&&!accessController.canLeave())return;for(const [key,value] of Object.entries(pages))value.hidden=key!==name;for(const b of tabs.children)b.classList.toggle('active',b===tab);head.querySelector('h2').textContent=name;},'');tab.prepend(menuIcon({'Users':'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M20 8v6 M17 11h6','Password resets':'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2','Computers':'M3 4h18v13H3z M8 21h8 M12 17v4','Networking':'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M3 12h18 M12 3v18','Updates':'M12 3v12 M7 10l5 5 5-5 M4 17v4h16v-4'}[name]));tab.classList.toggle('active',name===selectedPage);tabs.append(tab);}head.querySelector('h2').textContent=selectedPage;
+    const pages={};for(const name of ['Users','Password resets','Computers',...((localNetwork||meta?.deployment==='standalone'||meta?.docker_network)?['Networking']:[]),'Updates']){const page=el('div','server-admin-page');page.dataset.page=name;page.hidden=name!==selectedPage;pages[name]=page;content.append(page);const tab=button(name,()=>{if(name!=='Networking'&&!pages['Networking']?.hidden&&accessController&&!accessController.canLeave())return;for(const [key,value] of Object.entries(pages))value.hidden=key!==name;for(const b of tabs.children)b.classList.toggle('active',b===tab);head.querySelector('h2').textContent=name;},'');tab.prepend(menuIcon({'Users':'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M20 8v6 M17 11h6','Password resets':'M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3 M12 15v2','Computers':'M3 4h18v13H3z M8 21h8 M12 17v4','Networking':'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M3 12h18 M12 3v18','Updates':'M12 3v12 M7 10l5 5 5-5 M4 17v4h16v-4'}[name]));tab.classList.toggle('active',name===selectedPage);tabs.append(tab);}head.querySelector('h2').textContent=selectedPage;
     const data=await api('admin');
     if(pages['Networking']){
       if(localNetwork)accessController=mountPhoneAccess(pages['Networking'],{nativeInvoke,workingBots,dialog:d,onPair:()=>{d.close();return connectMobile();}});
+      else if(meta?.docker_network)accessController=await mountDockerNetwork(pages['Networking'],{api,dialog:d});
       else pages['Networking'].append(el('p','muted','Manage networking from Kindred on the computer running this server.'));
     }
 
@@ -307,25 +309,38 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const updates=el('section','server-update-settings'),updateRow=el('div','row-actions');updates.append(el('h3','','Server updates'),el('p','muted','Current server '+(getServerVersion()||'version unavailable')));updateRow.append(button('Check for updates',()=>{d.close();window.dispatchEvent(new Event('kindred-server-update'));},'outline-button'));updates.append(updateRow);pages.Updates.append(updates);
     if(localNetwork){for(const old of d.querySelectorAll('.local-server-admin'))old.remove();const local=el('section','local-server-admin');local.dataset.nativeLocalAdmin='true';local.dataset.sharedLocalAdmin='true';local.append(el('h3','','Local server'));pages.Updates.append(local);mountLocalServer(local,{nativeInvoke,workingBots,dialog:d});}
 
-    const hardware=el('section','vm-resource-settings'),heading=el('h3','','Bot computer resources');
+    const hardware=el('section','vm-resource-settings'),heading=el('h3','','Shared VM resources');
     const status=el('p','muted','Loading computer settings…');status.setAttribute('role','status');
     hardware.append(heading,status);pages.Computers.append(hardware);
     const form=el('form','vm-resource-form'),fields={},readouts={};
     for(const [key,title,min,max,step] of [['cpus','CPUs',1,32,1],['memory_mb','RAM (GB)',1,256,0.5],['disk_gb','Disk (GB)',8,2048,1]]){
       const f=label(title,'number','');f.input.min=min;f.input.max=max;f.input.step=step;f.input.required=true;fields[key]=f.input;const readout=el('div','vm-resource-readout');readout.append(el('span','',title),el('span','vm-resource-value'));readouts[key]=readout;form.append(f.root,readout);
     }
-    const help=el('p','muted small','For this workspace. Shut down the computer, save changes, then start it again. Disk space can only increase.');
+    const help=el('p','muted small','All bots in this workspace share this VM. Set its resources before first startup, or shut it down before changing them. An existing disk can only increase.');
     const actions=el('div','row-actions'),save=el('button','outline-button','Save resources');save.type='submit';
-    let resourceBusy=false,resourceState=null,provisioned=true;
+    let resourceBusy=false,resourceDirty=false,resourceState=null,provisioned=true;
     const power=button('Shut down',async()=>{
       if(resourceBusy)return;resourceBusy=true;renderResourceControls();status.textContent=resourceState==='running'?'Shutting down…':'Starting…';
       try{const response=await fetch('/api/vm/'+(resourceState==='running'?'shutdown':'start'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getToken()},body:'{}',signal:AbortSignal.timeout(120000)});const value=await response.json();if(!response.ok)throw Error(value.error||'Computer action failed');await loadResources();}
       catch(e){status.textContent=e.message;}finally{resourceBusy=false;renderResourceControls();}
     },'outline-button');actions.append(save,power);form.append(help,actions);hardware.append(form);form.hidden=true;
-    function renderResourceControls(){const editable=resourceState!=='running'&&provisioned;save.hidden=!editable;save.disabled=resourceBusy||!editable;power.disabled=resourceBusy;power.textContent=resourceState==='running'?'Shut down':'Start computer';for(const [key,input] of Object.entries(fields)){input.disabled=resourceBusy||!editable;input.parentElement.hidden=!editable;readouts[key].hidden=editable;readouts[key].lastChild.textContent=input.value;}}
+    function renderResourceControls(){
+      const editable=resourceState!=='running';
+      for(const [key,input] of Object.entries(fields)){input.disabled=resourceBusy||!editable;input.parentElement.hidden=!editable;readouts[key].hidden=editable;readouts[key].lastChild.textContent=input.value;}
+      save.hidden=!editable;save.disabled=resourceBusy||!editable;
+      power.disabled=resourceBusy||(editable&&(resourceDirty||!form.checkValidity()));
+      power.title=resourceDirty?'Save resources before starting':'';
+      power.textContent=resourceState==='running'?'Shut down':'Start computer';
+    }
+    form.addEventListener('input',()=>{resourceDirty=true;renderResourceControls();});
     async function loadResources(){
       try{const value=await api('computer-settings');if(value.supported===false){status.textContent='This legacy computer is managed outside Kindred. Its host administrator controls its resources.';return;}
-        provisioned=value.provisioned!==false;resourceState=value.state;for(const [key,input] of Object.entries(fields))input.value=key==='memory_mb'?value.resources[key]/1024:value.resources[key];fields.disk_gb.min=value.resources.disk_gb;form.hidden=false;status.textContent=!provisioned?'Start this computer once to configure its resources.':resourceState==='running'?'Running':'Stopped';renderResourceControls();
+        resourceDirty=false;provisioned=value.provisioned!==false;resourceState=value.state;for(const [key,input] of Object.entries(fields))input.value=key==='memory_mb'?value.resources[key]/1024:value.resources[key];fields.disk_gb.min=provisioned?value.resources.disk_gb:8;
+        if(value.limits){fields.cpus.max=value.limits.cpus[1];fields.memory_mb.max=value.limits.memory_mb[1]/1024;}
+        form.hidden=false;status.textContent=!provisioned?'Not started. Set shared VM resources before starting.':resourceState==='running'?'Running':'Stopped';
+        if(value.capacity)status.textContent+=` · Server/container: ${value.capacity.cpus} CPUs, ${(value.capacity.memory_budget_mb/1024).toFixed(1)} GB RAM available for a stopped VM (0.5 GB reserved for the server).`;
+        if(resourceState!=='running'&&!form.checkValidity())status.textContent+=' Choose resources within this capacity before starting.';
+        renderResourceControls();
       }catch(e){status.textContent=e.message;}
     }
     form.onsubmit=async event=>{event.preventDefault();if(resourceBusy||resourceState==='running'||!form.reportValidity())return;resourceBusy=true;renderResourceControls();status.textContent='Saving resources…';
