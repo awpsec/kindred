@@ -5025,6 +5025,35 @@ function setTaskCommentaryRowExpanded(row,key,expanded,animate=true){
     const finish=()=>{motion.cancel();row.hidden=!expanded;row.style.removeProperty('overflow');delete row.finishTaskCommentary;delete row.refreshTaskCommentary;};
     const control=trackMotion(motion,220,finish);row.finishTaskCommentary=()=>control.finish();row.refreshTaskCommentary=()=>setTaskCommentaryRowExpanded(row,key,expanded);
 }
+function cancelProgressCompletion(group){
+  const pending=group._progressCompletion;
+  if(pending){cancelAnimationFrame(pending.frame);clearTimeout(pending.timer);group._progressCompletion=null;}
+  group._progressRevision=(group._progressRevision||0)+1;
+}
+function scheduleProgressCompletion(group,requested){
+  const entry=group._progressEntry,key=group.dataset.progressGroup,runId=group._progressRunId,prior=group._progressCompletion;
+  const continuing=prior&&prior.entry===entry&&prior.key===key&&prior.runId===runId;
+  // Refresh replaces the render revision, but must not postpone a pending close.
+  const deadline=continuing?prior.deadline:performance.now()+32;
+  cancelProgressCompletion(group);
+  if(!(requested||continuing)||group.dataset.progressFinished!=='true')return;
+  const revision=group._progressRevision,pending={entry,key,runId,deadline,frame:0,timer:0};
+  group._progressCompletion=pending;
+  const finish=()=>{
+    if(group._progressCompletion!==pending||group._progressRevision!==revision)return;
+    cancelProgressCompletion(group);
+    const details=group.querySelector('.summary-progress-disclosure'),body=details?.querySelector('.summary-progress-body');
+    if(!group.isConnected||group._progressEntry!==entry||group.dataset.progressGroup!==key||group._progressRunId!==runId||group.dataset.progressFinished!=='true'||entry.progressOpen.has(key)||!details?.open||details.classList.contains('is-collapsing'))return;
+    const summary=details.querySelector('summary');
+    if(body.contains(document.activeElement))summary.focus({preventScroll:true});
+    if(group.classList.contains('task-staged'))setTaskCommentaryExpanded(key,false);
+    summary.onclick({preventDefault(){}});
+  };
+  pending.frame=requestAnimationFrame(finish);
+  // A delayed/abandoned frame must not strand an automatic completion request.
+  // 32ms plus the existing 320ms disclosure fallback stays within its 400ms bound.
+  pending.timer=setTimeout(finish,Math.max(0,deadline-performance.now()));
+}
 function summaryProgress(items,entry,runs){
   const first=items.find(m=>m.kind==='task_progress'),key=first.progress.group_id,presentation=taskPresentation(items,entry),staged=presentation.mode==='staged',questions=taskQuestions(items,entry);
   const rootRun=runs.find(r=>r.id===first.run_id)||state.allRuns.find(r=>r.id===first.run_id)||state.details.get(first.run_id)?.run;
@@ -5050,7 +5079,7 @@ function summaryProgress(items,entry,runs){
   const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
   const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open&&!previous.querySelector('details').classList.contains('is-collapsing');
-  group._progressCompleting=completing;group._progressEntry=entry;
+  group._progressCompleting=completing;group._progressEntry=entry;group._progressRunId=currentRunId;
   const details=node('details','summary-progress-disclosure');details.open=completing||manual||(staged&&!finished&&!entry.progressClosed.has(key));
   const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender);
   const chevron=node('span','summary-progress-chevron','⌄');chevron.setAttribute('aria-hidden','true');title.append(chevron);
@@ -5071,8 +5100,9 @@ function summaryProgress(items,entry,runs){
   if(activity){receipt.append(node('div','muted small','Recorded activity · '+(Number(activity.completed)||0)+' completed call'+(activity.completed===1?'':'s')+(activity.failed?' · '+activity.failed+' failed':'')));for(const item of activity.recent||[]){const row=node('div','summary-progress-update',item.label+(item.count>1?' × '+item.count:'')+(item.failed?' · Failed':''));if(started&&item.created>=started)row.append(node('span','progress-update-time',' '+elapsedTime(item.created-started)));receipt.append(row);}}
   else receipt.append(node('div','muted small','No recorded actions yet.'));
   body.append(receipt);details.append(title,body);group.append(details);animateChatDisclosure(details,body);
-  title.addEventListener('click',()=>{const opening=!details.open||details.classList.contains('is-collapsing');if(opening){entry.progressOpen.add(key);entry.progressClosed.delete(key);}else{entry.progressOpen.delete(key);entry.progressClosed.add(key);}if(staged)setTaskCommentaryExpanded(key,opening);},{capture:true});
-  if(completing)requestAnimationFrame(()=>{if(group.isConnected&&!entry.progressOpen.has(key)&&details.open){if(body.contains(document.activeElement))title.focus({preventScroll:true});if(staged)setTaskCommentaryExpanded(key,false);title.onclick({preventDefault(){}});}});
+  title.addEventListener('click',()=>{cancelProgressCompletion(group);const opening=!details.open||details.classList.contains('is-collapsing');if(opening){entry.progressOpen.add(key);entry.progressClosed.delete(key);}else{entry.progressOpen.delete(key);entry.progressClosed.add(key);}if(staged)setTaskCommentaryExpanded(key,opening);},{capture:true});
+  for(const event of ['pointerdown','keydown'])group.addEventListener(event,()=>cancelProgressCompletion(group),{capture:true});
+  scheduleProgressCompletion(group,completing);
   return group;
 }
 function reminderBatch(messages,entry){
@@ -6330,7 +6360,9 @@ function preserveProgressGroup(previous,next){
   patchConversationText(body,next.querySelector('.summary-progress-body'));
   details.refreshDisclosure?.();
   if(restarting&&!details.open&&next.querySelector('details').open)details.querySelector('summary').onclick({preventDefault(){}});
-  if(next._progressCompleting)requestAnimationFrame(()=>{if(previous.isConnected&&details.open&&!details.classList.contains('is-collapsing')&&!next._progressEntry.progressOpen.has(previous.dataset.progressGroup)){if(body.contains(document.activeElement))details.querySelector('summary').focus({preventScroll:true});setTaskCommentaryExpanded(previous.dataset.progressGroup,false);details.querySelector('summary').onclick({preventDefault(){}});}});
+  cancelProgressCompletion(next);
+  previous._progressEntry=next._progressEntry;previous._progressRunId=next._progressRunId;
+  scheduleProgressCompletion(previous,next._progressCompleting);
   return true;
 }
 function preserveShardMessage(previous,next){
