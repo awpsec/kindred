@@ -1,0 +1,80 @@
+// Exercise actual app handlers with the retained computer fixture, without
+// replacing production paste functions. Only the clipboard and its chunk clock
+// are controlled so geometry can settle before either continuation resumes.
+const fs=require('node:fs'),path=require('node:path'),Module=require('node:module');
+const source=path.join(__dirname,'test-mobile-navigation.cjs');
+let code=fs.readFileSync(source,'utf8');
+const needle=' assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,computerPoses:6,retainedConnection:true,noRemoteInput:true}));return;';
+const extra=`
+ const observations=[];
+ const settled=()=>p.waitForFunction(()=>!document.querySelector('#app').dataset.mobileResizing);
+ const pasteDone=()=>p.waitForFunction(()=>document.querySelector('#desktop-paste').dataset.pending!=='true');
+ const count=()=>p.evaluate(()=>activeRFB.keys.length);
+ const fold=async()=>{
+   await p.evaluate(()=>{const n=window.__KINDRED_NATIVE_GEOMETRY;window.foldSequence=(window.foldSequence||0)+1;n.reservedRegions=foldSequence%2?[{kind:'division',active:true,x:490,y:0,width:20,height:800}]:[];window.dispatchEvent(new Event('kindred-native-geometry'));});
+   await settled();
+ };
+ const pendingRead=async(native=false)=>{
+   await p.evaluate(native=>{window.heldReadResolve=null;window.heldReadReject=null;const read=()=>new Promise((resolve,reject)=>{heldReadResolve=resolve;heldReadReject=reject;});if(native){window.__KINDRED_NATIVE_CLIPBOARD_TEXT=true;window.__TAURI__={core:{invoke:read}};}else{window.__KINDRED_NATIVE_CLIPBOARD_TEXT=false;Object.defineProperty(navigator,'clipboard',{configurable:true,value:{readText:read}});}},native);
+   await p.locator('#desktop-paste').click();await p.waitForFunction(()=>!!window.heldReadResolve);
+ };
+ const fresh=async(text)=>{
+   const before=await count();
+   await p.evaluate(text=>{window.__KINDRED_NATIVE_CLIPBOARD_TEXT=false;Object.defineProperty(navigator,'clipboard',{configurable:true,value:{readText:async()=>text}});},text);
+   await p.locator('#desktop-paste').click();await pasteDone();
+   assert.equal(await count(),before+[...text.replace(/\\r\\n?/g,'\\n')].length,'Fresh explicit paste must work');
+ };
+ await settled();
+ const canvas=p.locator('#desktop canvas:not(.desktop-glass)');
+ await canvas.dispatchEvent('keydown',{key:'Shift',code:'ShiftLeft',keyCode:16,which:16,shiftKey:true,bubbles:true});
+ await pendingRead();await fold();
+ await p.evaluate(()=>heldReadResolve('CANCEL OLD FOLD INTENT'));await pasteDone();
+ assert.equal(await count(),0,'Resolved clipboard must not replay after same-size fold settles');
+ assert.deepEqual(await p.evaluate(()=>activeRFB.keyEvents.map(e=>[e.code,e.down])),[['ShiftLeft',true],['ShiftLeft',false]],'Held modifier releases once');
+ observations.push('same-size-fold cancels pending clipboard; Shift release once');
+ await fresh('OK');
+ await pendingRead(true);const nativeBefore=await count();await fold();
+ await p.evaluate(()=>heldReadResolve('CANCEL OLD NATIVE READ'));await pasteDone();
+ assert.equal(await count(),nativeBefore,'Native clipboard uses the same intent generation');
+ observations.push('native clipboard read cancelled');
+ await p.evaluate(()=>window.__KINDRED_NATIVE_CLIPBOARD_TEXT=false);
+ await pendingRead();const resizeBefore=await count();
+ await p.evaluate(()=>{window.pasteResizeDelivered=false;window.addEventListener('resize',()=>window.pasteResizeDelivered=true,{once:true});});
+ await p.setViewportSize({width:980,height:780});
+ await p.waitForFunction(()=>window.pasteResizeDelivered&&!document.querySelector('#app').dataset.mobileResizing);
+ await p.evaluate(()=>heldReadResolve('CANCEL OLD RESIZE INTENT'));await pasteDone();
+ assert.equal(await count(),resizeBefore,'Settled resize must not revive an old read');
+ observations.push('settled viewport resize cancelled');
+ await pendingRead();await fold();await p.evaluate(()=>heldReadReject(new Error('Owned clipboard denial')));await pasteDone();
+ assert.equal(await p.locator('#text-dialog').isVisible(),false,'Old rejected clipboard intent must not open fallback');
+ observations.push('old rejection does not defer into fallback dialog');
+ const holdChunk=async()=>p.evaluate(()=>{window.heldPasteChunk=null;window.originalPasteTimer=window.setTimeout;window.setTimeout=function(fn,delay,...args){if(delay===10&&new Error().stack?.includes('pasteIntoComputer')){window.heldPasteChunk=()=>fn(...args);return -1;}return originalPasteTimer(fn,delay,...args);};});
+ const releaseChunk=async()=>p.evaluate(()=>{const resume=heldPasteChunk;window.setTimeout=originalPasteTimer;heldPasteChunk=null;resume();});
+ const chunkBefore=await count();await holdChunk();
+ await p.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{readText:async()=> 'x'.repeat(96)}}));
+ await p.locator('#desktop-paste').click();await p.waitForFunction(()=>!!window.heldPasteChunk);
+ assert.equal(await count(),chunkBefore+32);await fold();await releaseChunk();await pasteDone();
+ assert.equal(await count(),chunkBefore+32,'Delayed toolbar chunk must stop after geometry settles');
+ observations.push('toolbar delayed chunk cancelled at32');
+ await fresh('NEW');
+ await p.evaluate(()=>{document.querySelector('#text-dialog').showModal();document.querySelector('#paste-text').value='m'.repeat(96);});
+ await holdChunk();const manualBefore=await count();
+ await p.evaluate(()=>document.querySelector('#text-form').requestSubmit());await p.waitForFunction(()=>!!window.heldPasteChunk);
+ assert.equal(await count(),manualBefore+32);await fold();await releaseChunk();
+ await p.waitForFunction(()=>!document.querySelector('#text-form [data-pending="true"]'));
+ assert.equal(await count(),manualBefore+32,'Delayed manual paste must stop after geometry settles');
+ assert.equal(await p.locator('#paste-text').inputValue(),'m'.repeat(96),'Interrupted text stays available for explicit correction');
+ await p.locator('#paste-text').fill('MANUAL');
+   await p.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await settled();
+   await p.locator('#text-form').getByRole('button',{name:'Paste',exact:true}).click();
+ await p.locator('#text-dialog').waitFor({state:'hidden'});assert.equal(await count(),manualBefore+32+6);
+ observations.push('manual delayed chunk cancelled; fresh explicit submit works');
+ assert.equal(await p.evaluate(()=>activeRFB===retainedRFB&&activeRFB.disconnects===0),true);
+ assert.equal(writes.length,beforeWrites);assert.equal(sessions.length,beforeSessions);
+ assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({passed:true,engine,pasteIntentControls:observations,retainedConnection:true,noTransitionInput:true,errors}));return;
+`;
+if(code.split(needle).length!==2)throw Error('Retained computer fixture drift');
+code=code.replace(needle,extra+needle);
+process.env.KINDRED_DUO_COMPUTER='1';
+const m=new Module(source,module);m.filename=source;m.paths=Module._nodeModulePaths(path.dirname(source));m._compile(code,source);

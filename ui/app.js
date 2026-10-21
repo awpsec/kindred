@@ -4011,11 +4011,13 @@ $("take-control").onclick = () => perform(()=>state.teaching && state.desktopCon
 $("teach-task").onclick = () => perform(()=>state.teaching ? reviewTeaching() : startTeaching());
 $("computer-settings-link").onclick = () =>
   perform(() => openSettings("bot-computer"));
+// Geometry recovery must not revive an earlier clipboard read or paste chunk.
+let computerPasteRevision=0;
 function computerInputReady(){return window.__KINDRED_MOBILE_PLATFORM!=='ios'||$('app').dataset.mobileResizing!=='true';}
-async function pasteIntoComputer(value) {
+async function pasteIntoComputer(value, pasteRevision=computerPasteRevision) {
   if (!state.rfb || !state.status.takeover || !state.desktopControlRequested)
     throw new Error("Take control of the computer first.");
-  if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
+  if(pasteRevision!==computerPasteRevision||!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
   if (!value) throw new Error("Your clipboard has no text to paste.");
   if (value.length > 16000) throw new Error("Paste up to 16,000 characters at a time.");
   // Use the current control session: the HTTP input path must evict its VNC lease.
@@ -4024,7 +4026,7 @@ async function pasteIntoComputer(value) {
   for (const character of value.replace(/\r\n?/g, "\n")) {
     if (state.rfb !== rfb || !state.desktopConnected || !state.status.takeover || !state.desktopControlRequested)
       throw new Error("Computer control ended before the paste finished.");
-    if(!computerInputReady())throw new Error(sent?"The computer view changed before the paste finished. Check the text before trying again.":"The computer view is adjusting. Try Paste again when it settles.");
+    if(pasteRevision!==computerPasteRevision||!computerInputReady())throw new Error(sent?"The computer view changed before the paste finished. Check the text before trying again.":"The computer view is adjusting. Try Paste again when it settles.");
     const point = character.codePointAt(0);
     const key = character === "\n" ? 0xff0d : character === "\t" ? 0xff09 : point <= 0xff ? point : 0x01000000 | point;
     rfb.sendKey(key);
@@ -4034,7 +4036,7 @@ async function pasteIntoComputer(value) {
 $("desktop-paste").onclick = async () => {await perform(async () => {
   if(!state.rfb||!state.desktopConnected||!state.status.takeover||!state.desktopControlRequested)throw new Error("Take control of the computer first.");
   if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
-  const expectedRFB=state.rfb;
+  const expectedRFB=state.rfb,pasteRevision=computerPasteRevision;
   let value;
   try {
     value = window.__KINDRED_NATIVE_CLIPBOARD_TEXT
@@ -4045,7 +4047,7 @@ $("desktop-paste").onclick = async () => {await perform(async () => {
     // failures through WebKit's second Paste prompt or the manual browser form.
     if(window.__KINDRED_NATIVE_CLIPBOARD_TEXT)throw error;
     if(state.rfb!==expectedRFB)throw new Error("The computer connection changed. Check the current computer before trying Paste again.");
-    if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
+    if(pasteRevision!==computerPasteRevision||!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
     // Some browsers deny clipboard reads. Keep a direct paste target outside chat.
     $("paste-text").value = "";
     $("text-dialog").showModal();
@@ -4053,7 +4055,7 @@ $("desktop-paste").onclick = async () => {await perform(async () => {
     return;
   }
   if(state.rfb!==expectedRFB)throw new Error("The computer connection changed. Check the current computer before trying Paste again.");
-  await pasteIntoComputer(value);
+  await pasteIntoComputer(value,pasteRevision);
 }, $("desktop-paste"));updateDesktopState();};
 $("text-form").onsubmit = (e) => {
   e.preventDefault();
@@ -9041,6 +9043,7 @@ installMobileNavigation({
  route:()=>({key:currentConversationId()+'|'+screenBotId(),target:$('app').hidden||document.querySelector('.artifact-studio')||!$('details-panel').hidden?'none':!$('computer-panel').hidden?(document.documentElement.dataset.iosComputer==='overlay'||$('computer-panel').classList.contains('expanded')?'bot-chat':'none'):document.documentElement.dataset.iosLayout==='compact'&&!$('app').classList.contains('sidebar-open')&&state.bot?'chat-list':'none'}),
  back:target=>{saveDraft();captureChatAnchor();if(target==='bot-chat'){leaveControlPane();state.desktopNavigationHidden=true;state.desktopNavigationBot=screenBotId();state.desktopNavigationExpanded=$('computer-panel').classList.contains('expanded');$('computer-panel').hidden=true;$('computer-panel').inert=true;renderControlNotice(true);}else $('app').classList.add('sidebar-open');},
  resized:()=>{
+   computerPasteRevision++;
    // Keep the pre-resize message anchor; measuring after reflow loses its offset.
    // End a held pointer at its last validated position before refitting. Do not
    // send a new press or replay the interrupted click after the geometry changes.
