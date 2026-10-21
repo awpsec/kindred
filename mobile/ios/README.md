@@ -33,8 +33,8 @@ mobile/ios/
 ## Setup
 
 1. Install a current Xcode. Use **Xcode 27.1** for the owner-selected
-   Duo simulator and adaptive native-toolbar checks; older SDKs cannot prove
-   that layout. Install XcodeGen
+   Duo simulator and adaptive native-toolbar checks; the reserved-region bridge requires the iOS 27.1 SDK at build time.
+   The app still runs on iOS 17 and later; older systems use ordinary adaptive layouts. Install XcodeGen
    (`brew install xcodegen`).
 2. Create `Config/Local.xcconfig` (ignored by Git) with your values:
    ```

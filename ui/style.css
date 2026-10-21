@@ -6213,3 +6213,27 @@ html[data-mobile] .request-tray.is-answering .request-tray-bar .icon-button{widt
 .document-header .document-icon-button{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;min-width:32px;padding:6px;border:0;color:var(--muted)}
 .document-header .document-icon-button:hover{background:var(--hover);color:var(--fg)}
 .document-header .document-icon-button svg{width:20px;height:20px}
+
+
+/* The iOS host supplies local reserved-region frames. Keep the retained DOM
+   and VNC connection while changing only layout; resizing gates remote input. */
+html[data-ios-inner=true][data-ios-layout=regular] .sidebar {width:var(--ios-sidebar-width);flex:0 0 var(--ios-sidebar-width)}
+html[data-ios-inner=true][data-ios-sidebar-hidden=true] .sidebar {display:none}
+html[data-ios-inner=true][data-ios-sidebar-hidden=true] #mobile-menu {display:inline-flex}
+html[data-ios-inner=true][data-ios-computer=side] .computer-panel:not([hidden]):not(.pane-layout-frame):not(.expanded) {flex:0 0 var(--ios-computer-width);width:var(--ios-computer-width)!important;min-width:0;margin-left:var(--ios-division-gap)}
+html[data-ios-fold-single=true] .conversation {position:absolute;left:var(--ios-safe-x);top:var(--ios-safe-y);width:var(--ios-safe-width);height:var(--ios-safe-height);flex:none}
+html[data-ios-fold=horizontal] .conversation {display:grid;grid-template-rows:57px minmax(0,calc(var(--ios-fold-top) - 57px)) minmax(0,1fr)}
+html[data-ios-fold=horizontal] .conversation>.composer-area {position:relative;inset:auto;grid-row:3;align-self:end;max-height:calc(100dvh - var(--ios-fold-bottom));overflow-y:auto;pointer-events:auto}
+html[data-ios-fold=horizontal] .conversation .messages {padding-bottom:12px;scroll-padding-bottom:12px}
+html[data-ios-reserved=true] dialog {inset:var(--ios-safe-y) auto auto var(--ios-safe-x);margin:16px;max-width:calc(var(--ios-safe-width) - 32px);max-height:calc(var(--ios-safe-height) - 32px)}
+html[data-ios-reserved=true][data-ios-layout=compact] .sidebar {inset:var(--ios-safe-y) auto auto var(--ios-safe-x);width:var(--ios-safe-width);height:var(--ios-safe-height)}
+html[data-ios-reserved=true] .computer-panel:not([hidden]):not(.pane-layout-frame):is(.expanded),
+html[data-ios-reserved=true][data-ios-computer=overlay] .computer-panel:not([hidden]):not(.pane-layout-frame) {inset:var(--ios-safe-y) auto auto var(--ios-safe-x)!important;width:var(--ios-safe-width)!important;height:var(--ios-safe-height)!important;min-width:0}
+.ios-duo-resizer {display:none}
+html[data-ios-inner=true][data-ios-fold=none] .ios-duo-resizer {display:block;position:absolute;top:0;bottom:0;right:-10px;width:20px;z-index:10;cursor:col-resize;touch-action:none}
+html[data-ios-inner=true][data-ios-fold=none][data-ios-computer=side] .computer-panel:not(.expanded)>.ios-duo-resizer {right:auto;left:-10px}
+html[data-ios-inner=true][data-ios-computer=overlay] .computer-panel>.ios-duo-resizer,
+html[data-ios-inner=true] .computer-panel.expanded>.ios-duo-resizer {display:none}
+.ios-duo-resizer:focus-visible {outline:2px solid var(--fg);outline-offset:-8px}
+
+html[data-ios-reserved=true] :is(.conversation-header,.composer-area,.computer-panel .panel-header) {padding-left:max(16px,var(--ios-camera-left,0px));padding-right:max(16px,var(--ios-camera-right,0px))}

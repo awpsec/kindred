@@ -47,6 +47,8 @@ jobs:
           assert actual==expected
           result={'source_commit':actual,'unsigned_simulator_only':True,'xcode':subprocess.check_output(['xcodebuild','-version'],text=True),'developer_directory':subprocess.check_output(['xcode-select','-p'],text=True).strip(),'sdk_identity':subprocess.check_output(['xcodebuild','-showsdks'],text=True)}
           Path('ios-validation/environment.json').write_text(json.dumps(result,indent=2)+'\n')
+          sdk=subprocess.check_output(['xcrun','--sdk','iphonesimulator','--show-sdk-version'],text=True).strip()
+          assert tuple(map(int,sdk.split('.')[:2])) >= (27,1), 'Select Xcode 27.1+ before building the reserved-region bridge; no automatic retry.'
           PY
       - name: Generate the existing iOS project
         shell: bash

@@ -64,6 +64,7 @@ struct RootView: View {
                 let session = model.session(for: account)
                 ZStack {
                     WebContainerView(session: session, navigationBlocked: model.sheet != nil || model.download != nil)
+                        .modifier(ReservedDisplayRegions(session: session))
                     if let failure = session.loadState.failure {
                         VStack(spacing: 16) {
                             Text("Couldn't open Kindred").font(.headline)

@@ -216,6 +216,20 @@ final class WebSession: NSObject {
         return true
     }
 
+    private var reservedRegionsJSON = "[]"
+
+    func updateReservedRegions(_ regions: [ReservedDisplayRegion]) {
+        let valid = regions.filter {
+            [$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite)
+                && $0.width >= 0 && $0.height >= 0
+        }
+        guard let data = try? JSONEncoder().encode(valid),
+              let next = String(data: data, encoding: .utf8), next != reservedRegionsJSON else { return }
+        edgeBack?.cancel()
+        reservedRegionsJSON = next
+        applyGeometry()
+    }
+
     func updateGeometry(width: CGFloat, height: CGFloat, windowWidth: CGFloat,
                         windowHeight: CGFloat, safeArea: UIEdgeInsets) {
         let values = [width, height, windowWidth, windowHeight]
@@ -238,6 +252,7 @@ final class WebSession: NSObject {
         let script = """
         if (window.top !== window.self || window.location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
         window.__KINDRED_NATIVE_GEOMETRY = \(geometry);
+        window.__KINDRED_NATIVE_GEOMETRY.reservedRegions = \(reservedRegionsJSON);
         window.dispatchEvent(new CustomEvent("kindred-native-geometry", {detail: window.__KINDRED_NATIVE_GEOMETRY}));
         """
         webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { _ in }
