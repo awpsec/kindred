@@ -324,14 +324,15 @@ html[data-kindred-ios][data-ios-native-computer=true] .computer-panel>.ios-duo-r
 
 /* Measure controls against the actual conversation, after native pane sizing.
    Stale server camera offsets must not preserve a former half-screen composer. */
-html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area { left:0; right:0; width:100%; max-width:none; margin-inline:0; box-sizing:border-box; padding-left:max(10px,var(--ios-native-control-left,0px)); padding-right:max(10px,var(--ios-native-control-right,0px)); }
+html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area { left:0; right:0; width:100%; max-width:none; margin-inline:0; box-sizing:border-box; padding-left:max(10px,var(--ios-native-control-left,0px)); padding-right:max(10px,var(--ios-native-control-right,0px)); padding-bottom:calc(8px + var(--ios-composer-safe-bottom,var(--ios-safe-bottom))); }
 html[data-kindred-ios][data-ios-duo=true] .conversation-header { padding-left:max(12px,var(--ios-native-control-left,0px)); padding-right:max(12px,var(--ios-native-control-right,0px)); }
 html[data-kindred-ios][data-ios-duo=true] .bot-heading { left:calc(50% + (var(--ios-native-control-left,0px) - var(--ios-native-control-right,0px)) / 2); max-width:calc(100% - 24px - var(--ios-native-control-left,0px) - var(--ios-native-control-right,0px)); }
 
 /* The native vertical rail owns navigation on both Duo displays. Its localized
    occlusions are projected above; a full-height shell strip wastes space below
    the rail. Keep the retained header actions for their server-owned closures. */
-html[data-kindred-ios][data-ios-duo=true] .shell { padding-inline:0; }
+html[data-kindred-ios][data-ios-duo=true] .shell { padding-inline:0; padding-block:0; }
+html[data-kindred-ios][data-ios-duo=true] #ios-status-blur { display:none; }
 html[data-kindred-ios][data-ios-duo=true] .conversation-header { display:none; }
 @media (min-width:600px) and (max-height:500px) {
   html[data-kindred-ios][data-ios-duo=true][data-ios-slab=true] .computer-panel:not([hidden]) { grid-template-rows:minmax(0,1fr); }

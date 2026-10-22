@@ -141,3 +141,13 @@ The iOS-only progress pass covers 32 width/type/theme combinations and preserves
 44-point timestamp targets without inflating narration rows or scrolling clipped
 wrappers. A separate older-server preview test proves that the installed native
 adapter corrects full-row targets while retaining the server's action closures.
+
+The final native simulator measurement confirmed a 951×669 full web viewport.
+The whole-view safe area reserved 34 points at the bottom; the SDK bottom-bar
+region reserved 16 for a 64-point row. The composer now reports its actual form
+height through a bounded, deduplicated bridge; UIKit queries that bottom row
+and publishes only its validated bottom clearance for the composer. It never
+copies the row's large top inset into page padding. Keyboard-visible clearance
+remains zero. Other surfaces retain their own safe-area policy. Native rail
+presentation also removes the obsolete global top blur and legacy shell block
+padding so the first conversation row is not blurred or offset.

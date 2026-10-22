@@ -82,6 +82,8 @@ final class WebSession: NSObject {
     private var layoutRight: CGFloat = 0
     private var layoutIsSlab = false
     private var layoutHeight: CGFloat = 0
+    private var layoutComposerBottom: CGFloat = 0
+    private(set) var composerExtent: CGFloat = 0
     private var layoutIsPortrait = true
     private var computerInputWanted = false
     private var computerFocusPending = false
@@ -251,8 +253,10 @@ final class WebSession: NSObject {
     /// Presentation values only, delivered to the trusted main frame. The host
     /// extends behind system chrome while WebKit avoids the keyboard.
     func updateLayout(topInset: CGFloat, bottomInset: CGFloat, leftInset: CGFloat = 0, rightInset: CGFloat = 0,
-                      isDuo: Bool = false, isDuoInner: Bool = false, usesNativeRail: Bool = false, isSlab: Bool, viewportHeight: CGFloat = 0, isPortrait: Bool = true) {
-        guard layoutTop != topInset || layoutBottom != bottomInset || layoutLeft != leftInset || layoutRight != rightInset || presentation.isDuo != isDuo || presentation.isDuoInner != isDuoInner || presentation.usesNativeRail != usesNativeRail || layoutIsSlab != isSlab || layoutHeight != viewportHeight || layoutIsPortrait != isPortrait else { return }
+                      isDuo: Bool = false, isDuoInner: Bool = false, usesNativeRail: Bool = false, composerBottomInset: CGFloat? = nil, isSlab: Bool, viewportHeight: CGFloat = 0, isPortrait: Bool = true) {
+        let composerBottom = composerBottomInset ?? bottomInset
+        guard layoutComposerBottom != composerBottom || layoutTop != topInset || layoutBottom != bottomInset || layoutLeft != leftInset || layoutRight != rightInset || presentation.isDuo != isDuo || presentation.isDuoInner != isDuoInner || presentation.usesNativeRail != usesNativeRail || layoutIsSlab != isSlab || layoutHeight != viewportHeight || layoutIsPortrait != isPortrait else { return }
+        layoutComposerBottom = composerBottom
         layoutTop = topInset
         layoutBottom = bottomInset
         layoutLeft = leftInset
@@ -271,13 +275,14 @@ final class WebSession: NSObject {
         guard origin.matches(webView.url) else { return }
         let script = """
         if (window.top !== window.self || location.origin !== expectedOrigin) return;
-        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, leftInset, rightInset, isDuo, isDuoInner, usesNativeRail, isSlab, viewportHeight, isPortrait};
+        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, leftInset, rightInset, isDuo, isDuoInner, usesNativeRail, composerBottomInset, isSlab, viewportHeight, isPortrait};
         window.dispatchEvent(new CustomEvent('kindred-ios-layout', {detail: window.__KINDRED_IOS_LAYOUT}));
         """
         webView.callAsyncJavaScript(script, arguments: ["expectedOrigin": origin.serialized,
             "topInset": Double(layoutTop), "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab,
             "leftInset": Double(layoutLeft), "rightInset": Double(layoutRight), "isDuo": presentation.isDuo,
             "isDuoInner": presentation.isDuoInner, "usesNativeRail": presentation.usesNativeRail,
+            "composerBottomInset": Double(layoutComposerBottom),
             "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait], in: nil, in: .page) { _ in }
     }
 
@@ -450,6 +455,13 @@ final class WebSession: NSObject {
                 presentation.computerExpandAvailable = body["computerExpandAvailable"] as? Bool == true
                 presentation.computerExpanded = body["computerExpanded"] as? Bool == true
                 presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "composer-extent",
+               let height = body["height"] as? Double, height.isFinite, height > 0,
+               height <= min(1000, Double(webView.bounds.height)), abs(composerExtent - height) > 0.5 {
+                composerExtent = height
+                webView.superview?.setNeedsLayout()
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "computer-input",

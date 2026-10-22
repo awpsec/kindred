@@ -927,6 +927,9 @@
       document.querySelector('#computer-expand')?.click();
     }
     html.style.setProperty('--ios-safe-bottom', `${Math.max(0, Number(value.bottomInset) || 0)}px`);
+    const composerBottomInset = typeof value.composerBottomInset === 'number' && Number.isFinite(value.composerBottomInset)
+      ? Math.max(0,value.composerBottomInset) : Math.max(0,Number(value.bottomInset) || 0);
+    html.style.setProperty('--ios-composer-safe-bottom',`${composerBottomInset}px`);
     nativeHeight = Math.max(0, Number(value.viewportHeight) || 0);
     nativePortrait = typeof value.isPortrait === 'boolean' ? value.isPortrait : undefined;
     updateViewport();
@@ -1017,15 +1020,29 @@
   for (const control of [document.querySelector('.bot-heading'), composerArea]) {
     if (control) obstructionObserver.observe(control);
   }
+  let lastComposerExtent = null;
   const updateClearance = () => {
     const top = header.getBoundingClientRect().height;
     const bottom = composerArea?.hidden ? 0 : (composerArea?.getBoundingClientRect().height || 0) + (parseFloat(getComputedStyle(html).getPropertyValue('--ios-composer-obstruction')) || 0);
     conversation.style.setProperty('--ios-chat-top', `${top}px`);
     conversation.style.setProperty('--ios-chat-bottom', `${bottom}px`);
+    const form = document.querySelector('#composer'), rect = form?.getBoundingClientRect();
+    const visible = nativeDuo && rect?.height > 0 && !shell.hidden && !form.closest('[hidden]') && getComputedStyle(form).visibility !== 'hidden' &&
+      !document.querySelector('dialog[open],.artifact-studio') && document.querySelector('#details-panel')?.hidden !== false &&
+      (computer?.hidden || (html.dataset.iosComputer === 'side' && !computer.classList.contains('expanded')));
+    if (!visible) { lastComposerExtent = null; return; }
+    const height = Math.round(rect.height*100)/100;
+    if (Number.isFinite(height) && height !== lastComposerExtent) {
+      lastComposerExtent = height;
+      window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'composer-extent',height});
+    }
   };
   const clearanceObserver = new ResizeObserver(updateClearance);
   clearanceObserver.observe(header);
   if (composerArea) clearanceObserver.observe(composerArea);
+  const composerVisibilityObserver = new MutationObserver(updateClearance);
+  for (const pane of [shell,computer,document.querySelector('#details-panel')]) if (pane) composerVisibilityObserver.observe(pane,{attributes:true,attributeFilter:['class','hidden']});
+  new MutationObserver(updateClearance).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
   updateClearance();
 
   // The store manages the installed app. Keep both version labels, with no

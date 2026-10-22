@@ -54,10 +54,24 @@ final class WebHostView: UIView {
         if #available(iOS 27.1, *), usesNativeRail {
             insets = session.webView.edgeInsets(for: .safeArea(cornerAdaptation: .horizontal))
         }
+        var composerBottom = insets.bottom
+        if #available(iOS 27.1, *), usesNativeRail, session.composerExtent > 0 {
+            // Query the actual bottom row; the whole-view safe area also
+            // contains the vertical bar and can leave unnecessary blank space.
+            let extent = min(session.webView.bounds.height, session.composerExtent + 16)
+            let rowInsets = session.webView.edgeInsets(for: .bar(onEdge: UIRectEdge.bottom, extent: extent))
+            let row = session.webView.bounds.inset(by: rowInsets)
+            if [rowInsets.top, rowInsets.left, rowInsets.bottom, rowInsets.right].allSatisfy({ $0.isFinite && $0 >= 0 }),
+               !row.isNull, row.width > 0, row.height > 0,
+               row.minY >= 0, row.maxY <= session.webView.bounds.maxY + 0.5 {
+                composerBottom = rowInsets.bottom
+            }
+        }
         let windowBounds = window?.bounds ?? bounds
         session.updateLayout(topInset: insets.top, bottomInset: keyboardVisible ? 0 : insets.bottom,
                              leftInset: insets.left, rightInset: insets.right, isDuo: hasDivision || usesNativeRail,
-                             isDuoInner: isDuoInner, usesNativeRail: usesNativeRail, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
+                             isDuoInner: isDuoInner, usesNativeRail: usesNativeRail,
+                             composerBottomInset: keyboardVisible ? 0 : composerBottom, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
                              viewportHeight: session.webView.bounds.height,
                              isPortrait: windowBounds.height >= windowBounds.width)
         session.refreshSystemTextSize()
