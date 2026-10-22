@@ -1,3 +1,4 @@
+import {transcriptAttachments} from './transcript-attachments.js';
 import {mobileSession,mobileConversationKey,mobileRequestedChat,mobileRequestedEvent,installMobileNavigation} from './mobile.js';
 import {createServerUpdater} from './server-update.js';
 import {settingsHeaderArt} from './settings-header-art.js';
@@ -1416,7 +1417,7 @@ async function renderChat(force, mode='sync', signal) {
     runs,
     state.approvals,
     state.userTasks,
-    runs.map((r) => state.details.get(r.id)?.events),
+    runs.map((r) => [state.details.get(r.id)?.events,state.details.get(r.id)?.attachments]),
   ]);
   if (!force && key === state.chatKey) return;
   state.chatKey = key;
@@ -5868,8 +5869,15 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   if(currentConversationId()!==id || !entry.loaded)return;
   renderRequestTray(chat,entry);
   const data={messages:entry.messages.filter(m=>!withdrawnQueueMessage(m,id))},visibleRuns=new Set(data.messages.filter(m=>['assistant','result','task_progress'].includes(m.kind)).map(m=>m.run_id).filter(Boolean));
-  const listedRuns=state.allRuns.filter(r=>!chat.shared&&r.chat_id===id && (visibleRuns.has(r.id) || entry.workingRuns?.has(r.id) || (!entry.hasAfter && (active(r)||r.status==='queued'))));
-  const wanted=[...new Set([...visibleRuns,...listedRuns.map(r=>r.id)])];
+  const listedRuns=state.allRuns.filter(r=>r.chat_id===id && (visibleRuns.has(r.id) || entry.workingRuns?.has(r.id) || (!entry.hasAfter && (active(r)||r.status==='queued'))));
+  // Keep previously discovered shares available when paging past their result.
+  // Only conversation-owned cached runs with a share inside this page qualify.
+  const pageTimes=data.messages.map(m=>m.created),pageStart=Math.min(...pageTimes),pageEnd=Math.max(...pageTimes);
+  const attachmentOwners=[...state.details].filter(([,detail])=>detail.run?.chat_id===id&&detail.attachments?.some(file=>{
+    const created=detail.events?.find(event=>event.kind==='attachment'&&event.body?.id===file.id)?.created||file.created;
+    return created&&(!entry.hasBefore||created>=pageStart)&&(!entry.hasAfter||created<=pageEnd);
+  })).map(([runId])=>runId);
+  const wanted=[...new Set([...visibleRuns,...listedRuns.map(r=>r.id),...attachmentOwners])];
   if(mode!=='cached'){
     const pending=wanted.filter(runId=>{
       const listed=state.allRuns.find(r=>r.id===runId),cached=state.details.get(runId);
@@ -5908,7 +5916,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     workers.map(r=>r.id),[...entry.finishing.keys()],
     state.approvals,
     state.userTasks,
-    runs.map((r) => state.details.get(r.id)?.events),
+    runs.map((r) => [state.details.get(r.id)?.events,state.details.get(r.id)?.attachments]),
   ]);
   if (state.chatKey === key && state.renderedChatId===id) return;
   state.chatKey = key;
@@ -5942,11 +5950,44 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
 
   let sequenceAvatar = null, previousSender = null,
     previousTime = 0;
+  function appendTranscriptTimestamp(created){
+    if (created - previousTime > 1800) {
+      area.append(
+        node(
+          "div",
+          "chat-timestamp",
+          new Date(created * 1000).toLocaleString(undefined, {timeZone:botTimezone(),
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          }),
+        ),
+      );
+      previousSender = null;
+    }
+    previousTime = created;
+  }
   const boundary=unreadBoundaries.get(id);let unreadInserted=false;
-  const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
+  const attachmentPlan=transcriptAttachments(data.messages,runs,state.details,{...entry,directOrder:chat.id.startsWith('dm-')&&!chat.shared});
+  const fallbackAttachments=new Set();
+  const remainingAttachments=files=>(files||[]).filter(file=>{if(attachmentPlan.projected.has(file.id)||fallbackAttachments.has(file.id))return false;fallbackAttachments.add(file.id);return true;});
+  const transcript=data.messages.flatMap((m,i)=>[...(attachmentPlan.rows.get(i)||[]).map(attachment=>({kind:'shared_attachment',text:'Shared file',attachment})),m]);
+  transcript.push(...(attachmentPlan.rows.get(data.messages.length)||[]).map(attachment=>({kind:'shared_attachment',text:'Shared file',attachment})));
+  const batches=connectorBatches(transcript,boundary,runs),artifactBatches=artifactUpdateBatches(transcript),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
   const taskTrackers=new Map([...summaries].map(([key,items])=>[key,summaryProgress(items,entry,runs)]));
   for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
-  for (const m of data.messages) {
+  for (const m of transcript) {
+    if(m.kind==='shared_attachment'){
+      const {file,run,created}=m.attachment,group=node('article','message-group shared-attachment-message');
+      appendTranscriptTimestamp(created);
+      group.dataset.message='attachment:'+file.id;group.dataset.run=run.id;
+      if(!chat.id.startsWith('dm-')){
+        const bot=state.bots.find(b=>b.id===run.bot_id),member=chat.participants?.find(p=>p.bot_id===run.bot_id||p.id===run.bot_id);
+        const author=node('div','message-author');author.append(node('strong','',member?.name||bot?.name||'Bot'));group.append(author);
+      }
+      renderAttachments(group,[file]);area.append(group);previousSender=null;continue;
+    }
     if(stacked.has(m.seq)||m.kind==='continuation')continue;
     if (!m.text?.trim()&&m.kind!=='task_progress') continue;
     if(m.kind==='task_progress'&&!summaries.has(m.progress?.group_id))continue;
@@ -6012,22 +6053,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       }
       continue;
     }
-    if (m.created - previousTime > 1800) {
-      area.append(
-        node(
-          "div",
-          "chat-timestamp",
-          new Date(m.created * 1000).toLocaleString(undefined, {timeZone:botTimezone(),
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          }),
-        ),
-      );
-      previousSender = null;
-    }
-    previousTime = m.created;
+    appendTranscriptTimestamp(m.created);
     const statusRun=runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run;
     const statusNotice=m.status_notice||(m.kind==='notice'?{label:'Status',text:m.text}:m.kind==='result'&&statusRun&&['failed','cancelled','interrupted'].includes(statusRun.status)?{label:statusRun.status==='cancelled'?'Task stopped':statusRun.status==='interrupted'?'Task interrupted':'Task failed',text:statusRun.error||m.text}:null);
     if(statusNotice){
@@ -6046,7 +6072,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       content.append(chatStatusNotice(statusNotice.label,statusNotice.text));
       if(m.files?.length)content.append(fileLinks(m.files));
       if(m.kind==='result'){
-        renderAttachments(content,m.attachments||state.details.get(m.run_id)?.attachments||[]);
+        renderAttachments(content,remainingAttachments(m.attachments||state.details.get(m.run_id)?.attachments));
         if(statusRun){content.append(messageTools(statusRun,state.details.get(statusRun.id)?.events||[]));if(!recovered&&['failed','cancelled','interrupted'].includes(statusRun.status))content.append(continueTaskButton(statusRun));}
       }
       previousSender=null;sequenceAvatar=null;continue;
@@ -6112,7 +6138,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       if(documents.length)group.append(fileLinks(documents));
     }
     if (m.kind === "result") {
-      renderAttachments(group, m.attachments || state.details.get(m.run_id)?.attachments || []);
+      renderAttachments(group, remainingAttachments(m.attachments || state.details.get(m.run_id)?.attachments));
       const run =
         runs.find((r) => r.id === m.run_id) || state.details.get(m.run_id)?.run;
       if (run) {
@@ -6123,7 +6149,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     area.append(group);
   }
 
-  if(chat.shared&&!entry.hasAfter)for(const run of state.allRuns.filter(r=>r.chat_id===id&&active(r))){const cards=taskCards(run);if(cards.children.length)area.append(cards);}
+  if(chat.shared&&!entry.hasAfter)for(const run of state.allRuns.filter(r=>r.chat_id===id&&active(r)&&!workers.some(worker=>worker.id===r.id))){const cards=taskCards(run);if(cards.children.length)area.append(cards);}
   if(entry.hasAfter)area.append(historyEdge(entry,'newer'));
   for (const run of workers
     .filter(() => !entry.hasAfter)
@@ -6141,7 +6167,6 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       const bubble=markdown(e.body.text);foldLongMessage(bubble,`event:${run.id}:${e.seq}`,entry);row.append(bubble);
       group.append(row);
     }
-    renderAttachments(group, state.details.get(run.id)?.attachments || []);
     const tools=messageTools(run,events,false);if(tools.children.length)group.append(tools);
     if(group.children.length)area.append(group);
   }
