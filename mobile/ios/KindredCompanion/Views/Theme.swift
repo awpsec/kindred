@@ -131,12 +131,26 @@ struct ToolbarAvatarButton: UIViewRepresentable {
 final class MeasuredAvatarButton: UIButton {
     var activate: (() -> Void)?
     var frameChanged: ((CGRect) -> Void)?
+    private var frameScheduled = false
+    private func publishFrame() {
+        guard !frameScheduled else { return }
+        frameScheduled = true
+        // A bar may lay out its label before attaching it to the window and
+        // never lay it out again. Measure after both layout and attachment.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.frameScheduled = false
+            guard let window = self.window else { return }
+            self.frameChanged?(self.convert(self.bounds, to: window))
+        }
+    }
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard let window else { return }
-        let frame = convert(bounds, to: window)
-        // Publish after UIKit's bar layout, never the detached label's local box.
-        DispatchQueue.main.async { [weak self] in self?.frameChanged?(frame) }
+        publishFrame()
+    }
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        publishFrame()
     }
 }
 

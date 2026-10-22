@@ -213,41 +213,30 @@ final class WebHostView: UIView {
     private func sampleRailControls() {
         guard let session, let window, window.windowScene?.activationState == .foregroundActive else { return }
         let web = session.webView
-        guard session.presentation.usesNativeRail, session.presentation.toolbarIdentity else { session.updateRailFrame(nil); return }
+        guard session.presentation.usesNativeRail else { session.updateRailFrame(nil); return }
         if session.presentation.isDuoInner {
             let identity = session.toolbarIdentityFrame
             session.updateRailFrame(identity, identity: identity)
             return
         }
-        let left = railOnLeft
-        let inset = left ? web.safeAreaInsets.left : web.safeAreaInsets.right
-        guard web.bounds.height > 0 else { session.updateRailFrame(nil); return }
-        let x = left ? inset / 2 : web.bounds.maxX - inset / 2
+        let inset = railOnLeft ? web.safeAreaInsets.left : web.safeAreaInsets.right
+        guard web.bounds.height > 0, inset > 0 else { session.updateRailFrame(nil); return }
         var union = CGRect.null
         var identity = session.toolbarIdentityFrame
-        var seen = Set<ObjectIdentifier>()
-        // Public hit testing identifies the native controls without depending on
-        // private bar classes or children. It sends no touches/actions. Gaps are
-        // included in the final union, and the page keeps its own corner regions.
-        func sample(_ point: CGPoint) {
-            var hit = window.hitTest(web.convert(point, to: window), with: nil)
-            if hit?.isDescendant(of: web) == true { return }
-            var isIdentity = false
-            while let view = hit, view !== window {
-                isIdentity = isIdentity || view.accessibilityIdentifier == "kindred-bot-identity" || view.accessibilityLabel == session.presentation.chatTitle + " details"
-                if view is UIControl {
-                    let frame = web.convert(view.bounds, from: view)
-                    if frame.width > 0, frame.width <= 100, frame.height > 0, frame.height <= 100, frame.intersects(web.bounds) {
-                        if isIdentity { identity = frame }
-                        if seen.insert(ObjectIdentifier(view)).inserted { union = union.union(frame) }
-                    }
-                    break
-                }
-                hit = view.superview
-            }
-        }
-        if inset > 0 {
-            for y in stride(from: CGFloat(4), to: web.bounds.height, by: 8) { sample(CGPoint(x: x, y: y)) }
+        var pending: [UIView] = [window]
+        // Native bars can route hit testing through the web host. Measure the
+        // visible public controls in the reserved edge strip directly instead.
+        // Skip the entire web subtree, including its editors and form controls.
+        while let view = pending.popLast() {
+            guard view !== web, !view.isHidden, view.alpha > 0.01 else { continue }
+            pending.append(contentsOf: view.subviews)
+            guard view is UIControl else { continue }
+            let frame = web.convert(view.bounds, from: view)
+            let inStrip = railOnLeft ? frame.midX <= inset : frame.midX >= web.bounds.maxX-inset
+            guard inStrip, frame.width > 0, frame.width <= 100, frame.height > 0, frame.height <= 100,
+                  frame.intersects(web.bounds) else { continue }
+            if view.accessibilityIdentifier == "kindred-bot-identity" { identity = frame }
+            union = union.union(frame)
         }
         session.updateRailFrame(union.isNull ? identity : union, identity: identity)
     }

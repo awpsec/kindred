@@ -206,17 +206,29 @@ updates without reopening a submenu. The sample bot's original shape was restore
 
 Bot replies keep one fixed line length on the closed display, ending six points
 before the measured dock/status edge. Only user messages adjust dynamically.
-Their larger bubbles use the available fixed lane at full bubble width, and
-translate horizontally as one piece around the controls. This preserves bubble
-shape, line breaks, attachment positions and the vertical reading anchor. A
-280 ms ease continues from its current position on reversal; a small release
-buffer prevents boundary chatter. App/system Reduce Motion removes the slide.
+A long user bubble keeps its leading edge steady and eases its trailing edge
+into the full lower lane; short bubbles follow their natural right alignment.
+The earlier fixed-width cap no longer leaves an unused strip below the menu.
+A 280 ms ease continues from its current position on reversal. A small release
+buffer prevents boundary chatter without holding the wider gutter well below
+the controls. App/system Reduce Motion settles the geometry immediately.
 
-`test-ios-message-clearance-motion.cjs` seeks real WebKit transitions through
-intermediate and final positions, reverses mid-slide, and checks constant bubble
-width/height, fixed bot geometry, retained composer/draft, real scroll crossings,
-settled bounds, leading-edge rotation and both Reduce Motion preferences. The
-existing pane/fold/composer motion, native-center, Duo content (both server
-adapters and rail sides) and iOS layout suites also pass. The native target builds
-and its three contour tests pass. The updated sample-chat build remains installed
-in the Duo simulator, preserving all stored accounts.
+An actual simulator inspection exposed a second cause: the native toolbar
+measurement was null, so the page kept the older full-height reading gutter.
+The host now measures visible public UIControls in the reserved edge strip,
+excluding the entire web subtree, rather than relying on native hit testing.
+The avatar reports its frame after window attachment as well as layout, and
+navigation changes schedule a fresh host measurement.
+
+`test-ios-message-clearance-motion.cjs` covers late-arriving toolbar geometry,
+intermediate/final bubble widths, a steady leading edge, interruption/reversal,
+fixed bot geometry, retained composer/draft, actual scroll crossings, immediate
+space recovery below the dock, leading-edge rotation and Reduce Motion. The
+native avatar test covers layout before window attachment. Native-center and
+pane/fold/composer motion checks also pass. The native build and avatar tests
+pass. Changes remain confined to iOS presentation and regression coverage.
+
+Native cover-display verification confirms a valid 44-by-148-point menu frame,
+a full 466-point reading viewport, a 364-point user bubble beside the controls
+and a 442-point bubble below them. The lower bubble visibly fills the previously
+unused strip. Stored accounts are preserved during in-place simulator updates.

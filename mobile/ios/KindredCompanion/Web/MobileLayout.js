@@ -1348,9 +1348,8 @@
     const historyStyle = history && getComputedStyle(history);
     const lane = historyRect && {left:historyRect.left+history.clientLeft+(parseFloat(historyStyle.paddingLeft)||0),right:historyRect.left+history.clientLeft+history.clientWidth-(parseFloat(historyStyle.paddingRight)||0)};
     let laneLeft = 0, laneRight = 0;
-    // Both authors keep a stable line length on the cover. Use the actual
-    // controls' edge plus a small gap, rather than shrinking the bot's text
-    // again every time it scrolls beside the dock.
+    // Bot replies keep a stable line length on the cover. User messages only
+    // reserve this space while beside the controls, reclaiming it below.
     for (const zone of lane && flow ? zones : []) {
       if (zone.x >= lane.right || zone.x+zone.width <= lane.left) continue;
       if (zone.x+zone.width/2 > (lane.left+lane.right)/2) laneRight = Math.max(laneRight,lane.right-zone.x+6);
@@ -1362,11 +1361,11 @@
       const user = !!group.querySelector('.message-row.user');
       group.toggleAttribute('data-ios-user-message',user);
       const rect = group.getBoundingClientRect();
-      const buffer = messageClearance.get(group) ? 28 : 12;
+      const buffer = messageClearance.get(group) ? 12 : 6;
       const overlaps = user && zones.some(zone => rect.top < zone.y+zone.height+buffer && rect.bottom > zone.y-buffer);
       messageClearance.set(group,!!flow && overlaps);
-      // Right-aligned user bubbles keep their larger, constant width and move
-      // as one piece. Translation carries the text without rewrapping it.
+      // Grow the trailing edge into the lower lane. A long bubble's leading
+      // edge stays put; short, right-aligned bubbles slide with that edge.
       setContentInset(group,'--ios-user-clearance',flow && overlaps ? laneRight : 0);
     }
     if (!sidebar) return;

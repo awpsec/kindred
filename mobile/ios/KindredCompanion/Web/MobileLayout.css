@@ -445,22 +445,21 @@ html[data-kindred-ios][data-ios-bot-center] .computer-panel.ios-keyboard-active>
 /* Latest is an independent floating action in the full bottom lane. */
 html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area>.jump-latest { right:10px; max-width:calc(100% - 20px); }
 
-/* Cover messages keep a stable line length. Bot replies sit just before the
-   controls; user bubbles use the larger lane and slide around the dock as a
-   single piece, keeping their shape, attachments and text wrapping intact. */
+/* Bot replies keep a steady lane on the cover. User bubbles grow into the
+   full lower lane, easing their trailing edge around the measured controls. */
 html[data-kindred-ios][data-ios-message-flow] .conversation>.conversation-history { margin-inline:0; }
 html[data-kindred-ios][data-ios-message-flow] #content>* {
  margin-left:var(--ios-message-lane-left,0px); margin-right:var(--ios-message-lane-right,0px);
  max-width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-message-lane-right,0px));
 }
 html[data-kindred-ios][data-ios-message-flow] #content>[data-ios-user-message] {
- width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-message-lane-right,0px));
- margin-left:auto; margin-right:0;
+ width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-user-clearance,0px));
+ max-width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-user-clearance,0px));
+ margin-left:auto; margin-right:var(--ios-user-clearance,0px);
 }
 html[data-kindred-ios][data-ios-message-flow] #content .message-row>.message-bubble { max-width:100%; }
 html[data-kindred-ios][data-ios-duo=true] #content>[data-ios-user-message] {
- translate:calc(-1 * var(--ios-user-clearance,0px)) 0;
- transition:translate .28s cubic-bezier(.2,.8,.2,1);
+ transition:width .28s cubic-bezier(.2,.8,.2,1),max-width .28s cubic-bezier(.2,.8,.2,1),margin-right .28s cubic-bezier(.2,.8,.2,1);
 }
 html[data-kindred-ios][data-ios-duo=true][data-motion=off] #content>[data-ios-user-message] { transition:none; }
 @media(prefers-reduced-motion:reduce) {

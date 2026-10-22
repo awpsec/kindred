@@ -310,8 +310,10 @@ final class WebSession: NSObject {
         guard presentation.toolbarIdentity,
               [frame.minX,frame.minY,frame.width,frame.height].allSatisfy({ $0.isFinite }),
               frame.width > 0, frame.width <= 100, frame.height > 0, frame.height <= 100 else { return }
+        let changed = identityWindowFrame != frame
         identityWindowFrame = frame
         if let local = toolbarIdentityFrame { updateRailFrame(lastRailFrame ?? local, identity: local) }
+        if changed { webView.superview?.setNeedsLayout() }
     }
 
     // Public native layout measurements projected into this retained web view.
@@ -510,6 +512,7 @@ final class WebSession: NSObject {
                     presentation.computerExpanded = body["computerExpanded"] as? Bool == true
                     presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
                 }
+                DispatchQueue.main.async { [weak self] in self?.webView.superview?.setNeedsLayout() }
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "composer-extent",

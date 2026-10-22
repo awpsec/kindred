@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import Kindred
 
 @MainActor
@@ -19,4 +20,27 @@ final class ToolbarAvatarTests: XCTestCase {
         XCTAssertNotEqual(triangle, pill)
         XCTAssertEqual(cloud, BotToolbarAvatar(shape: "cloud", color: "#2475ff").image(scale: 2)?.pngData())
     }
+
+    func testPublishesFrameWhenLaidOutBeforeWindowAttachment() async throws {
+        let button = MeasuredAvatarButton(frame: CGRect(x: 100, y: 200, width: 44, height: 44))
+        var frames: [CGRect] = []
+        button.frameChanged = { frames.append($0) }
+        button.setNeedsLayout()
+        button.layoutIfNeeded()
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertTrue(frames.isEmpty, "a detached label cannot publish window coordinates")
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = UIViewController()
+        window.isHidden = false
+        defer { window.isHidden = true }
+        window.rootViewController?.view.addSubview(button)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        XCTAssertEqual(try XCTUnwrap(frames.last), button.convert(button.bounds, to: window))
+    }
+
 }
