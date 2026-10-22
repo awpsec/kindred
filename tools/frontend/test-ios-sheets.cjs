@@ -39,6 +39,40 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-ios-sheets';
    const r=await sheet.boundingBox(),v=page.viewportSize();assert(r.width>=280&&r.x>=0&&r.y>=0&&r.x+r.width<=v.width+1&&r.y+r.height<=v.height-30,'sheet stays inside usable viewport');
    assert(await sheet.evaluate(n=>n.scrollWidth<=n.clientWidth+1),'sheet has no horizontal overflow');return r;
   };
+  await action('settings');await page.locator('#settings-dialog[data-ios-sheet][open]').waitFor();await settle();
+  const preferences=page.locator('#settings-dialog');
+  const settingsBounds=async()=>{
+   const r=await bounds(),v=page.viewportSize();
+   const left=side==='left'?84:0,right=v.width-(side==='right'?84:0),top=24,bottom=v.height-34;
+   assert(Math.abs(r.x+r.width/2-(left+right)/2)<1,'Settings is horizontally centered in its usable lane');
+   assert(Math.abs(r.y+r.height/2-(top+bottom)/2)<1,'Settings is vertically centered in its usable lane');
+   const close=await preferences.getByRole('button',{name:'Close settings sheet',exact:true}).boundingBox();
+   assert(close.x>=r.x&&close.y>=r.y&&close.x+close.width<=r.x+r.width&&close.y+close.height<=r.y+r.height,'Settings close stays inside the sheet');
+   const content=await preferences.locator('#settings-content').boundingBox();
+   assert(content.height>60&&content.y+content.height<=r.y+r.height+1,'Settings body has a bounded scroll viewport');
+   assert(await preferences.locator('#settings-content').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'Settings content cannot overflow horizontally');
+  };
+  await settingsBounds();await pose(951,669,true,false);await settingsBounds();
+  assert.equal((await bounds()).width,760,'open Settings uses the wider preferences layout');
+  await pose(951,669,true,false,[{kind:'division',active:true,x:460,y:0,width:28,height:669}]);
+  assert((await bounds()).x>=488,'Settings stays inside one book region');
+  await pose(951,669,true,false,[{kind:'division',active:true,x:0,y:330,width:951,height:28}]);
+  const tableSettings=await bounds();assert(tableSettings.y+tableSettings.height<=330,'Settings stays above an active tabletop fold');
+  await pose(951,669,true,false);
+  await preferences.locator('[data-settings-page=connections]').click();await settle();
+  await pose(669,951,true,true);await settingsBounds();
+  assert.equal(await preferences.locator('[aria-current=page]').getAttribute('data-settings-page'),'connections','selected Settings tab survives rotation');
+  await pose(466,780,false,true);await settingsBounds();
+  await pose(780,466,false,false);await settingsBounds();
+  await pose(466,430,false,true);await settingsBounds();
+  await page.screenshot({path:path.join(out,side+'-settings-keyboard.png')});
+  await preferences.getByRole('button',{name:'Close settings sheet',exact:true}).click();await preferences.waitFor({state:'hidden'});
+  assert.equal(await preferences.getAttribute('inert'),null,'closing Settings releases its interaction guard');
+  await page.emulateMedia({reducedMotion:'reduce'});await action('settings');await settle();
+  assert.equal(await preferences.evaluate(n=>n.getAnimations().length),0,'Settings respects Reduce Motion');
+  await preferences.getByRole('button',{name:'Close settings sheet',exact:true}).click();await preferences.waitFor({state:'hidden'});
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await pose(466,780,false,true,[{kind:'occlusion',active:true,x:side==='right'?382:0,y:0,width:84,height:170}]);
   await action('search');await page.locator('.navigation-search[data-ios-sheet]').waitFor();await settle();await bounds();
   const assertFlow=async()=>{
    const rows=await page.locator('.navigation-search-heading,.navigation-search-results>*').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width};}));
@@ -85,6 +119,6 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-ios-sheets';
    await pose(466,780,false,true);await bounds();assert(await sheet.getByRole('button',{name:'Remove Test person',exact:true}).isVisible(),'server participant survives folding');
    await sheet.getByRole('button',{name:'Start chat',exact:true}).scrollIntoViewIfNeeded();await sheet.getByRole('button',{name:'Close',exact:true}).click();
   }
-  assert.deepEqual(errors,[]);await page.close();console.log(JSON.stringify({side,searchFlow:true,creation:true,drafts:true,keyboard:true,folds:true,disclosure:true}));
+  assert.deepEqual(errors,[]);await page.close();console.log(JSON.stringify({side,settings:true,searchFlow:true,creation:true,drafts:true,keyboard:true,folds:true,disclosure:true}));
  }}finally{await browser.close();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});

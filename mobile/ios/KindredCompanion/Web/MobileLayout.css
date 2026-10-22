@@ -117,7 +117,7 @@ html[data-kindred-ios] #ios-library-menu svg { flex:none; }
 }
 html[data-kindred-ios][data-ios-short-viewport] .conversation-header,html[data-kindred-ios][data-ios-short-viewport] .jump-latest { display:none; }
 
-/* Profile settings arrive as a bottom sheet over the conversation list. */
+/* iPhone Settings uses a bottom sheet; Duo applies the native sheet bounds below. */
   html[data-kindred-ios] #settings-button { display:none; }
   html[data-kindred-ios] #settings-dialog[open] { display:flex; flex-direction:column; position:fixed; inset:auto 0 0; width:100%; max-width:760px; height:calc(100% - 76px); max-height:calc(100% - 76px); margin:0 auto; border:0; border-radius:28px 28px 0 0; background:var(--bg); padding-bottom:var(--ios-safe-bottom); animation:ios-sheet-in 240ms cubic-bezier(.2,.8,.2,1); }
   html[data-kindred-ios] #settings-dialog::backdrop { background:#0006; }
@@ -489,7 +489,7 @@ html[data-kindred-ios][data-ios-bot-center] .computer-panel>.desktop { max-heigh
    collapsing the computer to a sliver when its controls need more room. */
 html[data-kindred-ios][data-ios-bot-center] .computer-panel:not(.ios-keyboard-active)>.desktop { min-height:min(120px,30dvh); }
 
-/* Search and creation use one native sheet geometry on either Duo display.
+/* Search, creation and Settings use one native sheet geometry on either Duo display.
    The shared forms and their controls remain intact across pose/keyboard changes. */
 html[data-kindred-ios] dialog[data-ios-sheet][open] {
  box-sizing:border-box; position:fixed; inset:var(--ios-sheet-y) auto auto var(--ios-sheet-x)!important;
@@ -498,6 +498,20 @@ html[data-kindred-ios] dialog[data-ios-sheet][open] {
  animation:ios-action-sheet-in 220ms ease-out;
 }
 html[data-kindred-ios] dialog.navigation-search[data-ios-sheet][open] { display:flex; flex-direction:column; height:var(--ios-sheet-height); overflow:hidden; animation:none; }
+html[data-kindred-ios] #settings-dialog[data-ios-sheet][open] {
+ height:var(--ios-sheet-height); max-height:var(--ios-sheet-height); padding:0; border-radius:24px;
+ overflow:hidden; animation:ios-action-sheet-in 220ms ease-out;
+}
+html[data-kindred-ios] #settings-dialog[data-ios-sheet] :is(.ios-settings-header,.settings-nav,.settings-main) { box-sizing:border-box; min-width:0; max-width:100%; }
+html[data-kindred-ios] #settings-dialog[data-ios-sheet] #settings-content { overscroll-behavior:contain; }
+html[data-kindred-ios][data-motion=off] #settings-dialog[data-ios-sheet][open] { animation:none; }
+@media(prefers-reduced-motion:reduce) {
+ html[data-kindred-ios] #settings-dialog[data-ios-sheet][open] { animation:none; }
+}
+@media(min-width:600px) {
+ html[data-kindred-ios] #settings-dialog[data-ios-sheet] .ios-settings-header { display:grid; grid-template-columns:44px minmax(0,1fr); align-items:center; gap:12px; padding:12px 16px; }
+ html[data-kindred-ios] #settings-dialog[data-ios-sheet] #ios-settings-account { min-height:64px; padding:10px 14px; }
+}
 html[data-kindred-ios] .navigation-search-results { flex:1; scrollbar-width:none; padding:8px; }
 html[data-kindred-ios] .navigation-search-heading { box-sizing:border-box; padding:8px 14px; min-height:64px; }
 html[data-kindred-ios] dialog[data-ios-sheet] :is(.navigation-search-heading,.navigation-search-results>*) {

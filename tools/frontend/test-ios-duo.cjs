@@ -375,7 +375,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     await action('back');await page.locator('#details-panel').waitFor({state:'hidden'});await settled();
     assert.equal(await prompt.evaluate(node=>node.value),draft);
 
-    // Exit keeps the sheet modal while both its position and input availability
+    // Exit keeps the centered sheet modal while its fade and input availability
     // settle. An interrupted entrance must close from its actual current pose.
     for(const interruptEntrance of [false,true]) {
       await action('settings');await page.locator('#settings-dialog').waitFor({state:'visible'});
@@ -384,18 +384,18 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
         const entries=sheet.getAnimations();
         if(interruptEntrance){for(const animation of entries){animation.pause();animation.currentTime=Number(animation.effect.getTiming().duration)*.4;}}
         else await Promise.all(entries.map(animation=>animation.finished));
-        const translate=()=>{const value=getComputedStyle(sheet).transform;return value==='none'?0:new DOMMatrixReadOnly(value).m42;};
-        const start=translate();sheet.querySelector('[aria-label="Close settings sheet"]').click();
+        const sample=()=>{const style=getComputedStyle(sheet);return {y:parseFloat(style.translate.split(' ')[1])||0,opacity:Number(style.opacity)};};
+        const start=sample();sheet.querySelector('[aria-label="Close settings sheet"]').click();
         const animations=sheet.getAnimations().filter(animation=>!entries.includes(animation));
-        const closeStart=translate();
+        const closeStart=sample();
         for(const animation of animations){animation.pause();animation.currentTime=Number(animation.effect.getTiming().duration)*.5;}
-        const during={y:translate(),open:sheet.open,modal:sheet.matches(':modal'),inert:sheet.inert};
+        const during={...sample(),open:sheet.open,modal:sheet.matches(':modal'),inert:sheet.inert};
         for(const animation of animations)animation.finish();
-        return {start,closeStart,during,end:translate(),height:sheet.getBoundingClientRect().height};
+        return {start,closeStart,during,end:sample()};
       },interruptEntrance);
-      assert(Math.abs(exit.closeStart-exit.start)<2,'sheet dismissal must start at its current visible position');
-      assert(exit.during.open && exit.during.modal && exit.during.inert,'the descending sheet remains modal and rejects duplicate input');
-      assert(exit.during.y>exit.start+8 && exit.end>=exit.height-1,'settings must move downward before the modal is removed');
+      assert(Math.abs(exit.closeStart.y-exit.start.y)<1&&Math.abs(exit.closeStart.opacity-exit.start.opacity)<0.02,'sheet dismissal must start at its current visible position and opacity');
+      assert(exit.during.open && exit.during.modal && exit.during.inert,'the fading sheet remains modal and rejects duplicate input');
+      assert(exit.during.opacity<exit.start.opacity&&exit.during.y>exit.start.y&&exit.end.opacity===0,'centered Settings fades and moves slightly before the modal is removed');
       await page.locator('#settings-dialog').waitFor({state:'hidden'});await settled();
       await assertHitTarget(prompt,1);
     }
