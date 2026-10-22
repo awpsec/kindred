@@ -3,6 +3,35 @@ import KindredCore
 import UIKit
 import WebKit
 
+/// WebKit forwards its focused editor's accessory view to this public property.
+/// Keep the system keyboard and editing tools, without the browser form toolbar.
+@MainActor
+final class KindredWebView: WKWebView {
+    override var inputAccessoryView: UIView? { nil }
+}
+
+@MainActor
+@Observable
+final class WebPresentationState {
+    var hasChatInterface = false
+    var hasLoadedChats = false
+    var canvas = UIColor(named: "Canvas") ?? .systemBackground
+    var isDark: Bool?
+    var isDuo = false
+    var isDuoInner = false
+    var usesNativeRail = false
+    var botDetailsAvailable = false
+    var botAvatarShape = "round"
+    var botAvatarColor = "#2475ff"
+    var botSettingsAvailable = false
+    var computerExpandAvailable = false
+    var computerExpanded = false
+    var listToggleAvailable = false
+    var route = "chat-list"
+    var chatTitle = ""
+    var listVisible = false
+}
+
 @MainActor
 protocol WebSessionHost: AnyObject {
     func webSession(_ session: WebSession, didReceive message: SessionMessage)
@@ -43,6 +72,23 @@ final class WebSession: NSObject {
     let accountID: UUID
     let origin: ServerOrigin
     let webView: WKWebView
+    let presentation = WebPresentationState()
+    private var conversationTarget: ConversationMenuTarget?
+    private var contextMenuPreview: UITargetedPreview?
+    private weak var nativeMenuAlert: UIAlertController?
+    private var layoutTop: CGFloat = 0
+    private var layoutBottom: CGFloat = 0
+    private var layoutLeft: CGFloat = 0
+    private var layoutRight: CGFloat = 0
+    private var layoutIsSlab = false
+    private var layoutHeight: CGFloat = 0
+    private var layoutComposerBottom: CGFloat = 0
+    private var layoutKeyboardVisible = false
+    private var layoutRailSide = "none"
+    private(set) var composerExtent: CGFloat = 0
+    private var layoutIsPortrait = true
+    private var computerInputWanted = false
+    private var computerFocusPending = false
     private var profileID: String?
     private var latestToken: String?
     private var systemTextScale: Double
@@ -66,10 +112,16 @@ final class WebSession: NSObject {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.preferences.isFraudulentWebsiteWarningEnabled = true
         configuration.defaultWebpagePreferences.preferredContentMode = .mobile
+        configuration.ignoresViewportScaleLimits = false
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         configuration.applicationNameForUserAgent = "KindredMobile/" + version
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = KindredWebView(frame: .zero, configuration: configuration)
         super.init()
+        // Match a saved explicit appearance before the first web frame arrives.
+        if let saved = CachedWebAppearance.load(accountID: account.id), !saved.followsSystem {
+            presentation.canvas = saved.color
+            presentation.isDark = saved.isDark
+        }
 
         let controller = webView.configuration.userContentController
         let proxy = ScriptMessageProxy(session: self)
@@ -83,22 +135,18 @@ final class WebSession: NSObject {
         installBootstrap(token: token)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshSystemTextSize),
             name: UIContentSizeCategory.didChangeNotification, object: nil)
-        // Settings can change while the app is suspended; reconcile on return.
-        NotificationCenter.default.addObserver(self, selector: #selector(refreshSystemTextSize),
-            name: UIApplication.didBecomeActiveNotification, object: nil)
-
-        NotificationCenter.default.addObserver(self, selector: #selector(suspendEdgeBack),
-            name: UIApplication.willResignActiveNotification, object: nil)
-
+        let interaction = UIContextMenuInteraction(delegate: self)
+        webView.addInteraction(interaction)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = false
         webView.isOpaque = false
-        webView.backgroundColor = UIColor(named: "Canvas")
-        webView.underPageBackgroundColor = UIColor(named: "Canvas")
-        // SwiftUI already lays the web view out inside the safe area and above
-        // the keyboard; letting the scroll view inset again would double it.
+        webView.overrideUserInterfaceStyle = presentation.isDark.map { $0 ? .dark : .light } ?? .unspecified
+        webView.backgroundColor = presentation.canvas
+        webView.underPageBackgroundColor = presentation.canvas
+        // The page handles hardware padding and WebKit's visible viewport.
+        // Letting the scroll view add safe-area insets would count them twice.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.keyboardDismissMode = .interactive
         #if DEBUG
@@ -107,16 +155,46 @@ final class WebSession: NSObject {
         webView.load(URLRequest(url: origin.rootURL))
     }
 
-    @objc private func suspendEdgeBack() { edgeBack?.cancel() }
+    func sceneActivityChanged(active: Bool) {
+        if active {
+            refreshSystemTextSize()
+            restoreComputerKeyboard(force: true)
+        } else { edgeBack?.cancel(); cancelSidebarResize() }
+    }
+
+    enum DuoAction: String {
+        case back, computer, botSettings, chats, settings, artifacts, marketplace, search, newChat, newBot, newConversation, expandComputer, botDetails
+    }
+
+    func performDuoAction(_ action: DuoAction) {
+        guard presentation.usesNativeRail, presentation.hasChatInterface, !nativeNavigationBlocked,
+              origin.matches(webView.url), loadState.failure == nil else { return }
+        edgeBack?.cancel()
+        webView.callAsyncJavaScript("""
+        if (window.top !== window.self || location.origin !== expectedOrigin) return;
+        window.__kindredNativeSidebar?.cancel();
+        window.__kindredDuoActions?.perform(action);
+        """, arguments: ["expectedOrigin": origin.serialized, "action": action.rawValue], in: nil, in: .page) { _ in }
+    }
 
     func detachVisibleHost() {
         edgeBack?.cancel()
-        invalidateDictationContext(reason: "account-changed")
+        cancelSidebarResize()
+        invalidateDictationContext(reason: "account-changed", preserveVerifiedChat: true)
     }
 
     func setNativeNavigationBlocked(_ blocked: Bool) {
+        if blocked && !nativeNavigationBlocked { cancelSidebarResize() }
         nativeNavigationBlocked = blocked
-        if blocked { edgeBack?.cancel(); invalidateDictationContext(reason: "context-changed") }
+        if blocked { edgeBack?.cancel(); invalidateDictationContext(reason: "context-changed", preserveVerifiedChat: true) }
+    }
+
+    private func cancelSidebarResize() {
+        guard origin.matches(webView.url) else { return }
+        webView.callAsyncJavaScript("""
+        if (window.top !== window.self || location.origin !== expectedOrigin) return;
+        window.__kindredNativeSidebar?.cancel();
+        """, arguments: ["expectedOrigin": origin.serialized], in: nil, in: .page) { _ in }
     }
 
     /// Replaces the document-start script so the next load (reload, crash
@@ -136,16 +214,108 @@ final class WebSession: NSObject {
     private func installBootstrap(token: String?) {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
-        let source = WebBootstrap.documentStartScript(origin: origin, token: token, profileID: profileID)
-            + "\n" + WebTextSize.script(origin: origin, scale: systemTextScale)
-            + "\n" + WebDictation.bootstrap(origin: origin)
-        controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        let revision = Bundle.main.object(forInfoDictionaryKey: "KindredSourceRevision") as? String ?? ""
+        let versionLabel = "iOS " + version + " (" + build + ")" + (revision.isEmpty ? "" : " · " + String(revision.prefix(8)))
+        let hasPushSigning = APNsEnvironment(configurationValue: Bundle.main.object(forInfoDictionaryKey: "KindredAPNsEnvironment") as? String) != nil
+        let source = WebBootstrap.documentStartScript(origin: origin, token: token, profileID: profileID) + """
+        ;(() => {
+          if (window.top !== window.self || location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
+          window.__KINDRED_IOS_APP_VERSION = \(WebBootstrap.javaScriptString(versionLabel));
+          window.__KINDRED_IOS_PUSH_AVAILABLE = \(hasPushSigning ? "true" : "false");
+          const appearance = \(WebBootstrap.javaScriptString(presentation.isDark.map { $0 ? "dark" : "light" } ?? "system"));
+          if (appearance !== 'system') document.documentElement.dataset.theme = appearance;
+        })();
+        """
+        let textSize = WebTextSize.script(origin: origin, scale: systemTextScale)
+        controller.addUserScript(WKUserScript(source: source + "\n" + textSize + "\n" + WebDictation.bootstrap(origin: origin), injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        // Bundle the presentation layer so an older server still fits an iPhone.
+        // The same exact-origin check as the session bootstrap scopes this script.
+        if let cssURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "css"),
+           let jsURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "js"),
+           let css = try? String(contentsOf: cssURL, encoding: .utf8),
+           let js = try? String(contentsOf: jsURL, encoding: .utf8) {
+            let messageGestures = Bundle.main.url(forResource: "mobile-messages", withExtension: "js")
+                .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+            let layout = """
+            (function () {
+              if (window.top !== window.self || window.location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
+              const style = document.createElement('style');
+              style.textContent = \(WebBootstrap.javaScriptString(css));
+              document.head.append(style);
+              \(messageGestures)
+              \(js)
+            })();
+            """
+            controller.addUserScript(WKUserScript(source: layout, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: .page))
+        }
+    }
+
+    /// Presentation values only, delivered to the trusted main frame. The host
+    /// extends behind system chrome while WebKit avoids the keyboard.
+    func updateLayout(topInset: CGFloat, bottomInset: CGFloat, leftInset: CGFloat = 0, rightInset: CGFloat = 0,
+                      isDuo: Bool = false, isDuoInner: Bool = false, usesNativeRail: Bool = false, railSide: String = "none", composerBottomInset: CGFloat? = nil, keyboardVisible: Bool = false, isSlab: Bool, viewportHeight: CGFloat = 0, isPortrait: Bool = true) {
+        let composerBottom = composerBottomInset ?? bottomInset
+        let side = ["left", "right", "none"].contains(railSide) ? railSide : "none"
+        guard layoutRailSide != side || layoutKeyboardVisible != keyboardVisible || layoutComposerBottom != composerBottom || layoutTop != topInset || layoutBottom != bottomInset || layoutLeft != leftInset || layoutRight != rightInset || presentation.isDuo != isDuo || presentation.isDuoInner != isDuoInner || presentation.usesNativeRail != usesNativeRail || layoutIsSlab != isSlab || layoutHeight != viewportHeight || layoutIsPortrait != isPortrait else { return }
+        layoutRailSide = side
+        layoutComposerBottom = composerBottom
+        layoutKeyboardVisible = keyboardVisible
+        layoutTop = topInset
+        layoutBottom = bottomInset
+        layoutLeft = leftInset
+        layoutRight = rightInset
+        presentation.isDuo = isDuo
+        presentation.isDuoInner = isDuoInner
+        presentation.usesNativeRail = usesNativeRail
+        layoutIsSlab = isSlab
+        layoutHeight = viewportHeight
+        layoutIsPortrait = isPortrait
+        computerHostAttachmentChanged()
+        publishLayout()
+    }
+
+    private func publishLayout() {
+        guard origin.matches(webView.url) else { return }
+        let script = """
+        if (window.top !== window.self || location.origin !== expectedOrigin) return;
+        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, leftInset, rightInset, isDuo, isDuoInner, usesNativeRail, railSide, composerBottomInset, keyboardVisible, isSlab, viewportHeight, isPortrait};
+        window.dispatchEvent(new CustomEvent('kindred-ios-layout', {detail: window.__KINDRED_IOS_LAYOUT}));
+        """
+        webView.callAsyncJavaScript(script, arguments: ["expectedOrigin": origin.serialized,
+            "topInset": Double(layoutTop), "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab,
+            "leftInset": Double(layoutLeft), "rightInset": Double(layoutRight), "isDuo": presentation.isDuo,
+            "isDuoInner": presentation.isDuoInner, "usesNativeRail": presentation.usesNativeRail, "railSide": layoutRailSide,
+            "composerBottomInset": Double(layoutComposerBottom), "keyboardVisible": layoutKeyboardVisible,
+            "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait], in: nil, in: .page) { _ in }
+    }
+
+    func computerHostAttachmentChanged() {
+        ComputerOrientation.shared.update(webView: webView, active: computerInputWanted && webView.window != nil, isSlab: layoutIsSlab)
+    }
+
+    func restoreComputerKeyboard(force: Bool = false) {
+        guard computerInputWanted, (!layoutIsSlab || layoutIsPortrait), webView.window != nil,
+              !nativeNavigationBlocked, webView.window?.windowScene?.activationState == .foregroundActive,
+              origin.matches(webView.url), !computerFocusPending else { return }
+        computerFocusPending = true
+        webView.evaluateJavaScript("window.__kindredComputerInput?.focus(\(force ? "true" : "false"))") { [weak self] _, _ in
+            self?.computerFocusPending = false
+        }
+    }
+
+    private func setComputerInput(_ enabled: Bool) {
+        computerInputWanted = enabled
+        webView.scrollView.keyboardDismissMode = enabled ? .none : .interactive
+        computerHostAttachmentChanged()
+        if enabled { restoreComputerKeyboard() }
     }
 
     /// Update an already open page without a reload, and the bootstrap for its
     /// next document. This also catches a cached account becoming visible.
     @objc func refreshSystemTextSize() {
-        let scale = SystemTextSize.currentScale
+        let scale = webView.window == nil ? SystemTextSize.currentScale : SystemTextSize.scale(for: webView.traitCollection.preferredContentSizeCategory)
         guard scale != systemTextScale else { return }
         systemTextScale = scale
         installBootstrap(token: latestToken)
@@ -198,8 +368,10 @@ final class WebSession: NSObject {
         dictationDocumentGeneration &+= 1
         dictationCommands.invalidate()
         dictation.tearDown()
+        presentation.hasChatInterface = false
         edgeBack?.detach()
         NotificationCenter.default.removeObserver(self)
+        setComputerInput(false)
         webView.stopLoading()
         let controller = webView.configuration.userContentController
         controller.removeAllScriptMessageHandlers()
@@ -216,22 +388,8 @@ final class WebSession: NSObject {
         return true
     }
 
-    private var reservedRegionsJSON = "[]"
-
-    func updateReservedRegions(_ regions: [ReservedDisplayRegion]) {
-        let valid = regions.filter {
-            [$0.x, $0.y, $0.width, $0.height].allSatisfy(\.isFinite)
-                && $0.width >= 0 && $0.height >= 0
-        }
-        guard let data = try? JSONEncoder().encode(valid),
-              let next = String(data: data, encoding: .utf8), next != reservedRegionsJSON else { return }
-        edgeBack?.cancel()
-        reservedRegionsJSON = next
-        applyGeometry()
-    }
-
     func updateGeometry(width: CGFloat, height: CGFloat, windowWidth: CGFloat,
-                        windowHeight: CGFloat, safeArea: UIEdgeInsets) {
+                        windowHeight: CGFloat, safeArea: UIEdgeInsets, reservedRegions: [[String: Any]] = []) {
         let values = [width, height, windowWidth, windowHeight]
         guard values.allSatisfy({ $0.isFinite && $0 > 0 }) else { return }
         let insets = [safeArea.top, safeArea.right, safeArea.bottom, safeArea.left]
@@ -239,7 +397,8 @@ final class WebSession: NSObject {
         let payload: [String: Any] = ["width": Double(width), "height": Double(height),
             "windowWidth": Double(windowWidth), "windowHeight": Double(windowHeight),
             "safeArea": ["top": Double(safeArea.top), "right": Double(safeArea.right),
-                         "bottom": Double(safeArea.bottom), "left": Double(safeArea.left)]]
+                         "bottom": Double(safeArea.bottom), "left": Double(safeArea.left)],
+            "reservedRegions": reservedRegions]
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
               let next = String(data: data, encoding: .utf8), next != geometry else { return }
         edgeBack?.cancel()
@@ -252,7 +411,6 @@ final class WebSession: NSObject {
         let script = """
         if (window.top !== window.self || window.location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
         window.__KINDRED_NATIVE_GEOMETRY = \(geometry);
-        window.__KINDRED_NATIVE_GEOMETRY.reservedRegions = \(reservedRegionsJSON);
         window.dispatchEvent(new CustomEvent("kindred-native-geometry", {detail: window.__KINDRED_NATIVE_GEOMETRY}));
         """
         webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { _ in }
@@ -282,6 +440,98 @@ final class WebSession: NSObject {
         case WebSession.navigationHandler:
             edgeBack?.setNavigation(WebNavigation(body: message.body))
         case WebSession.accountsHandler:
+            if let body = message.body as? [String: Any], body["action"] as? String == "duo-navigation",
+               let route = body["route"] as? String,
+               ["chat-list", "bot-chat", "computer", "details", "artifacts", "artifact", "marketplace"].contains(route),
+               let title = body["title"] as? String, title.count <= 160, let listVisible = body["listVisible"] as? Bool {
+                presentation.route = route
+                presentation.chatTitle = title
+                presentation.listVisible = listVisible
+                presentation.botSettingsAvailable = body["botSettingsAvailable"] as? Bool == true
+                presentation.botDetailsAvailable = body["botDetailsAvailable"] as? Bool == true
+                if let shape = body["botAvatarShape"] as? String,
+                   ["round", "pebble", "square", "capsule", "triangle", "hexagon", "cloud", "drop"].contains(shape) {
+                    presentation.botAvatarShape = shape
+                }
+                if let color = body["botAvatarColor"] as? String,
+                   color.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil {
+                    presentation.botAvatarColor = color
+                }
+                presentation.computerExpandAvailable = body["computerExpandAvailable"] as? Bool == true
+                presentation.computerExpanded = body["computerExpanded"] as? Bool == true
+                presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "composer-extent",
+               let height = body["height"] as? Double, height.isFinite, height > 0,
+               height <= min(1000, Double(webView.bounds.height)), abs(composerExtent - height) > 0.5 {
+                composerExtent = height
+                webView.superview?.setNeedsLayout()
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "computer-input",
+               let enabled = body["enabled"] as? Bool {
+                setComputerInput(enabled)
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "computer-keyboard" {
+                restoreComputerKeyboard(force: true)
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "notification-settings" {
+                if APNsEnvironment(configurationValue: Bundle.main.object(forInfoDictionaryKey: "KindredAPNsEnvironment") as? String) == nil {
+                    host?.webSession(self, show: "Background notifications require Apple Developer Program push signing. This free Personal Team build cannot receive them.", isError: false)
+                } else { host?.webSessionRequestedAccounts(self) }
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "native-menu" {
+                if let menu = NativeActionMenu(body: body) { presentNativeMenu(menu) }
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "conversation-target" {
+                conversationTarget = ConversationMenuTarget(body: body)
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "message-target" {
+                conversationTarget = ConversationMenuTarget(body: body, kind: .message)
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "artifact-target" {
+                conversationTarget = ConversationMenuTarget(body: body, kind: .artifact)
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "message-target-clear" {
+                if conversationTarget?.kind == .message { conversationTarget = nil }
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "conversation-target-clear" {
+                conversationTarget = nil
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "launch-ready" {
+                presentation.hasLoadedChats = true
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "interface-ready" {
+                presentation.hasChatInterface = true
+                publishLayout()
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "appearance",
+               let rgb = body["rgb"] as? [Double], rgb.count == 3,
+               rgb.allSatisfy({ $0.isFinite && (0...255).contains($0) }) {
+                let color = UIColor(red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255, alpha: 1)
+                if body["appearanceKnown"] as? Bool == true {
+                    CachedWebAppearance(rgb: rgb, followsSystem: body["followsSystem"] as? Bool == true).save(accountID: accountID)
+                }
+                presentation.canvas = color
+                presentation.isDark = body["followsSystem"] as? Bool == true ? nil : (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722) < 128
+                webView.overrideUserInterfaceStyle = presentation.isDark.map { $0 ? .dark : .light } ?? .unspecified
+                webView.backgroundColor = color
+                webView.underPageBackgroundColor = color
+                webView.superview?.backgroundColor = color
+                return
+            }
             if AccountsMessage(body: message.body) != nil {
                 edgeBack?.cancel()
                 host?.webSessionRequestedAccounts(self)
@@ -291,11 +541,14 @@ final class WebSession: NSObject {
         }
     }
 
-    private func invalidateDictationContext(reason: String) {
+    private func invalidateDictationContext(reason: String, preserveVerifiedChat: Bool = false) {
         dictationDocumentGeneration &+= 1
         dictationCommands.invalidate()
         dictation.cancel(reason: reason)
-        dictationChatID = nil
+        // A sheet or host move keeps the same trusted document. JavaScript only
+        // re-sends context when its chat changes, so retain the verified chat
+        // while still cancelling speech and invalidating queued commands.
+        if !preserveVerifiedChat { dictationChatID = nil }
     }
 
     private func receiveDictation(_ command: DictationCommand) {
@@ -425,6 +678,11 @@ extension WebSession: WKNavigationDelegate {
         dictationDocumentGeneration &+= 1
         dictationCommands.invalidate()
         dictationDocumentID = nil; dictationChatID = nil
+        setComputerInput(false)
+        // Keep established web navigation in charge while a route/reload starts.
+        // Clearing this flag briefly restores the native account toolbar above
+        // artifacts. A real page failure still restores recovery controls.
+        presentation.hasLoadedChats = false
         edgeBack?.setNavigation(nil)
         loadState.failure = nil
     }
@@ -500,6 +758,7 @@ extension WebSession: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        presentation.hasChatInterface = false
         // Reloading runs the current bootstrap script, i.e. the latest token.
         reload()
     }
@@ -509,6 +768,7 @@ extension WebSession: WKNavigationDelegate {
         if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled { return }
         // WebKitErrorFrameLoadInterruptedByPolicyChange: downloads and refused loads.
         if error.domain == "WebKitErrorDomain" && error.code == 102 { return }
+        presentation.hasChatInterface = false
         loadState.failure = KindredAPIClient.describe(error)
         edgeBack?.setNavigation(nil)
         notify(KindredAPIClient.describe(error))
@@ -615,5 +875,234 @@ extension WebSession: WKDownloadDelegate {
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         downloadDestinations.removeValue(forKey: ObjectIdentifier(download))
         notify("The download didn't finish: \(KindredAPIClient.describe(error))")
+    }
+}
+
+/// Presentation-only data from the trusted main frame. Action IDs are opaque;
+/// the page retains the existing closures and validates their current context.
+struct NativeActionMenu {
+    struct Item {
+        let title: String
+        let id: String?
+        let children: [Item]
+        let disabled: Bool
+        let selected: Bool
+        let destructive: Bool
+
+        init?(body: [String: Any], depth: Int = 0) {
+            guard depth <= 2, let title = body["title"] as? String,
+                  !title.isEmpty, title.count <= 100 else { return nil }
+            self.title = title
+            disabled = body["disabled"] as? Bool == true
+            selected = body["selected"] as? Bool == true
+            destructive = body["destructive"] as? Bool == true
+            if let values = body["children"] as? [[String: Any]] {
+                guard !values.isEmpty, values.count <= 40 else { return nil }
+                let parsed = values.compactMap { Item(body: $0, depth: depth + 1) }
+                guard parsed.count == values.count else { return nil }
+                children = parsed; id = nil
+            } else {
+                guard let value = body["id"] as? String, !value.isEmpty, value.utf8.count <= 64 else { return nil }
+                id = value; children = []
+            }
+        }
+    }
+    let key: String
+    let title: String
+    let rect: CGRect
+    let items: [Item]
+
+    init?(body: [String: Any]) {
+        guard let target = ConversationMenuTarget(body: body),
+              let values = body["items"] as? [[String: Any]], !values.isEmpty, values.count <= 40 else { return nil }
+        let parsed = values.compactMap { Item(body: $0) }
+        guard parsed.count == values.count else { return nil }
+        key = target.key; rect = target.rect; items = parsed
+        title = String((body["title"] as? String ?? "").prefix(100))
+    }
+}
+
+extension WebSession {
+    func nativeMenuSheet(_ menu: NativeActionMenu, items: [NativeActionMenu.Item]? = nil,
+                         title: String? = nil) -> UIAlertController {
+        let heading = title ?? menu.title
+        let alert = UIAlertController(title: heading.isEmpty ? nil : heading, message: nil, preferredStyle: .actionSheet)
+        alert.overrideUserInterfaceStyle = webView.overrideUserInterfaceStyle
+        for item in items ?? menu.items {
+            let label = (item.selected ? "✓ " : "") + item.title
+            let action = UIAlertAction(title: label, style: item.destructive ? .destructive : .default) { [weak self, weak alert] _ in
+                guard let self, self.origin.matches(self.webView.url) else { return }
+                // Finish native dismissal before a file picker, submenu, or
+                // server dialog opens. Never leave two presentations stacked.
+                alert?.dismiss(animated: true) {
+                    if !item.children.isEmpty {
+                        self.presentNativeMenu(menu, items: item.children, title: item.title)
+                    } else if let id = item.id {
+                        self.webView.callAsyncJavaScript("window.__kindredNativeMenus?.perform(id);",
+                            arguments:["id":id], in:nil, in:.page) { _ in }
+                    }
+                }
+            }
+            action.isEnabled = !item.disabled
+            alert.addAction(action)
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.webView.callAsyncJavaScript("window.__kindredNativeMenus?.cancel(key);",
+                arguments:["key":menu.key], in:nil, in:.page) { _ in }
+        })
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = webView
+            let anchor = menu.rect.intersection(webView.bounds)
+            popover.sourceRect = anchor.isNull ? CGRect(x:webView.bounds.midX, y:webView.bounds.midY, width:1, height:1) : anchor
+        }
+        return alert
+    }
+
+    private func presentNativeMenu(_ menu: NativeActionMenu, items: [NativeActionMenu.Item]? = nil, title: String? = nil) {
+        guard origin.matches(webView.url), webView.window != nil else { return }
+        if let current = nativeMenuAlert, current.presentingViewController != nil {
+            current.dismiss(animated:true) { [weak self] in self?.presentNativeMenu(menu, items:items, title:title) }
+            return
+        }
+        guard let presenter = presenter(), !(presenter is UIAlertController) else { return }
+        let alert = nativeMenuSheet(menu, items:items, title:title)
+        nativeMenuAlert = alert
+        presenter.present(alert, animated:true)
+    }
+}
+
+/// Bounded presentation data from the trusted main frame; never URLs or code.
+struct ConversationMenuTarget {
+    enum Kind: String { case conversation, message, artifact }
+    let kind: Kind
+    let key: String
+    let rect: CGRect
+    let receivedAt = ProcessInfo.processInfo.systemUptime
+
+    init?(body: [String: Any], kind: Kind = .conversation) {
+        guard let key = body["key"] as? String, !key.isEmpty, key.utf8.count <= 200,
+              let values = body["rect"] as? [Double], values.count == 4,
+              values.allSatisfy({ $0.isFinite && abs($0) <= 10000 }), values[2] > 0, values[3] > 0 else { return nil }
+        self.key = key
+        self.kind = kind
+        rect = CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+    }
+}
+
+extension WebSession: UIContextMenuInteractionDelegate {
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+        guard origin.matches(webView.url), let target = conversationTarget,
+              ProcessInfo.processInfo.systemUptime - target.receivedAt < 2,
+              target.rect.contains(location) else { return nil }
+        contextMenuPreview = nil
+        return UIContextMenuConfiguration(identifier: target.key as NSString, previewProvider: nil) { [weak self] _ in
+            let deferred = UIDeferredMenuElement.uncached { completion in
+                guard let self, self.origin.matches(self.webView.url) else { completion([]); return }
+                self.webView.callAsyncJavaScript("return kind === 'message' ? window.__kindredMobileMessages?.describe(key) : kind === 'artifact' ? window.__kindredNativeMenus?.describeArtifact(key) : window.__kindredConversationMenu?.describe(key);",
+                    arguments: ["key": target.key, "kind":target.kind.rawValue], in: nil, in: .page) { [weak self] result in
+                    guard let self, self.origin.matches(self.webView.url), case .success(let value) = result,
+                          let object = value as? [String: Any], let items = object["items"] as? [[String: Any]] else { completion([]); return }
+                    completion(self.conversationMenuElements(items, kind: target.kind))
+                }
+            }
+            return UIMenu(children: [deferred])
+        }
+    }
+
+    /// Render fixed menu data with UIKit. Selecting an opaque action ID invokes
+    /// its existing page button, with no general native-execution bridge.
+    func conversationMenuElements(_ items: [[String: Any]], kind: ConversationMenuTarget.Kind = .conversation, depth: Int = 0) -> [UIMenuElement] {
+        guard depth <= 1, items.count <= 20 else { return [] }
+        return items.compactMap { item in
+            guard let title = item["title"] as? String, !title.isEmpty, title.count <= 100 else { return nil }
+            if let children = item["children"] as? [[String: Any]], depth == 0 {
+                return UIMenu(title: title, image: UIImage(systemName: kind == .message ? "face.smiling" : "bell.slash"), children: conversationMenuElements(children, kind: kind, depth: 1))
+            }
+            guard let id = item["id"] as? String, id.utf8.count <= 64, !id.isEmpty else { return nil }
+            let symbol: String?
+            switch title {
+            case "Reply": symbol = "arrowshape.turn.up.left"
+            case "Copy message": symbol = "doc.on.doc"
+            case "Edit queued message": symbol = "pencil"
+            case "Pin", "Pin artifact": symbol = "pin"
+            case "Unpin", "Unpin artifact": symbol = "pin.slash"
+            case "Move to folder": symbol = "folder"
+            case "Details": symbol = "info.circle"
+            case "Edit bot", "Rename": symbol = "pencil"
+            case "Instructions": symbol = "doc.text"
+            case "Memory": symbol = "brain"
+            case "Chat settings": symbol = "gearshape"
+            case "Unmute": symbol = "bell"
+            case "Archive bot", "Archive chat": symbol = "archivebox"
+            default: symbol = nil
+            }
+            var attributes: UIMenuElement.Attributes = []
+            if item["disabled"] as? Bool == true { attributes.insert(.disabled) }
+            if item["destructive"] as? Bool == true { attributes.insert(.destructive) }
+            return UIAction(title: title, image: symbol.flatMap(UIImage.init(systemName:)), attributes:attributes, state: item["selected"] as? Bool == true ? .on : .off) { [weak self] _ in
+                guard let self, self.origin.matches(self.webView.url) else { return }
+                self.webView.callAsyncJavaScript("if (kind === 'message') window.__kindredMobileMessages?.perform(id); else if (kind === 'artifact') window.__kindredNativeMenus?.perform(id); else window.__kindredConversationMenu?.perform(id);",
+                    arguments: ["id": id, "kind":kind.rawValue], in: nil, in: .page) { _ in }
+            }
+        }
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        guard let target = conversationTarget,
+              configuration.identifier as? String == target.key else { return nil }
+        let rect = target.rect.intersection(webView.bounds)
+        guard !rect.isNull, rect.width > 0, rect.height > 0,
+              let snapshot = webView.resizableSnapshotView(from: rect, afterScreenUpdates: false, withCapInsets: .zero) else { return nil }
+        snapshot.frame = CGRect(origin: .zero, size: rect.size)
+        let parameters = UIPreviewParameters()
+        parameters.backgroundColor = presentation.canvas
+        parameters.visiblePath = UIBezierPath(roundedRect: snapshot.bounds, cornerRadius: 12)
+        let preview = UITargetedPreview(view: snapshot, parameters: parameters,
+            target: UIPreviewTarget(container: webView, center: CGPoint(x: rect.midX, y: rect.midY)))
+        contextMenuPreview = preview
+        return preview
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        contextMenuPreview
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                willEndFor configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionAnimating?) {
+        // UIKit may end its animation before the selected page action runs.
+        // Its next describe() replaces old closures; do not clear a pending action.
+        conversationTarget = nil
+        animator?.addCompletion { [weak self] in self?.contextMenuPreview = nil }
+        if animator == nil { contextMenuPreview = nil }
+    }
+}
+
+/// Public appearance preference only; no credentials or page content. Cache the
+/// account's last known theme for cold launch before the server responds.
+struct CachedWebAppearance: Codable {
+    let rgb: [Double]
+    let followsSystem: Bool
+    var isDark: Bool { (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722) < 128 }
+    var color: UIColor { UIColor(red: rgb[0] / 255, green: rgb[1] / 255, blue: rgb[2] / 255, alpha: 1) }
+    private static func location(accountID: UUID) -> URL? {
+        guard let support = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return nil }
+        return support.appendingPathComponent("Kindred/Appearance", isDirectory: true).appendingPathComponent(accountID.uuidString + ".json")
+    }
+    static func load(accountID: UUID) -> Self? {
+        guard let url = location(accountID: accountID), let data = try? Data(contentsOf: url),
+              let saved = try? JSONDecoder().decode(Self.self, from: data), saved.rgb.count == 3,
+              saved.rgb.allSatisfy({ $0.isFinite && (0...255).contains($0) }) else { return nil }
+        return saved
+    }
+    static func clear(accountID: UUID) {
+        if let url = location(accountID: accountID) { try? FileManager.default.removeItem(at: url) }
+    }
+    func save(accountID: UUID) {
+        guard let url = Self.location(accountID: accountID), let data = try? JSONEncoder().encode(self) else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 }

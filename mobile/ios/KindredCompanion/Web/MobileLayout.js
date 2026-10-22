@@ -1,0 +1,1590 @@
+// Native presentation of server actions. Session storage and origin enforcement belong to WebSession.
+(() => {
+  const html = document.documentElement;
+  if (!window.__KINDRED_MOBILE || html.dataset.kindredIos) return;
+  html.dataset.kindredIos = 'true';
+  html.dataset.mobile = 'true';
+  // SVG animation frames cannot change navigation, menus or pane geometry.
+  // Keep them out of native-wide observers while retaining identity changes.
+  const observeUI = callback => new MutationObserver((records, observer) => {
+    const structural = records.filter(record => !record.target.closest?.('.character') ||
+      (record.type === 'attributes' && ['data-shape','data-avatar-body','data-avatar-color'].includes(record.attributeName)));
+    if (structural.length) callback(structural, observer);
+  });
+  // UIKit supplies system text size separately. Respect fixed
+  // page scale in WKWebView so double taps and pinches cannot zoom the shell.
+  // Leave Safari and embedded computer/document content's own gestures alone.
+  const viewport = document.querySelector('meta[name=viewport]') || document.createElement('meta');
+  viewport.name = 'viewport';
+  viewport.content = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content';
+  if (!viewport.isConnected) document.head.append(viewport);
+  const shell = document.querySelector('#app');
+  const header = document.querySelector('.conversation-header');
+  if (!shell || !header) return;
+  // Older deployed servers finish only the outgoing edge animation. Keep the
+  // incoming pane moving too, without replacing their retained Back closure.
+  // New servers own the paired animation and bypass this compatibility layer.
+  let edgeHandler = window.__KINDRED_EDGE_BACK, edgePreview = null;
+  const clearEdgePreview = () => { edgePreview?.animation?.cancel(); edgePreview = null; };
+  const adaptEdgeHandler = handler => {
+    if (typeof handler !== 'function' || window.__KINDRED_MOBILE_NAVIGATION_VERSION >= 2) return handler;
+    return message => {
+      const accepted = handler(message);
+      if (!accepted) return accepted;
+      if (message.phase === 'begin' && shell.classList.contains('ios-edge-preview')) {
+        clearEdgePreview();
+        const target = shell.dataset.edgeTarget;
+        const destination = shell.querySelector(target === 'bot-chat' ? '.conversation' : '.sidebar');
+        if (destination) edgePreview = {id:message.id,destination,width:shell.clientWidth};
+      }
+      if (edgePreview?.id === message.id && ['finish','cancel'].includes(message.phase) && !edgePreview.animation &&
+          html.dataset.motion !== 'off' && !matchMedia('(prefers-reduced-motion:reduce)').matches) {
+        const commit = message.phase === 'finish' && message.commit === true;
+        edgePreview.animation = edgePreview.destination.animate([
+          {transform:getComputedStyle(edgePreview.destination).transform},
+          {transform:`translateX(${commit ? 0 : -edgePreview.width*.3}px)`},
+        ],{duration:commit ? 250 : 200,easing:'ease-out',fill:'forwards'});
+      }
+      return accepted;
+    };
+  };
+  edgeHandler = adaptEdgeHandler(edgeHandler);
+  Object.defineProperty(window,'__KINDRED_EDGE_BACK',{configurable:true,
+    get:() => edgeHandler,set:value => { clearEdgePreview(); edgeHandler = adaptEdgeHandler(value); }});
+  observeUI(() => {
+    if (!shell.classList.contains('ios-edge-preview')) clearEdgePreview();
+  }).observe(shell,{attributes:true,attributeFilter:['class']});
+  // UIKit sizes WKWebView to the keyboard layout guide. Once native geometry
+  // arrives, do not subtract WebKit's transient visualViewport height again.
+  let nativeHeight = 0, nativePortrait, nativeDuo = false;
+  const updateViewport = () => {
+    const height = nativeHeight || window.visualViewport?.height || window.innerHeight;
+    html.style.setProperty('--ios-viewport-height', `${height}px`);
+    html.toggleAttribute('data-ios-short-viewport', height <= 180);
+    requestAnimationFrame(resetRootScroll);
+  };
+  window.visualViewport?.addEventListener('resize', updateViewport);
+  window.addEventListener('resize', updateViewport);
+  const resetRootScroll = () => {
+    // WebKit can scroll the fixed body's overflow-hidden box to reveal focus
+    // even while window.scrollY remains zero. Nested chat/editor scrolling is
+    // intentional; only the two viewport roots are reset.
+    for (const root of [html,document.body]) if (root && (root.scrollTop || root.scrollLeft)) root.scrollTo(0,0);
+    if (window.scrollY || window.scrollX) window.scrollTo(0,0);
+  };
+  window.visualViewport?.addEventListener('scroll',resetRootScroll);
+  window.addEventListener('scroll',resetRootScroll);
+  document.addEventListener('scroll',event => { if (event.target === html || event.target === document.body) resetRootScroll(); },true);
+  document.addEventListener('focusin',() => requestAnimationFrame(resetRootScroll));
+  updateViewport();
+  const compact = matchMedia('(max-width:760px), (max-height:500px)');
+  const menu = document.querySelector('#mobile-menu');
+  const sidebar = shell.querySelector('.sidebar');
+  const conversation = shell.querySelector('.conversation');
+  // An older server may install its message gesture bridge before our bundled
+  // script. Reuse its opaque key/actions, but correct the native preview bounds
+  // after its pointer handler has published the old full-row rectangle.
+  document.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || event.target.closest?.('a,button,input,textarea,select,[contenteditable=true],.message-reactions')) return;
+    const group = event.target.closest?.('#content .message-group[data-message]');
+    if (!group?.querySelector('.message-actions')) return;
+    queueMicrotask(() => {
+      const key = group.dataset.mobileMessageKey;
+      const bubble = group.querySelector('.message-row>:is(.message-bubble,.question-card)');
+      if (!key || !group.isConnected || !bubble?.getClientRects().length) return;
+      const rect = bubble.getBoundingClientRect(), viewport = group.closest('.conversation-history')?.getBoundingClientRect();
+      let left = Math.max(0,rect.left,viewport?.left || 0), right = Math.min(innerWidth,rect.right,viewport?.right ?? innerWidth);
+      let top = Math.max(0,rect.top,viewport?.top || 0), bottom = Math.min(nativeHeight || innerHeight,rect.bottom,viewport?.bottom ?? innerHeight);
+      for (const overlay of document.querySelectorAll('.conversation-header,.bot-heading,#composer-area,.jump-latest')) {
+        if (!overlay.getClientRects().length || getComputedStyle(overlay).visibility === 'hidden') continue;
+        const box = overlay.getBoundingClientRect();
+        if (box.right <= left || box.left >= right || box.bottom <= top || box.top >= bottom) continue;
+        if (overlay.matches('.conversation-header,.bot-heading')) top = Math.max(top,box.bottom);
+        else if (overlay.matches('.jump-latest') && event.clientY >= box.bottom) top = Math.max(top,box.bottom);
+        else bottom = Math.min(bottom,box.top);
+      }
+      window.webkit?.messageHandlers?.kindredAccounts?.postMessage(right > left && bottom > top
+        ? {action:'message-target',key,rect:[left,top,right-left,bottom-top]}
+        : {action:'message-target-clear'});
+    });
+  },true);
+  const statusBlur = document.createElement('div');
+  statusBlur.id = 'ios-status-blur'; statusBlur.setAttribute('aria-hidden','true');
+  document.body.append(statusBlur);
+  // Older servers request browser permission when notification preferences
+  // change. Keep their preference save, but route device setup to the app and
+  // replace the browser-only failure before it can paint.
+  const notificationMessage = () => window.__KINDRED_IOS_PUSH_AVAILABLE
+    ? 'Manage iPhone notifications in Accounts.'
+    : 'Background notifications require Apple Developer Program push signing. This free Personal Team build cannot receive them.';
+  document.addEventListener('change', event => {
+    const control = event.target;
+    const label = control.closest?.('label,.setting-row');
+    const title = control.getAttribute?.('aria-label') || label?.querySelector('.setting-label,span')?.textContent.trim();
+    if (title !== 'Notifications' || (control.type === 'checkbox' ? !control.checked : control.value === 'none')) return;
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'notification-settings'});
+  },true);
+  const notice = document.querySelector('#notice');
+  if (notice) observeUI(() => {
+    if (notice.textContent === 'This browser does not support notifications. Use the desktop app.' ||
+        notice.textContent === 'Notifications are blocked in your browser settings.') notice.textContent = notificationMessage();
+  }).observe(notice,{childList:true,characterData:true,subtree:true});
+
+  // Stop is a deliberate second tap on iOS, never a permanent hover action.
+  const workerSelector = '.work-line,.group-working-row';
+  let revealedStopRun = null;
+  const collapseStops = except => {
+    revealedStopRun = except?.querySelector('.work-stop')?.dataset.run || null;
+    adaptStops();
+  };
+  function adaptStops() {
+    for (const stop of document.querySelectorAll('.work-stop')) {
+      const row = stop.closest(workerSelector), label = row?.querySelector('.work-label,.group-working-label');
+      const revealed = !!revealedStopRun && stop.dataset.run === revealedStopRun;
+      row?.classList.toggle('ios-stop-revealed',revealed);
+      stop.tabIndex = revealed ? 0 : -1;
+      stop.setAttribute('aria-hidden', String(!revealed));
+      if (label) { label.tabIndex = 0; label.setAttribute('role','button'); label.setAttribute('aria-expanded',String(!!revealed)); }
+    }
+  }
+  let statusPress, handledStatusClick = false;
+  document.addEventListener('pointerdown', event => {
+    handledStatusClick = false;
+    const stop = event.target.closest?.(workerSelector)?.querySelector('.work-stop');
+    statusPress = stop && !event.target.closest('.work-stop')
+      ? {run:stop.dataset.run,x:event.clientX,y:event.clientY,pointer:event.pointerId} : null;
+  },true);
+  document.addEventListener('pointercancel', () => { statusPress = null; },true);
+  document.addEventListener('pointerup', event => {
+    const press = statusPress; statusPress = null;
+    if (!press || press.pointer !== event.pointerId || Math.hypot(event.clientX-press.x,event.clientY-press.y)>8) return;
+    // Blurring the composer can replace the status DOM between down and up.
+    // Carry the task ID through that change instead of losing the first tap.
+    revealedStopRun = revealedStopRun === press.run ? null : press.run;
+    adaptStops(); handledStatusClick = true;
+  },true);
+  document.addEventListener('click', event => {
+    const row = event.target.closest?.(workerSelector);
+    if (event.target.closest?.('.work-stop')) return;
+    if (handledStatusClick) { handledStatusClick = false; event.preventDefault(); event.stopImmediatePropagation(); return; }
+    if (row?.querySelector('.work-stop')) {
+      const show = row.querySelector('.work-stop').dataset.run !== revealedStopRun;
+      collapseStops(show ? row : null);
+      event.preventDefault(); event.stopImmediatePropagation();
+    } else collapseStops();
+  },true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') collapseStops();
+    if (!['Enter',' '].includes(event.key) || !event.target.matches?.('.work-label,.group-working-label')) return;
+    event.preventDefault(); event.stopImmediatePropagation(); event.target.click();
+  },true);
+  const messages = document.querySelector('.messages');
+  if (messages) observeUI(adaptStops).observe(messages,{childList:true,subtree:true});
+  adaptStops();
+  // Editing message/artifact source is a desktop workflow. Preserve reply,
+  // copy, reactions, previews and metadata controls in the iOS app.
+  const desktopEditControl = '[data-message-action="edit"],.artifact-workbench-actions button[aria-label^="Edit "],.artifact-workbench-actions button[aria-label="Finish editing"],.workspace-artifact-actions>button:first-child';
+  document.addEventListener('click', event => {
+    const action = event.target.closest?.('button');
+    const teaching = action?.id === 'teach-task' || (action?.closest('#composer-menu') && action.textContent.trim() === 'Teach a task');
+    if (!teaching && !event.target.closest?.(desktopEditControl)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+  }, true);
+  if (window.__kindredMobileMessages) {
+    const describe = window.__kindredMobileMessages.describe;
+    window.__kindredMobileMessages.describe = key => {
+      const model = describe(key);
+      return model ? {...model,items:model.items.filter(item => item.title !== 'Edit queued message')} : model;
+    };
+  }
+  // UIKit owns conversation context menus. Preserve the server's action
+  // closures so permissions, current pin state and mute choices stay authoritative.
+  const rowSelector = '.sidebar .nav-entry, .sidebar .pinned-entry';
+  const nativeActions = new Map();
+  let menuGeneration = 0;
+  const rowKey = row => {
+    const control = row?.querySelector('[data-sidebar-id]');
+    return control ? `${control.dataset.sidebarKind}:${control.dataset.sidebarId}` : null;
+  };
+  document.addEventListener('pointerdown', event => {
+    const row = event.target.closest?.(rowSelector);
+    if (!row || sidebar?.inert || event.button !== 0) return;
+    const rect = row.getBoundingClientRect();
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'conversation-target',
+      key:rowKey(row),rect:[rect.x,rect.y,rect.width,rect.height]});
+    // Desktop pin drag captures the pointer and disables horizontal scrolling.
+    // On iOS the same press belongs to the native menu, including pinned cards.
+    if (row.matches('.pinned-entry')) event.stopImmediatePropagation();
+  },true);
+  document.addEventListener('contextmenu', event => {
+    if (!event.target.closest?.(rowSelector)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+  },true);
+  document.addEventListener('scroll', () => {
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'conversation-target-clear'});
+  },true);
+  window.__kindredConversationMenu = {
+    describe(key) {
+      nativeActions.clear();
+      const row = [...document.querySelectorAll(rowSelector)].find(row => rowKey(row) === key);
+      if (!row || sidebar?.inert || !row.getClientRects().length) return null;
+      row.querySelector('.nav-more')?.click();
+      const menu = document.querySelector('body > .chat-context-menu');
+      if (!menu) return null;
+      const generation = ++menuGeneration;
+      const leaf = button => {
+        const id = `${generation}-${nativeActions.size}`;
+        nativeActions.set(id, {key,button});
+        return {title:button.textContent.trim(),id};
+      };
+      const items = [...menu.children].filter(child => child.matches('button')).map(button => {
+        if (button.getAttribute('aria-haspopup') !== 'menu') return leaf(button);
+        button.click(); // Creates the submenu; never invokes a conversation action.
+        const submenu = [...menu.querySelectorAll('.conversation-submenu')].find(sub => sub._trigger === button);
+        return {title:button.textContent.trim(),children:[...submenu?.querySelectorAll('button') || []].map(leaf)};
+      });
+      menu.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+      return {items};
+    },
+    perform(id) {
+      const action = nativeActions.get(id);
+      nativeActions.clear();
+      if (action && [...document.querySelectorAll(rowSelector)].some(row => rowKey(row) === action.key)) action.button.click();
+    },
+  };
+  const icon = path => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+  const adaptPreviews = () => {
+    for (const dialog of document.querySelectorAll('.document-dialog,.workspace-artifact-dialog,.screenshot-dialog,.chat-media-dialog')) {
+      if (dialog.dataset.iosPreview) continue;
+      let head = dialog.querySelector('.document-header,.dialog-header,.chat-media-heading');
+      let close = head?.querySelector('button:last-child');
+      if (dialog.matches('.workspace-artifact-dialog')) {
+        close = dialog.querySelector(':scope > button');
+        if (!close) continue;
+        head = document.createElement('header'); head.className = 'ios-preview-header';
+        const title = document.createElement('strong');
+        title.textContent = dialog.querySelector('.workspace-artifact-header strong')?.textContent || 'Artifact preview';
+        dialog.prepend(head); head.append(title,close);
+      }
+      if (!head || !close) continue;
+      dialog.dataset.iosPreview = 'true';
+      close.setAttribute('aria-label','Close preview'); close.title = 'Close preview';
+      close.innerHTML = icon('<path d="m6 6 12 12M18 6 6 18"/>');
+      if (dialog.matches('.document-dialog')) {
+        for (const action of head.querySelectorAll('button,a')) {
+          if (action !== close) action.classList.add('ios-preview-download');
+        }
+      }
+    }
+  };
+  observeUI(adaptPreviews).observe(document.body,{childList:true,subtree:true});
+  adaptPreviews();
+  // Artifacts retain the server's editor/save closures, but navigate as two
+  // pages on iOS. Returning to the list never destroys an in-progress editor.
+  const artifactPages = new Map();
+  const artifactRouteEvent = 'kindred-ios-artifact-route';
+  for (const method of ['pushState', 'replaceState']) {
+    const original = history[method];
+    history[method] = function (...args) {
+      // open() reports the route both before and after fetching. A late fetch
+      // must not pull someone back into a document they just left for the list.
+      const path = args[2] == null ? null : new URL(String(args[2]), location.href).pathname;
+      if (path && location.pathname === '/artifacts' && [...artifactPages.values()].some(page => page.ignoredRoute === path)) return;
+      const result = Reflect.apply(original, this, args);
+      window.dispatchEvent(new Event(artifactRouteEvent));
+      return result;
+    };
+  }
+  const artifactDocumentRoute = () => /^\/artifacts\/[^/]+\/?$/.test(location.pathname) || new URLSearchParams(location.hash.slice(1)).has('artifact');
+  const artifactButton = (label, path) => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'icon-button ios-artifact-button';
+    button.setAttribute('aria-label', label); button.title = label;
+    button.innerHTML = icon(path);
+    return button;
+  };
+  const mountArtifacts = root => {
+    if (artifactPages.has(root)) return;
+    const library = root.querySelector('.artifact-studio-library');
+    const workbench = root.querySelector('.artifact-workbench');
+    const toolbar = root.querySelector('.artifact-workbench-header');
+    const input = root.querySelector('.artifact-studio-library-search');
+    const create = root.querySelector('.artifact-add');
+    const brand = root.querySelector('.artifact-studio-library-brand');
+    if (!library || !workbench || !toolbar || !input || !create || !brand) return;
+    const nav = document.createElement('header'); nav.className = 'ios-artifact-navigation';
+    const chats = artifactButton('Back to chats', '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9 9 0 0 1-4-.9L3 21l1.9-5a9 9 0 0 1-.9-4 8.4 8.4 0 0 1 8.5-9H13a8.4 8.4 0 0 1 8 8z"/>');
+    chats.onclick = () => brand.click(); // Includes the server's unsaved-edit guard.
+    const find = artifactButton('Search artifacts', '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>');
+    find.setAttribute('aria-expanded', 'false');
+    find.onclick = () => {
+      const searching = library.classList.toggle('ios-artifact-searching');
+      find.setAttribute('aria-expanded', String(searching));
+      if (searching) input.focus();
+      else { input.value = ''; input.dispatchEvent(new Event('input', {bubbles:true})); }
+    };
+    create.classList.add('ios-artifact-button');
+    create.innerHTML = icon('<path d="M12 5v14M5 12h14"/>');
+    nav.append(chats, find, create);
+    // Keep the existing type chooser and its action closures next to +.
+    const addMenu = root.querySelector('.artifact-add-menu');
+    if (addMenu) nav.append(addMenu);
+    library.prepend(nav);
+    const back = artifactButton('Back to artifacts', '<path d="m14 5-7 7 7 7"/>');
+    const page = {ignoredRoute:null, show:null, dispose:null};
+    const show = documentView => {
+      root.dataset.iosArtifactView = documentView ? 'document' : 'list';
+      library.inert = documentView; workbench.inert = !documentView;
+    };
+    back.onclick = () => {
+      page.ignoredRoute = location.pathname;
+      history.pushState({}, '', '/artifacts');
+      show(false);
+      library.querySelector('.artifact-studio-library-item.selected')?.focus({preventScroll:true});
+    };
+    // The server rebuilds the document toolbar when refreshing a preview.
+    const placeBack = () => { if (back.parentElement !== toolbar) toolbar.prepend(back); };
+    const toolbarObserver = observeUI(placeBack);
+    toolbarObserver.observe(toolbar, {childList:true}); placeBack();
+    library.addEventListener('click', event => {
+      const row = event.target.closest('.artifact-studio-library-item');
+      if (!row || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      page.ignoredRoute = null;
+      if (row.getAttribute('aria-current') !== 'page') return;
+      // Reopening the selected document retains its current preview.
+      event.preventDefault(); event.stopImmediatePropagation();
+      history.pushState({}, '', '/artifacts/' + encodeURIComponent(row.dataset.artifactId));
+      show(true);
+    }, true);
+    page.show = show; page.dispose = () => toolbarObserver.disconnect();
+    artifactPages.set(root, page);
+    show(artifactDocumentRoute());
+  };
+  const syncArtifacts = () => {
+    for (const [root, page] of artifactPages) {
+      if (!root.isConnected) { page.dispose(); artifactPages.delete(root); }
+    }
+    shell.querySelectorAll('.artifact-studio').forEach(mountArtifacts);
+  };
+  observeUI(syncArtifacts).observe(shell, {childList:true});
+  const syncArtifactPage = () => {
+    for (const page of artifactPages.values()) page.show(artifactDocumentRoute());
+  };
+  window.addEventListener(artifactRouteEvent, syncArtifactPage);
+  window.addEventListener('popstate', syncArtifactPage);
+  window.addEventListener('hashchange', syncArtifactPage);
+  syncArtifacts();
+  if (menu) {
+    menu.innerHTML = icon('<path d="m14 5-7 7 7 7"/>');
+    menu.setAttribute('aria-label', 'Back to conversations');
+    menu.title = 'Conversations';
+  }
+  const accounts = document.createElement('button');
+  accounts.id = 'ios-accounts';
+  accounts.type = 'button';
+  accounts.className = 'icon-button';
+  accounts.setAttribute('aria-label', 'Profile and settings');
+  accounts.title = 'Profile and settings';
+  accounts.textContent = 'You';
+  accounts.setAttribute('aria-haspopup','menu');
+  accounts.setAttribute('aria-expanded','false');
+  const top = sidebar?.querySelector('.sidebar-top');
+  top?.prepend(accounts);
+  const more = document.createElement('button');
+  more.id = 'ios-library-more';
+  more.type = 'button';
+  more.className = 'icon-button';
+  more.setAttribute('aria-label', 'More');
+  more.setAttribute('aria-haspopup', 'menu');
+  more.setAttribute('aria-controls', 'ios-library-menu');
+  more.setAttribute('aria-expanded', 'false');
+  more.innerHTML = icon('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>');
+  more.hidden = true;
+  accounts.after(more);
+  const libraryMenu = document.createElement('div');
+  libraryMenu.id = 'ios-library-menu';
+  libraryMenu.setAttribute('popover', 'auto');
+  libraryMenu.setAttribute('role', 'menu');
+  libraryMenu.setAttribute('aria-label', 'Profile');
+  // Keep the original navigation entries in place: the Artifacts workspace
+  // reuses its entry as the return-to-Chats action while it is open.
+  for (const [id, label, path] of [
+    ['settings-button', 'Settings', '<circle cx="12" cy="12" r="8"/>'],
+    ['artifacts-button', 'Artifacts', '<path d="M3 7h7l2 2h9v11H3z"/>'],
+    ['marketplace-button', 'Marketplace', '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM17 14v6M14 17h6"/>'],
+  ]) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.setAttribute('role', 'menuitem');
+    item.innerHTML = icon(path);
+    const text = document.createElement('span');
+    text.textContent = label;
+    item.append(text);
+    item.onclick = () => {
+      libraryMenu.hidePopover();
+      document.getElementById(id)?.click();
+    };
+    libraryMenu.append(item);
+  }
+  const manageAccounts=document.createElement('button');
+  manageAccounts.type='button';manageAccounts.setAttribute('role','menuitem');manageAccounts.textContent='Manage accounts';
+  manageAccounts.onclick=()=>{libraryMenu.hidePopover();window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'open'});};
+  libraryMenu.append(manageAccounts);
+  sidebar?.append(libraryMenu);
+  const positionLibraryMenu = () => {
+    if (!libraryMenu.matches(':popover-open')) return;
+    const anchor = accounts.getBoundingClientRect();
+    libraryMenu.style.left = `${Math.max(12, Math.min(anchor.left, innerWidth - libraryMenu.offsetWidth - 12))}px`;
+    libraryMenu.style.top = `${anchor.bottom + 8}px`;
+  };
+  accounts.onclick = more.onclick = () => {
+    libraryMenu.togglePopover();
+    positionLibraryMenu();
+  };
+  libraryMenu.addEventListener('toggle', event => accounts.setAttribute('aria-expanded', String(event.newState === 'open')));
+  libraryMenu.addEventListener('keydown', event => {
+    const items = [...libraryMenu.querySelectorAll('button')];
+    const index = items.indexOf(document.activeElement);
+    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[next].focus();
+    }
+  });
+  more.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      libraryMenu.showPopover();
+      positionLibraryMenu();
+      libraryMenu.querySelector('button')?.focus();
+    }
+  });
+  window.addEventListener('resize', positionLibraryMenu);
+  const search = document.createElement('button');
+  search.id = 'ios-search';
+  search.type = 'button';
+  search.className = 'icon-button';
+  search.setAttribute('aria-label', 'Search conversations');
+  search.setAttribute('aria-expanded', 'false');
+  search.innerHTML = icon('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>');
+  top?.insertBefore(search, document.querySelector('#new-bot'));
+  search.onclick = () => {
+    const palette = document.querySelector('#search-trigger');
+    if (palette) { palette.click(); return; }
+    sidebar.classList.toggle('ios-searching');
+    search.setAttribute('aria-expanded', String(sidebar.classList.contains('ios-searching')));
+    if (sidebar.classList.contains('ios-searching')) document.querySelector('#search')?.focus();
+    else {
+      const input = document.querySelector('#search');
+      if (input) { input.value = ''; input.dispatchEvent(new Event('input', {bubbles:true})); }
+    }
+  };
+  const settings = document.querySelector('#settings-dialog');
+  const settingsHeader = document.createElement('div');
+  settingsHeader.className = 'ios-settings-header';
+  const settingsClose = document.createElement('button');
+  settingsClose.type = 'button';
+  settingsClose.className = 'icon-button';
+  settingsClose.setAttribute('aria-label', 'Close settings sheet');
+  settingsClose.innerHTML = icon('<path d="m6 6 12 12M18 6 6 18"/>');
+  settingsClose.onclick = () => document.querySelector('#settings-close')?.click();
+  const accountEntry = document.createElement('button');
+  accountEntry.id = 'ios-settings-account';
+  accountEntry.type = 'button';
+  accountEntry.setAttribute('aria-label', 'Manage accounts');
+  const accountInitial = document.createElement('span');
+  accountInitial.className = 'ios-account-initial';
+  const accountCopy = document.createElement('span');
+  accountCopy.className = 'ios-account-copy';
+  const accountName = document.createElement('strong');
+  const accountCaption = document.createElement('span');
+  accountCaption.textContent = 'Accounts and servers';
+  accountCopy.append(accountName, accountCaption);
+  const accountChevron = document.createElement('span');
+  accountChevron.innerHTML = icon('<path d="m9 5 7 7-7 7"/>');
+  accountEntry.append(accountInitial, accountCopy, accountChevron);
+  accountEntry.onclick = () => window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'open'});
+  settingsHeader.append(settingsClose, accountEntry);
+  settings?.prepend(settingsHeader);
+  if (settings) {
+    const closeImmediately = settings.close.bind(settings);
+    let exit = null, exitTimer;
+    settings.close = returnValue => {
+      if (!settings.open || exit) return;
+      if (html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches) {
+        closeImmediately(returnValue); return;
+      }
+      settings.inert = true;
+      settings.dataset.iosSheetClosing = 'true';
+      const animation = settings.animate([{transform:getComputedStyle(settings).transform},{transform:'translateY(100%)'}],
+        {duration:240,easing:'cubic-bezier(.4,0,.8,.2)',fill:'forwards'});
+      exit = animation;
+      const finish = () => {
+        if (exit !== animation) return;
+        exit = null; clearTimeout(exitTimer);
+        // Remove the modal before releasing the held end pose.
+        closeImmediately(returnValue);
+        animation.cancel(); settings.inert = false;
+        delete settings.dataset.iosSheetClosing;
+      };
+      animation.finished.then(finish,finish);
+      // WebKit animation suspension must never leave an invisible modal.
+      exitTimer = setTimeout(finish,600);
+    };
+    settings.addEventListener('cancel',event => { event.preventDefault(); settings.close(); });
+  }
+  // The sheet is a destination from the list; dismissing it returns there.
+  // A downward pull at the top dismisses it without interfering with content scrolling.
+  let sheetPull;
+  settingsHeader.addEventListener('touchstart', event => { sheetPull = event.touches[0]?.clientY; }, {passive:true});
+  settingsHeader.addEventListener('touchend', event => {
+    if (sheetPull !== undefined && event.changedTouches[0]?.clientY - sheetPull > 80) settingsClose.click();
+    sheetPull = undefined;
+  }, {passive:true});
+  const avatar = document.querySelector('#user-avatar');
+  const updateAccount = () => {
+    const initial = avatar?.textContent.trim() || 'You';
+    accounts.textContent = initial;
+    accountInitial.textContent = initial;
+    accountName.textContent = document.querySelector('#identity-name')?.textContent.trim() || 'Your account';
+  };
+  if (avatar) observeUI(updateAccount).observe(avatar, {subtree:true, childList:true, characterData:true});
+  const identityName = document.querySelector('#identity-name');
+  if (identityName) observeUI(updateAccount).observe(identityName, {subtree:true, childList:true, characterData:true});
+  updateAccount();
+  const computer = document.querySelector('#computer-panel');
+  // Keep pause reminders in one compact place above the composer. Reuse the
+  // server's return buttons so bot identity, pause IDs and errors stay intact.
+  const controlNotice = document.querySelector('#control-notice');
+  const queueStatus = document.querySelector('#queue-status');
+  const composerHost = document.querySelector('#composer-area');
+  if (controlNotice && queueStatus && composerHost) {
+    composerHost.prepend(controlNotice);
+    const returnIcon = icon('<path d="m10 5-7 7 7 7"/><path d="M3 12h12a6 6 0 0 1 6 6"/>');
+    const adaptControlNotice = () => {
+      const queueAction = queueStatus.querySelector('button');
+      queueStatus.classList.toggle('ios-control-paused', !!queueAction);
+      const botID = queueStatus.dataset.controlBotId;
+      // Older servers omit IDs. Ignore the heading's primary-bot badge when
+      // matching their text-only return action.
+      const headingName = [...(document.querySelector('#heading')?.childNodes || [])]
+        .filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent).join('').trim();
+      const duplicate = queueAction && !controlNotice.hidden && [...controlNotice.querySelectorAll('.control-notice-row button')]
+        .some(action => botID && action.closest('.control-notice-row').dataset.controlBotId
+          ? action.closest('.control-notice-row').dataset.controlBotId === botID
+          : action.getAttribute('aria-label') === queueAction.getAttribute('aria-label') ||
+            action.getAttribute('aria-label') === 'Return control to ' + headingName);
+      queueStatus.classList.toggle('ios-control-duplicate', !!duplicate);
+      if (queueAction) {
+        if (!queueAction.hasAttribute('aria-label')) queueAction.setAttribute('aria-label', 'Return control');
+        let copy = queueStatus.querySelector('.ios-control-copy');
+        if (!copy) { copy = document.createElement('span'); copy.className = 'ios-control-copy'; queueStatus.prepend(copy); }
+        const queued = [...queueStatus.children].find(child => child.matches('span:not(.ios-control-copy)'))?.textContent.match(/^\d+ messages? queued/);
+        const label = 'Computer paused' + (queued ? ' · ' + queued[0] : '');
+        if (copy.textContent !== label) copy.textContent = label;
+      } else queueStatus.querySelector('.ios-control-copy')?.remove();
+      for (const action of [...controlNotice.querySelectorAll('.control-notice-row button'), ...(queueAction ? [queueAction] : [])]) {
+        if (!action.querySelector('svg')) action.insertAdjacentHTML('beforeend', returnIcon);
+      }
+    };
+    const pauseObserver = observeUI(adaptControlNotice);
+    for (const source of [controlNotice,queueStatus]) pauseObserver.observe(source,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['hidden','data-control-bot-id']});
+    adaptControlNotice();
+  }
+  if (computer) {
+    let resumeScreen = null;
+    // The server attaches desktop's click-to-expand listener to this host.
+    // Replace that host before opening a VNC connection; its content survives,
+    // and future RFB instances attach to the new #desktop. Canvas listeners
+    // belong to noVNC and are left intact.
+    const detachDesktopExpansion = () => {
+      const oldDesktop = computer.querySelector('#desktop');
+      if (!oldDesktop) return;
+      const desktop = oldDesktop.cloneNode(false);
+      desktop.append(...oldDesktop.childNodes); oldDesktop.replaceWith(desktop);
+    };
+    if (computer.hidden) detachDesktopExpansion();
+    document.addEventListener('click', event => {
+      if (computer.hidden && event.target.closest?.('#show-computer')) detachDesktopExpansion();
+    },true);
+    document.addEventListener('pointerdown', event => {
+      if (!event.target.closest?.('#desktop') || computer.classList.contains('is-controlling')) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+    },true);
+    const back = document.createElement('button');
+    back.id = 'ios-computer-back';
+    back.className = 'icon-button';
+    back.type = 'button';
+    back.setAttribute('aria-label', 'Back to chat');
+    back.innerHTML = icon('<path d="m14 5-7 7 7 7"/>');
+    back.onclick = () => document.querySelector('#computer-close')?.click();
+    computer.querySelector('.panel-header')?.prepend(back);
+    const controls = document.createElement('section');
+    controls.className = 'ios-computer-controls';
+    controls.setAttribute('aria-label', 'Computer controls and resources');
+    for (const child of [...computer.children]) {
+      if (!child.matches('.panel-header, #desktop, .bot-center-heading, .ios-duo-resizer, .ios-computer-edge')) controls.append(child);
+    }
+    computer.append(controls);
+    const toolbar = controls.querySelector('.desktop-toolbar');
+    const paste = document.querySelector('#desktop-paste');
+    if (paste && toolbar) {
+      paste.setAttribute('aria-label','Paste'); paste.title = 'Paste';
+      toolbar.prepend(paste);
+    }
+    // A remote canvas cannot advertise its text fields to iOS. Keep a real
+    // native text input focused while forwarding text to noVNC's keyboard.
+    const input = document.createElement('textarea');
+    input.id = 'ios-computer-input'; input.setAttribute('aria-label', 'Type on bot computer');
+    input.autocapitalize = 'off'; input.autocomplete = 'off'; input.spellcheck = false;
+    input.setAttribute('autocorrect', 'off'); input.tabIndex = -1;
+    computer.append(input);
+    const sentinel = '\u200b';
+    const resetInput = () => { input.value = sentinel; input.setSelectionRange(1,1); };
+    let composing = false;
+    const canvas = () => computer.classList.contains('is-controlling') && !computer.hidden
+      ? computer.querySelector('.desktop-canvas canvas') : null;
+    // Keep the keyboard's geometry steady until the action click completes.
+    // Blurring this input on pointer-down otherwise moves Return control out
+    // from under the user's finger before pointer-up can activate it.
+    let controlPress = null, completedControlTap = null;
+    toolbar?.addEventListener('pointerdown',event => {
+      controlPress = null;
+      const button = event.target.closest('#desktop-paste,#take-control,#done-subtask');
+      if (!event.isPrimary || event.button !== 0 || !canvas() || !button || button.disabled) return;
+      event.preventDefault();
+      if (event.pointerType === 'touch') controlPress = {button,id:event.pointerId,x:event.clientX,y:event.clientY};
+    });
+    toolbar?.addEventListener('pointercancel',() => { controlPress = null; });
+    toolbar?.addEventListener('pointerup',event => {
+      const press = controlPress; controlPress = null;
+      if (!press || !canvas() || shell.dataset.mobileResizing === 'true' || press.id !== event.pointerId || !press.button.isConnected || press.button.disabled ||
+          event.target.closest('button') !== press.button || Math.hypot(event.clientX-press.x,event.clientY-press.y) > 8) return;
+      // WKWebView suppresses its compatibility click after a prevented touch
+      // pointer-down. Activate once on release without dismissing the keyboard.
+      event.preventDefault();
+      completedControlTap = {button:press.button,at:performance.now()};
+      press.button.click();
+    });
+    toolbar?.addEventListener('click',event => {
+      if (event.isTrusted && event.detail > 0 && completedControlTap?.button === event.target.closest('button') &&
+          performance.now()-completedControlTap.at < 600) {
+        completedControlTap = null; event.preventDefault(); event.stopImmediatePropagation();
+      }
+    },true);
+    window.addEventListener('kindred-native-geometry',() => { controlPress = null; });
+    const sendKey = (type, key, code = 'Unidentified', modifiers = {}) => {
+      canvas()?.dispatchEvent(new KeyboardEvent(type, {key,code,bubbles:true,cancelable:true,...modifiers}));
+    };
+    const sendText = () => {
+      for (const character of input.value.replace(sentinel,'')) {
+        sendKey('keydown', character === '\n' ? 'Enter' : character);
+      }
+      resetInput();
+    };
+    input.addEventListener('compositionstart', () => { composing = true; });
+    input.addEventListener('compositionend', () => { composing = false; sendText(); });
+    input.addEventListener('input', () => { if (!composing) sendText(); });
+    input.addEventListener('beforeinput', event => {
+      if (!composing && event.inputType.startsWith('delete')) {
+        event.preventDefault(); sendKey('keydown','Backspace'); resetInput();
+      }
+    });
+    input.addEventListener('keydown', event => {
+      if (event.isComposing || event.key === 'Unidentified' || event.key === 'Process') return;
+      if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) return;
+      event.preventDefault(); event.stopPropagation();
+      sendKey('keydown',event.key,event.code,{ctrlKey:event.ctrlKey,altKey:event.altKey,metaKey:event.metaKey,shiftKey:event.shiftKey});
+    });
+    input.addEventListener('keyup', event => {
+      if (event.isComposing) return;
+      sendKey('keyup',event.key,event.code); event.stopPropagation();
+    });
+    const keyboardState = () => {
+      const active = document.activeElement === input;
+      computer.classList.toggle('ios-keyboard-active',active);
+    };
+    let restoringFocus = false;
+    input.addEventListener('focus',keyboardState);
+    input.addEventListener('blur',() => {
+      keyboardState();
+      if (!restoringFocus && canvas()) window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'computer-keyboard'});
+    });
+    let awaitingControl = false, controlTimeout, hadControl = false, inputWanted = false;
+    const portrait = () => html.dataset.iosDuoInner === 'true' || (nativePortrait ?? (window.innerHeight >= window.innerWidth));
+    window.__kindredComputerInput = {
+      focus(force = false) {
+        if (!canvas() || !portrait()) return;
+        // A fold can resize the computer behind a sheet or a second editor.
+        // Keep that editor's keyboard and caret instead of stealing focus.
+        if (document.querySelector('dialog[open]') ||
+            (document.activeElement !== input && document.activeElement?.matches('input,textarea,select,[contenteditable=true]'))) return;
+        restoringFocus = true;
+        if (force) input.blur();
+        input.focus({preventScroll:true}); restoringFocus = false;
+      }
+    };
+    // Focus during the user's tap, before the asynchronous takeover request;
+    // iOS won't summon its keyboard from a later network callback alone.
+    document.querySelector('#take-control')?.addEventListener('click', event => {
+      if (event.currentTarget.disabled) return;
+      clearTimeout(controlTimeout);
+      if (canvas()) { awaitingControl = false; return; }
+      awaitingControl = true; resetInput();
+      updateControl();
+      controlTimeout = setTimeout(() => { awaitingControl = false; updateControl(); },35000);
+    },true);
+    document.addEventListener('click', event => {
+      if (!event.target.closest?.('#computer-close')) return;
+      resumeScreen = canvas() ? document.querySelector('#screen-picker')?.value : null;
+    },true);
+    // Remote clicks may focus the canvas; restore native entry after the click.
+    let restoreKeyboard = false;
+    computer.addEventListener('pointerdown', event => {
+      if (event.target.matches('.desktop-canvas canvas')) restoreKeyboard = computer.classList.contains('ios-keyboard-active');
+    },true);
+    computer.addEventListener('pointerup', event => {
+      if (event.target.matches('.desktop-canvas canvas') && restoreKeyboard && canvas()) window.__kindredComputerInput.focus();
+      restoreKeyboard = false;
+    });
+    let paneWasHidden = computer.hidden;
+    const updateControl = () => {
+      // Other server actions can open the pane too. The connection awaits its
+      // endpoint before constructing RFB, so clear legacy host listeners at
+      // the hidden->visible transition, before the live canvas is attached.
+      if (paneWasHidden && !computer.hidden) detachDesktopExpansion();
+      paneWasHidden = computer.hidden;
+      const controlling = !!canvas();
+      if (controlling) {
+        awaitingControl = false; clearTimeout(controlTimeout);
+        if (!hadControl) {
+          resetInput(); window.__kindredComputerInput.focus();
+          window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'computer-keyboard'});
+        }
+      } else if ((!awaitingControl || computer.hidden) && document.activeElement === input) {
+        awaitingControl = false; clearTimeout(controlTimeout); input.blur();
+      }
+      const wanted = !computer.hidden && (controlling || awaitingControl);
+      if (wanted !== inputWanted) {
+        inputWanted = wanted;
+        window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'computer-input',enabled:wanted});
+      }
+      hadControl = controlling;
+      if (!computer.hidden && resumeScreen) {
+        const choice = document.querySelector('#screen-picker')?.value;
+        const action = document.querySelector('#take-control');
+        const label = action?.getAttribute('aria-label');
+        if (choice !== resumeScreen) resumeScreen = null;
+        else if (!action.disabled && label === 'Use screen') {
+          // Resume only the screen we left under manual control. "Use screen"
+          // reattaches its existing lease; it never interrupts a new bot task.
+          resumeScreen = null; action.click();
+        } else if (!action.disabled && /^(Take control|Stop task & take control)$/.test(label)) resumeScreen = null;
+      }
+      const screen = computer.querySelector('.desktop-canvas canvas');
+      if (screen?.width > 0 && screen?.height > 0) computer.style.setProperty('--ios-screen-ratio',screen.width / screen.height);
+    };
+    observeUI(updateControl).observe(computer,{attributes:true,attributeFilter:['class','hidden','width','height'],childList:true,subtree:true});
+    updateControl();
+  }
+  // The shared phone UI suppresses expansion for every iOS client. Native
+  // geometry distinguishes an open inner display or tablet from a slab.
+  document.querySelector('#computer-expand')?.addEventListener('click', event => {
+    if (!computer || html.dataset.iosSlab !== 'false' ||
+        (nativeDuo && html.dataset.iosDuoInner !== 'true')) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    const expanded = !computer.classList.contains('expanded');
+    computer.classList.toggle('expanded',expanded);
+    const button = event.currentTarget;
+    button.setAttribute('aria-label',expanded ? 'Collapse computer' : 'Expand computer');
+    button.title = expanded ? 'Collapse computer' : 'Expand computer';
+    button.innerHTML = icon(expanded
+      ? '<path d="m7 6 6 6-6 6m6-12 6 6-6 6"/>'
+      : '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>');
+  },true);
+  // Keep the installed app's sidebar independent of older server fold widths.
+  // Each account already has an isolated WebKit store; profile IDs scope its
+  // preference further when that account switches profiles.
+  const nativeSidebarKey = 'kindred-ios-sidebar-v1:' + (window.__KINDRED_MOBILE_PROFILE || '');
+  let nativeSidebarWidth = 210, nativeComputerWidth = 240, nativeSidebarHidden = false, nativeSidebarDrag = null, nativeSidebarStamp = '';
+  try {
+    const saved = JSON.parse(localStorage.getItem(nativeSidebarKey) || 'null');
+    if (saved && Number.isFinite(saved.width) && saved.width >= 76 && saved.width <= 600 && typeof saved.hidden === 'boolean') {
+      nativeSidebarWidth = saved.width; nativeSidebarHidden = saved.hidden;
+      if (Number.isFinite(saved.computerWidth) && saved.computerWidth >= 240 && saved.computerWidth <= 800) nativeComputerWidth = saved.computerWidth;
+    }
+  } catch {}
+  const saveNativeSidebar = () => { try { localStorage.setItem(nativeSidebarKey,JSON.stringify({width:nativeSidebarWidth,computerWidth:nativeComputerWidth,hidden:nativeSidebarHidden})); } catch {} };
+  const nativeSidebarOwnsLayout = () => html.dataset.iosDuoInner === 'true' && html.dataset.iosLayout === 'regular' && !shell.hidden && !document.querySelector('.artifact-studio') && (computer?.hidden || (html.dataset.iosComputer === 'side' && !computer.classList.contains('expanded')));
+  const nativeSidebarActive = () => nativeSidebarOwnsLayout() && document.querySelector('#details-panel')?.hidden !== false;
+  const nativeComputerActive = () => html.dataset.iosDuoInner === 'true' && !computer?.hidden && !computer.classList.contains('expanded') && html.dataset.iosComputer === 'side' && !(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).some(region => region.active !== false && region.kind === 'division' && region.width > 0 && region.height > 0 && region.x < innerWidth && region.x+region.width > 0 && region.y < (nativeHeight||innerHeight) && region.y+region.height > 0);
+  const nativeSidebarBlocked = () => document.hidden || shell.hidden || !!document.querySelector('dialog[open],.artifact-studio') || computer?.classList.contains('expanded');
+  const nativeSidebarLeading = () => nativeDuo && html.dataset.iosRailSide === 'left' ? Math.min(innerWidth,Math.max(0,Number(window.__KINDRED_IOS_LAYOUT?.leftInset)||0)) : 0;
+  const nativeSidebarGeometry = () => JSON.stringify([window.__KINDRED_NATIVE_GEOMETRY || {},html.dataset.iosRailSide]);
+  function syncNativeSidebar(notify = false) {
+    if (!sidebar) return;
+    // Earlier servers count inactive fold divisions and can mark a fitting
+    // flat three-pane layout compact. Use installed-app widths for that pose.
+    if (html.dataset.iosDuoInner === 'true' && !html.hasAttribute('data-ios-fold') && !computer?.hidden && html.dataset.iosComputer === 'side' && !(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).some(region => region.active !== false && region.kind === 'division' && region.width > 0 && region.height > 0 && region.x < innerWidth && region.x+region.width > 0 && region.y < (nativeHeight||innerHeight) && region.y+region.height > 0)) {
+      const css = getComputedStyle(shell), available = shell.clientWidth-(parseFloat(css.paddingLeft)||0)-(parseFloat(css.paddingRight)||0), scale = parseFloat(getComputedStyle(html).getPropertyValue('--text-scale')) || 1;
+      if ((nativeHeight||innerHeight) >= 480 && available-(nativeSidebarHidden?0:Math.max(76,Math.min(nativeSidebarWidth,available/4-nativeSidebarLeading()))+nativeSidebarLeading())-nativeComputerWidth >= 300*scale && html.dataset.iosLayout !== 'regular') html.dataset.iosLayout = 'regular';
+    }
+    if (nativeSidebarDrag && (!(nativeSidebarDrag.kind === 'computer' ? nativeComputerActive() : nativeSidebarActive()) || nativeSidebarBlocked() || nativeSidebarDrag.geometry !== nativeSidebarGeometry())) nativeSidebarDrag.cancel();
+    const active = nativeSidebarOwnsLayout();
+    const style = getComputedStyle(shell), contentLeft = shell.getBoundingClientRect().left + (parseFloat(style.paddingLeft) || 0);
+    const width = shell.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+    const other = !computer?.hidden && html.dataset.iosComputer === 'side' ? computer.getBoundingClientRect().width : 0;
+    const scale = parseFloat(getComputedStyle(html).getPropertyValue('--text-scale')) || 1;
+    const leading = nativeSidebarLeading();
+    let maximum = Math.max(76,Math.min(width/4-leading,width - other - leading - (!computer?.hidden ? 300 : 360) * scale));
+    for (const region of window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []) {
+      if (region.active !== false && region.kind === 'division' && region.height > region.width && region.x > contentLeft) maximum = Math.min(maximum,Math.max(76,region.x-contentLeft-leading));
+    }
+    maximum = Math.floor(maximum);
+    const shownWidth = Math.max(76,Math.min(nativeSidebarWidth,maximum));
+    for (const [name,value] of Object.entries({iosNativeSidebar:active,iosNativeSidebarHidden:active && nativeSidebarHidden,iosNativeSidebarRail:active && shownWidth < 128})) {
+      if (html.dataset[name] !== String(value)) html.dataset[name] = String(value);
+    }
+    if (html.style.getPropertyValue('--ios-native-sidebar-width') !== shownWidth+leading+'px') html.style.setProperty('--ios-native-sidebar-width',shownWidth+leading+'px');
+    if (html.style.getPropertyValue('--ios-native-sidebar-leading') !== leading+'px') html.style.setProperty('--ios-native-sidebar-leading',leading+'px');
+    const detailsLeft = active && !nativeSidebarHidden ? shownWidth+leading : 0;
+    if (html.style.getPropertyValue('--ios-details-left') !== detailsLeft+'px') html.style.setProperty('--ios-details-left',detailsLeft+'px');
+    html.dataset.iosNativeSidebarDraggable = String(nativeSidebarActive());
+    if (active) {
+      const handles = [...sidebar.querySelectorAll(':scope>.ios-duo-resizer')];
+      let handle = handles.shift();
+      for (const duplicate of handles) duplicate.remove();
+      if (!handle) {
+        handle = document.createElement('div'); handle.className = 'ios-duo-resizer'; handle.dataset.pane = 'sidebar'; handle.tabIndex = 0;
+        handle.setAttribute('role','separator'); handle.setAttribute('aria-orientation','vertical'); handle.setAttribute('aria-label','Resize chat list'); sidebar.append(handle);
+      }
+      handle.setAttribute('aria-valuemin','76'); handle.setAttribute('aria-valuemax',String(Math.round(maximum))); handle.setAttribute('aria-valuenow',String(Math.round(shownWidth)));
+    }
+    const computerActive = nativeComputerActive(), computerMaximum = Math.max(240,Math.min(800,width-(active&&!nativeSidebarHidden?shownWidth+leading:0)-300*scale));
+    const shownComputerWidth = Math.max(240,Math.min(nativeComputerWidth,computerMaximum));
+    if (html.dataset.iosNativeComputer !== String(computerActive)) html.dataset.iosNativeComputer = String(computerActive);
+    if (html.style.getPropertyValue('--ios-native-computer-width') !== shownComputerWidth+'px') html.style.setProperty('--ios-native-computer-width',shownComputerWidth+'px');
+    if (computerActive) {
+      const handles = [...computer.querySelectorAll(':scope>.ios-duo-resizer')]; let handle = handles.shift(); for (const duplicate of handles) duplicate.remove();
+      if (!handle) { handle = document.createElement('div'); handle.className = 'ios-duo-resizer'; handle.dataset.pane = 'computer'; handle.tabIndex = 0; handle.setAttribute('role','separator'); handle.setAttribute('aria-orientation','vertical'); handle.setAttribute('aria-label','Resize bot computer'); computer.append(handle); }
+      handle.setAttribute('aria-valuemin','240'); handle.setAttribute('aria-valuemax',String(Math.round(computerMaximum))); handle.setAttribute('aria-valuenow',String(Math.round(shownComputerWidth)));
+    }
+    const stamp = [active,nativeSidebarHidden,shownWidth,leading,computerActive,shownComputerWidth].join(':');
+    const changed = stamp !== nativeSidebarStamp; nativeSidebarStamp = stamp;
+    updateNavigation();
+    if (changed && notify === true) window.dispatchEvent(new Event('kindred-native-geometry'));
+  }
+  window.__kindredNativeSidebar = {active:nativeSidebarActive,cancel() { nativeSidebarDrag?.cancel(); },toggle() {
+    if (!nativeSidebarActive() || document.querySelector('dialog[open]') || nativeSidebarDrag) return;
+    nativeSidebarHidden = !nativeSidebarHidden; saveNativeSidebar(); syncNativeSidebar(true);
+  }};
+  document.addEventListener('pointerdown',event => {
+    const handle = event.target.closest?.('.sidebar>.ios-duo-resizer,.computer-panel>.ios-duo-resizer'), isComputer = handle?.dataset.pane === 'computer';
+    if (!handle || !(isComputer ? nativeComputerActive() : nativeSidebarActive()) || nativeSidebarBlocked() || (!isComputer && nativeSidebarHidden) || event.button !== 0 || !event.isPrimary || nativeSidebarDrag) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    const before = isComputer ? nativeComputerWidth : nativeSidebarWidth, start = (isComputer ? computer : sidebar).getBoundingClientRect().width-(isComputer?0:nativeSidebarLeading()), x = event.clientX, id = event.pointerId;
+    const geometry = nativeSidebarGeometry(), shield = document.createElement('div'); shield.className = 'pane-resize-shield'; shield.setAttribute('aria-hidden','true'); document.body.append(shield);
+    html.classList.add('pane-resizing'); handle.setPointerCapture(id);
+    const move = next => { if (next.pointerId === id) { const value = Math.max(isComputer?240:76,Math.min(Number(handle.getAttribute('aria-valuemax')),start+(next.clientX-x)*(isComputer?-1:1))); if(isComputer) nativeComputerWidth=value; else nativeSidebarWidth=value; syncNativeSidebar(true); } };
+    const end = commit => {
+      if (!nativeSidebarDrag) return;
+      nativeSidebarDrag = null;
+      handle.removeEventListener('pointermove',move); handle.removeEventListener('pointerup',up); handle.removeEventListener('pointercancel',cancel); handle.removeEventListener('lostpointercapture',cancel); document.removeEventListener('keydown',escape,true);
+      if (handle.hasPointerCapture(id)) handle.releasePointerCapture(id);
+      shield.remove(); html.classList.remove('pane-resizing');
+      if (!commit) { if(isComputer) nativeComputerWidth=before; else nativeSidebarWidth=before; }
+      else { if (!isComputer && nativeSidebarWidth < 128) nativeSidebarWidth = 76; saveNativeSidebar(); }
+      syncNativeSidebar();
+      // Keep remote input gated until the shared controller verifies the final
+      // canvas transform, including a cancelled drag that changed no width.
+      window.dispatchEvent(new Event('kindred-native-geometry'));
+    };
+    const up = next => { if (next.pointerId === id) end(true); }, cancel = () => end(false), escape = next => { if (next.key === 'Escape') { next.preventDefault(); cancel(); } };
+    nativeSidebarDrag = {kind:isComputer?'computer':'sidebar',geometry,cancel}; handle.addEventListener('pointermove',move); handle.addEventListener('pointerup',up); handle.addEventListener('pointercancel',cancel); handle.addEventListener('lostpointercapture',cancel); document.addEventListener('keydown',escape,true);
+    shell.dataset.mobileResizing = 'true'; window.dispatchEvent(new Event('kindred-native-geometry'));
+  },true);
+  document.addEventListener('keydown',event => {
+    const isComputer = event.target.matches?.('.computer-panel>.ios-duo-resizer');
+    if (!event.target.matches?.('.sidebar>.ios-duo-resizer,.computer-panel>.ios-duo-resizer') || !(isComputer?nativeComputerActive():nativeSidebarActive()) || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    const maximum = Number(event.target.getAttribute('aria-valuemax'));
+    const minimum = isComputer?240:76,previous = isComputer?nativeComputerWidth:nativeSidebarWidth;
+    const value = event.key === 'Home' ? minimum : event.key === 'End' ? maximum : Math.max(minimum,Math.min(maximum,previous+(event.key === 'ArrowLeft' ? -16 : 16)*(isComputer?-1:1)));
+    if(isComputer) nativeComputerWidth=value; else nativeSidebarWidth=value;
+    saveNativeSidebar(); syncNativeSidebar(true);
+  },true);
+  for (const type of ['pointerdown','pointermove','pointerup','click','keydown','keyup','touchstart','touchmove','touchend']) document.addEventListener(type,event => {
+    if (nativeSidebarDrag && event.target.closest?.('#desktop,#desktop-paste,#take-control,#ios-computer-input')) { event.preventDefault(); event.stopImmediatePropagation(); }
+  },{capture:true,passive:false});
+  document.addEventListener('click',event => {
+    if (event.target.closest?.('#ios-search') && nativeSidebarActive() && (nativeSidebarHidden || nativeSidebarWidth < 128)) {
+      nativeSidebarHidden = false; nativeSidebarWidth = Math.max(210,nativeSidebarWidth); saveNativeSidebar(); syncNativeSidebar(true);
+    }
+  },true);
+  observeUI(() => syncNativeSidebar()).observe(html,{attributes:true,attributeFilter:['style','data-ios-layout','data-ios-duo-inner']});
+  observeUI(() => syncNativeSidebar()).observe(sidebar,{childList:true});
+  // The deployed desktop slide also animates a flex reservation. Native pane
+  // widths and its resize callback can invalidate that frame before it ends.
+  // Settle through the server's own cancellation closure before paint; a bounded opacity effect
+  // then fades the retained pane at its final native geometry. No navigation,
+  // computer connection or completion handler is replaced.
+  const paneFades = new Map();
+  const finishPaneFades = () => { for (const fade of [...paneFades.values()]) fade.finish(); };
+  for (const type of ['pagehide','resize']) window.addEventListener(type,finishPaneFades);
+  document.addEventListener('visibilitychange',() => { if (document.hidden) finishPaneFades(); });
+  matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',event => { if (event.matches) finishPaneFades(); });
+  observeUI(() => { if (html.dataset.motion === 'off') finishPaneFades(); }).observe(html,{attributes:true,attributeFilter:['data-motion']});
+  function settleNativePaneFrames() {
+    if (!nativeDuo) return;
+    for (const panel of shell.querySelectorAll(':scope>.pane-layout-frame')) {
+      const motion = panel.getAnimations().find(animation => animation.effect?.getKeyframes().some(frame => frame.transform && frame.width));
+      if (!motion) continue;
+      const frames = motion.effect.getKeyframes(), first = frames[0];
+      const offset = new DOMMatrix(first.transform);
+      const exit = {left:(parseFloat(panel.style.left)||0)+offset.m41,
+        top:(parseFloat(panel.style.top)||0)+offset.m42,width:parseFloat(first.width),height:parseFloat(first.height)};
+      const closing = panel.inert;
+      motion.cancel();
+      // Animation cancel events are queued. Invoke the same owner callback
+      // now so its held frame/reservation is gone before this paint.
+      if (panel.classList.contains('pane-layout-frame')) motion.dispatchEvent(new Event('cancel'));
+      const previous = paneFades.get(panel);
+      const startOpacity = previous ? Number(getComputedStyle(panel).opacity) : (closing?1:0);
+      previous?.finish();
+      panel.classList.remove('ios-pane-closing');
+      const reduced = html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches;
+      if (reduced) continue;
+      if (closing && panel.hidden && Object.values(exit).every(Number.isFinite)) {
+        for (const [name,value] of Object.entries(exit)) panel.style.setProperty('--ios-pane-exit-'+name,value+'px');
+        panel.classList.add('ios-pane-closing');
+      }
+      const fade = panel.animate([{opacity:startOpacity},{opacity:closing?0:1}],{duration:200,easing:'ease-out',fill:'both'});
+      let timer,done=false;
+      const finish = () => {
+        if (done) return; done=true; clearTimeout(timer);
+        if (paneFades.get(panel)?.animation !== fade) return;
+        paneFades.delete(panel); panel.classList.remove('ios-pane-closing');
+        for (const name of Object.keys(exit)) panel.style.removeProperty('--ios-pane-exit-'+name);
+        fade.onfinish = fade.oncancel = null; fade.cancel();
+      };
+      paneFades.set(panel,{animation:fade,finish});
+      fade.onfinish = fade.oncancel = finish;
+      timer=setTimeout(finish,320);
+    }
+  }
+  observeUI(records => {
+    records = records.filter(record => record.target === shell ||
+      record.target.matches?.('.details-panel,.computer-panel') || sidebar.contains(record.target));
+    if (!records.length) return;
+    settleNativePaneFrames(); syncNativeSidebar();
+    if (records.some(record => record.target === shell || record.target.matches?.('.details-panel,.computer-panel'))) {
+      updateNativeContentClearance(); scheduleContentClearance();
+    }
+  }).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','open','class']});
+  observeUI(() => { if (nativeSidebarDrag && nativeSidebarBlocked()) nativeSidebarDrag.cancel(); }).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
+  document.addEventListener('visibilitychange',() => { if (document.hidden) nativeSidebarDrag?.cancel(); });
+  for (const type of ['pagehide','blur','popstate','hashchange']) window.addEventListener(type,() => nativeSidebarDrag?.cancel());
+  window.addEventListener('kindred-native-geometry',() => syncNativeSidebar());
+  syncNativeSidebar();
+  function updateNavigation() {
+    const isCompact = html.dataset.iosLayout ? html.dataset.iosLayout === 'compact' : compact.matches;
+    const railClasses = ['sidebar-rail', 'sidebar-fading', 'sidebar-peek'];
+    if (isCompact && railClasses.some(name => shell.classList.contains(name))) shell.classList.remove(...railClasses);
+    const open = shell.classList.contains('sidebar-open');
+    menu?.setAttribute('aria-expanded', String(open));
+    const hiddenList = html.dataset.iosNativeSidebar === 'true' ? nativeSidebarHidden : html.dataset.iosSidebarHidden === 'true';
+    if (sidebar) sidebar.inert = (isCompact && !open) || (hiddenList && !html.classList.contains('pane-resizing'));
+    if (sidebar?.inert && libraryMenu.matches(':popover-open')) libraryMenu.hidePopover();
+    if (conversation) conversation.inert = isCompact && open;
+  }
+  compact.addEventListener('change', updateNavigation);
+  observeUI(updateNavigation).observe(shell, {attributes:true, attributeFilter:['class']});
+  observeUI(updateNavigation).observe(html, {attributes:true, attributeFilter:['class','data-ios-layout','data-ios-sidebar-hidden']});
+  updateNavigation();
+  // Animate retained chrome between local display geometries. Pixel bounds,
+  // rather than scale transforms, keep text and touch targets at their real size.
+  const chromeNodes = () => [...document.querySelectorAll('#composer,.conversation-header .bot-heading,.conversation>.composer-area>.jump-latest')];
+  const chromeRects = new Map(), chromePainted = new Map(), chromeTargets = new Map(), chromeMotions = new Map();
+  let chromePose = '', chromeLayout = '', chromeKeyboard, chromeFrame = 0, chromeTimer = 0, chromeActive = false;
+  const chromeRect = node => {
+    if (!node.getClientRects().length || getComputedStyle(node).visibility === 'hidden') return null;
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? {x:rect.x,y:rect.y,width:rect.width,height:rect.height} : null;
+  };
+  const displayPose = () => {
+    const geometry = window.__KINDRED_NATIVE_GEOMETRY, layout = window.__KINDRED_IOS_LAYOUT;
+    if (!nativeDuo || !geometry || !layout) return '';
+    // Host height/safe-area changes caused by the keyboard are intentionally absent.
+    return JSON.stringify([geometry.windowWidth,geometry.windowHeight,layout.isDuoInner,layout.isPortrait,
+      (geometry.reservedRegions || []).filter(r => r.kind === 'division' && r.active !== false && r.width>0 && r.height>0)
+        .map(r => r.height>r.width ? ['vertical',r.x,r.width] : ['horizontal',r.y,r.height]).sort()]);
+  };
+  const finishChromeMotion = () => {
+    clearTimeout(chromeTimer); chromeTimer = 0;
+    for (const motion of chromeMotions.values()) { motion.onfinish = motion.oncancel = null; motion.cancel(); }
+    chromeMotions.clear(); chromeTargets.clear(); chromePainted.clear(); chromeActive = false;
+    delete html.dataset.iosChromeMorphing; chromeRects.clear();
+    for (const node of chromeNodes()) chromeRects.set(node,chromeRect(node));
+  };
+  function scheduleChromeMotion() {
+    if (chromeFrame) return;
+    chromeFrame = requestAnimationFrame(() => {
+      chromeFrame = 0;
+      if (!nativeDuo) { chromePose = ''; finishChromeMotion(); return; }
+      const geometry = window.__KINDRED_NATIVE_GEOMETRY;
+      // A resize can precede its native geometry message. Keep the last painted
+      // source until that message arrives instead of caching half-reflowed bounds.
+      if (nativeDuo && Number.isFinite(geometry?.width) && Math.abs(geometry.width-innerWidth)>1) return;
+      const nextPose = displayPose(), changed = chromePose && nextPose && nextPose !== chromePose;
+      chromePose = nextPose;
+      const keyboard = window.__KINDRED_IOS_LAYOUT?.keyboardVisible === true;
+      const keyboardChanged = chromeKeyboard !== undefined && chromeKeyboard !== keyboard;
+      chromeKeyboard = keyboard;
+      const lane = conversation.getBoundingClientRect(), area = document.querySelector('#composer-area');
+      const bounds = area?.getBoundingClientRect(), css = area && getComputedStyle(area);
+      const layout = JSON.stringify([lane.x,lane.y,lane.width,lane.height,bounds?.x,bounds?.width,bounds?.bottom,css?.paddingLeft,css?.paddingRight,
+        header.style.getPropertyValue('--ios-native-control-left'),header.style.getPropertyValue('--ios-native-control-right')]);
+      const layoutChanged = layout !== chromeLayout; chromeLayout = layout;
+      if (keyboardChanged) { finishChromeMotion(); return; }
+      if (!changed && chromeActive && !layoutChanged) {
+        for (const node of chromeNodes()) chromePainted.set(node,chromeRect(node));
+        return;
+      }
+      const reduced = html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches;
+      if (!changed && !chromeActive) {
+        chromeRects.clear();
+        for (const node of chromeNodes()) chromeRects.set(node,chromeRect(node));
+        return;
+      }
+      if (reduced || document.hidden || html.classList.contains('pane-resizing')) { finishChromeMotion(); return; }
+      const before = new Map();
+      for (const node of chromeNodes()) before.set(node,chromeActive ? (chromePainted.get(node) || chromeRect(node)) : chromeRects.get(node));
+      // Cancel only our effects, then measure the natural destination after
+      // native/sidebar observers have applied the latest geometry in this frame.
+      for (const motion of chromeMotions.values()) { motion.onfinish = motion.oncancel = null; motion.cancel(); }
+      chromeMotions.clear(); chromeTargets.clear();
+      for (const node of chromeNodes()) {
+        const target = chromeRect(node), prior = before.get(node);
+        chromeRects.set(node,target);
+        if (!target || node.classList.contains('is-morphing')) continue;
+        const from = prior || (node.matches('.bot-heading') ? {...target,x:target.x+target.width/2-22,width:44} : null);
+        if (!from || (!changed && Math.abs(from.x-target.x)+Math.abs(from.y-target.y)+Math.abs(from.width-target.width)+Math.abs(from.height-target.height)<1)) continue;
+        chromeTargets.set(node,target);
+        // Centered identity and trailing Latest controls already change their
+        // layout origin as width changes. Subtract that anchor movement once.
+        const anchor = node.matches('.bot-heading') ? 0.5 : 1;
+        const dx = from.x-target.x-(target.width-from.width)*anchor;
+        const editing = node.id === 'composer';
+        // Keep the live editor's height natural while its width changes. New
+        // keystrokes/attachments must never be clipped by a held animation box.
+        // Anchor the live form by its trailing edge as width changes.
+        // A left-origin translation plus a changing width can drift past the
+        // rail while UIKit publishes intermediate hinge geometry.
+        const constraints = editing ? {minWidth:'0px',maxWidth:'none',alignSelf:'flex-end',marginLeft:'0px',marginRight:'0px'}
+          : {minWidth:'0px',maxWidth:'none',minHeight:Math.min(from.height,target.height)+'px',overflow:'clip'};
+        const motion = node.animate([
+          {...constraints,translate:`${dx}px ${from.y-target.y}px`,width:from.width+'px',...(editing?{}:{height:from.height+'px'}),opacity:prior?1:0},
+          {...constraints,translate:'0px 0px',width:target.width+'px',...(editing?{}:{height:target.height+'px'}),opacity:1},
+        ],{duration:280,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});
+        chromeMotions.set(node,motion); chromePainted.set(node,chromeRect(node));
+      }
+      chromeActive = chromeMotions.size > 0;
+      if (chromeActive) {
+        html.dataset.iosChromeMorphing = 'true';
+        // Effects finish together. Removing them reveals exactly the measured
+        // natural destination, without leaving inline frame styles behind.
+        const motions = [...chromeMotions.values()];
+        const complete = () => { if (motions.every(m => [...chromeMotions.values()].includes(m))) finishChromeMotion(); };
+        Promise.all(motions.map(m => m.finished)).then(complete,complete);
+        if (!chromeTimer) chromeTimer = setTimeout(finishChromeMotion,650);
+      } else finishChromeMotion();
+    });
+  }
+  for (const type of ['kindred-native-geometry','kindred-ios-layout']) window.addEventListener(type,scheduleChromeMotion);
+  const chromeLayoutObserver = new ResizeObserver(scheduleChromeMotion);
+  for (const node of [shell,conversation,...chromeNodes()]) if (node) chromeLayoutObserver.observe(node);
+  document.addEventListener('visibilitychange',() => { if (document.hidden) { chromePose = ''; finishChromeMotion(); } });
+  window.addEventListener('pagehide',() => { chromePose = ''; finishChromeMotion(); });
+  matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',event => { if (event.matches) finishChromeMotion(); });
+  observeUI(() => { if (html.dataset.motion === 'off') finishChromeMotion(); }).observe(html,{attributes:true,attributeFilter:['data-motion']});
+  scheduleChromeMotion();
+
+  function updateEnvironment(value) {
+    if (!value) return;
+    html.style.setProperty('--ios-safe-top', `${Math.max(0, Number(value.topInset) || 0)}px`);
+    html.style.setProperty('--ios-safe-left', `${Math.max(0, Number(value.leftInset) || 0)}px`);
+    html.style.setProperty('--ios-safe-right', `${Math.max(0, Number(value.rightInset) || 0)}px`);
+    const duoCapable = value.isDuo === true;
+    nativeDuo = typeof value.usesNativeRail === 'boolean' ? value.usesNativeRail : duoCapable;
+    html.dataset.iosDuo = String(nativeDuo);
+    html.dataset.iosDuoInner = String(value.isDuoInner === true);
+    html.dataset.iosRailSide = nativeDuo ? (['left','right','none'].includes(value.railSide) ? value.railSide : 'right') : 'none';
+    html.dataset.iosSlab = String(value.isSlab === true);
+    // A closed phone must not inherit an inner-display fullscreen state whose
+    // collapse control is intentionally unavailable on the outer display.
+    if (duoCapable && value.isDuoInner !== true && computer?.classList.contains('expanded')) {
+      document.querySelector('#computer-expand')?.click();
+    }
+    html.style.setProperty('--ios-safe-bottom', `${Math.max(0, Number(value.bottomInset) || 0)}px`);
+    const composerBottomInset = typeof value.composerBottomInset === 'number' && Number.isFinite(value.composerBottomInset)
+      ? Math.max(0,value.composerBottomInset) : Math.max(0,Number(value.bottomInset) || 0);
+    html.style.setProperty('--ios-composer-safe-bottom',`${composerBottomInset}px`);
+    // The system rail extends to the keyboard edge while typing. Keep the
+    // composer's trailing action outside its measured safe inset, while using
+    // the full bottom lane again as soon as the keyboard is dismissed.
+    const keyboardRight = nativeDuo && value.keyboardVisible === true && Number.isFinite(value.rightInset)
+      ? Math.max(0,Math.min(innerWidth,value.rightInset)) : 0;
+    const keyboardLeft = nativeDuo && value.keyboardVisible === true && html.dataset.iosRailSide === 'left' && Number.isFinite(value.leftInset)
+      ? Math.max(0,Math.min(innerWidth,value.leftInset)) : 0;
+    html.style.setProperty('--ios-composer-keyboard-left',`${keyboardLeft}px`);
+    html.style.setProperty('--ios-composer-keyboard-right',`${html.dataset.iosRailSide === 'right' ? keyboardRight : 0}px`);
+    nativeHeight = Math.max(0, Number(value.viewportHeight) || 0);
+    nativePortrait = typeof value.isPortrait === 'boolean' ? value.isPortrait : undefined;
+    // Use window pose, never the keyboard-shortened web viewport.
+    html.dataset.iosOuterLandscape = String(nativeDuo && value.isDuoInner !== true && nativePortrait === false);
+    updateViewport();
+    updateReservedControls();
+    window.__kindredComputerInput?.focus();
+  }
+  window.addEventListener('kindred-ios-layout', event => updateEnvironment(event.detail));
+  const setContentInset = (node,name,value) => {
+    const text = Math.max(0,Math.round(value*100)/100)+'px';
+    if (node && node.style.getPropertyValue(name) !== text) node.style.setProperty(name,text);
+  };
+  function updateNativeContentClearance() {
+    const value = window.__KINDRED_IOS_LAYOUT || {}, side = html.dataset.iosRailSide;
+    const edgeLeft = nativeDuo && side === 'left' ? Math.min(innerWidth,Math.max(0,Number(value.leftInset)||0)) : 0;
+    const edgeRight = nativeDuo && side === 'right' ? Math.min(innerWidth,Math.max(0,Number(value.rightInset)||0)) : 0;
+    const insetFor = rect => ({left:Math.min(rect.width,Math.max(0,edgeLeft-rect.left)),right:Math.min(rect.width,Math.max(0,rect.right-(innerWidth-edgeRight)))});
+    for (const node of [conversation,computer,document.querySelector('#details-panel')]) {
+      if (!node) continue;
+      // Use the stable parent pane interval, never an already-inset child.
+      const inset = insetFor(node.getBoundingClientRect());
+      setContentInset(node,'--ios-content-left',inset.left);
+      setContentInset(node,'--ios-content-right',inset.right);
+    }
+    if (!sidebar) return;
+    const base = sidebar.getBoundingClientRect(), sidebarStyle = getComputedStyle(sidebar);
+    const contentLeft = base.left+(parseFloat(sidebarStyle.paddingLeft)||0), contentRight = base.right-(parseFloat(sidebarStyle.paddingRight)||0);
+    const inset = insetFor({left:contentLeft,right:contentRight,width:contentRight-contentLeft});
+    const scroll = document.querySelector('#bots'), viewport = scroll?.getBoundingClientRect() || base;
+    const rows = [...sidebar.querySelectorAll('#bots .nav-entry')];
+    const visible = rows.filter(node => {const r=node.getBoundingClientRect();return r.height>0 && r.bottom>Math.max(base.top,viewport.top) && r.top<Math.min(base.bottom,viewport.bottom);});
+    // The compact-list design shortens four rows below search. When search
+    // is hidden, one more row occupies its slot. This is a content rule, not
+    // a fabricated system rail/occlusion frame.
+    const upper = new Set(visible.slice(0,sidebar.classList.contains('ios-searching') ? 4 : 5));
+    for (const row of rows) {
+      setContentInset(row,'--ios-list-left',upper.has(row)?inset.left:0);
+      setContentInset(row,'--ios-list-right',upper.has(row)?inset.right:0);
+      const corner = nativeDuo && row === visible[0] && !sidebar.classList.contains('ios-searching');
+      if (row.hasAttribute('data-ios-leading-corner') !== corner) row.toggleAttribute('data-ios-leading-corner',corner);
+    }
+    const search = sidebar.querySelector(':scope>.search');
+    setContentInset(search,'--ios-list-left',inset.left);
+    setContentInset(search,'--ios-list-right',inset.right);
+    // The server's keyed row glide uses Web Animations without mutating DOM
+    // as it moves. Keep classification current through that finite movement.
+    if (rows.some(row => row.getAnimations().some(animation => animation.playState === 'running' && Number.isFinite(animation.effect?.getComputedTiming().endTime)))) scheduleContentClearance();
+  }
+  let contentClearanceFrame = 0;
+  const scheduleContentClearance = () => {
+    if (!contentClearanceFrame) contentClearanceFrame = requestAnimationFrame(() => {contentClearanceFrame=0;updateNativeContentClearance();});
+  };
+  document.addEventListener('scroll',event => {if(event.target === document.querySelector('#bots') || event.target === sidebar) scheduleContentClearance();},true);
+  observeUI(scheduleContentClearance).observe(sidebar,{subtree:true,childList:true,attributes:true,attributeFilter:['class','hidden']});
+  const contentClearanceObserver = new ResizeObserver(scheduleContentClearance);
+  for (const node of [shell,sidebar,conversation,computer,document.querySelector('#details-panel')]) if(node)contentClearanceObserver.observe(node);
+  function updateReservedControls() {
+    scheduleContentClearance();
+    const regions = nativeDuo ? (window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || [])
+      .filter(region => region.active !== false && [region.x,region.y,region.width,region.height].every(Number.isFinite))
+      .map(region => {
+        const x = Math.max(0,region.x), y = Math.max(0,region.y);
+        return {...region,x,y,width:Math.min(innerWidth,region.x+region.width)-x,
+          height:Math.min(nativeHeight||innerHeight,region.y+region.height)-y};
+      }).filter(region => region.width > 0 && region.height > 0) : [];
+    const horizontal = regions.find(r => r.kind === 'division' && r.width > r.height && r.y > 0);
+    html.dataset.iosDuoPose = horizontal ? 'tabletop' : regions.some(r => r.kind === 'division' && r.height > r.width) ? 'book' : 'flat';
+    html.style.setProperty('--ios-tabletop-top',`${horizontal?.y || 0}px`);
+    // If the keyboard covers the lower half, controls stay above it instead
+    // of reserving a hinge gap outside the remaining web viewport.
+    const below = horizontal && (nativeHeight || innerHeight) > horizontal.y + horizontal.height + 128;
+    html.style.setProperty('--ios-tabletop-gap',`${below ? horizontal.height : 0}px`);
+    const occlusions = regions.filter(r => r.kind === 'occlusion');
+    const sharedRegions = html.hasAttribute('data-ios-fold');
+    const divisions = regions.filter(region => region.kind === 'division' && region.height > region.width);
+    html.dataset.iosNativeReserved = String(!sharedRegions && divisions.length > 0);
+    const projectNativeControls = () => {
+      for (const control of [header,document.querySelector('#composer-area')]) {
+        if (!control) continue;
+        const rect = control.getBoundingClientRect(); let left = rect.left, right = rect.right;
+        for (const region of regions) {
+          if (region.y >= rect.bottom || region.y+region.height <= rect.top || region.x >= right || region.x+region.width <= left) continue;
+          if (region.x-left > right-region.x-region.width) right = Math.max(left,region.x);
+          else left = Math.min(right,region.x+region.width);
+        }
+        const values = {'--ios-native-control-left':left-rect.left+'px','--ios-native-control-right':rect.right-right+'px'};
+        for (const [name,value] of Object.entries(values)) if (control.style.getPropertyValue(name) !== value) control.style.setProperty(name,value);
+      }
+    };
+    projectNativeControls();
+    requestAnimationFrame(projectNativeControls);
+    if (!sharedRegions) for (const control of [header,document.querySelector('#composer-area')]) {
+      if (!control) continue;
+      const rect = control.getBoundingClientRect(); let left = rect.left, right = rect.right;
+      for (const region of divisions) {
+        if (region.y >= rect.bottom || region.y+region.height <= rect.top || region.x >= right || region.x+region.width <= left) continue;
+        if (region.x-left > right-region.x-region.width) right = Math.max(left,region.x);
+        else left = Math.min(right,region.x+region.width);
+      }
+      control.style.setProperty('--ios-camera-left',left-rect.left+'px'); control.style.setProperty('--ios-camera-right',rect.right-right+'px');
+    }
+    const intersects = (a,b) => a.left < b.x+b.width && a.right > b.x && a.top < b.y+b.height && a.bottom > b.y;
+    const tag = document.querySelector('.bot-heading');
+    html.style.setProperty('--ios-header-obstruction','0px');
+    html.style.setProperty('--ios-composer-obstruction','0px');
+    if (tag && !sharedRegions) {
+      const rect = tag.getBoundingClientRect();
+      const move = Math.max(0,...occlusions.filter(r => intersects(rect,r)).map(r => r.y+r.height+8-rect.top));
+      html.style.setProperty('--ios-header-obstruction',`${move}px`);
+    }
+    const area = document.querySelector('#composer-area');
+    if (area && !sharedRegions) {
+      // Side projection already keeps the input clear of corner/status
+      // occlusions. Testing the full-width wrapper would lift it a second time.
+      const rect = (area.querySelector('#composer') || area).getBoundingClientRect();
+      const move = Math.max(0,...occlusions.filter(r => intersects(rect,r)).map(r => rect.bottom-r.y+8));
+      html.style.setProperty('--ios-composer-obstruction',`${move}px`);
+    }
+    requestAnimationFrame(() => updateClearance());
+  }
+  window.addEventListener('kindred-native-geometry',updateReservedControls);
+  observeUI(updateReservedControls).observe(html,{attributes:true,attributeFilter:['data-ios-fold']});
+  updateEnvironment(window.__KINDRED_IOS_LAYOUT);
+  // Floating controls share the message viewport. Reserve their measured sizes,
+  // including attachments/replies and keyboard/rotation changes, for scroll ends.
+  const composerArea = document.querySelector('#composer-area');
+  // Dynamic Type and draft growth can hit a camera region without changing
+  // the native viewport. Recheck after those controls actually change size.
+  let obstructionFrame = 0;
+  const obstructionObserver = new ResizeObserver(() => {
+    if (obstructionFrame) return;
+    obstructionFrame = requestAnimationFrame(() => {
+      obstructionFrame = 0;
+      // Current shared layouts own camera/division avoidance. A growing draft
+      // needs a fresh projection even when the host's bounds have not changed.
+      if (html.hasAttribute('data-ios-fold')) window.dispatchEvent(new Event('kindred-native-geometry'));
+      else updateReservedControls();
+    });
+  });
+  for (const control of [document.querySelector('.bot-heading'), composerArea]) {
+    if (control) obstructionObserver.observe(control);
+  }
+  let lastComposerExtent = null;
+  const updateClearance = () => {
+    const top = header.getBoundingClientRect().height;
+    const bottom = composerArea?.hidden ? 0 : (composerArea?.getBoundingClientRect().height || 0) + (parseFloat(getComputedStyle(html).getPropertyValue('--ios-composer-obstruction')) || 0);
+    conversation.style.setProperty('--ios-chat-top', `${top}px`);
+    conversation.style.setProperty('--ios-chat-bottom', `${bottom}px`);
+    const form = document.querySelector('#composer'), rect = form?.getBoundingClientRect();
+    const visible = nativeDuo && rect?.height > 0 && !shell.hidden && !form.closest('[hidden]') && getComputedStyle(form).visibility !== 'hidden' &&
+      !document.querySelector('dialog[open],.artifact-studio') && document.querySelector('#details-panel')?.hidden !== false &&
+      (computer?.hidden || (html.dataset.iosComputer === 'side' && !computer.classList.contains('expanded')));
+    if (!visible) { lastComposerExtent = null; return; }
+    // The SDK asks for a bottom *bar*, not the whole writing surface.
+    // Including the editor made a second line select a different safe-area
+    // row and lift the entire composer. Measure only the retained action row,
+    // with the same breathing room above and below; draft wrapping must not
+    // move that anchor.
+    const actions = [...form.querySelectorAll('#composer-actions,#send,.dictation-button,.dictation-cancel')]
+      .filter(node => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden')
+      .map(node => node.getBoundingClientRect()).filter(box => box.height > 0);
+    if (!actions.length) return;
+    const rowTop = Math.min(...actions.map(box => box.top)), rowBottom = Math.max(...actions.map(box => box.bottom));
+    const height = Math.round((rowBottom-rowTop+2*Math.max(0,rect.bottom-rowBottom))*100)/100;
+    if (Number.isFinite(height) && height !== lastComposerExtent) {
+      lastComposerExtent = height;
+      window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'composer-extent',height});
+    }
+  };
+  const clearanceObserver = new ResizeObserver(updateClearance);
+  clearanceObserver.observe(header);
+  if (composerArea) clearanceObserver.observe(composerArea);
+  const composerVisibilityObserver = observeUI(updateClearance);
+  for (const pane of [shell,computer,document.querySelector('#details-panel')]) if (pane) composerVisibilityObserver.observe(pane,{attributes:true,attributeFilter:['class','hidden']});
+  observeUI(updateClearance).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
+  updateClearance();
+
+  // The store manages the installed app. Keep both version labels, with no
+  // browser/server updater or desktop speech controls exposed on this device.
+  const settingsContent = document.querySelector('#settings-content');
+  const adaptDeviceSettings = () => {
+    for (const version of settingsContent?.querySelectorAll('[data-client-version]') || []) {
+      const value = window.__KINDRED_IOS_APP_VERSION || 'iOS app';
+      if (version.textContent !== value) version.textContent = value;
+      const label = version.closest('.setting-row')?.querySelector('.setting-label');
+      if (label && label.textContent !== 'iOS app on this device') label.textContent = 'iOS app on this device';
+    }
+  };
+  if (settingsContent) observeUI(adaptDeviceSettings).observe(settingsContent, {subtree:true, childList:true, characterData:true});
+  adaptDeviceSettings();
+  // Clear a stale desktop multiline measurement after the draft becomes empty.
+  document.addEventListener('input', event => {
+    const editor = event.target;
+    if (editor.id === 'prompt' && !(editor.value ?? editor.innerText ?? '').trim()) {
+      document.querySelector('#composer')?.classList.remove('is-multiline');
+    }
+  });
+  // Older servers install desktop select listeners on the real <select>. Stop
+  // those listeners, leaving the browser's default iOS picker and change event.
+  for (const type of ['mousedown', 'click', 'keydown']) {
+    document.addEventListener(type, event => {
+      if (event.target instanceof HTMLSelectElement) event.stopImmediatePropagation();
+    }, true);
+  }
+  let launchReadySent = false;
+  const markLaunchReady = () => {
+    if (launchReadySent) return;
+    launchReadySent = true;
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'launch-ready'});
+  };
+  const checkLoadedRows = () => { if (sidebar.querySelector('.bot-link,.pinned-bot')) markLaunchReady(); };
+  observeUI(checkLoadedRows).observe(sidebar, {childList:true, subtree:true});
+  checkLoadedRows();
+  let lastAppearance = '', themePreference;
+  // Observe existing settings and chat responses without extra requests.
+  // The original response still goes to the server UI unchanged.
+  const fetch = window.fetch;
+  window.fetch = function (...args) {
+    return fetch.apply(this, args).then(response => {
+      if (response.ok && response.url === new URL('/api/chats', location.origin).href) {
+        // Include an empty account, after the server UI consumes the response.
+        response.clone().json().then(() => requestAnimationFrame(() => requestAnimationFrame(markLaunchReady))).catch(() => {});
+      }
+      if (response.ok && response.url === new URL('/api/settings', location.origin).href) {
+        response.clone().json().then(value => {
+          if (['system', 'dark', 'light'].includes(value.theme)) {
+            themePreference = value.theme;
+            updateAppearance();
+          }
+        }).catch(() => {});
+      }
+      return response;
+    });
+  };
+  document.addEventListener('change', event => {
+    const select = event.target;
+    if (select instanceof HTMLSelectElement && ['system', 'dark', 'light'].every(value => [...select.options].some(option => option.value === value))) {
+      themePreference = select.value;
+      updateAppearance();
+    }
+  });
+  function updateAppearance() {
+    const color = getComputedStyle(document.body).backgroundColor;
+    const rgb = color.match(/^rgba?\(([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)/)?.slice(1).map(Number);
+    const appearance = `${color}:${themePreference}`;
+    if (!rgb || appearance === lastAppearance) return;
+    lastAppearance = appearance;
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'appearance', rgb, followsSystem:themePreference === 'system', appearanceKnown:themePreference !== undefined});
+  }
+  observeUI(updateAppearance).observe(html, {attributes:true, attributeFilter:['data-theme', 'class', 'style']});
+  updateAppearance();
+  // Adapt action menus at their presentation boundary. Keep the server's
+  // closures, but never render its hover menus/flyouts in the native app.
+  const actionMenuSelector = '[role="menu"],#new-menu,.deliverable-menu,.avatar-popover';
+  const menuActions = new Map();
+  let actionMenuSerial = 0, lastMenuSource = null;
+  const menuContext = () => `${location.pathname}:${document.querySelector('#heading')?.textContent || ''}`;
+  for (const type of ['pointerdown', 'click', 'contextmenu', 'keydown']) {
+    document.addEventListener(type, event => {
+      if (event.isTrusted || type === 'contextmenu') lastMenuSource = event.target.closest?.('button,[data-artifact-id]') || event.target;
+    }, true);
+  }
+  const openActionMenu = element => {
+    if (element.closest('.conversation-submenu') || element.closest('[hidden],[inert]')) return false;
+    if (element.hasAttribute('popover')) return element.matches(':popover-open');
+    if (element.matches('.avatar-popover')) return element.parentElement.classList.contains('menu-open');
+    return getComputedStyle(element).display !== 'none';
+  };
+  const closeActionMenu = (element, source) => {
+    if (element.matches('.avatar-popover')) element.parentElement?.classList.remove('menu-open');
+    else if (element.hasAttribute('popover')) { if (element.matches(':popover-open')) element.hidePopover(); }
+    else element.hidden = true;
+    source?.setAttribute('aria-expanded', 'false');
+    // Reset the server's transient menu state without running any action.
+    if (element.isConnected && element.matches('.chat-context-menu,.artifact-context-menu,.message-action-menu')) {
+      element.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}));
+    }
+  };
+  const presentActionMenu = (element, present = true, toolbarSource = null) => {
+    const source = toolbarSource || (element.matches('.avatar-popover') ? element.parentElement.querySelector('button') : lastMenuSource);
+    if (!source?.isConnected || source.closest('[hidden],[inert]')) { closeActionMenu(element, source); return; }
+    if (toolbarSource && (!source.getClientRects().length || getComputedStyle(source).visibility === 'hidden')) { closeActionMenu(element, source); return; }
+    menuActions.clear();
+    const generation = String(++actionMenuSerial), context = menuContext();
+    const remember = button => {
+      const title = (button.getAttribute('aria-label') || button.textContent || button.title).trim().slice(0,100);
+      if (!title || title === 'Teach a task' || title === 'Review lesson') return null;
+      const id = `${generation}-${menuActions.size}`;
+      menuActions.set(id, {button,source,element,context});
+      return {id,title,disabled:button.disabled || button.getAttribute('aria-disabled') === 'true',
+        selected:button.getAttribute('aria-checked') === 'true' || button.getAttribute('aria-pressed') === 'true',
+        destructive:button.classList.contains('danger') || /^(Delete|Remove|Archive)\b/.test(title)};
+    };
+    const choices = parent => [...parent.querySelectorAll('button,a[href]')]
+      .filter(button => !button.closest('[hidden]') && button.closest('[role=menu],.avatar-popover,.deliverable-menu,#new-menu') === parent)
+      .map(button => {
+        if (button.matches('.has-submenu')) {
+          button.click(); // Builds choices without invoking a leaf action.
+          const child = [...parent.querySelectorAll('.conversation-submenu')].find(menu => menu._trigger === button);
+          if (child) return {title:button.textContent.trim().slice(0,100),children:choices(child)};
+        }
+        return remember(button);
+      }).filter(Boolean);
+    const items = element.matches('.avatar-popover')
+      ? [...[...element.querySelectorAll('[role=group]')].map(group => ({title:group.getAttribute('aria-label'),children:[...group.querySelectorAll('button')].map(remember).filter(Boolean)})), ...[...element.querySelectorAll(':scope > button')].map(remember).filter(Boolean)]
+      : choices(element);
+    // Library pinning belongs to desktop's drawer, which iOS replaces with pages.
+    const allowed = items.filter(item => !/^(Close|Unpin|Pin) (artifact )?library$/.test(item.title));
+    const bounds = source.getBoundingClientRect();
+    // Native toolbar buttons have no web rectangle. Anchor to the current
+    // page's visible corner, retaining that page as the action's owner.
+    const rect = toolbarSource ? {x:Math.max(0,Math.min(innerWidth-1,bounds.right-1)),
+      y:Math.max(0,Math.min(innerHeight-1,bounds.top+1)),width:1,height:1} : bounds;
+    closeActionMenu(element, source);
+    if (!allowed.length) { menuActions.clear(); return; }
+    const model = {action:'native-menu',key:generation,
+      title:element === libraryMenu ? '' : element.getAttribute('aria-label') || '',rect:[rect.x,rect.y,rect.width,rect.height],items:allowed};
+    if (present) window.webkit?.messageHandlers?.kindredAccounts?.postMessage(model);
+    return model;
+  };
+  document.addEventListener('pointerdown', event => {
+    const row = event.target.closest?.('.artifact-studio-library-item[data-artifact-id]');
+    if (!row || row.closest('[hidden],[inert]') || event.button !== 0) return;
+    const rect = row.getBoundingClientRect();
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'artifact-target',key:row.dataset.artifactId,
+      rect:[rect.x,rect.y,rect.width,rect.height]});
+  }, true);
+  window.__kindredNativeMenus = {
+    describeArtifact(key) {
+      const row = document.querySelector(`.artifact-studio-library-item[data-artifact-id="${CSS.escape(key)}"]`);
+      if (!row || row.closest('[hidden],[inert]') || !row.getClientRects().length) return null;
+      lastMenuSource = row;
+      const rect = row.getBoundingClientRect();
+      row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:rect.x,clientY:rect.y}));
+      const menu = document.querySelector('.artifact-context-menu');
+      return menu ? presentActionMenu(menu, false) : null;
+    },
+    perform(id) {
+      const action = menuActions.get(id);
+      if (!action) return;
+      menuActions.clear();
+      if (action.context !== menuContext() || !action.source.isConnected ||
+          action.source.closest('[hidden],[inert]') || !action.source.getClientRects().length || action.button.disabled || action.button.getAttribute('aria-disabled') === 'true') return;
+      action.button.click();
+      // Avatar choice closures reopen the desktop flyout while saving.
+      closeActionMenu(action.element, action.source);
+    },
+    cancel(key) { if (key === String(actionMenuSerial)) menuActions.clear(); },
+  };
+  const scanActionMenus = () => {
+    for (const element of document.querySelectorAll(actionMenuSelector)) {
+      if (openActionMenu(element)) { presentActionMenu(element); break; }
+    }
+  };
+  observeUI(scanActionMenus).observe(document.body, {childList:true,subtree:true,attributes:true,
+    attributeFilter:['hidden','class','aria-expanded']});
+  document.addEventListener('toggle', scanActionMenus, true);
+  scanActionMenus();
+  const openToolbarMenu = (trigger, source, selector) => {
+    if (!trigger || !source?.isConnected || source.closest('[hidden],[inert]') ||
+        !source.getClientRects().length || getComputedStyle(source).visibility === 'hidden') return;
+    trigger.click(); // Keep server-owned menu construction and leaf closures.
+    const element = document.querySelector(selector);
+    if (element && openActionMenu(element)) presentActionMenu(element,true,source);
+  };
+  const duoRoute = () => {
+    const library = document.querySelector('.artifact-studio');
+    if (library) return library.dataset.iosArtifactView === 'document' ? 'artifact' : 'artifacts';
+    if (document.querySelector('#marketplace-dialog[open]')) return 'marketplace';
+    if (!computer?.hidden) return 'computer';
+    if (!document.querySelector('#details-panel')?.hidden) return 'details';
+    if (shell.hidden) return 'marketplace';
+    return html.dataset.iosLayout === 'compact' && shell.classList.contains('sidebar-open') ? 'chat-list' : 'bot-chat';
+  };
+  let lastDuoNavigation = '';
+  const publishDuoNavigation = () => {
+    if (!nativeDuo) return;
+    const route = duoRoute();
+    const listAvailable = ['bot-chat','computer'].includes(route) && nativeSidebarActive();
+    const avatar = document.querySelector('#header-avatar .character'), shape = avatar?.dataset.avatarBody || avatar?.dataset.shape || 'round', color = avatar?.dataset.avatarColor || (avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '');
+    const state = {action:'duo-navigation', route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160),
+      botAvatarShape:/^[a-z0-9-]{1,32}$/.test(shape) ? shape : 'round',
+      botAvatarColor:/^#[0-9a-f]{6}$/i.test(color) ? color : '#2475ff',
+      botDetailsAvailable:['bot-chat','computer'].includes(route) && !!document.querySelector('#bot-details') && !document.querySelector('#bot-details').disabled,
+      listVisible:listAvailable && !nativeSidebarHidden,
+      listToggleAvailable:listAvailable,
+      computerExpandAvailable:route === 'computer' && html.dataset.iosDuoInner === 'true' && !!document.querySelector('#computer-expand') && !document.querySelector('#computer-expand').disabled,
+      computerExpanded:route === 'computer' && computer.classList.contains('expanded'),
+      botSettingsAvailable:route === 'details' && !!document.querySelector('#bot-settings') && !document.querySelector('#bot-settings').hidden};
+    const next = JSON.stringify(state);
+    if (lastDuoNavigation === next) return;
+    lastDuoNavigation = next;
+    window.webkit?.messageHandlers?.kindredAccounts?.postMessage(state);
+  };
+  window.__kindredDuoActions = {async perform(action) {
+    // Search is a modal on new servers. Back/search dismiss it; other native
+    // actions wait for dismissal so no second sheet can stack over its exit.
+    if (document.querySelector('.navigation-search[open]')) {
+      if (!await window.__KINDRED_NAVIGATION_SEARCH?.close()) return;
+      if (action === 'back' || action === 'search') return;
+    }
+    const route = duoRoute();
+    if (!nativeDuo || (document.querySelector('dialog[open]') && !(action === 'back' && route === 'marketplace'))) return;
+    if (action === 'chats') {
+      if (nativeSidebarActive()) window.__kindredNativeSidebar.toggle();
+      publishDuoNavigation(); return;
+    }
+    if (action === 'expandComputer') {
+      if (route === 'computer' && html.dataset.iosDuoInner === 'true') document.querySelector('#computer-expand')?.click();
+      publishDuoNavigation(); return;
+    }
+    if (action === 'newBot' || action === 'newConversation') {
+      if (!['chat-list','bot-chat','computer'].includes(route)) return;
+      const menu = document.querySelector('#new-menu');
+      const choice = [...(menu?.querySelectorAll('button') || [])].find(button => button.textContent.trim() === (action === 'newBot' ? 'New bot' : 'New chat'));
+      if (choice && !choice.disabled) { menuActions.clear(); menu.hidden = true; choice.click(); }
+      publishDuoNavigation(); return;
+    }
+    if (action === 'back' || (action === 'computer' && route === 'computer')) {
+      if (route === 'computer') {
+        if (typeof window.__KINDRED_MOBILE_BACK === 'function') window.__KINDRED_MOBILE_BACK('bot-chat');
+        else document.querySelector('#ios-computer-back')?.click();
+      } else if (route === 'details') document.querySelector('#details-close')?.click();
+      else if (route === 'artifact') document.querySelector('.artifact-workbench-header [aria-label="Back to artifacts"]')?.click();
+      else if (route === 'artifacts') document.querySelector('.ios-artifact-navigation [aria-label="Back to chats"]')?.click();
+      else if (route === 'marketplace') document.querySelector('#marketplace-dialog')?.close();
+      else if (route === 'bot-chat') {
+        if (typeof window.__KINDRED_MOBILE_BACK === 'function') window.__KINDRED_MOBILE_BACK('chat-list');
+        else menu?.click();
+      }
+    } else {
+      const selectors = {computer:'#show-computer',botDetails:'#bot-details',botSettings:'#bot-settings',settings:'#settings-button',artifacts:'#artifacts-button',marketplace:'#marketplace-button',search:'#ios-search',newChat:'#new-bot'};
+      if (action === 'botDetails' && !['bot-chat','computer'].includes(route)) return;
+      if (action === 'botSettings' && (route !== 'details' || document.querySelector('#bot-settings')?.hidden)) return;
+      if (action === 'search' && route === 'artifacts') document.querySelector('.ios-artifact-navigation [aria-label="Search artifacts"]')?.click();
+      else if (action === 'newChat' && route === 'artifacts') openToolbarMenu(document.querySelector('.artifact-add'),document.querySelector('.artifact-studio-library'),'.artifact-add-menu');
+      else if (action === 'newChat' && ['chat-list','bot-chat','computer'].includes(route)) openToolbarMenu(document.querySelector('#new-bot'),sidebar,'#new-menu');
+      else if (action === 'newChat') return;
+      else if (Object.hasOwn(selectors,action)) document.querySelector(selectors[action])?.click();
+    }
+    publishDuoNavigation();
+  }};
+  observeUI(publishDuoNavigation).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class','data-ios-artifact-view','data-shape','data-avatar-body','data-avatar-color']});
+  observeUI(publishDuoNavigation).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
+  observeUI(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo','data-ios-duo-inner','data-ios-sidebar-hidden','data-ios-native-sidebar','data-ios-native-sidebar-hidden']});
+  publishDuoNavigation();
+  // Hand navigation to the page before slow fonts/images finish loading.
+  window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'interface-ready'});
+})();

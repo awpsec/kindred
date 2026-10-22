@@ -37,6 +37,8 @@
 	<false/>
 	<key>KindredAPNsEnvironment</key>
 	<string>$(KINDRED_APS_ENVIRONMENT)</string>
+	<key>KindredSourceRevision</key>
+	<string>$(KINDRED_SOURCE_REVISION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
@@ -77,7 +79,7 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Kindred uses on-device speech recognition when you choose to dictate a draft. Dictation never sends your message automatically.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Kindred uses the microphone when you choose to dictate or record audio in a conversation.</string>
+	<string>Kindred uses the microphone when you choose to dictate a draft or record audio or video in a conversation.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Kindred saves an image to your photo library only when you choose to save it.</string>
 	<key>UIApplicationSceneManifest</key>
@@ -85,11 +87,8 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
-	<key>UILaunchScreen</key>
-	<dict>
-		<key>UIColorName</key>
-		<string>Canvas</string>
-	</dict>
+	<key>UILaunchStoryboardName</key>
+	<string>KindredLaunchScreen</string>
 	<key>UIRequiresFullScreen</key>
 	<false/>
 	<key>UISupportedInterfaceOrientations</key>

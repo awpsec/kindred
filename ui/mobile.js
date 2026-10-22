@@ -101,7 +101,7 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
   };
   function geometry(force=false){
     // Keyboard-only visual viewport changes do not alter the layout size class.
-    const style=getComputedStyle(shell),w=(shell.clientWidth||innerWidth)-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0),h=document.documentElement.clientHeight||innerHeight,scale=parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1,pose=mobileRegions(window.__KINDRED_NATIVE_GEOMETRY,w,h),duo=pose.inner,inner=pose.inner,computerOpen=visible(document.querySelector('#computer-panel')),minChat=(duo?(computerOpen?20:24):32)*15*scale,computerWidth=duo?(inner?panes.computer:280):Math.max(360,w*.42),size=[w,h,scale,computerOpen,duo,inner,panes.sidebar,panes.computer,panes.hidden].join('|');
+    const style=getComputedStyle(shell),w=(shell.clientWidth||innerWidth)-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0),h=document.documentElement.clientHeight||innerHeight,scale=parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1,pose=mobileRegions(window.__KINDRED_NATIVE_GEOMETRY,document.documentElement.clientWidth||innerWidth,h),duo=pose.inner,inner=pose.inner,computerOpen=visible(document.querySelector('#computer-panel')),minChat=(duo?(computerOpen?20:24):32)*15*scale,computerWidth=duo?(inner?panes.computer:280):Math.max(360,w*.42),size=[w,h,scale,computerOpen,duo,inner,panes.sidebar,panes.computer,panes.hidden].join('|');
     if(size===lastSize&&force!==true)return;
     lastSize=size;clear();
     const native=window.__KINDRED_NATIVE_GEOMETRY,shape=native?native.windowWidth+'x'+native.windowHeight:'',typing=document.activeElement?.matches('input,textarea,[contenteditable=true]');
@@ -118,7 +118,10 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
     html.style.setProperty('--ios-fold-bottom',((pose.horizontal?.y||0)+(pose.horizontal?.height||0))+'px');
     if(paneDrag&&(!inner||regions.some(r=>r.kind==='division')||shape!==paneDrag.shape)){paneDrag.cancel();return;}
     let sidebarWidth=duo?(inner?Math.min(panes.sidebar,Math.max(160,w-minChat)):210):300,paneWidth=inner?Math.min(computerWidth,Math.max(240,w-minChat)):computerWidth,gap=0;
-    const division=pose.vertical;
+    // Region frames and control rectangles use viewport coordinates. Only pane
+    // widths use the shell's padded content origin; padding is not a scale.
+    const contentLeft=shell.getBoundingClientRect().left+(parseFloat(style.paddingLeft)||0);
+    const division=pose.vertical?{...pose.vertical,x:pose.vertical.x-contentLeft}:null;
     let side=computerOpen&&layoutHeight>=480&&w-paneWidth>=minChat;
     let list=layoutHeight>=480&&w-sidebarWidth-(side?paneWidth:0)>=minChat&&!(inner&&panes.hidden);
     if(division){

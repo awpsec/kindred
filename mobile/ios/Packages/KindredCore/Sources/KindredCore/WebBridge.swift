@@ -90,6 +90,17 @@ public enum WebBootstrap {
           window.__KINDRED_MOBILE_PLATFORM = "ios";
           window.__KINDRED_MOBILE_PROFILE = \(javaScriptString(profileID ?? ""));
           window.__KINDRED_NATIVE_SESSION_BOOTSTRAP = true;
+          // WebKit omits randomUUID on confirmed private HTTP origins, while
+          // getRandomValues remains available. Keep the same RFC 4122 v4 entropy.
+          if (!window.crypto.randomUUID) {
+            window.crypto.randomUUID = function () {
+              var bytes = window.crypto.getRandomValues(new Uint8Array(16));
+              bytes[6] = (bytes[6] & 15) | 64;
+              bytes[8] = (bytes[8] & 63) | 128;
+              var hex = Array.from(bytes, function (b) { return b.toString(16).padStart(2, "0"); });
+              return hex.slice(0,4).join("") + "-" + hex.slice(4,6).join("") + "-" + hex.slice(6,8).join("") + "-" + hex.slice(8,10).join("") + "-" + hex.slice(10).join("");
+            };
+          }
           try {
             window.localStorage.removeItem(\(javaScriptString(tokenKey)));
             var token = \(tokenLiteral);

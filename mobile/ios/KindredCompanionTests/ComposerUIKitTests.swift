@@ -20,12 +20,12 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     private var observers: [NSObjectProtocol] = []
     private var layoutEvidence: [String: Any] = [:]
     private var keyboardOwnershipEvents: [[String: Any]] = []
-    private static let fullHeightDiagnosticMethods = [
-        "testKeyboardOwnershipFullHeightOrdinaryFocus",
-        "testKeyboardOwnershipFullHeightPreventScrollFocus",
+    private static let contractedDiagnosticMethods = [
+        "testKeyboardOwnershipContractedOrdinaryFocus",
+        "testKeyboardOwnershipContractedPreventScrollFocus",
     ]
-    private var isFullHeightDiagnostic: Bool {
-        Self.fullHeightDiagnosticMethods.contains { method in
+    private var isContractedDiagnostic: Bool {
+        Self.contractedDiagnosticMethods.contains { method in
             name == method || name.hasSuffix(".\(method)") || name.hasSuffix(" \(method)]")
         }
     }
@@ -81,19 +81,16 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let root = NavigationStack {
             WebContainerView(session: session)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .principal) { Text("Composer fixture") }
-                    ToolbarItem(placement: .topBarTrailing) { Button("Accounts") {} }
-                }
+                .ignoresSafeArea(.container, edges: [.top, .bottom])
+                .toolbar(.hidden, for: .navigationBar)
         }
         window = UIWindow(windowScene: scene)
-        if isFullHeightDiagnostic {
-            // Experimental test host only. Production and original tests retain
-            // SwiftUI's existing keyboard avoidance behavior.
-            window.rootViewController = UIHostingController(rootView: root.ignoresSafeArea(.keyboard))
-        } else {
+        if isContractedDiagnostic {
+            // Diagnostic comparison only: ordinary tests match RootView's
+            // single keyboard owner, WebHostView's UIKit layout guide.
             window.rootViewController = UIHostingController(rootView: root)
+        } else {
+            window.rootViewController = UIHostingController(rootView: root.ignoresSafeArea(.keyboard))
         }
         window.makeKeyAndVisible()
         observers.append(NotificationCenter.default.addObserver(forName: UIResponder.keyboardDidShowNotification, object: nil, queue: .main) { [weak self] note in
@@ -128,7 +125,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // Bind the fixture's exact shared candidate, not a stale connected UI.
         _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
         try await waitFor("exact Send candidate UI manifest") {
-            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='0622d73d9d4bb43e14d7ce10f466c1528c3f39764d775e94ad70f9e7041e172c' && window.__sendSurfaceFixture?.['app.js']==='8d62214bf221ece3dcd6651add2158f8bb95afb0cbd9a312fcc75f76405a787f' && window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c'")
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='f9c9a9a4b677ca63d96f845a1a5492a9378fbad90e286bc3b9b8311ed28e6e7b' && window.__sendSurfaceFixture?.['app.js']==='17909a4c569a6031237e2dbb2bc5c97bed8aee79dfebf5f61711fa88dde4279f' && window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c'")
         }
         try await waitFor("injected native capability reconciles through bridge") {
             try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && window.__KINDRED_IOS_DICTATION?.recognizerAvailable===true")
@@ -160,6 +157,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     }
 
     func testKeyboardOpenClosePreservesDraftAndToolbarAboveKeyboard() async throws {
+        try await checkComposer(label: "idle-centered")
         let draft = "Native draft\nSecond line\nThird line"
         _ = try await js("const p=document.querySelector('#prompt');p.textContent='Native draft\\nSecond line\\nThird line';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.focus({preventScroll:true});true")
         try await waitFor("actual UIKit software keyboard didShow") { self.keyboardShows > 0 && self.keyboardFrame.height > 100 }
@@ -263,6 +261,29 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         }
     }
 
+    func testDictationRestartsAfterAccountsSheetAndCachedHostSuspension() async throws {
+        _ = try await js("const p=document.querySelector('#prompt');p.textContent='Retained draft';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
+        for suspension in ["accounts-sheet", "cached-host"] {
+            _ = try await js("document.querySelector('.dictation-button').click();true")
+            try await waitFor("recording before " + suspension) { self.session.dictation.phase == "recording" }
+            if suspension == "accounts-sheet" { session.setNativeNavigationBlocked(true) }
+            else { session.detachVisibleHost() }
+            try await waitFor("suspended utterance cancelled") {
+                guard self.session.dictation.operation == nil else { return false }
+                return try await self.boolean("!document.querySelector('#composer').classList.contains('is-dictating')")
+            }
+            session.setNativeNavigationBlocked(false)
+            _ = try await js("document.querySelector('.dictation-button').click();true")
+            try await waitFor("same document restarts after " + suspension) { self.session.dictation.phase == "recording" }
+            _ = try await js("document.querySelector('.dictation-cancel').click();true")
+            try await waitFor("restart cancelled without sending") { self.session.dictation.operation == nil }
+            let draft = try await js("document.querySelector('#prompt').textContent") as? String
+            XCTAssertEqual(draft, "Retained draft")
+            let sends = try await js("window.__composerSends.length") as? Int
+            XCTAssertEqual(sends, 0)
+        }
+    }
+
     func testKeyboardOwnershipContractedOrdinaryFocus() async throws {
         try await captureKeyboardOwnership(fullHeight: false, preventScroll: false)
     }
@@ -277,7 +298,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     }
 
     private func captureKeyboardOwnership(fullHeight: Bool, preventScroll: Bool) async throws {
-        XCTAssertEqual(isFullHeightDiagnostic, fullHeight)
+        XCTAssertEqual(!isContractedDiagnostic, fullHeight)
         let phase = "keyboard-ownership-\(fullHeight ? "full-height" : "contracted")-\(preventScroll ? "prevent-scroll" : "ordinary")"
         let start = ProcessInfo.processInfo.systemUptime
         // Fixed synthetic input only. Serialize equality, never editable text.
@@ -359,7 +380,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             (()=>{const rect=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
               const p=document.querySelector('#prompt'),shell=document.querySelector('#app'),v=visualViewport;
               return {draftMatches:p?.textContent==='Keyboard ownership fixture draft',sendCount:window.__composerSends.length,
-                uiMatches:window.__sendSurfaceFixture?.['style.css']==='0622d73d9d4bb43e14d7ce10f466c1528c3f39764d775e94ad70f9e7041e172c'&&window.__sendSurfaceFixture?.['app.js']==='8d62214bf221ece3dcd6651add2158f8bb95afb0cbd9a312fcc75f76405a787f'&&window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c',
+                uiMatches:window.__sendSurfaceFixture?.['style.css']==='f9c9a9a4b677ca63d96f845a1a5492a9378fbad90e286bc3b9b8311ed28e6e7b'&&window.__sendSurfaceFixture?.['app.js']==='17909a4c569a6031237e2dbb2bc5c97bed8aee79dfebf5f61711fa88dde4279f'&&window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c',
                 uiManifest:window.__sendSurfaceFixture,viewport:{width:innerWidth,height:innerHeight},
                 client:{width:document.documentElement.clientWidth,height:document.documentElement.clientHeight},
                 visual:v?{width:v.width,height:v.height,offsetTop:v.offsetTop,offsetLeft:v.offsetLeft,scale:v.scale}:null,
@@ -377,7 +398,15 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     private func js(_ source: String) async throws -> Any? {
         // A WK page retains its global lexical environment between evaluations.
         // A block isolates const/let while preserving expression/Promise results.
-        try await session.webView.evaluateJavaScript("{\n\(source)\n}")
+        return try await withCheckedThrowingContinuation { continuation in
+            session.webView.evaluateJavaScript("{\n\(source)\n}") { value, error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume(returning: value) }
+            }
+            // Pair the queued script with UIKit focus immediately, before the
+            // asynchronous DOM focus runs. Actual touch is a separate check.
+            if source.contains(".focus(") { session.webView.becomeFirstResponder() }
+        }
     }
     private func boolean(_ source: String) async throws -> Bool { try await js(source) as? Bool == true }
     private func waitFor(_ label: String, timeout: TimeInterval = 12, predicate: () async throws -> Bool) async throws {
@@ -521,6 +550,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                     probe.finish(["page": value ?? NSNull()])
                 }
             }
+            if source.contains(".focus(") { session.webView.becomeFirstResponder() }
         }
     }
 
@@ -578,6 +608,13 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let controls = try XCTUnwrap(metrics["controls"] as? [[String: Any]])
         XCTAssertGreaterThanOrEqual(controls.count, 2)
         XCTAssertGreaterThanOrEqual(p["height"] ?? 0, 24)
+        if (c["height"] ?? .infinity) <= 60 {
+            XCTAssertEqual((p["y"] ?? 0) + (p["height"] ?? 0) / 2,
+                           (c["y"] ?? 0) + (c["height"] ?? 0) / 2, accuracy: 1,
+                           "Idle text must be centered in the composer pill")
+        }
+        let providerHidden = try await boolean("!document.querySelector('#composer-hint').getClientRects().length")
+        XCTAssertTrue(providerHidden, "Native composer omits the provider in every state")
         if let reply = metrics["reply"] as? [String: Double], let files = metrics["files"] as? [String: Double] {
             XCTAssertLessThanOrEqual(reply["bottom"] ?? .infinity, (files["y"] ?? 0) + 1)
             XCTAssertLessThanOrEqual(files["bottom"] ?? .infinity, (p["y"] ?? 0) + 1)
@@ -592,10 +629,18 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         }
         let native = try XCTUnwrap(metrics["native"] as? [String: Any])
         let safe = try XCTUnwrap(native["safeArea"] as? [String: Double])
-        XCTAssertEqual(safe["bottom"] ?? -1, Double(window.safeAreaInsets.bottom), accuracy: 2)
-        XCTAssertEqual(safe["top"] ?? -1, Double(window.safeAreaInsets.top), accuracy: 2)
-        XCTAssertEqual(safe["left"] ?? -1, Double(window.safeAreaInsets.left), accuracy: 2)
-        XCTAssertEqual(safe["right"] ?? -1, Double(window.safeAreaInsets.right), accuracy: 2)
+        let webInsets = session.webView.safeAreaInsets
+        XCTAssertEqual(safe["bottom"] ?? -1, Double(webInsets.bottom), accuracy: 2)
+        XCTAssertEqual(safe["top"] ?? -1, Double(webInsets.top), accuracy: 2)
+        XCTAssertEqual(safe["left"] ?? -1, Double(webInsets.left), accuracy: 2)
+        XCTAssertEqual(safe["right"] ?? -1, Double(webInsets.right), accuracy: 2)
+        if keyboardVisible {
+            let composerBottom = session.webView.convert(CGPoint(x: 0, y: c["bottom"] ?? 0), to: window).y
+            let keyboardTop = window.convert(keyboardFrame, from: nil).minY
+            XCTAssertGreaterThanOrEqual(keyboardTop - composerBottom, 6)
+            XCTAssertLessThanOrEqual(keyboardTop - composerBottom, 18,
+                                     "Composer stays adjacent to the real keyboard, without an empty gap")
+        }
         let json = try JSONSerialization.data(withJSONObject: metrics, options: [.prettyPrinted, .sortedKeys])
         let attachment = XCTAttachment(data: json, uniformTypeIdentifier: "public.json")
         attachment.name = label + "-actual-UIKit-geometry"

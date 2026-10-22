@@ -43,7 +43,8 @@ export function mountArtwork(box,profile,size=44){
  // during a rapid reversal. Following that weight directly would jump in size.
  function orbitTarget(snapshot){const morph=snapshot.morph;const weight=morph&&size>=48?Math.max(0,Math.min(1,morph.amount*((morph.kind==='orbit'?morph.swap:0)+(morph.outgoing==='orbit'?1-morph.swap:0)))):0;return 1+.75*weight;}
  function draw(snapshot=engine.frame()){
-  const ink=paint(a,document.documentElement.dataset.theme==='dark');if(ink!==renderPaint){renderPaint=ink;renderAppearance=createAppearance(ink);}
+  if(box.dataset.avatarBody!==a.body)box.dataset.avatarBody=a.body;
+  const ink=paint(a,document.documentElement.dataset.theme==='dark');if(ink!==renderPaint){renderPaint=ink;box.dataset.avatarColor=ink;renderAppearance=createAppearance(ink);}
   const transform=`translate(-50%,-50%) scale(${orbitScale.toFixed(4)})`;
   if(canvas.style.transform!==transform)canvas.style.transform=transform;
   commitSvgTree(canvas,renderSvgTree(snapshot,renderAppearance,size*fillScale(artworkFill),id,{displaySize:size,extent:'100%'}));dirty=false;

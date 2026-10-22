@@ -27,7 +27,7 @@ export function createNavigationSearch({getItems=()=>[],search,renderIcon,onErro
   heading.append(glass,input,close);status.setAttribute('role','status');status.setAttribute('aria-live','polite');status.hidden=true;
   footer.append(el('span','','↑ ↓ to navigate'),el('span','','↵ to open'),el('span','','esc to close'));
   dialog.append(heading,list,status,footer);document.body.append(dialog);
-  let rows=[],selectedId=null,origin=null,timer=null,request=null,generation=0,remote=[],animation=null,closing=false,destroyed=false;
+  let rows=[],selectedId=null,origin=null,timer=null,request=null,generation=0,presentation=0,remote=[],animation=null,closing=false,destroyed=false;
   const reduced=()=>document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches;
   function invalidate(){++generation;clearTimeout(timer);timer=null;request?.abort();request=null;}
   function announce(message){status.textContent=message;status.hidden=!message;}
@@ -57,9 +57,10 @@ export function createNavigationSearch({getItems=()=>[],search,renderIcon,onErro
   }
   async function activate(item){
     if(closing||!item)return;
+    const ticket=presentation;
     // Finish closing before opening another native modal, so focus cannot be
     // restored onto the old trigger after the destination has taken focus.
-    await hide();try{await item.run();}catch(error){onError(error);}
+    if(!await hide()||ticket!==presentation||destroyed)return;try{await item.run();}catch(error){onError(error);}
   }
   function refresh({remoteSearch=false}={}){
     if(!dialog.open||closing||destroyed)return;
@@ -74,18 +75,19 @@ export function createNavigationSearch({getItems=()=>[],search,renderIcon,onErro
   }
   function open(query=''){
     if(destroyed)return;
+    presentation++;
     const wasOpen=dialog.open;animation?.cancel();animation=null;closing=false;
     if(!wasOpen){origin=document.activeElement;onOpen?.();dialog.showModal();}
     input.value=query;input.setAttribute('aria-expanded','true');refresh({remoteSearch:true});input.focus();input.setSelectionRange?.(query.length,query.length);
     if(!wasOpen&&!reduced())animation=dialog.animate([{opacity:0,transform:'translateY(-6px) scale(.985)'},{opacity:1,transform:'none'}],{duration:140,easing:'cubic-bezier(.2,.8,.2,1)'});
   }
   async function hide(){
-    if(!dialog.open||closing)return;
+    if(!dialog.open||closing)return false;
     closing=true;invalidate();input.setAttribute('aria-expanded','false');animation?.cancel();
     const leaving=!reduced()?dialog.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateY(-4px) scale(.99)'}],{duration:100,easing:'ease-in'}):null;
-    animation=leaving;if(leaving)try{await leaving.finished;}catch{return;}
-    if(!closing)return;dialog.close();animation=null;closing=false;remote=[];announce('');
-    if(origin?.isConnected&&!origin.closest('[hidden]'))origin.focus({preventScroll:true});origin=null;
+    animation=leaving;if(leaving)try{await leaving.finished;}catch{return false;}
+    if(!closing||destroyed)return false;dialog.close();animation=null;closing=false;remote=[];announce('');
+    if(origin?.isConnected&&!origin.closest('[hidden]'))origin.focus({preventScroll:true});origin=null;return true;
   }
   function keydown(event){
     if(shortcut&&(event.metaKey||event.ctrlKey)&&!event.altKey&&event.key.toLowerCase()==='k'){

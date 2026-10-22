@@ -74,6 +74,8 @@ final class AppModel {
     private(set) var activeAccountID: UUID?
     /// Accounts with a session token in the Keychain.
     private(set) var signedIn: Set<UUID> = []
+    /// Process lifetime state: backgrounding, reloads and account switches never replay the launch.
+    var hasCompletedLaunch = false
     var sheet: SheetRoute?
     var banner: Banner?
     var download: DownloadedFile?
@@ -422,6 +424,7 @@ final class AppModel {
         try await signOut(id, ignoringNotificationFailure: ignoringNotificationFailure)
         cancelRetry(id)
         accounts.removeAll { $0.id == id }
+        CachedWebAppearance.clear(accountID: id)
         if activeAccountID == id {
             activeAccountID = accounts.max { $0.lastUsedAt < $1.lastUsedAt }?.id
         }
@@ -433,7 +436,15 @@ final class AppModel {
     /// Web data stores can only be deleted once no web view uses them; anything
     /// left is retried on the next launch.
     private func removePendingWebsiteData() async {
+        guard !pendingDataRemovals.isEmpty else { return }
+        let existing = Set(await WKWebsiteDataStore.allDataStoreIdentifiers)
         for id in pendingDataRemovals where sessions[id] == nil {
+            // An account removed before opening its page has no web data store.
+            // Avoid asking WebKit to delete a store that was never created.
+            guard existing.contains(id) else {
+                pendingDataRemovals.removeAll { $0 == id }
+                continue
+            }
             do {
                 try await WKWebsiteDataStore.remove(forIdentifier: id)
                 pendingDataRemovals.removeAll { $0 == id }
@@ -699,6 +710,15 @@ final class AppModel {
     private func cancelRetry(_ id: UUID) {
         retryTasks.removeValue(forKey: id)?.cancel()
         retryAttempts[id] = nil
+    }
+
+    /// Ignore stale pushes after alerts are turned off, sign-out, or account
+    /// removal. APNs may still have an alert in flight during unregistering.
+    func shouldPresentNotification(_ route: PushRoute?) -> Bool {
+        guard let route,
+              let account = AccountGrouping.account(forServerAccountID: route.serverAccountID,
+                  installationID: route.installationID, in: accounts) else { return false }
+        return account.push.wanted && isSignedIn(account.id)
     }
 
     /// A tapped alert: choose the saved account the server account ID maps to,

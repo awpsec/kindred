@@ -7608,7 +7608,7 @@ function hidePane(panel){
 }
 function setComputerExpanded(expanded){
   // iOS already uses its native full-size computer layout, including Open links.
-  if(window.__KINDRED_MOBILE_PLATFORM==='ios')expanded=false;
+  if(window.__KINDRED_MOBILE_PLATFORM==='ios'&&document.documentElement.dataset.iosSlab==='true'&&document.documentElement.dataset.iosDuoInner!=='true')expanded=false;
   const panel=$('computer-panel');
   if(panel.classList.contains('expanded')!==expanded)transitionPaneLayout(()=>panel.classList.toggle('expanded',expanded));
   $('computer-expand').setAttribute('aria-label',expanded?'Collapse computer':'Expand computer');
@@ -7871,8 +7871,10 @@ function avatarMenu(bot) {
     b.dataset.color=color;b.dataset.palette=palettes.find(p=>p.label===name).id;
     b.style.backgroundColor=color;b.title=name;b.setAttribute('aria-label',name);swatches.append(b);
   }
+  const more=button('Custom color…',()=>{closeAvatarMenus();pickAvatar(portrait(bot),p=>perform(()=>choose({avatar:p.avatar,shape:p.shape,eyes:p.eyes,color:p.color})));},'outline-button');
   wrap.updateProfile=updated=>{
     bot=updated;const p=portrait(bot);
+    more.setAttribute('aria-pressed',String(!!avatarAppearance(p).custom_color));
     trigger.setAttribute('aria-label','Customize '+bot.name);const preview=replaceCharacter(trigger,p,82);preview.dataset.avatarPreview='true';setActivity(preview,'idle');
     for(const b of shapeChoices.children) {
       const selected=b.dataset.shape===avatarAppearance(p).body;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));
@@ -7883,7 +7885,6 @@ function avatarMenu(bot) {
     }
   };
   wrap.updateProfile(bot);
-  const more=button('Custom color…',()=>{closeAvatarMenus();pickAvatar(portrait(bot),p=>perform(()=>choose({avatar:p.avatar,shape:p.shape,eyes:p.eyes,color:p.color})));},'outline-button');
   menu.append(shapeChoices,swatches,more);
   wrap.append(trigger,menu);return wrap;
 }
@@ -9291,6 +9292,17 @@ navigationSearch=createNavigationSearch({shortcut:false,
  onOpen:()=>{closeIdentityMenu();$('new-menu').hidden=true;},onError:error=>notice(error.message),
 });
 $('search-trigger').onclick=()=>navigationSearch.open();
+// Installed iOS adapters keep their native toolbar and invoke #ios-search.
+// Capture before their old handler attempts to focus the hidden filter input.
+if(window.__KINDRED_MOBILE_PLATFORM==='ios'){
+ document.addEventListener('click',event=>{
+  if(!event.target.closest?.('#ios-search'))return;
+  event.preventDefault();event.stopImmediatePropagation();
+  if(navigationSearch.isOpen)void navigationSearch.close();else if(!document.querySelector('dialog[open]'))navigationSearch.open();
+ },true);
+ window.__KINDRED_NAVIGATION_SEARCH={close:()=>navigationSearch.close()};
+}
+
 
 function botLibraryFile(item){return item.kind==='attachment'&&item.file.kind!=='file'?{...item.file,name:item.file.title||'Screenshot.png',mime:'image/png'}:item.file;}
 function botLibraryReader(item){

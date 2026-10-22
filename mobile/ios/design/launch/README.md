@@ -1,7 +1,8 @@
 # Approved iOS launch: wake up and dissolve
 
 Owner approved this version on October 3, 2026. This folder is the handoff to the
-Mac/Xcode implementation thread. The animation is **not yet wired into the app**.
+Mac/Xcode implementation thread. The animation is implemented natively in
+`KindredCompanion/Views/KindredLaunchView.swift` above the existing root content.
 It is iOS-only. Do not add it to desktop or Android.
 
 - [Dark preview](dark.gif)
@@ -40,10 +41,15 @@ chat list is illustrative; do not replace the shipping layout with this mockup.
 ## Native integration handoff
 
 Implement as a first app-rendered SwiftUI layer above the existing root/content,
-using the current native startup implementation as the integration point. Keep
-the static launch screen unchanged. Use the updated mark from
+using the current native startup implementation as the integration point.
+October 22 owner update: the system launch storyboard uses only the theme canvas.
+Do not add a static mark: its different size/center created a second launch stage
+and a visible jump into the approved animation. The first app-rendered mark below
+is the sole logo appearance. Use the updated mark from
 `mobile/ios/tools/kindred-mark.svg` with separately animatable pill eyes; do not
 embed the eyes twice in the body image.
+The October 11 approved Soft K asset replaces the earlier body and eye positions;
+the native drawing follows that current SVG while retaining the approved timing.
 
 - Run once on a fresh app launch. Do not replay on scene activation, background
   return, account/profile switching, navigation, web reload or reconnect.
@@ -67,7 +73,10 @@ Build and run in the iPhone simulator with both themes and Reduce Motion. Check
 cold launch, warm return, signed-out startup, unavailable server, account switch,
 and an already-loaded/fast startup. Check that the final UI and touch handling
 are exactly the existing app's, with no retained logo or animation layer. Native
-build/simulator validation has not been performed by this design handoff.
+build/simulator validation was completed during native integration: light/dark
+cold launches, Reduce Motion, signed-out startup, signed-in chat and background
+return without replay. Native tests cover readiness bounds and account switching;
+physical-device checks remain outstanding. See the main iOS README for details.
 
 Keep work in the existing `awpsec/kindred` repository under `mobile/ios`. If the
 Mac thread has uncommitted work, commit it on its working branch before fetching

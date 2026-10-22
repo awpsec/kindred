@@ -1,0 +1,168 @@
+// Exercise the deployed pane motion with the native bundle, not just desktop CSS.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const {server,token,profileID}=require('./fixtures/duo.cjs');
+const root=path.resolve(__dirname,'../..'),bundle=path.join(root,'mobile/ios/KindredCompanion/Web');
+(async()=>{
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await webkit.launch();
+ try {
+  const p=await browser.newPage({viewport:{width:951,height:669},hasTouch:true}),errors=[];p.on('pageerror',e=>errors.push(e.message));
+  if(process.env.LEGACY){const shared=fs.readFileSync(path.join(root,'ui/mobile.js'),'utf8');await p.route(origin+'/mobile.js',r=>r.fulfill({contentType:'text/javascript',body:shared.slice(0,shared.indexOf('export function installMobileNavigation('))+fs.readFileSync(path.join(__dirname,'fixtures/mobile-navigation-v1.js'),'utf8')}));}
+  await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,'ui/app.js'),'utf8')+'\nexport {showPane,hidePane,finishComputerTransition};'}));
+  await p.addInitScript(({token,profileID,css,js})=>{
+   sessionStorage.setItem('kindred-token',token);Object.assign(window,{__KINDRED_MOBILE:true,__KINDRED_MOBILE_PLATFORM:'ios',__KINDRED_MOBILE_PROFILE:profileID,__KINDRED_NATIVE_SESSION_BOOTSTRAP:true});
+   window.accountRequests=[];window.webkit={messageHandlers:{kindredAccounts:{postMessage:v=>accountRequests.push(v)},kindredDictation:{postMessage:()=>{}}}};
+   window.__KINDRED_IOS_DICTATION={supported:true,protocolVersion:1,engine:'apple-on-device',onDeviceOnly:true,documentID:'duo-motion-test',onDeviceAvailable:true};
+   window.__KINDRED_IOS_LAYOUT={topInset:24,bottomInset:34,leftInset:16,rightInset:84,railSide:'right',isDuo:true,isDuoInner:true,usesNativeRail:true,isPortrait:false,viewportHeight:669};
+   window.__KINDRED_NATIVE_GEOMETRY={width:951,height:669,windowWidth:951,windowHeight:669,reservedRegions:[{kind:'division',active:false,x:475,y:0,width:0,height:669},{kind:'occlusion',active:true,x:867,y:0,width:84,height:120}]};
+   addEventListener('DOMContentLoaded',()=>{const style=document.createElement('style');style.textContent=css;document.head.append(style);(0,eval)(js);},{once:true});
+  },{token,profileID,css:fs.readFileSync(path.join(bundle,'MobileLayout.css'),'utf8'),js:fs.readFileSync(path.join(bundle,'MobileLayout.js'),'utf8')});
+  await p.goto(origin+'/#kindred-chat=dm-vivienne');await p.locator('#prompt').waitFor();await p.evaluate(async()=>window.motionFixture=await import('/app.js'));
+  // Capture the effect at creation: chat layout on a busy WebKit process can
+  // take longer than the entire 200ms fade between two animation frames. Seek
+  // and finish it in the capture's microtask, before the native cleanup timer;
+  // do not change product duration or suppress its bounded cleanup.
+  await p.evaluate(()=>{
+   window.captureChromeEffects=()=>new Promise((resolve,reject)=>{
+    const animate=Element.prototype.animate,effects=[];let queued=false;
+    const restore=()=>{Element.prototype.animate=animate;clearTimeout(timeout);};
+    const timeout=setTimeout(()=>{restore();reject(new Error('No native chrome effect was created'));},1500);
+    Element.prototype.animate=function(...args){
+     const effect=animate.apply(this,args);
+     if(this.matches('#composer,.bot-heading,.jump-latest')&&effect.effect.getKeyframes().some(frame=>'translate' in frame)){
+      effect.pause();effect.currentTime=0;effects.push(effect);
+      if(!queued){queued=true;queueMicrotask(()=>{restore();resolve(effects);});}
+     }
+     return effect;
+    };
+   });
+   window.capturePaneFade=(panel,change)=>new Promise((resolve,reject)=>{
+    const animate=Element.prototype.animate;let captured=false;
+    const restore=()=>{Element.prototype.animate=animate;clearTimeout(timeout);};
+    const timeout=setTimeout(()=>{restore();reject(new Error('No native pane opacity effect was created'));},1500);
+    Element.prototype.animate=function(...args){
+     const effect=animate.apply(this,args);
+     if(this===panel&&effect.effect.getKeyframes().some(frame=>'opacity' in frame)){
+      captured=true;effect.pause();effect.currentTime=0;restore();
+      // Let the native observer finish settling the retained pane's layout.
+      queueMicrotask(()=>resolve(effect));
+     }
+     return effect;
+    };
+    try{change();}catch(error){if(!captured){restore();reject(error);}else throw error;}
+   });
+  });
+  const reports=[];
+  for(const pane of ['details-panel','computer-panel'])for(const open of [true,false]) {
+   const proof=await p.evaluate(async({pane,open})=>{
+    const panel=document.getElementById(pane),rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+    const sample=()=>({pane:rect(panel),chat:rect(document.querySelector('.conversation')),composer:rect(document.querySelector('#composer'))});
+    const transitions=[await capturePaneFade(panel,()=>motionFixture[open?'showPane':'hidePane'](panel))];
+    const frames=[];for(const t of [0,50,150,199]){transitions.forEach(a=>a.currentTime=t);frames.push({...sample(),opacity:Number(getComputedStyle(panel).opacity)});}
+    transitions.forEach(a=>a.finish());
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    return {frames,after:sample(),hidden:panel.hidden,transitions:transitions.length,leaks:document.querySelectorAll('.pane-layout-frame,.pane-layout-reservation').length};
+   },{pane,open});reports.push({pane,open,...proof});
+   for(const item of ['chat','composer',...(open?['pane']:[])])for(const axis of ['x','width'])assert(Math.abs(proof.frames.at(-1)[item][axis]-proof.after[item][axis])<2,JSON.stringify({pane,open,item,axis,proof}));
+   assert.equal(proof.hidden,!open);assert.equal(proof.leaks,0,'server frame/reservation settled before native fade');
+   assert(proof.transitions>0,'the native pane has an opacity transition: '+JSON.stringify({pane,open,proof}));
+   const opacity=proof.frames.map(frame=>frame.opacity);
+   assert(open?opacity.at(-1)>opacity[0]:opacity.at(-1)<opacity[0],'the pane fades in the requested direction');
+   for(const item of ['chat','composer'])for(const axis of ['x','width'])assert(Math.abs(proof.frames[0][item][axis]-proof.after[item][axis])<2,'settled lane cannot teleport when the fade completes');
+  }
+  const reversal=await p.evaluate(async()=>{
+   const pane=document.querySelector('#details-panel');
+   const fade=await capturePaneFade(pane,()=>motionFixture.showPane(pane));fade.currentTime=80;
+   const before=Number(getComputedStyle(pane).opacity);
+   const reverse=await capturePaneFade(pane,()=>motionFixture.hidePane(pane));reverse.currentTime=0;const after=Number(getComputedStyle(pane).opacity);
+   dispatchEvent(new Event('resize'));return {before,after,hidden:pane.hidden,closing:document.querySelectorAll('.ios-pane-closing').length,vars:pane.style.cssText.includes('--ios-pane-exit-')};
+  });assert(Math.abs(reversal.before-reversal.after)<0.06,'a quick reversal continues from its current opacity');assert(reversal.hidden&&!reversal.closing&&!reversal.vars,'resize cleans an interrupted closing fade');
+  await p.emulateMedia({reducedMotion:'reduce'});
+  await p.evaluate(()=>motionFixture.showPane(document.querySelector('#details-panel')));await p.evaluate(()=>new Promise(r=>requestAnimationFrame(r)));
+  assert.equal(await p.locator('#details-panel').evaluate(n=>n.getAnimations().length),0,'Reduce Motion removes native pane fades');
+  await p.evaluate(()=>motionFixture.hidePane(document.querySelector('#details-panel')));
+  await p.emulateMedia({reducedMotion:'no-preference'});
+  const relay=async(inner,capture=false)=>{
+   const width=inner?951:466,height=inner?669:678;await p.setViewportSize({width,height});
+   await p.evaluate(async({inner,width,height,capture})=>{
+    const effects=capture?captureChromeEffects():null;
+    Object.assign(__KINDRED_IOS_LAYOUT,{isDuoInner:inner,isPortrait:!inner,viewportHeight:height,keyboardVisible:false});
+    __KINDRED_NATIVE_GEOMETRY={width,height,windowWidth:width,windowHeight:height,reservedRegions:inner?[{kind:'division',active:false,x:475,y:0,width:0,height}]:[]};
+    dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));dispatchEvent(new Event('kindred-native-geometry'));
+    if(effects)window.capturedChrome=await effects;
+   },{inner,width,height,capture});
+   if(!capture)await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  };
+  await relay(false);await p.waitForFunction(()=>!document.documentElement.dataset.iosChromeMorphing);
+  const beforeFold=await p.locator('#composer').boundingBox();await relay(true,true);
+  const fold=await p.evaluate(async()=>{
+   const form=document.querySelector('#composer'),tag=document.querySelector('.bot-heading');
+   const motions=capturedChrome;
+   const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+   const frames=[];for(const time of [0,70,140,210,279]){motions.forEach(a=>a.currentTime=time);frames.push({form:rect(form),tag:rect(tag)});}
+   motions.forEach(a=>a.finish());await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+   return {motions:motions.length,frames,after:{form:rect(form),tag:rect(tag)}};
+  });
+  assert(fold.motions>=2,'composer and identity share a display geometry animation');
+  assert(Math.abs(fold.frames[0].form.width-beforeFold.width)<2,'composer starts at its last painted width: '+JSON.stringify({beforeFold,fold}));
+  const widths=fold.frames.map(f=>f.form.width);assert(widths.some(w=>w>widths[0]+2&&w<fold.after.form.width-2),'composer expands through intermediate widths');
+  for(const item of ['form','tag'])for(const axis of ['x','y','width','height'])assert(Math.abs(fold.frames.at(-1)[item][axis]-fold.after[item][axis])<2,'chrome ends at its natural bounds without cleanup teleport');
+  for(const frame of fold.frames)assert(Math.abs(frame.tag.x+frame.tag.width/2-(fold.after.tag.x+fold.after.tag.width/2))<2,'appearing identity expands around its final center');
+  assert(fold.frames[0].tag.width<fold.after.tag.width-2,'appearing identity grows from an avatar-sized pill');
+  assert.equal(await p.locator('html').getAttribute('data-ios-chrome-morphing'),null,'display animation settles without a held frame');
+  // The half-open book pose can change usable controls without changing the
+  // window's size or inner-display classification at all.
+  await p.evaluate(async()=>{
+   const effects=captureChromeEffects();__KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:true,x:475,y:0,width:28,height:669}];dispatchEvent(new Event('kindred-native-geometry'));window.capturedChrome=await effects;
+  });
+  const contraction=await p.evaluate(async()=>{
+   const form=document.querySelector('#composer'),mic=document.querySelector('.dictation-button');
+   const motions=capturedChrome;
+   const frames=[];for(const t of [0,70,140,279]){motions.forEach(a=>a.currentTime=t);frames.push({right:form.getBoundingClientRect().right,mic:mic.getBoundingClientRect().right,width:form.getBoundingClientRect().width});}
+   const translations=motions.filter(a=>a.effect.target===form).flatMap(a=>a.effect.getKeyframes().map(f=>f.translate));motions.forEach(a=>a.finish());await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {frames,translations};
+  });
+  for(const frame of contraction.frames){assert(Math.abs(frame.right-contraction.frames.at(-1).right)<1,'contraction keeps its trailing form edge even when wider than the destination');assert(Math.abs(frame.mic-contraction.frames.at(-1).mic)<1,'contraction cannot push the native mic offscreen');}
+  for(const translate of contraction.translations)assert(Math.abs(parseFloat(translate))<0.01,'contraction needs no racing sideways translation');
+  await p.waitForFunction(()=>!document.documentElement.dataset.iosChromeMorphing);
+  const book=await p.locator('#composer').boundingBox();
+  await p.evaluate(async()=>{const effects=captureChromeEffects();__KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:false,x:475,y:0,width:0,height:669}];dispatchEvent(new Event('kindred-native-geometry'));window.capturedChrome=await effects;});
+  const bookOpen=await p.evaluate(async()=>{
+   const form=document.querySelector('#composer'),motions=capturedChrome;
+   const edges=[];const widths=[];for(const time of [0,70,140,279]){motions.forEach(a=>a.currentTime=time);widths.push(form.getBoundingClientRect().width);const f=form.getBoundingClientRect(),m=document.querySelector('.dictation-button').getBoundingClientRect();edges.push({right:f.right,mic:m.right});}motions.forEach(a=>a.finish());
+   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {widths,edges,translations:motions.filter(a=>a.effect.target===form).flatMap(a=>a.effect.getKeyframes().map(f=>f.translate)),end:form.getBoundingClientRect().width};
+  });assert(Math.abs(bookOpen.widths[0]-book.width)<2,'half-open book begins at its painted input width');
+  assert(bookOpen.widths.some(w=>w>book.width+2&&w<bookOpen.end-2),'half-open to flat visibly expands through intermediate bounds');
+  assert(Math.abs(bookOpen.widths.at(-1)-bookOpen.end)<2,'book completion cannot teleport');
+  // Seeking a paused WebKit animation samples width/translate atomically and
+  // hid a native compositor race. A stationary right edge needs no horizontal
+  // translation at all: only its right-anchored width may animate.
+  for(const translate of bookOpen.translations)assert(Math.abs(parseFloat(translate))<0.01,'leftward growth must not race width against a compositor translation');
+  const interrupted=await p.evaluate(async()=>{
+   const first=captureChromeEffects();__KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:true,x:475,y:0,width:28,height:669}];dispatchEvent(new Event('kindred-native-geometry'));
+   await first;
+   const form=document.querySelector('#composer'),rect=()=>{const r=form.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width};};
+   for(const a of form.getAnimations()){a.pause();a.currentTime=100;}
+   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const before=rect();
+   const second=captureChromeEffects();__KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:false,x:475,y:0,width:0,height:669}];dispatchEvent(new Event('kindred-native-geometry'));
+   const motions=await second;
+   motions.forEach(a=>{a.pause();a.currentTime=0;});const after=rect();motions.forEach(a=>a.finish());await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {before,after};
+  });for(const axis of ['x','y','width'])assert(Math.abs(interrupted.before[axis]-interrupted.after[axis])<2,'a reversed fold resumes from the last painted '+axis);
+  for(const frame of bookOpen.edges){assert(Math.abs(frame.right-bookOpen.edges[0].right)<1,'leftward expansion keeps the trailing form edge anchored');assert(Math.abs(frame.mic-bookOpen.edges[0].mic)<1,'native mic stays anchored while input expands leftward');}
+  // Keyboard-only changes are UIKit-owned, and Reduce Motion settles bounds.
+  await p.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{keyboardVisible:true,composerBottomInset:0,bottomInset:0,viewportHeight:400});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
+  await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));assert.equal(await p.locator('html').getAttribute('data-ios-chrome-morphing'),null,'typing does not start a fold animation');
+  const growth=await p.evaluate(async()=>{
+   const form=document.querySelector('#composer'),editor=document.querySelector('#prompt');editor.focus();
+   const sample=()=>{const r=form.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height,root:document.documentElement.scrollTop,body:document.body.scrollTop};};
+   const initial=accountRequests.filter(v=>v.action==='composer-extent').at(-1).height;const frames=[];for(const value of ['Hello','Hello\nSecond line','Hello\nSecond line\nThird line','A naturally wrapping draft with enough words to exceed a single line in this input. '.repeat(3),'Hello']){
+    editor.value=value;editor.dispatchEvent(new Event('input',{bubbles:true}));
+    for(let i=0;i<8;i++){await new Promise(requestAnimationFrame);frames.push({value,...sample()});}
+   }return {frames,initial,requests:accountRequests.filter(v=>v.action==='composer-extent')};
+  });
+  assert(growth.frames.some(f=>f.height>growth.frames[0].height+20),'draft actually grows to multiple lines');
+  for(const frame of growth.frames){assert(Math.abs(frame.bottom-growth.frames[0].bottom)<1,'typing grows upward without lifting the bottom edge');assert.equal(frame.root+frame.body,0,'draft growth cannot scroll viewport roots');}
+  for(const request of growth.requests)assert(Math.abs(request.height-growth.initial)<1,'native bottom-bar query is independent of draft height');
+  await p.emulateMedia({reducedMotion:'reduce'});await relay(false);assert.equal(await p.locator('html').getAttribute('data-ios-chrome-morphing'),null,'Reduce Motion settles display bounds immediately');
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,reports,fold,contraction,bookOpen,interrupted,growth}));
+ } finally {await browser.close();server.closeAllConnections();server.close();}
+})().catch(e=>{console.error(e);server.close();process.exitCode=1;});

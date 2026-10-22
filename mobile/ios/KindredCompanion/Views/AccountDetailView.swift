@@ -115,7 +115,7 @@ struct AccountDetailView: View {
         Section {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: statusSymbol(account))
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(.secondary)
                 Text(statusText(account, signedIn: signedIn))
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
@@ -136,7 +136,7 @@ struct AccountDetailView: View {
         } header: {
             Text("Notifications")
         } footer: {
-            Text("Bot updates show a generic message. Reminders include their text and time. Tapping an alert opens the conversation.")
+            Text("Bot updates show a generic message. Reminders include their text and time. Background alerts require the server to send a push through Apple's APNs service. Tapping an alert opens the conversation.")
         }
     }
 
@@ -147,6 +147,7 @@ struct AccountDetailView: View {
     }
 
     private func statusSymbol(_ account: Account) -> String {
+        if model.notificationAuthorization == .denied { return "bell.slash" }
         switch account.push.state {
         case .registered: return "bell.badge.fill"
         case .failed, .removalUnconfirmed: return "exclamationmark.bubble"
@@ -157,7 +158,11 @@ struct AccountDetailView: View {
     private func statusText(_ account: Account, signedIn: Bool) -> String {
         switch account.push.state {
         case .registered:
-            return "On. This device is registered with the server."
+            if model.notificationAuthorization == .denied {
+                return "Notifications are turned off in iOS. Enable them in Settings."
+            }
+            if case .success(let status)? = serverStatus, status != .configured { return status.message }
+            return "This device is registered with the server."
         case .failed(let message, _):
             return account.push.wanted ? "Registration failed: \(message) Kindred will try again." : "Last registration failed: \(message)"
         case .removalUnconfirmed(let message, _):
@@ -169,7 +174,7 @@ struct AccountDetailView: View {
             break
         }
         if !signedIn { return "Sign in to manage notifications." }
-        if model.apnsEnvironment == nil { return "This build of Kindred isn't configured for notifications." }
+        if model.apnsEnvironment == nil { return "This build needs Apple push signing to receive background notifications." }
         if account.serverAccountID == nil { return "Notifications need a Kindred account sign-in, not a legacy access token." }
         if account.push.wanted { return waitingText() }
         switch serverStatus {
