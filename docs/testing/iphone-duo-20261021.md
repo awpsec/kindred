@@ -182,3 +182,14 @@ The installed adapter settles only the server's temporary pane-frame animation t
 Automated WebKit coverage includes current/historical navigation, left/right gutters, outer landscape bottom-corner status regions, focused/blurred input height, keyboard boundaries, scrollbar viewport, tabletop history fill, draft/anchor retention and controlled-input cancellation. The pane regression reproduces the former 240-point final-frame chat-width jump and now samples opacity and unchanged lane bounds through completion; it also covers rapid reversal, resize interruption and Reduce Motion. Native Swift build and source review cover the host lifecycle and guards.
 
 Final visual folding/keyboard/pane timing remains pending: Device Hub became inaccessible when the Mac locked during this pass. Do not treat automated geometry checks or source review as visual certification on the simulator or physical Duo.
+
+
+## Continuous display chrome (October 22 follow-up)
+
+The retained composer, centered identity and Latest messages control now animate actual pixel bounds across local display/hinge geometry changes. Text is not scaled. The 280ms coordinated motion samples the previous painted position, supports a reversed fold, and removes its effects at the natural destination. A centered pill accounts for its center anchor while its width grows. The editor keeps its natural height and live draft/caret; intermediate form widths do not repeatedly change the native bottom-row extent. A fixed 650ms fallback prevents lingering effects.
+
+Keyboard-only viewport changes, initial attachment, background return, pane dragging and Reduce Motion retain their existing ownership. Host resize messages can arrive after a viewport resize; the old painted bounds are retained until native width agrees. A lighter theme-matched native frost is limited to outer/inner architecture changes. Same-display hinge/resizing transitions show their actual movement directly. Source changes remain confined to the installed iOS bundle, not desktop/server UI.
+
+The motion fixture now samples closed-to-open and same-window half-open-book-to-flat transitions, including intermediate composer widths, centered identity growth, cleanup continuity, rapid fold reversal and keyboard/Reduce Motion exclusions under current and historical navigation. Existing geometry tests wait for finite chrome motion before checking their final bounds.
+
+Messages comparison is unavailable in this iOS 27.1 runtime: installed-app metadata and the runtime Applications bundle contain Messages compose/extension services, but no Messages conversation app. The closed-screen reading/Latest clearance policy is unchanged. Native visual verification also remains pending while the Mac is locked.

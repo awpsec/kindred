@@ -982,6 +982,111 @@
   new MutationObserver(updateNavigation).observe(shell, {attributes:true, attributeFilter:['class']});
   new MutationObserver(updateNavigation).observe(html, {attributes:true, attributeFilter:['class','data-ios-layout','data-ios-sidebar-hidden']});
   updateNavigation();
+  // Animate retained chrome between local display geometries. Pixel bounds,
+  // rather than scale transforms, keep text and touch targets at their real size.
+  const chromeNodes = () => [...document.querySelectorAll('#composer,.conversation-header .bot-heading,.conversation>.composer-area>.jump-latest')];
+  const chromeRects = new Map(), chromePainted = new Map(), chromeTargets = new Map(), chromeMotions = new Map();
+  let chromePose = '', chromeLayout = '', chromeKeyboard, chromeFrame = 0, chromeTimer = 0, chromeActive = false;
+  const chromeRect = node => {
+    if (!node.getClientRects().length || getComputedStyle(node).visibility === 'hidden') return null;
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? {x:rect.x,y:rect.y,width:rect.width,height:rect.height} : null;
+  };
+  const displayPose = () => {
+    const geometry = window.__KINDRED_NATIVE_GEOMETRY, layout = window.__KINDRED_IOS_LAYOUT;
+    if (!nativeDuo || !geometry || !layout) return '';
+    // Host height/safe-area changes caused by the keyboard are intentionally absent.
+    return JSON.stringify([geometry.windowWidth,geometry.windowHeight,layout.isDuoInner,layout.isPortrait,
+      (geometry.reservedRegions || []).filter(r => r.kind === 'division' && r.active !== false && r.width>0 && r.height>0)
+        .map(r => r.height>r.width ? ['vertical',r.x,r.width] : ['horizontal',r.y,r.height]).sort()]);
+  };
+  const finishChromeMotion = () => {
+    clearTimeout(chromeTimer); chromeTimer = 0;
+    for (const motion of chromeMotions.values()) { motion.onfinish = motion.oncancel = null; motion.cancel(); }
+    chromeMotions.clear(); chromeTargets.clear(); chromePainted.clear(); chromeActive = false;
+    delete html.dataset.iosChromeMorphing; chromeRects.clear();
+    for (const node of chromeNodes()) chromeRects.set(node,chromeRect(node));
+  };
+  function scheduleChromeMotion() {
+    if (chromeFrame) return;
+    chromeFrame = requestAnimationFrame(() => {
+      chromeFrame = 0;
+      if (!nativeDuo) { chromePose = ''; finishChromeMotion(); return; }
+      const geometry = window.__KINDRED_NATIVE_GEOMETRY;
+      // A resize can precede its native geometry message. Keep the last painted
+      // source until that message arrives instead of caching half-reflowed bounds.
+      if (nativeDuo && Number.isFinite(geometry?.width) && Math.abs(geometry.width-innerWidth)>1) return;
+      const nextPose = displayPose(), changed = chromePose && nextPose && nextPose !== chromePose;
+      chromePose = nextPose;
+      const keyboard = window.__KINDRED_IOS_LAYOUT?.keyboardVisible === true;
+      const keyboardChanged = chromeKeyboard !== undefined && chromeKeyboard !== keyboard;
+      chromeKeyboard = keyboard;
+      const lane = conversation.getBoundingClientRect(), area = document.querySelector('#composer-area');
+      const bounds = area?.getBoundingClientRect(), css = area && getComputedStyle(area);
+      const layout = JSON.stringify([lane.x,lane.y,lane.width,lane.height,bounds?.x,bounds?.width,bounds?.bottom,css?.paddingLeft,css?.paddingRight,
+        header.style.getPropertyValue('--ios-native-control-left'),header.style.getPropertyValue('--ios-native-control-right')]);
+      const layoutChanged = layout !== chromeLayout; chromeLayout = layout;
+      if (keyboardChanged) { finishChromeMotion(); return; }
+      if (!changed && chromeActive && !layoutChanged) {
+        for (const node of chromeNodes()) chromePainted.set(node,chromeRect(node));
+        return;
+      }
+      const reduced = html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches;
+      if (!changed && !chromeActive) {
+        chromeRects.clear();
+        for (const node of chromeNodes()) chromeRects.set(node,chromeRect(node));
+        return;
+      }
+      if (reduced || document.hidden || html.classList.contains('pane-resizing')) { finishChromeMotion(); return; }
+      const before = new Map();
+      for (const node of chromeNodes()) before.set(node,chromeActive ? (chromePainted.get(node) || chromeRect(node)) : chromeRects.get(node));
+      // Cancel only our effects, then measure the natural destination after
+      // native/sidebar observers have applied the latest geometry in this frame.
+      for (const motion of chromeMotions.values()) { motion.onfinish = motion.oncancel = null; motion.cancel(); }
+      chromeMotions.clear(); chromeTargets.clear();
+      for (const node of chromeNodes()) {
+        const target = chromeRect(node), prior = before.get(node);
+        chromeRects.set(node,target);
+        if (!target || node.classList.contains('is-morphing')) continue;
+        const from = prior || (node.matches('.bot-heading') ? {...target,x:target.x+target.width/2-22,width:44} : null);
+        if (!from || (!changed && Math.abs(from.x-target.x)+Math.abs(from.y-target.y)+Math.abs(from.width-target.width)+Math.abs(from.height-target.height)<1)) continue;
+        chromeTargets.set(node,target);
+        // Centered identity and trailing Latest controls already change their
+        // layout origin as width changes. Subtract that anchor movement once.
+        const anchor = node.matches('.bot-heading') ? 0.5 : node.matches('.jump-latest') ? 1 : 0;
+        const dx = from.x-target.x-(target.width-from.width)*anchor;
+        const editing = node.id === 'composer';
+        // Keep the live editor's height natural while its width changes. New
+        // keystrokes/attachments must never be clipped by a held animation box.
+        const constraints = editing ? {minWidth:'0px',maxWidth:'none'}
+          : {minWidth:'0px',maxWidth:'none',minHeight:Math.min(from.height,target.height)+'px',overflow:'clip'};
+        const motion = node.animate([
+          {...constraints,translate:`${dx}px ${from.y-target.y}px`,width:from.width+'px',...(editing?{}:{height:from.height+'px'}),opacity:prior?1:0},
+          {...constraints,translate:'0px 0px',width:target.width+'px',...(editing?{}:{height:target.height+'px'}),opacity:1},
+        ],{duration:280,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});
+        chromeMotions.set(node,motion); chromePainted.set(node,chromeRect(node));
+      }
+      chromeActive = chromeMotions.size > 0;
+      if (chromeActive) {
+        html.dataset.iosChromeMorphing = 'true';
+        // Effects finish together. Removing them reveals exactly the measured
+        // natural destination, without leaving inline frame styles behind.
+        const motions = [...chromeMotions.values()];
+        const complete = () => { if (motions.every(m => [...chromeMotions.values()].includes(m))) finishChromeMotion(); };
+        Promise.all(motions.map(m => m.finished)).then(complete,complete);
+        if (!chromeTimer) chromeTimer = setTimeout(finishChromeMotion,650);
+      } else finishChromeMotion();
+    });
+  }
+  for (const type of ['kindred-native-geometry','kindred-ios-layout']) window.addEventListener(type,scheduleChromeMotion);
+  const chromeLayoutObserver = new ResizeObserver(scheduleChromeMotion);
+  for (const node of [shell,conversation,...chromeNodes()]) if (node) chromeLayoutObserver.observe(node);
+  document.addEventListener('visibilitychange',() => { if (document.hidden) { chromePose = ''; finishChromeMotion(); } });
+  window.addEventListener('pagehide',() => { chromePose = ''; finishChromeMotion(); });
+  matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',event => { if (event.matches) finishChromeMotion(); });
+  new MutationObserver(() => { if (html.dataset.motion === 'off') finishChromeMotion(); }).observe(html,{attributes:true,attributeFilter:['data-motion']});
+  scheduleChromeMotion();
+
   function updateEnvironment(value) {
     if (!value) return;
     html.style.setProperty('--ios-safe-top', `${Math.max(0, Number(value.topInset) || 0)}px`);
@@ -1165,7 +1270,7 @@
       !document.querySelector('dialog[open],.artifact-studio') && document.querySelector('#details-panel')?.hidden !== false &&
       (computer?.hidden || (html.dataset.iosComputer === 'side' && !computer.classList.contains('expanded')));
     if (!visible) { lastComposerExtent = null; return; }
-    const height = Math.round(rect.height*100)/100;
+    const height = Math.round((chromeTargets.get(form)?.height ?? rect.height)*100)/100;
     if (Number.isFinite(height) && height !== lastComposerExtent) {
       lastComposerExtent = height;
       window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'composer-extent',height});

@@ -40,7 +40,8 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
           window.__KINDRED_NATIVE_GEOMETRY={...bounds,reservedRegions:regions};
           dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));dispatchEvent(new Event('kindred-native-geometry'));
         },{inner,bounds,regions,landscape});
-        await page.waitForFunction(()=>!document.querySelector('#app').dataset.mobileResizing);
+        await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+        await page.waitForFunction(()=>!document.querySelector('#app').dataset.mobileResizing&&!document.documentElement.dataset.iosChromeMorphing);
       };
       const assertFill=async()=>{
         const conversation=await page.locator('.conversation').boundingBox(),form=await page.locator('#composer').boundingBox();

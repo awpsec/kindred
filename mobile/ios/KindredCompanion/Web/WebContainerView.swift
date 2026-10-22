@@ -87,6 +87,10 @@ final class WebHostView: UIView {
                         inner: inner, divisions: divisions)
         defer { pose = next }
         guard let previous = pose else { return } // Cold launch owns its animation.
+        // The retained web controls animate same-display resizing/hinge changes.
+        // Frost is only a bridge between outer/inner navigation architectures;
+        // covering every hinge update would hide their actual movement.
+        guard next.inner != previous.inner || frostActive else { return }
         // Trigger on window pose only. Once covered, also wait for the local
         // host/keyboard guide/safe-area layout to settle before uncovering it.
         let layout = "\(bounds)|\(session?.webView.frame ?? .zero)|\(session?.webView.safeAreaInsets ?? .zero)|\(safeAreaInsets)"
@@ -103,9 +107,9 @@ final class WebHostView: UIView {
             view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             view.frame = bounds
             view.overrideUserInterfaceStyle = session?.webView.overrideUserInterfaceStyle ?? .unspecified
-            view.effect = UIAccessibility.isReduceTransparencyEnabled ? nil : UIBlurEffect(style: .systemMaterial)
+            view.effect = UIAccessibility.isReduceTransparencyEnabled ? nil : UIBlurEffect(style: .systemUltraThinMaterial)
             view.contentView.backgroundColor = (session?.presentation.canvas ?? .systemBackground)
-                .withAlphaComponent(UIAccessibility.isReduceTransparencyEnabled ? 1 : 0.88)
+                .withAlphaComponent(UIAccessibility.isReduceTransparencyEnabled ? 1 : 0.18)
             if view.superview !== self { addSubview(view) }
             bringSubviewToFront(view)
             view.layer.removeAllAnimations()

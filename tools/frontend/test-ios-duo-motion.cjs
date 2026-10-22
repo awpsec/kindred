@@ -47,6 +47,65 @@ const root=path.resolve(__dirname,'../..'),bundle=path.join(root,'mobile/ios/Kin
   await p.emulateMedia({reducedMotion:'reduce'});
   await p.evaluate(()=>motionFixture.showPane(document.querySelector('#details-panel')));await p.evaluate(()=>new Promise(r=>requestAnimationFrame(r)));
   assert.equal(await p.locator('#details-panel').evaluate(n=>n.getAnimations().length),0,'Reduce Motion removes native pane fades');
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,reports}));
+  await p.evaluate(()=>motionFixture.hidePane(document.querySelector('#details-panel')));
+  await p.emulateMedia({reducedMotion:'no-preference'});
+  const relay=async inner=>{
+   const width=inner?951:466,height=inner?669:678;await p.setViewportSize({width,height});
+   await p.evaluate(({inner,width,height})=>{
+    Object.assign(__KINDRED_IOS_LAYOUT,{isDuoInner:inner,isPortrait:!inner,viewportHeight:height,keyboardVisible:false});
+    __KINDRED_NATIVE_GEOMETRY={width,height,windowWidth:width,windowHeight:height,reservedRegions:inner?[{kind:'division',active:false,x:475,y:0,width:0,height}]:[]};
+    dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));dispatchEvent(new Event('kindred-native-geometry'));
+   },{inner,width,height});
+   await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  };
+  await relay(false);await p.waitForFunction(()=>!document.documentElement.dataset.iosChromeMorphing);
+  const beforeFold=await p.locator('#composer').boundingBox();await relay(true);
+  await p.waitForFunction(()=>document.documentElement.dataset.iosChromeMorphing==='true');
+  const fold=await p.evaluate(async()=>{
+   const form=document.querySelector('#composer'),tag=document.querySelector('.bot-heading');
+   const motions=[...form.getAnimations(),...tag.getAnimations()].filter(a=>a.effect.getKeyframes().some(f=>'translate' in f));motions.forEach(a=>a.pause());
+   const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+   const frames=[];for(const time of [0,70,140,210,279]){motions.forEach(a=>a.currentTime=time);frames.push({form:rect(form),tag:rect(tag)});}
+   motions.forEach(a=>a.finish());await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+   return {motions:motions.length,frames,after:{form:rect(form),tag:rect(tag)}};
+  });
+  assert(fold.motions>=2,'composer and identity share a display geometry animation');
+  assert(Math.abs(fold.frames[0].form.width-beforeFold.width)<2,'composer starts at its last painted width: '+JSON.stringify({beforeFold,fold}));
+  const widths=fold.frames.map(f=>f.form.width);assert(widths.some(w=>w>widths[0]+2&&w<fold.after.form.width-2),'composer expands through intermediate widths');
+  for(const item of ['form','tag'])for(const axis of ['x','y','width','height'])assert(Math.abs(fold.frames.at(-1)[item][axis]-fold.after[item][axis])<2,'chrome ends at its natural bounds without cleanup teleport');
+  for(const frame of fold.frames)assert(Math.abs(frame.tag.x+frame.tag.width/2-(fold.after.tag.x+fold.after.tag.width/2))<2,'appearing identity expands around its final center');
+  assert(fold.frames[0].tag.width<fold.after.tag.width-2,'appearing identity grows from an avatar-sized pill');
+  assert.equal(await p.locator('html').getAttribute('data-ios-chrome-morphing'),null,'display animation settles without a held frame');
+  // The half-open book pose can change usable controls without changing the
+  // window's size or inner-display classification at all.
+  await p.evaluate(()=>{
+   __KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:true,x:475,y:0,width:28,height:669}];dispatchEvent(new Event('kindred-native-geometry'));
+  });await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));await p.waitForFunction(()=>!document.documentElement.dataset.iosChromeMorphing);
+  const book=await p.locator('#composer').boundingBox();
+  await p.evaluate(()=>{__KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:false,x:475,y:0,width:0,height:669}];dispatchEvent(new Event('kindred-native-geometry'));});
+  await p.waitForFunction(()=>document.documentElement.dataset.iosChromeMorphing==='true');
+  const bookOpen=await p.evaluate(async()=>{
+   const form=document.querySelector('#composer'),motions=form.getAnimations().filter(a=>a.effect.getKeyframes().some(f=>'translate' in f));motions.forEach(a=>a.pause());
+   const widths=[];for(const time of [0,70,140,279]){motions.forEach(a=>a.currentTime=time);widths.push(form.getBoundingClientRect().width);}motions.forEach(a=>a.finish());
+   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {widths,end:form.getBoundingClientRect().width};
+  });assert(Math.abs(bookOpen.widths[0]-book.width)<2,'half-open book begins at its painted input width');
+  assert(bookOpen.widths.some(w=>w>book.width+2&&w<bookOpen.end-2),'half-open to flat visibly expands through intermediate bounds');
+  assert(Math.abs(bookOpen.widths.at(-1)-bookOpen.end)<2,'book completion cannot teleport');
+  const interrupted=await p.evaluate(async()=>{
+   __KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:true,x:475,y:0,width:28,height:669}];dispatchEvent(new Event('kindred-native-geometry'));
+   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+   const form=document.querySelector('#composer'),rect=()=>{const r=form.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width};};
+   for(const a of form.getAnimations()){a.pause();a.currentTime=100;}
+   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const before=rect();
+   __KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:false,x:475,y:0,width:0,height:669}];dispatchEvent(new Event('kindred-native-geometry'));
+   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+   const motions=[...document.querySelectorAll('#composer,.bot-heading,.jump-latest')].flatMap(n=>n.getAnimations()).filter(a=>a.effect.getKeyframes().some(f=>'translate' in f));
+   motions.forEach(a=>{a.pause();a.currentTime=0;});const after=rect();motions.forEach(a=>a.finish());await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {before,after};
+  });for(const axis of ['x','y','width'])assert(Math.abs(interrupted.before[axis]-interrupted.after[axis])<2,'a reversed fold resumes from the last painted '+axis);
+  // Keyboard-only changes are UIKit-owned, and Reduce Motion settles bounds.
+  await p.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{keyboardVisible:true,viewportHeight:400});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
+  await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));assert.equal(await p.locator('html').getAttribute('data-ios-chrome-morphing'),null,'typing does not start a fold animation');
+  await p.emulateMedia({reducedMotion:'reduce'});await relay(false);assert.equal(await p.locator('html').getAttribute('data-ios-chrome-morphing'),null,'Reduce Motion settles display bounds immediately');
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,reports,fold,bookOpen,interrupted}));
  } finally {await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

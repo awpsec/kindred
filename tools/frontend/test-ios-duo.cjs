@@ -48,7 +48,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
       const check=()=>{
         const shell=document.querySelector('#app'),canvas=document.querySelector('#desktop canvas:not(.desktop-glass)'),rect=canvas?.getBoundingClientRect();
         const next=[innerWidth,innerHeight,shell?.dataset.mobileResizing,rect?.x,rect?.y,rect?.width,rect?.height].join('|');
-        frames=shell && !shell.dataset.mobileResizing && stamp===next?frames+1:0;stamp=next;
+        frames=shell && !shell.dataset.mobileResizing && !document.documentElement.dataset.iosChromeMorphing && stamp===next?frames+1:0;stamp=next;
         if(frames>=3)return resolve();
         if(performance.now()>deadline)return reject(new Error('Duo geometry did not settle'));
         requestAnimationFrame(check);

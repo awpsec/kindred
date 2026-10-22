@@ -32,7 +32,8 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
       await page.goto(origin+'/#kindred-chat=dm-vivienne');await page.locator('#content .message-group[data-message="72"]').waitFor({state:'visible'});
       const action=name=>page.evaluate(name=>__kindredDuoActions.perform(name),name);
       const settled=async()=>{
-        await page.waitForFunction(()=>!document.querySelector('#app').dataset.mobileResizing);
+        await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+        await page.waitForFunction(()=>!document.querySelector('#app').dataset.mobileResizing&&!document.documentElement.dataset.iosChromeMorphing);
         await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
         await page.waitForFunction(()=>[...document.querySelectorAll('.sidebar .nav-entry')].every(node=>node.getAnimations().every(animation=>animation.playState!=='running')));
         await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
