@@ -587,8 +587,12 @@
       }
       settings.inert = true;
       settings.dataset.iosSheetClosing = 'true';
-      const animation = settings.animate([{transform:getComputedStyle(settings).transform},{transform:'translateY(100%)'}],
-        {duration:240,easing:'cubic-bezier(.4,0,.8,.2)',fill:'forwards'});
+      const centered = settings.hasAttribute('data-ios-sheet');
+      const painted = getComputedStyle(settings);
+      const frames = centered ? [{opacity:painted.opacity,translate:painted.translate},{opacity:0,translate:'0 10px'}]
+        : [{transform:getComputedStyle(settings).transform},{transform:'translateY(100%)'}];
+      const animation = settings.animate(frames,
+        {duration:centered?180:240,easing:centered?'ease-out':'cubic-bezier(.4,0,.8,.2)',fill:'forwards'});
       exit = animation;
       const finish = () => {
         if (exit !== animation) return;
@@ -1342,7 +1346,7 @@
   };
   // Shared dialogs retain their forms, selection and close handlers. Only
   // their presentation belongs to the installed app's current safe rectangle.
-  const sheetSelector = 'dialog.navigation-search,dialog.bot-dialog,dialog.chat-dialog,dialog.server-chat-dialog';
+  const sheetSelector = 'dialog.navigation-search,dialog.bot-dialog,dialog.chat-dialog,dialog.server-chat-dialog,dialog#settings-dialog';
   function updateNativeSheets() {
     const layout = window.__KINDRED_IOS_LAYOUT || {}, style = getComputedStyle(html);
     const read = name => parseFloat(style.getPropertyValue(name)) || 0;
@@ -1359,6 +1363,8 @@
     for (const dialog of document.querySelectorAll(sheetSelector)) {
       if (!dialog.open) continue;
       const search = dialog.classList.contains('navigation-search');
+      const preferences = dialog.id === 'settings-dialog';
+      if (preferences && !nativeDuo) { dialog.removeAttribute('data-ios-sheet'); continue; }
       // Wide sheets sit in the usable center. On the cover, Search keeps the
       // full lower lane and projects each row around the measured native dock.
       const flow = search && nativeDuo && layout.isDuoInner !== true;
@@ -1367,9 +1373,9 @@
       const left = Math.max(region.x,flow ? 0 : Number(layout.leftInset)||0);
       const right = Math.min(region.x+region.width,innerWidth-(flow ? 0 : Number(layout.rightInset)||0));
       const gap = Math.min(12,Math.max(0,(bottom-top)/8));
-      const width = Math.max(0,Math.min(search ? 680 : 600,right-left-2*gap));
+      const width = Math.max(0,Math.min(preferences ? 760 : search ? 680 : 600,right-left-2*gap));
       const sheetHeight = Math.max(0,Math.min(search ? 680 : 760,bottom-top-2*gap));
-      const x = left+(right-left-width)/2, y = top+gap;
+      const x = left+(right-left-width)/2, y = preferences ? top+(bottom-top-sheetHeight)/2 : top+gap;
       setContentInset(dialog,'--ios-sheet-x',x);
       setContentInset(dialog,'--ios-sheet-y',y);
       setContentInset(dialog,'--ios-sheet-width',width);

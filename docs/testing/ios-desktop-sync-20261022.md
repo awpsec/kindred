@@ -183,6 +183,15 @@ New Chat, and Details; the local redesign sample server remains selected.
 Changes are confined to the installed iOS presentation adapter and regression
 coverage. No shared desktop assets, production server or signing data changed.
 
+Settings now uses that same geometry on Duo, centered on both axes within the
+usable region instead of inheriting the older left-anchored bottom sheet. Its
+header becomes compact on wider displays, its body scrolls inside the bounded
+card, and dismissal fades from the current entrance pose. Ordinary iPhones keep
+their existing bottom sheet. Sheet, Duo and iOS layout suites pass, including
+both dock sides, portrait/landscape, keyboard height, active book/tabletop folds,
+retained tab selection, interrupted dismissal and Reduce Motion. Native Duo
+inspection covers the open landscape/portrait and closed displays.
+
 ## Visual avatar picker
 
 Tapping a bot's avatar now opens its actual desktop shape previews and palette
