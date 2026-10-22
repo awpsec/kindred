@@ -65,7 +65,8 @@ export function followCharacterPointer(surface,findCharacter){
   if(event.pointerType==='touch'){reset();return;}
   const box=findCharacter();if(previous!==box){reset();previous=box;}
   if(!box?._artwork)return;
-  const rect=box.getBoundingClientRect(),reach=Math.max(120,rect.width*2);
+  // Match the authored renderer: full gaze at two avatar widths from center.
+  const rect=box.getBoundingClientRect(),reach=Math.max(1,rect.width)*2;
   if(!rect.width||!rect.height){reset();return;}
   box._artwork.lookAt([Math.max(-1,Math.min(1,(event.clientX-rect.left-rect.width/2)/reach)),Math.max(-1,Math.min(1,(rect.top+rect.height/2-event.clientY)/reach))]);
  },{passive:true});
