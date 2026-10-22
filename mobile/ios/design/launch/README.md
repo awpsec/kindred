@@ -41,8 +41,11 @@ chat list is illustrative; do not replace the shipping layout with this mockup.
 ## Native integration handoff
 
 Implement as a first app-rendered SwiftUI layer above the existing root/content,
-using the current native startup implementation as the integration point. Keep
-the static launch screen unchanged. Use the updated mark from
+using the current native startup implementation as the integration point.
+October 22 owner update: the system launch storyboard uses only the theme canvas.
+Do not add a static mark: its different size/center created a second launch stage
+and a visible jump into the approved animation. The first app-rendered mark below
+is the sole logo appearance. Use the updated mark from
 `mobile/ios/tools/kindred-mark.svg` with separately animatable pill eyes; do not
 embed the eyes twice in the body image.
 The October 11 approved Soft K asset replaces the earlier body and eye positions;

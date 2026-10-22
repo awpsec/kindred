@@ -232,3 +232,22 @@ book-to-open expansion: form right=941 and mic right=930 throughout, with zero
 sideways translation. Regression coverage checks contraction while the form
 is wider than its parent, expansion, and absence of the racing translation,
 in addition to the existing intermediate/final bound assertions.
+
+
+## Single launch mark (October 22)
+
+The owner approved removing the duplicate static launch mark. The system
+storyboard previously centered a 160-point K while the approved native drawing
+starts at 45.5% height with a 1.4 scale. That produced two visually different
+launch stages. The storyboard now contains only the existing adaptive Canvas
+background. The native wake/blink/tilt/dissolve remains the sole animated mark;
+its timing, readiness bounds, Reduce Motion behavior and once-per-process
+lifecycle are unchanged. Navigation gains no permanent branding.
+
+The storyboard compiled successfully in Xcode 27.1. Cold-launch recordings
+were reviewed in light/dark on the signed-in Duo (iOS 27.1) and an isolated
+regular iPhone 17 simulator (iOS 27.2, signed out). They show one app-rendered
+mark without the differently positioned static K before it. Existing Reduce
+Motion and background-return ownership is unchanged; this follow-up did not
+add a new native Reduce Motion/warm-return visual pass. Accounts were preserved
+and no test messages were sent.

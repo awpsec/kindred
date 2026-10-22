@@ -6,11 +6,10 @@
         <viewController id="launch-controller" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launch-view">
             <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
             <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
-            <subviews><imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="KindredMark" translatesAutoresizingMaskIntoConstraints="NO" id="launch-mark"><rect key="frame" x="116.5" y="346" width="160" height="160"/><constraints><constraint firstAttribute="width" constant="160" id="mark-width"/><constraint firstAttribute="height" constant="160" id="mark-height"/></constraints></imageView></subviews>
             <color key="backgroundColor" name="Canvas"/>
-            <constraints><constraint firstItem="launch-mark" firstAttribute="centerX" secondItem="launch-view" secondAttribute="centerX" id="mark-center-x"/><constraint firstItem="launch-mark" firstAttribute="centerY" secondItem="launch-view" secondAttribute="centerY" id="mark-center-y"/></constraints>
+
         </view></viewController>
         <placeholder placeholderIdentifier="IBFirstResponder" id="launch-responder" sceneMemberID="firstResponder"/>
     </objects></scene></scenes>
-    <resources><image name="KindredMark" width="128" height="128"/><namedColor name="Canvas"><color red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor></resources>
+    <resources><namedColor name="Canvas"><color red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor></resources>
 </document>
