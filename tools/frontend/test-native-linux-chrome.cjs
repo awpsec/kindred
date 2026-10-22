@@ -95,7 +95,8 @@ server.on('request',async(req,res)=>{
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
  try{
-  for(const width of [800,900,1000,1100,1320]){
+  for(const width of (process.env.KINDRED_NATIVE_WIDTHS||'800,900,1000,1100,1320').split(',').map(Number)){
+   assert(Number.isInteger(width)&&width>=700&&width<=4000,'Invalid KINDRED_NATIVE_WIDTHS');
    current=backend+'-'+width;finished=false;failure='';stderr='';
    const data=path.join(root,current,'data'),config=path.join(root,current,'config'),saved=path.join(data,'kindred/window-state');fs.mkdirSync(saved,{recursive:true});
    fs.writeFileSync(path.join(saved,'main.json'),JSON.stringify({x:60,y:70,width,height:800,scale:1,monitor:null,maximized:width===1320,frame:[0,0]}));
@@ -114,7 +115,7 @@ server.on('request',async(req,res)=>{
  }finally{
   if(current)fs.writeFileSync(path.join(out,current+'-native.log'),stderr);
   if(child?.exitCode===null)child.kill();
-  fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed,backend,scope:'Current source Tauri binary and frontend on isolated native display; Wayland uses nested Weston, not XWayland.',results,failure},null,2));
+  fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed,backend,scope:'Caller-provided Tauri binary with current fixture frontend on isolated native display; consult binary/source receipt. Wayland uses nested Weston, not XWayland.',results,failure},null,2));
   server.closeAllConnections();server.close();fs.rmSync(root,{recursive:true,force:true});
  }
 })().catch(e=>{console.error(e);process.exitCode=1;server.closeAllConnections();server.close();});
