@@ -20,11 +20,12 @@ function disconnectGlobals(){if(instances.size)return;cancel();observer?.disconn
 export function mountArtwork(box,profile,size=44){
  let p=profile,a=appearance(p),state='idle',dead=false,connected=false,dirty=true,still=false,settled=false;
  const canvas=document.createElement('span');canvas.className='avatar-canvas';Object.assign(canvas.style,{position:'absolute',left:'50%',top:'50%',width:(fillScale(.6)*100)+'%',height:(fillScale(.6)*100)+'%',transform:'translate(-50%,-50%)',pointerEvents:'none'});box.append(canvas);
- const id='kindred-art-'+(++nextId),seed=hash(p.bot_id||p.id||p.seed||JSON.stringify([a.body,a.expression,p.name||'']));
+ const id='kindred-art-'+(++nextId),seed=hash(p.bot_id||p.id||p.seed||JSON.stringify([a.body,p.name||'']));
  const engine=createMotionEngine({body:resolveBody(a.body)}),controller=createStateController(engine,state,{seed,isCompact:size<48});
  let renderPaint,renderAppearance,idleTime=0;
- // A seek/rest can hold an expression morph at t=0; release it through the authored face API.
- function hold(release=false){const face=animationStates[controller.state]?.face||(a.expression==='neutral'?null:a.expression);engine.holdFace(face);if(release)engine.setExpression(face||'neutral');}
+ // Faces follow activity. Ignore saved picker expressions from older clients.
+ // A seek/rest can hold a morph at t=0; release it through the authored face API.
+ function hold(release=false){const face=animationStates[controller.state]?.face||null;engine.holdFace(face);if(release)engine.setExpression(face||'neutral');}
  function draw(){const ink=paint(a,document.documentElement.dataset.theme==='dark');if(ink!==renderPaint){renderPaint=ink;renderAppearance=createAppearance(ink);}commitSvgTree(canvas,renderSvgTree(engine.frame(),renderAppearance,size*fillScale(.6),id,{displaySize:size,extent:'100%'}));dirty=false;}
  function isStill(){return reducedMotion()||p.animated===false;}
  function staticPose(){engine.pause();engine.seek(0);hold(true);for(let j=0;j<60;j++)engine.advance(.1);settled=true;draw();}

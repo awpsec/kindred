@@ -31,7 +31,7 @@ import {
   shapes,
   colors,
   defaultProfile,
-  newAvatarProfile, updateCharacter, avatarAppearance, selectAppearance, expressions, palettes,
+  newAvatarProfile, updateCharacter, avatarAppearance, selectAppearance, palettes,
   setActivity,
   activityState,
   syncCharacter,
@@ -1895,9 +1895,6 @@ function renderAvatar() {
     b.append(character({...selectAppearance(p,{body:shape}),name:"",animated:false},48));
     $("shape-options").append(b);
   }
-  let expressionOptions=$('expression-options');
-  if(!expressionOptions){expressionOptions=node('div','expression-options');expressionOptions.id='expression-options';expressionOptions.setAttribute('role','group');expressionOptions.setAttribute('aria-label','Expression');$('shape-options').after(expressionOptions);}
-  expressionOptions.replaceChildren(...expressions.map(expression=>{const b=button(expression,()=>{state.avatarDraft=selectAppearance(state.avatarDraft,{expression});state.avatarSave({...state.avatarDraft});renderAvatar();},'expression-option');b.setAttribute('aria-pressed',String(avatarAppearance(p).expression===expression));return b;}));
   let custom=$('avatar-custom-color');
   if(!custom){const label=node('label','avatar-custom-color','Custom color');custom=document.createElement('input');custom.type='color';custom.id='avatar-custom-color';label.append(custom);$('color-options').after(label);}
   custom.parentElement.classList.toggle('selected',avatarAppearance(p).palette===null);
@@ -7858,7 +7855,7 @@ function avatarMenu(bot) {
     }
   };
   wrap.updateProfile(bot);
-  const more=button('Expressions and custom color',()=>{wrap.classList.remove('menu-open');pickAvatar(portrait(bot),p=>perform(()=>choose({avatar:p.avatar,shape:p.shape,eyes:p.eyes,color:p.color})));},'outline-button');
+  const more=button('Custom color…',()=>{wrap.classList.remove('menu-open');pickAvatar(portrait(bot),p=>perform(()=>choose({avatar:p.avatar,shape:p.shape,eyes:p.eyes,color:p.color})));},'outline-button');
   menu.append(shapeChoices,swatches,more);
   wrap.append(trigger,menu);return wrap;
 }

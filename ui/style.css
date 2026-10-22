@@ -3319,11 +3319,12 @@ html[data-motion='off'] .color-option {transition:none;scale:1;}
 .avatar-customize:is(:hover,:focus-visible) .character-body > path:first-child,.avatar-edit:is(:hover,:focus-visible) .character-body > path:first-child,.shape-option:is(.selected,:hover,:focus-visible) .character-body > path:first-child {stroke:var(--soft);stroke-opacity:.55;stroke-width:6;stroke-linejoin:round;paint-order:stroke fill;}
 .avatar-customize::after,.avatar-edit::after {content:"✎";position:absolute;inset:0;display:grid;place-items:center;color:var(--fg);font-size:calc(25px * var(--text-scale, 1));opacity:0;pointer-events:none;}
 .avatar-customize:is(:hover,:focus-visible)::after,.avatar-edit:is(:hover,:focus-visible)::after {opacity:1;}
-.avatar-dialog {width:330px;padding:20px;}
+.avatar-dialog {width:560px;max-width:calc(100vw - 32px);padding:20px;}
 .avatar-dialog .dialog-header {justify-content:flex-end;}
 .avatar-dialog .avatar-preview {height:122px;}
-.avatar-dialog .shape-options {margin-bottom:15px;gap:2px;}
-.avatar-dialog .color-options {gap:12px;}
+.avatar-dialog .shape-options {grid-template-columns:repeat(auto-fit,minmax(56px,1fr));margin-bottom:15px;gap:8px;}
+.avatar-dialog .shape-option {min-height:64px;}
+.avatar-dialog .color-options {grid-template-columns:repeat(auto-fit,26px);gap:12px;}
 .switch-row > small {display:block;max-width:220px;font-size:calc(11px * var(--text-scale, 1));}
 .screenshot-attachment {margin:8px 0;width:112px;max-width:100%;}
 .screenshot-frame {position:relative;}
@@ -6248,9 +6249,8 @@ html[data-ios-reserved=true] :is(.conversation-header,.composer-area,.computer-p
 .artwork-character {position:relative;display:inline-block;flex-shrink:0;line-height:0;}
 .artwork-character .avatar-canvas {display:block;width:100%;height:100%;}
 .artwork-character .avatar-canvas svg {width:100%;height:100%;overflow:visible;animation:none;}
-.expression-options {display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;}
-.expression-option[aria-pressed="true"] {background:var(--fg);color:var(--bg);}
-.avatar-custom-color {display:flex;align-items:center;gap:12px;margin:12px 0;}
+.avatar-custom-color {display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0;white-space:nowrap;}
+.avatar-custom-color input[type=color] {flex:none;width:48px;height:32px;margin:0;padding:3px;cursor:pointer;}
 .avatar-popover .quick-shapes {max-height:260px;overflow:auto;}
 /* Compact Linux sidebar rail keeps both actions inside the original header. */
 @media(min-width:761px){
