@@ -1289,6 +1289,8 @@
     const scroll = document.querySelector('#bots'), viewport = scroll?.getBoundingClientRect() || base;
     const rows = [...sidebar.querySelectorAll('#bots .nav-entry')];
     const visible = rows.filter(node => {const r=node.getBoundingClientRect();return r.height>0 && r.bottom>Math.max(base.top,viewport.top) && r.top<Math.min(base.bottom,viewport.bottom);});
+    const leadingViewport = nativeDuo && viewport.width > 0 && viewport.height > 0 && viewport.top < 28 && !sidebar.classList.contains('ios-searching');
+    if (scroll?.hasAttribute('data-ios-leading-viewport') !== leadingViewport) scroll?.toggleAttribute('data-ios-leading-viewport',leadingViewport);
     // The compact-list design shortens four rows below search. When search
     // is hidden, one more row occupies its slot. This is a content rule, not
     // a fabricated system rail/occlusion frame.
@@ -1296,7 +1298,7 @@
     for (const row of rows) {
       setContentInset(row,'--ios-list-left',upper.has(row)?inset.left:0);
       setContentInset(row,'--ios-list-right',upper.has(row)?inset.right:0);
-      const corner = nativeDuo && row === visible[0] && !sidebar.classList.contains('ios-searching');
+      const corner = leadingViewport && row === visible[0];
       if (row.hasAttribute('data-ios-leading-corner') !== corner) row.toggleAttribute('data-ios-leading-corner',corner);
     }
     const search = sidebar.querySelector(':scope>.search');
@@ -1642,6 +1644,7 @@
     const listAvailable = (route === 'bot-chat' || (!botCenter() && route === 'computer')) && nativeSidebarActive();
     const avatar = document.querySelector('#header-avatar .character'), shape = avatar?.dataset.avatarBody || avatar?.dataset.shape || 'round', color = avatar?.dataset.avatarColor || (avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '');
     const state = {action:'duo-navigation', botCenterAvailable:botCenter(), route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160),
+      reduceMotion:html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches,
       botAvatarShape:/^[a-z0-9-]{1,32}$/.test(shape) ? shape : 'round',
       botAvatarColor:/^#[0-9a-f]{6}$/i.test(color) ? color : '#2475ff',
       botDetailsAvailable:['bot-chat','computer'].includes(route) && !!document.querySelector('#bot-details') && !document.querySelector('#bot-details').disabled,
@@ -1705,7 +1708,8 @@
   }};
   observeUI(publishDuoNavigation).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class','data-ios-artifact-view','data-shape','data-avatar-body','data-avatar-color']});
   observeUI(publishDuoNavigation).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
-  observeUI(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo','data-ios-duo-inner','data-ios-sidebar-hidden','data-ios-native-sidebar','data-ios-native-sidebar-hidden']});
+  observeUI(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo','data-ios-duo-inner','data-ios-sidebar-hidden','data-ios-native-sidebar','data-ios-native-sidebar-hidden','data-motion']});
+  matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',publishDuoNavigation);
   publishDuoNavigation();
   // Hand navigation to the page before slow fonts/images finish loading.
   window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'interface-ready'});

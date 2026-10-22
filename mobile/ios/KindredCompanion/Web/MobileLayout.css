@@ -380,10 +380,15 @@ html[data-kindred-ios][data-ios-duo=true] .sidebar>.search { width:auto; margin-
 html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .nav-entry { box-sizing:border-box; width:calc(100% - var(--ios-list-left,0px) - var(--ios-list-right,0px)); margin-left:var(--ios-list-left,0px); transition:width .2s ease,margin-left .2s ease; }
 html[data-kindred-ios][data-ios-native-sidebar-rail=true] .sidebar #bots .nav-entry { width:60px; margin-inline:auto; }
 html[data-kindred-ios][data-ios-duo=true] .sidebar .nav-entry[data-ios-leading-corner],
-html[data-kindred-ios][data-ios-duo=true] .sidebar .nav-entry[data-ios-leading-corner]>.bot-link { border-top-left-radius:28px; }
+html[data-kindred-ios][data-ios-duo=true] .sidebar .nav-entry[data-ios-leading-corner]>.bot-link { border-top-left-radius:48px; }
+/* The viewport keeps alert/selection fills inside the corner while cards scroll
+   or trade places. Its radius includes the list's eight-point inner gutter. */
+html[data-kindred-ios][data-ios-duo=true] .sidebar #bots[data-ios-leading-viewport] { clip-path:inset(0 round 56px 0 0 0); }
+html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .bot-link { transition:background .18s ease,border-top-left-radius .22s ease; }
 @media(prefers-reduced-motion:reduce) {
- html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .nav-entry { transition:none; }
+ html[data-kindred-ios][data-ios-duo=true] .sidebar #bots :is(.nav-entry,.bot-link) { transition:none; }
 }
+html[data-kindred-ios][data-ios-duo=true][data-motion=off] .sidebar #bots :is(.nav-entry,.bot-link) { transition:none; }
 
 /* The short outer display needs a compact input, while the opened display
    retains the full conversation-width composer. Keep its hit targets intact. */

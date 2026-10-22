@@ -126,3 +126,23 @@ fixture now supports authenticated, bounded, in-memory uploads, download,
 removal and attachment metadata on sample messages. A 300 KB synthetic PNG goes
 through the real composer path. Files disappear when the fixture exits; this
 does not change or validate production-server upload handling.
+
+## Alert corner and dock item changes
+
+The first visible card uses a larger leading curve, and the list viewport clips
+to a concentric outer curve when it starts at the display's upper edge. This
+keeps selected/unread fills inside the cutout during scrolling and reordering;
+search and lists positioned farther down retain their ordinary shape. Radius
+changes ease with row movement and stop under Reduce Motion.
+
+Native navigation updates now share one SwiftUI animation transaction after
+chat loading, so conditional dock items and their glass container can reflow
+together. The installed adapter forwards the app/system Reduce Motion preference
+to disable that transaction; UIKit's accessibility setting is also checked.
+
+`test-ios-duo-content.cjs` passes both server adapters and left/right rails,
+including hit exclusion in the curved cutout for normal, selected and unread
+states, row reordering and native Reduce Motion forwarding. The identity suite
+passes, the native target builds, and a WebKit alert-card capture was inspected.
+The new native dock motion still needs a hands-on check: the Mac remained locked
+during this follow-up's validation.

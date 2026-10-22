@@ -125,9 +125,17 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
           assert.equal(row.corner,!searching&&index===0,phase+': only the first non-search card has the decorative corner');
         }
         close(visible[upperCount].width-visible[0].width,84,phase+': lower rows remain full width');
-        if(!searching){assert.equal(visible[0].radius,'28px');assert.equal(visible[0].linkRadius,'28px');}return visible;
+        if(!searching){assert.equal(visible[0].radius,'48px');assert.equal(visible[0].linkRadius,'48px');}return visible;
       };
       const first=await assertRows('initial');
+      const cornerHit=await page.locator('#bots').evaluate(scroll=>{
+        const link=scroll.querySelector('[data-ios-leading-corner]>.bot-link'),saved=link.className,r=link.getBoundingClientRect(),hits=[];
+        for(const state of ['', 'active', 'active has-unread']) {
+          link.className=saved+' '+state;
+          hits.push(document.elementFromPoint(r.left+12,r.top+6)?.closest('.nav-entry')===link.parentElement);
+        }
+        link.className=saved;return hits;
+      });assert(cornerHit.every(hit=>!hit),'normal, selected and alert cards cannot occupy the rounded corner cutout');
       await action('search');await page.locator('.navigation-search').waitFor({state:'visible'});await settled();
       const search=await rect('.navigation-search');assert(search.x>=0&&search.x+search.width<=466,'native search fits the display');
       await action('search');await page.locator('.navigation-search').waitFor({state:'hidden'});
@@ -135,6 +143,7 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
       await page.locator('#bots').evaluate(async node=>{node.scrollTop=0;const rows=[...node.querySelectorAll('.nav-entry')],moved=rows.at(-1),before=moved.getBoundingClientRect().top;rows[0].parentElement.prepend(moved);const delta=before-moved.getBoundingClientRect().top;await moved.animate([{transform:`translateY(${delta}px)`},{transform:'translateY(0px)'}],{duration:180,easing:'linear'}).finished;});
       const reordered=await assertRows('reordered');assert.notEqual(reordered[0].id,first[0].id,'reordering reclassifies the leading corner and compact rows');
       await page.emulateMedia({reducedMotion:'reduce'});await settled();assert((await rows()).every(row=>row.transition==='0s'),'Reduce Motion removes card-width transitions');
+      assert.equal(await page.evaluate(()=>accountRequests.filter(value=>value.action==='duo-navigation').at(-1).reduceMotion),true,'Reduce Motion reaches the native dock transaction');
       // Closed landscape is a compact input pose, distinct from an opened
       // display whose web viewport was merely shortened by the keyboard.
       await page.locator('.sidebar .bot-link').first().click();
@@ -158,7 +167,7 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
       await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{isDuoInner:true,isSlab:false,isPortrait:false,keyboardVisible:true});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
       await settled();close((await rect('.conversation>.composer-area')).width,(await rect('.conversation')).width,'an opened keyboard-shortened viewport retains the full composer lane');
       assert.deepEqual(errors,[]);await page.screenshot({path:path.join(out,`v${version}-${side}.png`)});
-      reports.push({serverVersion:version,railSide:side,safeRailTotal:totalRail,railPreference:76,railPersistsThroughDetailsGearBack:true,detailsOverlay:true,quarterWidthMaximum:true,historyClearRailLatestAtTrailingEdge:true,fullComposerLane:true,connectedCanvasClearRail:true,computerSharesBotCenter:true,controlledGutterPointer:true,cancelledTouchGuard:true,closedUpperFiveRows:true,searchUpperFourRows:true,finiteWAAPIReorderReclassifies:true,scrollAndReorderReclassify:true,searchSafeSide:true,reducedMotion:true,decorativeFirstCorner:28,closedLandscapeCompactComposer:true,softBothBlurEdges:true,innerKeyboardFullComposer:true});await page.close();
+      reports.push({serverVersion:version,railSide:side,safeRailTotal:totalRail,railPreference:76,railPersistsThroughDetailsGearBack:true,detailsOverlay:true,quarterWidthMaximum:true,historyClearRailLatestAtTrailingEdge:true,fullComposerLane:true,connectedCanvasClearRail:true,computerSharesBotCenter:true,controlledGutterPointer:true,cancelledTouchGuard:true,closedUpperFiveRows:true,searchUpperFourRows:true,finiteWAAPIReorderReclassifies:true,scrollAndReorderReclassify:true,searchSafeSide:true,reducedMotion:true,nativeDockReduceMotion:true,alertCornerCutout:true,decorativeFirstCorner:48,closedLandscapeCompactComposer:true,softBothBlurEdges:true,innerKeyboardFullComposer:true});await page.close();
     }
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(reports,null,2));console.log(JSON.stringify({passed:true,engine:'webkit',reports}));
   }finally{await browser.close();server.closeAllConnections();server.close();}

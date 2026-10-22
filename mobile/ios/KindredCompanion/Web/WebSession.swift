@@ -1,5 +1,6 @@
 import Observation
 import KindredCore
+import SwiftUI
 import UIKit
 import WebKit
 
@@ -485,23 +486,29 @@ final class WebSession: NSObject {
                let route = body["route"] as? String,
                ["chat-list", "bot-chat", "computer", "details", "artifacts", "artifact", "marketplace"].contains(route),
                let title = body["title"] as? String, title.count <= 160, let listVisible = body["listVisible"] as? Bool {
-                presentation.route = route
-                presentation.chatTitle = title
-                presentation.listVisible = listVisible
-                presentation.botSettingsAvailable = body["botSettingsAvailable"] as? Bool == true
-                presentation.botDetailsAvailable = body["botDetailsAvailable"] as? Bool == true
-                if let shape = body["botAvatarShape"] as? String,
-                   BotToolbarAvatar.supports(shape: shape) {
-                    presentation.botAvatarShape = shape
+                // Keep conditional toolbar items in the same native transaction
+                // so the glass bar and its controls change together.
+                let animate = presentation.hasLoadedChats && presentation.usesNativeRail &&
+                    !UIAccessibility.isReduceMotionEnabled && (body["reduceMotion"] as? Bool != true)
+                withAnimation(animate ? .smooth(duration: 0.28) : nil) {
+                    presentation.route = route
+                    presentation.chatTitle = title
+                    presentation.listVisible = listVisible
+                    presentation.botSettingsAvailable = body["botSettingsAvailable"] as? Bool == true
+                    presentation.botDetailsAvailable = body["botDetailsAvailable"] as? Bool == true
+                    if let shape = body["botAvatarShape"] as? String,
+                       BotToolbarAvatar.supports(shape: shape) {
+                        presentation.botAvatarShape = shape
+                    }
+                    if let color = body["botAvatarColor"] as? String,
+                       color.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil {
+                        presentation.botAvatarColor = color
+                    }
+                    presentation.hasBotCenter = body["botCenterAvailable"] as? Bool == true
+                    presentation.computerExpandAvailable = body["computerExpandAvailable"] as? Bool == true
+                    presentation.computerExpanded = body["computerExpanded"] as? Bool == true
+                    presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
                 }
-                if let color = body["botAvatarColor"] as? String,
-                   color.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil {
-                    presentation.botAvatarColor = color
-                }
-                presentation.hasBotCenter = body["botCenterAvailable"] as? Bool == true
-                presentation.computerExpandAvailable = body["computerExpandAvailable"] as? Bool == true
-                presentation.computerExpanded = body["computerExpanded"] as? Bool == true
-                presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "composer-extent",
