@@ -315,6 +315,8 @@ try:
    stop(child);child=None
    command(['node',a.source.resolve()/'tools/frontend/test-native-workspace-artifacts.cjs'],'native-artifact-rendering.log',env={**env,'KINDRED_NATIVE_EXE':str(executable),'KINDRED_NATIVE_WINDOW_PROBE':str(out/'window-proof')},timeout=90)
    proof['native_sandboxed_artifact_rendering']=True
+   command(['node',tools/'native-foreground-smoke.cjs','--source',a.source.resolve(),'--exe',executable,'--focus',out/'app-focus','--output',out/'native-foreground'],'native-foreground.log',env=env,timeout=60)
+   proof['native_foreground_refresh']=json.loads((out/'native-foreground/result.json').read_text())
    assert not gui_failures,'; '.join(gui_failures)
 
 
