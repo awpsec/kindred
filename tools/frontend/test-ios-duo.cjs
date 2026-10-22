@@ -23,7 +23,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
       window.__KINDRED_MOBILE_PROFILE = profileID;
       window.__KINDRED_NATIVE_SESSION_BOOTSTRAP = true;
       window.__KINDRED_IOS_APP_VERSION = 'iOS Duo regression';
-      window.__KINDRED_IOS_LAYOUT = {topInset:0,bottomInset:0,leftInset:0,rightInset:0,isSlab:true,isDuo:true,isDuoInner:false,isPortrait:true,viewportHeight:outer.height};
+      window.__KINDRED_IOS_LAYOUT = {topInset:0,bottomInset:0,leftInset:0,rightInset:0,isSlab:true,isDuo:true,isDuoInner:false,usesNativeRail:true,isPortrait:true,viewportHeight:outer.height};
       window.__KINDRED_NATIVE_GEOMETRY = {...outer,safeArea:{top:0,right:0,bottom:0,left:0},reservedRegions:[]};
       window.accountRequests = [];
       window.navigation = [];
@@ -54,7 +54,16 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
         requestAnimationFrame(check);
       };requestAnimationFrame(check);
     }));
-    const action = name => page.evaluate(name => window.__kindredDuoActions.perform(name),name);
+    const action = name => page.evaluate(name => {
+      if (document.documentElement.dataset.iosDuo === 'true') return window.__kindredDuoActions.perform(name);
+      // Closing the device restores the ordinary phone's HTML controls.
+      const selectors={computer:'#show-computer',settings:'#settings-button',search:'#ios-search',artifacts:'#artifacts-button'};
+      if(name==='back') {
+        if(!document.querySelector('#computer-panel').hidden) window.__KINDRED_MOBILE_BACK('bot-chat');
+        else if(!document.querySelector('#details-panel').hidden) document.querySelector('#details-close').click();
+        else document.querySelector('#mobile-menu').click();
+      } else if(selectors[name]) document.querySelector(selectors[name]).click();
+    },name);
     const relay = async (bounds,{regions=[],insets={top:0,right:0,bottom:0,left:0}}={}) => {
       await page.setViewportSize({width:bounds.width,height:bounds.height});
       await page.evaluate(({bounds,regions,insets}) => {
@@ -62,14 +71,16 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
         // The SDK reports inactive divisions on a flat inner display. Their
         // nonzero frames identify capability without reserving fold space.
         if (isDuoInner && !regions.some(region=>region.kind==='division')) regions=[...regions,{kind:'division',active:false,x:bounds.width/2,y:0,width:28,height:bounds.height}];
-        window.__KINDRED_IOS_LAYOUT = {topInset:insets.top,bottomInset:insets.bottom,leftInset:insets.left,rightInset:insets.right,isSlab:!isDuoInner,isDuo:true,isDuoInner,isPortrait:bounds.windowHeight>=bounds.windowWidth,viewportHeight:bounds.height};
+        window.__KINDRED_IOS_LAYOUT = {topInset:insets.top,bottomInset:insets.bottom,leftInset:insets.left,rightInset:insets.right,isSlab:!isDuoInner,isDuo:true,isDuoInner,usesNativeRail:true,isPortrait:bounds.windowHeight>=bounds.windowWidth,viewportHeight:bounds.height};
         window.__KINDRED_NATIVE_GEOMETRY = {...bounds,safeArea:insets,reservedRegions:regions};
         window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:window.__KINDRED_IOS_LAYOUT}));
         window.dispatchEvent(new CustomEvent('kindred-native-geometry',{detail:window.__KINDRED_NATIVE_GEOMETRY}));
       },{bounds,regions,insets});
       await settled();
     };
-    const nav = () => page.evaluate(() => window.accountRequests.filter(value=>value.action==='duo-navigation').at(-1));
+    const nav = () => page.evaluate(() => document.documentElement.dataset.iosDuo === 'true'
+      ? window.accountRequests.filter(value=>value.action==='duo-navigation').at(-1)
+      : {route:!document.querySelector('#computer-panel').hidden?'computer':document.querySelector('#app').classList.contains('sidebar-open')?'chat-list':'bot-chat'});
     const ui = () => page.evaluate(() => window.__KINDRED_DUO_FIXTURE.snapshot());
     const readAnchor = () => page.evaluate(() => {
       const area=document.querySelector('#content'),top=area.getBoundingClientRect().top;
@@ -100,7 +111,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     };
     const assertHitTarget=async(locator,min=44)=>{
       const result=await locator.evaluate(node=>{const rect=node.getBoundingClientRect(),hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);return {width:rect.width,height:rect.height,hittable:node.contains(hit)};});
-      assert(result.width>=min && result.height>=min && result.hittable,`the visible control must be a reachable hit target: ${JSON.stringify(result)}`);
+      assert(result.width>=min-.01 && result.height>=min-.01 && result.hittable,`the visible control must be a reachable hit target: ${JSON.stringify(result)}`);
     };
     const assertReservedBounds=async locator=>{
       const rect=await locator.boundingBox(),safe=await page.evaluate(()=>Object.fromEntries(['x','y','width','height'].map(name=>[name,parseFloat(document.documentElement.style.getPropertyValue('--ios-safe-'+name))])));
@@ -132,8 +143,9 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert((await ui()).heading.includes('Vivienne'),'the requested non-default conversation must open');
     assert.equal((await ui()).iosLayout,'compact','the outer display uses separate list/chat pages');
     assert.equal((await nav()).route,'bot-chat');
-    for(const selector of ['#mobile-menu','#show-computer','#ios-computer-back','#computer-close','#details-close','.sidebar-top'])
-      assert(await page.locator(selector).isHidden(),`${selector} duplicates native Duo navigation`);
+    for(const selector of ['#mobile-menu','#show-computer','.conversation-header'])
+      assert(await page.locator(selector).isHidden(),`${selector} is owned by the native rail on the closed phone`);
+    assert.equal((await nav()).botDetailsAvailable,true);assert.equal((await nav()).botAvatarShape,'triangle');assert.match((await nav()).botAvatarColor,/^#[0-9a-f]{6}$/i);
 
     // Native toolbar presses have no trusted DOM pointer source. In particular,
     // + must work before any WebKit tap and after Search focuses its input.
@@ -150,6 +162,8 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     };
     const chooseNative=(menu,title)=>page.evaluate(id=>window.__kindredNativeMenus.perform(id),menu.items.find(item=>item.title===title).id);
     await relay(inner);
+    for(const selector of ['#mobile-menu','#show-computer','#ios-computer-back','#computer-close','#details-close','.sidebar-top'])
+      assert(await page.locator(selector).isHidden(),`${selector} duplicates native inner-display navigation`);
     for(const regions of [
       [{kind:'division',active:false,x:0,y:300,width:inner.width,height:28}],
       [{kind:'division',active:true,x:-80,y:0,width:20,height:inner.height}],
@@ -313,16 +327,17 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     const bookList=await page.locator('.sidebar').boundingBox(),bookChat=await page.locator('.conversation').boundingBox();
     assert(Math.abs(bookList.width-210)<2,'book list stays narrow instead of consuming a fold half');
     assert(Math.abs(bookChat.x-(bookList.x+bookList.width))<2,'book conversation retains the space after its narrow list');
-    const bookTag=await page.locator('.bot-heading').boundingBox(),bookComposer=await page.locator('#composer').boundingBox();
-    for(const rect of [bookTag,bookComposer]) assert(rect.x>=division.x+division.width || rect.x+rect.width<=division.x,'floating controls must avoid the active book division');
+    const bookComposer=await page.locator('#composer').boundingBox();
+    assert(bookComposer.x>=division.x+division.width || bookComposer.x+bookComposer.width<=division.x,'composer controls must avoid the active book division');
+    assert(await page.locator('.bot-heading').isHidden(),'the native bot avatar replaces the HTML tag');
     await assertRetained(baseline); await assertAnchor(anchor);
     await page.screenshot({path:path.join(out,'book-list-chat.png')});
     await relay(inner,{regions:[division],insets:{top:0,right:21,bottom:0,left:12}});
     const paddedList=await page.locator('.sidebar').boundingBox(),paddedChat=await page.locator('.conversation').boundingBox();
-    assert.equal(paddedList.x,12,'book layout must retain the left hardware inset');
+    assert.equal(paddedList.x,0,'native rail content extends below localized system chrome');
     assert(Math.abs(paddedList.width-210)<2,'asymmetric padding must retain the narrow list');
     assert(Math.abs(paddedChat.x-(paddedList.x+paddedList.width))<2,'asymmetric padding must not introduce a second fold gap');
-    assert(paddedChat.x+paddedChat.width<=inner.width-21+1,'book chat must retain the separate right inset');
+    assert.equal(paddedChat.x+paddedChat.width,inner.width,'global bar insets must not waste the bottom conversation lane');
     await relay(inner,{regions:[tabletop]});
     const tabletopHistory=await page.locator('.conversation-history').boundingBox(),tabletopComposer=await page.locator('#composer-area').boundingBox();
     assert(tabletopHistory.y+tabletopHistory.height<=tabletop.y+1,'native floating header must not displace tabletop history across the division');
@@ -330,13 +345,13 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert.equal(await page.locator('.messages').evaluate(node=>parseFloat(getComputedStyle(node).paddingBottom)),12,'tabletop history does not reserve a second composer gap');
     await relay(inner);
 
-    const tag=await page.locator('.bot-heading').boundingBox(),composer=await page.locator('#composer-area').boundingBox();
-    const camera={kind:'occlusion',x:tag.x+tag.width/2-20,y:0,width:40,height:72};
+    const composer=await page.locator('#composer-area').boundingBox();
+    const camera={kind:'occlusion',x:inner.width/2-20,y:0,width:40,height:72};
     const bottomCamera={kind:'occlusion',x:composer.x+composer.width/2-24,y:inner.height-32,width:48,height:32};
     await relay(inner,{regions:[camera,bottomCamera]});
-    const clearTag=await page.locator('.bot-heading').boundingBox(),clearComposer=await page.locator('#composer-area').boundingBox();
+    const clearComposer=await page.locator('#composer-area').boundingBox();
     const intersects=(a,b)=>a.x<b.x+b.width && a.x+a.width>b.x && a.y<b.y+b.height && a.y+a.height>b.y;
-    assert(!intersects(clearTag,camera),'the bot tag must clear an active camera occlusion');
+    assert(await page.locator('.bot-heading').isHidden(),'native rail avatar leaves no web tag to collide with camera regions');
     assert(!intersects(await page.locator('#composer').boundingBox(),bottomCamera),'the composer controls must clear a lower active occlusion');
     await page.locator('#content').evaluate(area=>{
       window.duoReadingPosition=area.scrollTop;
@@ -352,13 +367,13 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     await settled();
     await page.screenshot({path:path.join(out,'active-camera-clearance.png')});
     await relay(inner);
-    assert.equal(await page.locator('.bot-heading').evaluate(node=>getComputedStyle(node).top),'10px','inactive occlusions must not leave an empty header gap');
+    assert.equal(await page.locator('.conversation').evaluate(node=>parseFloat(getComputedStyle(node).getPropertyValue('--ios-chat-top'))),0,'native rail leaves no HTML header gap');
     assert.equal(await page.locator('#composer-area').evaluate(node=>getComputedStyle(node).bottom),'0px','inactive occlusions must not leave an empty composer gap');
 
     // The native gear targets the existing settings form only on Details.
     await action('botSettings');
     assert(await page.locator('#details-panel').isHidden(),'a stale gear action cannot open bot settings from chat');
-    await page.locator('.bot-heading').click();
+    await action('botDetails');
     await page.locator('#details-panel').waitFor({state:'visible'});
     await page.waitForFunction(()=>window.accountRequests.filter(v=>v.action==='duo-navigation').at(-1)?.botSettingsAvailable===true);
     assert(await page.locator('#bot-settings').isHidden(),'Duo Details must not duplicate the native gear');
@@ -458,12 +473,15 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert.equal((await ui()).iosComputer,'side');
     assert.equal((await ui()).iosLayout,'regular','flat Duo fits list, current chat, and computer');
     const panes=await Promise.all(['.sidebar','.conversation','#computer-panel'].map(selector=>page.locator(selector).boundingBox()));
-    assert(panes[0].width>=200 && panes[1].width>=360 && panes[2].width>=280,'three panes must retain useful minimum widths');
+    assert(panes[0].width>=200 && panes[1].width>=360 && panes[2].width>=240,'three panes must retain useful minimum widths');
     assert(panes[0].x+panes[0].width<=panes[1].x+1 && panes[1].x+panes[1].width<=panes[2].x+1,'three panes must not overlap');
     await page.screenshot({path:path.join(out,'flat-three-panes.png')});
     await page.evaluate(()=>window.duoExpandedRFB=window.__duoFixtureRFB);
-    await page.locator('#computer-expand').click();await settled();
+    assert.equal((await nav()).computerExpandAvailable,true);
+    assert(await page.locator('.computer-panel>.panel-header').isHidden(),'the native computer toolbar replaces its desktop title and border');
+    await action('expandComputer');await settled();
     assert.equal(await page.locator('#computer-panel').evaluate(node=>node.classList.contains('expanded')),true,'the inner display can explicitly expand its computer');
+    assert.equal((await nav()).computerExpanded,true);assert.equal((await nav()).listToggleAvailable,false,'an expanded computer cannot toggle an obscured list');
     await relay(outer);
     assert.equal(await page.locator('#computer-panel').evaluate(node=>node.classList.contains('expanded')),false,'closing must normalize an inherited maximize state before hiding its collapse control');
     assert.equal(await page.evaluate(()=>__duoFixtureRFB===duoExpandedRFB && __duoFixtureRFB.disconnects===0),true,'fold-time maximize normalization must preserve the transport');
@@ -480,9 +498,9 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     await dragPane('sidebar',30);
     assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-240)<2);
     await dragPane('computer',-20);
-    assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-300)<2);
+    assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-260)<2);
     const saved=await page.evaluate(()=>({native:JSON.parse(localStorage.getItem('kindred-ios-sidebar-v1:'+window.__KINDRED_MOBILE_PROFILE)),shared:JSON.parse(localStorage.getItem('kindred-ios-duo-panes-v1'))}));
-    assert.equal(saved.native.width,240);assert.equal(saved.shared.computer,300);
+    assert.equal(saved.native.width,240);assert.equal(saved.native.computerWidth,260);
     await action('chats');await settled();
     assert(await page.locator('.sidebar').isHidden());
     assert.equal((await ui()).iosLayout,'regular','manual list hiding must preserve a fitting inner architecture');
@@ -496,7 +514,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert.equal(await prompt.evaluate(node=>node.value),draft,'selecting the rail conversation retains its draft');
     await dragPane('sidebar',134);await dragPane('computer',20);
     assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-210)<2);
-    assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-280)<2);
+    assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-240)<2);
     assert.equal((await ui()).loadID,paneLoad);assert.equal(await prompt.evaluate(node=>node.value),draft);
     assert.deepEqual(await localInputEffects(),localEffectsBaseline,'pane gestures must not reach the controlled computer');
     assert.equal(await page.evaluate(()=>__duoFixtureRFB===retainedDuoRFB && __duoFixtureRFB.disconnects===0),true);
@@ -522,7 +540,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     await relay(inner,{regions:[division],insets:{top:0,right:21,bottom:0,left:12}});
     const asymmetricComputer=await page.locator('#computer-panel').boundingBox();
     assert(Math.abs(asymmetricComputer.x-(division.x+division.width))<2,'safe-area padding translates the book origin without scaling its division');
-    assert(Math.abs(asymmetricComputer.x+asymmetricComputer.width-(inner.width-21))<2,'computer retains the independent right inset');
+    assert(Math.abs(asymmetricComputer.x+asymmetricComputer.width-inner.width)<2,'computer uses the full canvas below localized native chrome');
     await relay(inner,{regions:[division]});
     assert.equal(await page.evaluate(()=>document.activeElement.id),'ios-computer-input','Duo landscape remote input must remain focused');
     await relay({...inner,height:315},{regions:[{...division,height:315}]});
@@ -654,8 +672,8 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert.equal(await page.locator('#duo-retained-dialog input').inputValue(),'Retained sheet value','modal content must survive unfolding');
     await page.evaluate(()=>document.querySelector('#duo-retained-dialog').remove());
     await relay({...inner,width:900},{insets:{top:0,right:21,bottom:0,left:12}});
-    assert.equal(await page.locator('#app').evaluate(node=>getComputedStyle(node).paddingLeft),'12px');
-    assert.equal(await page.locator('#app').evaluate(node=>getComputedStyle(node).paddingRight),'21px','asymmetric safe areas must remain independent');
+    assert.equal(await page.locator('#app').evaluate(node=>getComputedStyle(node).paddingLeft),'0px');
+    assert.equal(await page.locator('#app').evaluate(node=>getComputedStyle(node).paddingRight),'0px','native rail avoids localized occlusions instead of a global strip');
     const appearanceEvidence=[];
     for(const reducedMotion of ['no-preference','reduce'])for(const theme of ['dark','light']) {
       await page.emulateMedia({colorScheme:theme,reducedMotion});
@@ -697,7 +715,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     }
     assert.notEqual(appearanceEvidence[0].body,appearanceEvidence[1].body,'the light and dark backgrounds must actually change');
     // Use the same system-text event as the native host. Large text must grow
-    // the tag and its measured clearance without reloading the conversation.
+    // the conversation without recreating an HTML header or reloading it.
     const largeTextLoad=(await ui()).loadID;
     await relay(inner);
     for(const scale of [2,3.1176470588235294]) {
@@ -711,8 +729,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
         return {font:parseFloat(getComputedStyle(tag.querySelector('strong')).fontSize),line:parseFloat(getComputedStyle(tag.querySelector('strong')).lineHeight),tag:tag.getBoundingClientRect().toJSON(),header:header.getBoundingClientRect().toJSON(),clearance:parseFloat(getComputedStyle(conversation).getPropertyValue('--ios-chat-top'))};
       });
       assert(Math.abs(metrics.font-15*scale)<.1 && Math.abs(metrics.line-20*scale)<.1,'the Duo bot tag must honor Dynamic Type once');
-      assert(metrics.tag.height>=44 && metrics.header.y+metrics.header.height>=metrics.tag.y+metrics.tag.height+9,'the enlarged tag must fit inside the reserved header clearance');
-      assert(metrics.clearance>=metrics.header.height-1,'message clearance must grow with the tag');
+      assert.equal(metrics.tag.height,0);assert.equal(metrics.header.height,0);assert.equal(metrics.clearance,0,'native avatar keeps the HTML header absent at every text size');
       assert.equal((await ui()).loadID,largeTextLoad,'changing Dynamic Type must not reload the conversation');
       assert.equal(await prompt.evaluate(node=>node.value),draft);
       await page.locator('#content').evaluate(area=>{area.scrollTop=area.scrollHeight;area.dispatchEvent(new Event('scroll'));});
@@ -724,13 +741,11 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     }
     await page.evaluate(()=>{window.__KINDRED_SYSTEM_TEXT_SCALE=1;window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:1}}));});
     await relay(outer);
-    const smallTag=await page.locator('.bot-heading').boundingBox();
-    const adjacentCamera={kind:'occlusion',x:smallTag.x+smallTag.width+5,y:0,width:24,height:40};
+    const adjacentCamera={kind:'occlusion',x:outer.width-80,y:0,width:24,height:40};
     await relay(outer,{regions:[adjacentCamera]});
     await page.evaluate(()=>{window.__KINDRED_SYSTEM_TEXT_SCALE=2;window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:2}}));});
     await settled();
-    const growingTag=await page.locator('.bot-heading').boundingBox();
-    assert(growingTag.x+growingTag.width<=adjacentCamera.x || growingTag.x>=adjacentCamera.x+adjacentCamera.width || growingTag.y>=adjacentCamera.y+adjacentCamera.height+7,'a live text-size change must recheck active occlusions even when native geometry is unchanged');
+    assert(await page.locator('.bot-heading').isHidden(),'a live text-size change cannot restore the removed web tag');
     await page.evaluate(()=>{window.__KINDRED_SYSTEM_TEXT_SCALE=1;window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:1}}));});
     await relay(inner);
     // Legacy servers lack stable bot IDs and can include a badge in the heading.

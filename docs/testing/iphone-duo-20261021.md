@@ -118,3 +118,26 @@ Outer-display chrome follows the current inner-display state, rather than the
 remembered Duo capability. The inner computer has a compact resizable width in
 flat side-by-side layouts; active folds retain system region placement. Native
 right-toolbar expansion replaces the desktop screen title/picker/header.
+
+### Final rail presentation
+
+The later simulator review supersedes the initial closed-display chrome choice:
+both outer and inner Duo displays use the system's native right/left rail when
+its local trait supports one. Cold outer launch reads `verticalBarEdge` directly;
+opening the inner screen is not a prerequisite. A separate `usesNativeRail`
+bridge flag controls chrome while fresh `isDuoInner` controls pane architecture.
+The bot identity is a native avatar-only Details button using the original
+character paths and bounded shape/color fields. The web header has no empty row.
+
+Signed-in rail content extends behind native chrome on all edges. Horizontal
+corner adaptation and real active reserved regions protect controls locally,
+instead of applying a full-height empty strip beside the composer. Existing
+UIKit keyboard ownership and the ordinary iPhone safe-area behavior remain.
+
+The final browser pass includes current/historical server controllers, native
+avatar actions, full bottom lanes below localized rail occlusions, closed
+portrait/landscape, and restored ordinary slab chrome without rail support.
+The iOS-only progress pass covers 32 width/type/theme combinations and preserves
+44-point timestamp targets without inflating narration rows or scrolling clipped
+wrappers. A separate older-server preview test proves that the installed native
+adapter corrects full-row targets while retaining the server's action closures.

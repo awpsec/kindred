@@ -17,7 +17,7 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
       if(version===1)await page.route(origin+'/mobile.js',route=>route.fulfill({contentType:'text/javascript',body:legacy}));
       await page.addInitScript(({token,profileID,css,js})=>{
         sessionStorage.setItem('kindred-token',token);window.__KINDRED_MOBILE=true;window.__KINDRED_MOBILE_PLATFORM='ios';window.__KINDRED_MOBILE_PROFILE=profileID;window.__KINDRED_NATIVE_SESSION_BOOTSTRAP=true;
-        window.__KINDRED_IOS_LAYOUT={topInset:0,bottomInset:0,leftInset:0,rightInset:0,isDuo:true,isDuoInner:true,isSlab:false,isPortrait:false,viewportHeight:720};
+        window.__KINDRED_IOS_LAYOUT={topInset:0,bottomInset:0,leftInset:0,rightInset:0,isDuo:true,isDuoInner:true,usesNativeRail:true,isSlab:false,isPortrait:false,viewportHeight:720};
         window.__KINDRED_NATIVE_GEOMETRY={width:1280,height:720,windowWidth:1358,windowHeight:760,reservedRegions:[{kind:'division',active:false,x:640,y:0,width:28,height:720}]};
         window.accountRequests=[];window.webkit={messageHandlers:{kindredAccounts:{postMessage:value=>accountRequests.push(value)},kindredNavigation:{postMessage:()=>{}},kindredSession:{postMessage:()=>{}}}};
         document.addEventListener('pointerdown',event=>{window.lastSidebarPointer=event.pointerId;},true);
@@ -31,15 +31,15 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
       const retainedLoad=await page.evaluate(()=>__KINDRED_DUO_FIXTURE.snapshot().loadID);
       const action=name=>page.evaluate(name=>__kindredDuoActions.perform(name),name);
       const width=async()=>Math.round((await sidebar.boundingBox()).width);
-      const relay=async(inner,regions=[])=>{
-        const bounds=inner?{width:1280,height:720,windowWidth:1358,windowHeight:760}:{width:466,height:650,windowWidth:466,windowHeight:777};
+      const relay=async(inner,regions=[],landscape=false)=>{
+        const bounds=inner?{width:1280,height:720,windowWidth:1358,windowHeight:760}:landscape?{width:844,height:390,windowWidth:844,windowHeight:390}:{width:466,height:650,windowWidth:466,windowHeight:777};
         await page.setViewportSize({width:bounds.width,height:bounds.height});
-        await page.evaluate(({inner,bounds,regions})=>{
+        await page.evaluate(({inner,bounds,regions,landscape})=>{
           if(inner&&!regions.some(region=>region.kind==='division'))regions=[...regions,{kind:'division',active:false,x:640,y:0,width:28,height:720}];
-          window.__KINDRED_IOS_LAYOUT={topInset:0,bottomInset:0,leftInset:0,rightInset:0,isDuo:true,isDuoInner:inner,isSlab:!inner,isPortrait:!inner,viewportHeight:bounds.height};
+          window.__KINDRED_IOS_LAYOUT={topInset:!inner&&!landscape?59:0,bottomInset:!inner?landscape?21:34:0,leftInset:!inner&&landscape?12:0,rightInset:!inner&&landscape?78:0,isDuo:true,isDuoInner:inner,usesNativeRail:true,isSlab:!inner,isPortrait:!inner&&!landscape,viewportHeight:bounds.height};
           window.__KINDRED_NATIVE_GEOMETRY={...bounds,reservedRegions:regions};
           dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));dispatchEvent(new Event('kindred-native-geometry'));
-        },{inner,bounds,regions});
+        },{inner,bounds,regions,landscape});
         await page.waitForFunction(()=>!document.querySelector('#app').dataset.mobileResizing);
       };
       const assertFill=async()=>{
@@ -58,6 +58,9 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
       assert.equal(await width(),210,'native default stays narrow even when legacy shared UI requests half a display');
       assert.equal(await handle.count(),1,'older servers receive one native separator fallback');
       await assertFill();
+      await page.evaluate(()=>{for(const node of document.querySelectorAll('.conversation-header,#composer-area')){node.style.setProperty('--ios-camera-left','400px');node.style.setProperty('--ios-camera-right','0px');}dispatchEvent(new Event('kindred-native-geometry'));});
+      await settled();await page.waitForFunction(()=>Math.abs(document.querySelector('#composer').getBoundingClientRect().x-document.querySelector('.conversation').getBoundingClientRect().x-10)<1);
+      await assertFill();
       await relay(true,[{kind:'division',active:true,x:600,y:0,width:24,height:720}]);
       assert.equal(await width(),210,'book pose cannot widen the native sidebar');
       const foldedForm=await page.locator('#composer').boundingBox();assert(foldedForm.x>=624,'narrow legacy sidebar retains fold-safe composer controls');
@@ -68,6 +71,27 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
       const selected=sidebar.locator('.bot-link[aria-label="Vivienne"]');await selected.click();await settled();
       assert.equal(await prompt.evaluate(node=>node.value),'Native sidebar retained draft');
       await relay(false);assert.equal(await page.locator('html').getAttribute('data-ios-native-sidebar'),'false','outer screen clears native rail layout');
+      for(const landscape of [false,true]) {
+        await relay(false,[],landscape);
+        assert.equal(await page.locator('html').getAttribute('data-ios-duo'),'true','closed outer display retains its native rail');
+        assert(await page.locator('#mobile-menu').isHidden()&&await page.locator('#show-computer').isHidden(),'closed outer rail replaces web navigation');
+        const bounds=await page.evaluate(()=>{
+          const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+          const css=getComputedStyle(document.querySelector('#composer-area'));
+          return {header:rect('.conversation-header'),conversation:rect('.conversation'),form:rect('#composer'),area:rect('#composer-area'),blur:rect('#ios-status-blur'),paddingBottom:parseFloat(css.paddingBottom),layout:__KINDRED_IOS_LAYOUT};
+        });
+        assert.equal(bounds.header.height,0,'native bot avatar leaves no empty HTML header');
+        assert(Math.abs(bounds.form.x-10)<1&&Math.abs(bounds.form.right-((landscape?844:466)-10))<1,'outer composer fills the bottom lane instead of reserving a full-height rail strip');
+        assert.equal(bounds.paddingBottom,8+bounds.layout.bottomInset,'outer composer includes the bottom safe inset exactly once');
+        assert.equal(bounds.area.bottom,landscape?390:650,'composer remains attached to its phone viewport');
+        assert.equal(bounds.blur.y,0);assert.equal(bounds.blur.height,bounds.layout.topInset+18,'status blur is aligned with the supplied top safe area');
+        const navigation=await page.evaluate(()=>accountRequests.filter(value=>value.action==='duo-navigation').at(-1));assert.equal(navigation.botDetailsAvailable,true);assert.equal(navigation.botAvatarShape,'triangle');assert.match(navigation.botAvatarColor,/^#[a-f0-9]{6}$/i);
+      }
+      await relay(false,[{kind:'occlusion',active:true,x:766,y:0,width:78,height:180}],true);
+      assert(Math.abs((await page.locator('#composer').boundingBox()).width-824)<1,'localized upper rail occlusion leaves the bottom composer lane available');
+      await action('botDetails');await page.locator('#details-panel').waitFor({state:'visible'});await action('back');await page.locator('#details-panel').waitFor({state:'hidden'});
+      await page.evaluate(()=>{__KINDRED_IOS_LAYOUT.usesNativeRail=false;dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
+      assert(await page.locator('#mobile-menu').isVisible()&&await page.locator('.conversation-header').isVisible(),'an explicit native no-rail trait restores ordinary phone chrome despite retained Duo capability');
       await relay(true);await settled();assert.equal(await width(),76,'inner display restores its persisted rail');
       await begin(134);await page.mouse.up();await clean();assert.equal(await width(),210);
       const cancellations=[];
@@ -84,12 +108,31 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
         if(cause==='visibility')await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
         await clean();assert.equal(await width(),210,`${cause} restores the committed width`);cancellations.push(cause);
       }
+      await action('computer');await page.waitForFunction(()=>window.__duoFixtureRFB&&!document.querySelector('#computer-panel').hidden);await settled();
+      const computer=page.locator('#computer-panel'),computerHandle=page.locator('.computer-panel>.ios-duo-resizer');
+      assert.equal(Math.round((await computer.boundingBox()).width),240,'native computer defaults to compact width independent of deployed server');
+      assert.equal(await computerHandle.count(),1,'old servers receive exactly one native computer separator fallback');
+      assert(await page.locator('.computer-panel>.panel-header').isHidden(),'native toolbar replaces web title/border/expand controls');
+      const connection=await page.evaluate(()=>{window.retainedSidebarRFB=__duoFixtureRFB;return __duoFixtureRFB.disconnects;});
+      const grip=await computerHandle.boundingBox();await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2);await page.mouse.down();await page.mouse.move(grip.x+grip.width/2-40,grip.y+grip.height/2,{steps:4});await page.mouse.up();await clean();
+      assert.equal(Math.round((await computer.boundingBox()).width),280,'computer separator increases width when pulled left');
+      assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kindred-ios-sidebar-v1:'+__KINDRED_MOBILE_PROFILE)).computerWidth),280,'computer width is stored with the isolated profile preference');
+      await action('expandComputer');await page.waitForFunction(()=>document.querySelector('#computer-panel').classList.contains('expanded')&&!document.querySelector('#app').dataset.mobileResizing);
+      let navigation=await page.evaluate(()=>accountRequests.filter(value=>value.action==='duo-navigation').at(-1));assert.equal(navigation.computerExpanded,true);assert.equal(navigation.computerExpandAvailable,true);assert.equal(navigation.listToggleAvailable,false);
+      const preference=await page.evaluate(()=>localStorage.getItem('kindred-ios-sidebar-v1:'+__KINDRED_MOBILE_PROFILE));await action('chats');assert.equal(await page.evaluate(()=>localStorage.getItem('kindred-ios-sidebar-v1:'+__KINDRED_MOBILE_PROFILE)),preference,'unavailable list toggle cannot mutate a hidden pane');
+      await relay(false,[],true);assert(!await computer.evaluate(node=>node.classList.contains('expanded')),'closing normalizes fullscreen before outer rail controls return');assert(await page.locator('#ios-computer-back').isHidden());assert(await computerHandle.isHidden());
+      assert.equal(await page.evaluate(()=>accountRequests.filter(value=>value.action==='duo-navigation').at(-1).computerExpandAvailable),false,'outer rail must not offer inner-only expansion');
+      assert.equal((await page.locator('#desktop').boundingBox()).y,0,'closed landscape computer has no vestigial HTML header row');
+      assert.equal((await page.locator('.ios-computer-controls').boundingBox()).y,0,'closed landscape resources share the full native canvas height');
+      await relay(true);await settled();assert.equal(Math.round((await computer.boundingBox()).width),280,'unfold retains the chosen compact computer width');
+      assert.equal(await page.evaluate(()=>__duoFixtureRFB===retainedSidebarRFB&&__duoFixtureRFB.disconnects===0),connection===0,'resize/fold retains the computer connection');
+      await action('back');await computer.waitFor({state:'hidden'});await settled();
       const menuCount=()=>page.evaluate(()=>accountRequests.filter(value=>value.action==='native-menu').length),beforeMenus=await menuCount();
       await action('newBot');await page.locator('#bot-dialog').waitFor({state:'visible'});assert.equal(await menuCount(),beforeMenus);await page.getByRole('button',{name:'Close new bot',exact:true}).click();
       await action('newConversation');const chat=page.locator('dialog[aria-label="New chat"]');await chat.waitFor({state:'visible'});assert.equal(await menuCount(),beforeMenus);await chat.getByRole('button',{name:'Close',exact:true}).click();await chat.waitFor({state:'detached'});
       assert.equal(await page.evaluate(()=>__KINDRED_DUO_FIXTURE.snapshot().loadID),retainedLoad);assert.equal(await prompt.evaluate(node=>node.value),'Native sidebar retained draft');assert.deepEqual(errors,[]);
       await page.screenshot({path:path.join(out,`server-v${version}-native-sidebar.png`)});
-      reports.push({serverVersion:version,narrowDefault:210,collapsedRail:76,separatorFallback:true,railSelectionAndOuterInnerRestoration:true,composerConversationFill:true,foldAvoidance:true,nativeMenuLeaves:true,cancellationCleanup:cancellations,retainedLoadAndDraft:true,errors});
+      reports.push({serverVersion:version,narrowDefault:210,collapsedRail:76,computerDefault:240,computerResize:280,separatorFallback:true,railSelectionAndOuterInnerRestoration:true,closedPortraitLandscapeNativeRail:true,localizedRailDoesNotShrinkComposer:true,nativeAvatarDetails:true,noHTMLHeader:true,explicitNoRailRestoration:true,computerNativeExpandAndInertListToggle:true,composerConversationFill:true,foldAvoidance:true,nativeMenuLeaves:true,cancellationCleanup:cancellations,retainedLoadAndDraft:true,errors});
       await page.close();
     }
     fs.writeFileSync(path.join(out,'native-sidebar-report.json'),JSON.stringify(reports,null,2));console.log(JSON.stringify({passed:true,engine:'webkit',reports}));

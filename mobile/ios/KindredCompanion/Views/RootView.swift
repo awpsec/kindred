@@ -110,7 +110,7 @@ struct RootView: View {
                     }
                 }
                 .id(account.id)
-                .ignoresSafeArea(.container, edges: isShowingConversation && !usesDuoNavigation ? [.top, .bottom] : .bottom)
+                .ignoresSafeArea(.container, edges: isShowingConversation ? (usesDuoNavigation ? .all : [.top, .bottom]) : .bottom)
                 // WebHostView owns keyboard avoidance exactly once.
                 .ignoresSafeArea(.keyboard)
             } else {
@@ -147,20 +147,26 @@ struct RootView: View {
     }
 
     private var usesDuoNavigation: Bool {
-        isShowingConversation && activeSession?.presentation.isDuoInner == true
+        isShowingConversation && activeSession?.presentation.usesNativeRail == true
     }
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         if usesDuoNavigation, let session = activeSession {
-            ToolbarItem(placement: .topBarLeading) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 if session.presentation.route != "chat-list" && !(session.presentation.route == "bot-chat" && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {
                     Button {
                         session.performDuoAction(.back)
                     } label: { Label("Back", systemImage: "chevron.backward") }
                 }
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
+                if session.presentation.route == "bot-chat" && session.presentation.botDetailsAvailable {
+                    Button {
+                        session.performDuoAction(.botDetails)
+                    } label: {
+                        BotToolbarAvatar(shape: session.presentation.botAvatarShape, color: session.presentation.botAvatarColor)
+                    }
+                    .accessibilityLabel(session.presentation.chatTitle + " details")
+                }
                 if session.presentation.route == "details" && session.presentation.botSettingsAvailable {
                     Button {
                         session.performDuoAction(.botSettings)

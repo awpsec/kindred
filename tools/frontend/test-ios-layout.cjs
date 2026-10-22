@@ -491,6 +491,16 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       canvas.addEventListener('pointerdown',()=>window.iosRemotePointerEvents++);
     });
     assert(await page.locator('#ios-computer-input').evaluate(node=>node===document.activeElement));
+    // Proxy focus changes the keyboard class and can enqueue another canvas
+    // resize after the first ready state. Touch only the settled transform.
+    await page.evaluate(()=>new Promise((resolve,reject)=>{
+      const deadline=performance.now()+12000;let previous='',frames=0;
+      const check=()=>{
+        const canvas=document.querySelector('.desktop-canvas canvas:not(.desktop-glass)'),r=canvas?.getBoundingClientRect(),stamp=[r?.x,r?.y,r?.width,r?.height].join('|');
+        frames=!document.querySelector('#app').dataset.mobileResizing&&stamp===previous?frames+1:0;previous=stamp;
+        if(frames>=3)return resolve();if(performance.now()>deadline)return reject(new Error('Controlled slab canvas did not settle'));requestAnimationFrame(check);
+      };requestAnimationFrame(check);
+    }));
     await page.locator('.desktop-canvas canvas:not(.desktop-glass)').dispatchEvent('pointerdown',{button:0});
     assert.equal(await page.evaluate(()=>window.iosRemotePointerEvents),1,'controlled taps reach the actual canvas');
     assert(!(await page.locator('#computer-panel').evaluate(node=>node.classList.contains('expanded'))),'controlled taps do not trigger desktop expansion');

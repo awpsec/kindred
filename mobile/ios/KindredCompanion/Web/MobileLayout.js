@@ -65,6 +65,33 @@
   const menu = document.querySelector('#mobile-menu');
   const sidebar = shell.querySelector('.sidebar');
   const conversation = shell.querySelector('.conversation');
+  // An older server may install its message gesture bridge before our bundled
+  // script. Reuse its opaque key/actions, but correct the native preview bounds
+  // after its pointer handler has published the old full-row rectangle.
+  document.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || event.target.closest?.('a,button,input,textarea,select,[contenteditable=true],.message-reactions')) return;
+    const group = event.target.closest?.('#content .message-group[data-message]');
+    if (!group?.querySelector('.message-actions')) return;
+    queueMicrotask(() => {
+      const key = group.dataset.mobileMessageKey;
+      const bubble = group.querySelector('.message-row>:is(.message-bubble,.question-card)');
+      if (!key || !group.isConnected || !bubble?.getClientRects().length) return;
+      const rect = bubble.getBoundingClientRect(), viewport = group.closest('.conversation-history')?.getBoundingClientRect();
+      let left = Math.max(0,rect.left,viewport?.left || 0), right = Math.min(innerWidth,rect.right,viewport?.right ?? innerWidth);
+      let top = Math.max(0,rect.top,viewport?.top || 0), bottom = Math.min(nativeHeight || innerHeight,rect.bottom,viewport?.bottom ?? innerHeight);
+      for (const overlay of document.querySelectorAll('.conversation-header,.bot-heading,#composer-area,.jump-latest')) {
+        if (!overlay.getClientRects().length || getComputedStyle(overlay).visibility === 'hidden') continue;
+        const box = overlay.getBoundingClientRect();
+        if (box.right <= left || box.left >= right || box.bottom <= top || box.top >= bottom) continue;
+        if (overlay.matches('.conversation-header,.bot-heading')) top = Math.max(top,box.bottom);
+        else if (overlay.matches('.jump-latest') && event.clientY >= box.bottom) top = Math.max(top,box.bottom);
+        else bottom = Math.min(bottom,box.top);
+      }
+      window.webkit?.messageHandlers?.kindredAccounts?.postMessage(right > left && bottom > top
+        ? {action:'message-target',key,rect:[left,top,right-left,bottom-top]}
+        : {action:'message-target-clear'});
+    });
+  },true);
   const statusBlur = document.createElement('div');
   statusBlur.id = 'ios-status-blur'; statusBlur.setAttribute('aria-hidden','true');
   document.body.append(statusBlur);
@@ -769,6 +796,12 @@
   const nativeSidebarGeometry = () => JSON.stringify(window.__KINDRED_NATIVE_GEOMETRY || {});
   function syncNativeSidebar(notify = false) {
     if (!sidebar) return;
+    // Earlier servers count inactive fold divisions and can mark a fitting
+    // flat three-pane layout compact. Use installed-app widths for that pose.
+    if (html.dataset.iosDuoInner === 'true' && !html.hasAttribute('data-ios-fold') && !computer?.hidden && html.dataset.iosComputer === 'side' && !(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).some(region => region.active !== false && region.kind === 'division' && region.width > 0 && region.height > 0 && region.x < innerWidth && region.x+region.width > 0 && region.y < (nativeHeight||innerHeight) && region.y+region.height > 0)) {
+      const css = getComputedStyle(shell), available = shell.clientWidth-(parseFloat(css.paddingLeft)||0)-(parseFloat(css.paddingRight)||0), scale = parseFloat(getComputedStyle(html).getPropertyValue('--text-scale')) || 1;
+      if ((nativeHeight||innerHeight) >= 480 && available-(nativeSidebarHidden?0:nativeSidebarWidth)-nativeComputerWidth >= 300*scale && html.dataset.iosLayout !== 'regular') html.dataset.iosLayout = 'regular';
+    }
     if (nativeSidebarDrag && (!(nativeSidebarDrag.kind === 'computer' ? nativeComputerActive() : nativeSidebarActive()) || nativeSidebarBlocked() || nativeSidebarDrag.geometry !== nativeSidebarGeometry())) nativeSidebarDrag.cancel();
     const active = nativeSidebarActive();
     const style = getComputedStyle(shell), contentLeft = shell.getBoundingClientRect().left + (parseFloat(style.paddingLeft) || 0);
@@ -884,9 +917,9 @@
     html.style.setProperty('--ios-safe-left', `${Math.max(0, Number(value.leftInset) || 0)}px`);
     html.style.setProperty('--ios-safe-right', `${Math.max(0, Number(value.rightInset) || 0)}px`);
     const duoCapable = value.isDuo === true;
-    nativeDuo = duoCapable && value.isDuoInner === true;
+    nativeDuo = typeof value.usesNativeRail === 'boolean' ? value.usesNativeRail : duoCapable;
     html.dataset.iosDuo = String(nativeDuo);
-    html.dataset.iosDuoInner = String(nativeDuo && value.isDuoInner === true);
+    html.dataset.iosDuoInner = String(value.isDuoInner === true);
     html.dataset.iosSlab = String(value.isSlab === true);
     // A closed phone must not inherit an inner-display fullscreen state whose
     // collapse control is intentionally unavailable on the outer display.
@@ -921,6 +954,21 @@
     const sharedRegions = html.hasAttribute('data-ios-fold');
     const divisions = regions.filter(region => region.kind === 'division' && region.height > region.width);
     html.dataset.iosNativeReserved = String(!sharedRegions && divisions.length > 0);
+    const projectNativeControls = () => {
+      for (const control of [header,document.querySelector('#composer-area')]) {
+        if (!control) continue;
+        const rect = control.getBoundingClientRect(); let left = rect.left, right = rect.right;
+        for (const region of regions) {
+          if (region.y >= rect.bottom || region.y+region.height <= rect.top || region.x >= right || region.x+region.width <= left) continue;
+          if (region.x-left > right-region.x-region.width) right = Math.max(left,region.x);
+          else left = Math.min(right,region.x+region.width);
+        }
+        const values = {'--ios-native-control-left':left-rect.left+'px','--ios-native-control-right':rect.right-right+'px'};
+        for (const [name,value] of Object.entries(values)) if (control.style.getPropertyValue(name) !== value) control.style.setProperty(name,value);
+      }
+    };
+    projectNativeControls();
+    requestAnimationFrame(projectNativeControls);
     if (!sharedRegions) for (const control of [header,document.querySelector('#composer-area')]) {
       if (!control) continue;
       const rect = control.getBoundingClientRect(); let left = rect.left, right = rect.right;
@@ -1182,10 +1230,14 @@
     if (!nativeDuo) return;
     const route = duoRoute();
     const listAvailable = ['bot-chat','computer'].includes(route) && nativeSidebarActive();
+    const avatar = document.querySelector('#header-avatar .character'), shape = avatar?.dataset.shape || 'round', color = avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '';
     const state = {action:'duo-navigation', route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160),
+      botAvatarShape:/^[a-z0-9-]{1,32}$/.test(shape) ? shape : 'round',
+      botAvatarColor:/^#[0-9a-f]{6}$/i.test(color) ? color : '#2475ff',
+      botDetailsAvailable:['bot-chat','computer'].includes(route) && !!document.querySelector('#bot-details') && !document.querySelector('#bot-details').disabled,
       listVisible:listAvailable && !nativeSidebarHidden,
       listToggleAvailable:listAvailable,
-      computerExpandAvailable:route === 'computer' && !!document.querySelector('#computer-expand') && !document.querySelector('#computer-expand').disabled,
+      computerExpandAvailable:route === 'computer' && html.dataset.iosDuoInner === 'true' && !!document.querySelector('#computer-expand') && !document.querySelector('#computer-expand').disabled,
       computerExpanded:route === 'computer' && computer.classList.contains('expanded'),
       botSettingsAvailable:route === 'details' && !!document.querySelector('#bot-settings') && !document.querySelector('#bot-settings').hidden};
     const next = JSON.stringify(state);
@@ -1224,7 +1276,8 @@
         else menu?.click();
       }
     } else {
-      const selectors = {computer:'#show-computer',botSettings:'#bot-settings',settings:'#settings-button',artifacts:'#artifacts-button',marketplace:'#marketplace-button',search:'#ios-search',newChat:'#new-bot'};
+      const selectors = {computer:'#show-computer',botDetails:'#bot-details',botSettings:'#bot-settings',settings:'#settings-button',artifacts:'#artifacts-button',marketplace:'#marketplace-button',search:'#ios-search',newChat:'#new-bot'};
+      if (action === 'botDetails' && !['bot-chat','computer'].includes(route)) return;
       if (action === 'botSettings' && (route !== 'details' || document.querySelector('#bot-settings')?.hidden)) return;
       if (action === 'search' && route === 'artifacts') document.querySelector('.ios-artifact-navigation [aria-label="Search artifacts"]')?.click();
       else if (action === 'newChat' && route === 'artifacts') openToolbarMenu(document.querySelector('.artifact-add'),document.querySelector('.artifact-studio-library'),'.artifact-add-menu');

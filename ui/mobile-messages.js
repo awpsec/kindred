@@ -146,11 +146,12 @@
         const rect = bubble.getBoundingClientRect(), viewport = group.closest('.conversation-history')?.getBoundingClientRect();
         let left = Math.max(0,rect.left,viewport?.left || 0), right = Math.min(innerWidth,rect.right,viewport?.right ?? innerWidth);
         let top = Math.max(0,rect.top,viewport?.top || 0), bottom = Math.min(innerHeight,rect.bottom,viewport?.bottom ?? innerHeight);
-        for (const overlay of document.querySelectorAll('.conversation-header,#composer-area,.jump-latest')) {
+        for (const overlay of document.querySelectorAll('.conversation-header,.bot-heading,#composer-area,.jump-latest')) {
           if (!overlay.getClientRects().length || getComputedStyle(overlay).visibility === 'hidden') continue;
           const box = overlay.getBoundingClientRect();
           if (box.right <= left || box.left >= right || box.bottom <= top || box.top >= bottom) continue;
-          if (overlay.matches('.conversation-header')) top = Math.max(top,box.bottom);
+          if (overlay.matches('.conversation-header,.bot-heading')) top = Math.max(top,box.bottom);
+          else if (overlay.matches('.jump-latest') && event.clientY >= box.bottom) top = Math.max(top,box.bottom);
           else bottom = Math.min(bottom,box.top);
         }
         if (right > left && bottom > top) post({action:'message-target', key:keyFor(group), rect:[left,top,right-left,bottom-top]});

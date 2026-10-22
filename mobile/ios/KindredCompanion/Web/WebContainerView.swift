@@ -42,17 +42,22 @@ final class WebHostView: UIView {
 
     private func updateEnvironment() {
         var isDuoInner = false
+        var usesNativeRail = false
         if #available(iOS 27.1, *) {
             isDuoInner = !(window?.reservedRegions(kind: .division, options: .includeInactive).isEmpty ?? true)
             hasDivision = hasDivision || isDuoInner
+            usesNativeRail = isDuoInner || traitCollection.verticalBarEdge != .unspecified
         }
         guard let session else { return }
         let keyboardVisible = session.webView.frame.maxY < bounds.maxY - safeAreaInsets.bottom - 1
-        let insets = session.webView.safeAreaInsets
+        var insets = session.webView.safeAreaInsets
+        if #available(iOS 27.1, *), usesNativeRail {
+            insets = session.webView.edgeInsets(for: .safeArea(cornerAdaptation: .horizontal))
+        }
         let windowBounds = window?.bounds ?? bounds
         session.updateLayout(topInset: insets.top, bottomInset: keyboardVisible ? 0 : insets.bottom,
-                             leftInset: insets.left, rightInset: insets.right, isDuo: hasDivision,
-                             isDuoInner: isDuoInner, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
+                             leftInset: insets.left, rightInset: insets.right, isDuo: hasDivision || usesNativeRail,
+                             isDuoInner: isDuoInner, usesNativeRail: usesNativeRail, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
                              viewportHeight: session.webView.bounds.height,
                              isPortrait: windowBounds.height >= windowBounds.width)
         session.refreshSystemTextSize()
@@ -111,6 +116,11 @@ final class WebHostView: UIView {
     }
 
     private func observeTextSize() {
+        if #available(iOS 27.1, *) {
+            registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge) { (view: WebHostView, _: UITraitCollection) in
+                view.setNeedsLayout()
+            }
+        }
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: WebHostView, _: UITraitCollection) in
             view.session?.refreshSystemTextSize()
             view.setNeedsLayout()

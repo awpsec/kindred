@@ -322,3 +322,35 @@ html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rai
 html[data-kindred-ios][data-ios-native-computer=true] #app.shell>.computer-panel:not([hidden]):not(.expanded) { flex:0 0 var(--ios-native-computer-width)!important; width:var(--ios-native-computer-width)!important; margin-left:0; }
 html[data-kindred-ios][data-ios-native-computer=true] .computer-panel>.ios-duo-resizer { display:block; position:absolute; inset:0 auto 0 -12px; width:24px; z-index:35; touch-action:none; user-select:none; -webkit-user-select:none; }
 
+/* Measure controls against the actual conversation, after native pane sizing.
+   Stale server camera offsets must not preserve a former half-screen composer. */
+html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area { left:0; right:0; width:100%; max-width:none; margin-inline:0; box-sizing:border-box; padding-left:max(10px,var(--ios-native-control-left,0px)); padding-right:max(10px,var(--ios-native-control-right,0px)); }
+html[data-kindred-ios][data-ios-duo=true] .conversation-header { padding-left:max(12px,var(--ios-native-control-left,0px)); padding-right:max(12px,var(--ios-native-control-right,0px)); }
+html[data-kindred-ios][data-ios-duo=true] .bot-heading { left:calc(50% + (var(--ios-native-control-left,0px) - var(--ios-native-control-right,0px)) / 2); max-width:calc(100% - 24px - var(--ios-native-control-left,0px) - var(--ios-native-control-right,0px)); }
+
+/* The native vertical rail owns navigation on both Duo displays. Its localized
+   occlusions are projected above; a full-height shell strip wastes space below
+   the rail. Keep the retained header actions for their server-owned closures. */
+html[data-kindred-ios][data-ios-duo=true] .shell { padding-inline:0; }
+html[data-kindred-ios][data-ios-duo=true] .conversation-header { display:none; }
+@media (min-width:600px) and (max-height:500px) {
+  html[data-kindred-ios][data-ios-duo=true][data-ios-slab=true] .computer-panel:not([hidden]) { grid-template-rows:minmax(0,1fr); }
+  html[data-kindred-ios][data-ios-duo=true][data-ios-slab=true] .computer-panel>:is(.desktop,.ios-computer-controls) { grid-row:1; }
+}
+
+/* Progress is a compact reading sequence, including on older servers that
+   rendered narration inside the expanded tracker. An inline 44pt time target
+   must not add a 44pt blank line to every narration paragraph. */
+html[data-kindred-ios] #content .message-group.task-commentary { margin-block:8px; padding-inline-start:12px; }
+html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .message-row,
+html[data-kindred-ios] #content .summary-progress-update.message-row { display:block; min-height:0; height:auto; margin:0; }
+html[data-kindred-ios] #content .summary-progress-update { min-height:0; height:auto; padding-block:5px; }
+html[data-kindred-ios] #content .task-commentary .message-row>.message-bubble,
+html[data-kindred-ios] #content .summary-progress-update.message-row>.message-bubble,
+html[data-kindred-ios] #content .summary-progress-update .message-row>.message-bubble { min-width:0; max-width:100%; margin:0; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; font-size:calc(14px * var(--text-scale,1)); line-height:1.5; }
+html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .message-bubble p { margin-block:0; }
+html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .message-bubble p+p { margin-top:6px; }
+html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .message-text-viewport:not(.is-truncated) { overflow:visible; }
+html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .progress-update-time { max-width:100%; font-size:calc(12px * var(--text-scale,1)); line-height:1.5; vertical-align:baseline; white-space:normal; }
+html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .progress-update-clock { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .progress-update-time-toggle { display:inline-flex; align-items:center; min-width:44px; min-height:44px; padding:0; margin-block:min(0px,calc((1.5em - 44px) / 2)); vertical-align:baseline; }
