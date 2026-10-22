@@ -26,6 +26,7 @@ import { visualPanel, compactChanges } from "./visual-panels.js";
 import {
   character,
   replaceCharacter,
+  followCharacterPointer,
   revealCharacter,
   icon,
   shapes,
@@ -898,7 +899,7 @@ function updateReactions() {
     const r = reaction(avatar.dataset.botId);
     if(avatar.classList.contains('has-presence')){avatar.classList.toggle('is-online',r.online);avatar.title=r.online?'Recently active':'Resting';}
     const stale=state.activityReadAt&&Date.now()-state.activityReadAt>15000;
-    if(avatar.closest('.archive-burial'))continue;
+    if(avatar.closest('.archive-burial')||avatar.dataset.avatarPreview==='true')continue;
     setActivity(avatar, r.action,{...r,startedAt:(state.activities[avatar.dataset.botId]?.run_created_at??state.activities[avatar.dataset.botId]?.started_at)*1000});
     syncCharacter(avatar);
   }
@@ -1568,6 +1569,7 @@ function renderDetails() {
   $("details-back").hidden = true;
   $("bot-settings").hidden = false;
   const root = $("details-content");
+  followCharacterPointer($('details-panel'),()=>root.querySelector('.avatar-customize .character'));
   const previousForm=root.querySelector('.bot-identity-form');
   const form=previousForm?.dataset.botId===b.id?previousForm:botIdentityForm(b);
   form.updateIdentity(b);
@@ -1877,7 +1879,8 @@ function pickAvatar(value, save) {
 }
 function renderAvatar() {
   const p = state.avatarDraft;
-  replaceCharacter($("avatar-preview"),p,104);
+  const preview=replaceCharacter($("avatar-preview"),p,104);preview.dataset.avatarPreview='true';setActivity(preview,'idle');
+  followCharacterPointer($("avatar-dialog"),()=>$("avatar-preview").querySelector('.character'));
   $("shape-options").replaceChildren();
   for (const shape of shapes) {
     const b = button(
@@ -7845,7 +7848,7 @@ function avatarMenu(bot) {
   }
   wrap.updateProfile=updated=>{
     bot=updated;const p=portrait(bot);
-    trigger.setAttribute('aria-label','Customize '+bot.name);replaceCharacter(trigger,p,82);
+    trigger.setAttribute('aria-label','Customize '+bot.name);const preview=replaceCharacter(trigger,p,82);preview.dataset.avatarPreview='true';setActivity(preview,'idle');
     for(const b of shapeChoices.children) {
       const selected=b.dataset.shape===avatarAppearance(p).body;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));
       b.replaceChildren(character({...selectAppearance(p,{body:b.dataset.shape}),name:'',animated:false},44));

@@ -32,9 +32,17 @@ const result=await page.evaluate(async()=>{
  m.updateCharacter(b,{...p,animated:true},96);m.setActivity(b,'working');await wait(100);document.documentElement.dataset.motion='off';await wait(80);const reduced=window.avatarFrames;await wait(180);check(window.avatarFrames===reduced,'live reduced zero RAF');
  document.documentElement.dataset.theme='dark';await wait(40);check(b.innerHTML.includes('#0E74E0'),'app theme palette');
  document.documentElement.dataset.motion='on';m.setActivity(b,'idle');await wait(4200);const settled=window.avatarFrames;await wait(200);check(window.avatarFrames===settled,'settled idle zero RAF');
+ m.setActivity(b,'sleeping');await wait(120);const asleep=b.innerHTML,sleepFrames=window.avatarFrames;await wait(300);check(b.innerHTML===asleep,'sleeping pose remains static');check(window.avatarFrames===sleepFrames,'sleeping zero RAF');
+ b._artwork.lookAt([1,1]);await wait(100);check(b.innerHTML===asleep,'sleeping ignores pointer gaze');
+ m.setActivity(b,'working');await wait(200);check(window.avatarFrames>sleepFrames,'sleep resumes working');
+ m.setActivity(b,'idle');await wait(4200);const centered=b.innerHTML;b._artwork.lookAt([1,.5]);await wait(1200);const right=b.innerHTML;check(right!==centered,'gaze turns resting preview toward pointer');
+ b._artwork.lookAt([-1,-.5]);await wait(1200);check(b.innerHTML!==right,'gaze follows opposite pointer');b._artwork.lookAt(null);await wait(1400);const gazeSettled=window.avatarFrames;await wait(200);check(window.avatarFrames===gazeSettled,'released gaze settles without RAF');
+ b._artwork.lookAt([1,1]);await wait(1400);const held=b.innerHTML;window.testHidden=true;document.dispatchEvent(new Event('visibilitychange'));await wait(100);window.testHidden=false;document.dispatchEvent(new Event('visibilitychange'));await wait(1400);check(b.innerHTML!==held,'return from hidden releases settled gaze');check(!b._avatarHost.active(),'returned gaze settles');
+ b._artwork.lookAt([-1,1]);await wait(1400);const offscreenHeld=b.innerHTML;b.style.position='absolute';b.style.top='4000px';await wait(150);b.style.position='';b.style.top='';await wait(1400);check(b.innerHTML!==offscreenHeld,'return from offscreen releases settled gaze');check(!b._avatarHost.active(),'offscreen return gaze settles');
+ document.documentElement.dataset.motion='off';await wait(100);const reducedGaze=b.innerHTML;b._artwork.lookAt([1,1]);await wait(200);check(b.innerHTML===reducedGaze,'reduced motion ignores gaze');document.documentElement.dataset.motion='on';await wait(200);
  for(let j=0;j<30;j++){const n=m.character({...p,bot_id:'churn'+j},32);root.append(n);await Promise.resolve();n.remove();}await wait(100);
  b.remove();await wait(80);const detached=window.avatarFrames;await wait(180);check(window.avatarFrames===detached,'detached zero RAF');
- return {catalog:25,identityCases:Object.keys(c.avatarCatalog.legacyBodies).length,precedence:cases.length,hiddenPaused:true,stillPaused:true,reducedPaused:true,idleSettled:true,detachedPaused:true};
+ return {catalog:25,identityCases:Object.keys(c.avatarCatalog.legacyBodies).length,precedence:cases.length,hiddenPaused:true,stillPaused:true,reducedPaused:true,idleSettled:true,sleepingStatic:true,gazeTracks:true,gazeSettles:true,reducedGazeIgnored:true,detachedPaused:true};
 });
 await page.screenshot({path:path.join(out,(process.env.WEBKIT?'webkit':'chromium')+'-catalog.png')});
 assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,(process.env.WEBKIT?'webkit':'chromium')+'-runtime.json'),JSON.stringify(result,null,2));console.log(result);

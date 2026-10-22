@@ -56,6 +56,21 @@ export function setActivity(box,action='idle',options={}){
  const newEvent=eventKey&&c.terminal!==eventKey;
  if(c.action===next&&!newEvent)return;c.action=next;if(eventKey)c.terminal=eventKey;box.dataset.action=next;box._artwork.setState(next,newEvent?eventKey:'');
 }
+// Only explicitly bound editing surfaces react to the pointer. No global mouse listener.
+export function followCharacterPointer(surface,findCharacter){
+ if(surface._characterPointerBound)return;surface._characterPointerBound=true;
+ let previous=null;
+ const reset=()=>{previous?._artwork?.lookAt(null);previous=null;};
+ surface.addEventListener('pointermove',event=>{
+  if(event.pointerType==='touch'){reset();return;}
+  const box=findCharacter();if(previous!==box){reset();previous=box;}
+  if(!box?._artwork)return;
+  const rect=box.getBoundingClientRect(),reach=Math.max(120,rect.width*2);
+  if(!rect.width||!rect.height){reset();return;}
+  box._artwork.lookAt([Math.max(-1,Math.min(1,(event.clientX-rect.left-rect.width/2)/reach)),Math.max(-1,Math.min(1,(rect.top+rect.height/2-event.clientY)/reach))]);
+ },{passive:true});
+ for(const type of ['pointerleave','pointercancel','close'])surface.addEventListener(type,reset);
+}
 export function syncCharacter(box){if(box?._artwork)box._artwork.connect();else if(box?._character?.tribute)startTribute(box);}
 export function renderCharacterMotion(box,now=Date.now()){if(box?._character?.tribute)renderTribute(box,now,reducedMotion());else syncCharacter(box);}
 export function revealCharacter(box,startedAt=Date.now()){if(box?._character?.tribute){startTributeReveal(box,startedAt,reducedMotion());startTribute(box);}}
