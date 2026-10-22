@@ -38,7 +38,7 @@ fs.mkdirSync(out,{recursive:true});
     const metric=await page.evaluate(()=>{
      const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,right:r.right,bottom:r.bottom}};
      const controls=[...document.querySelectorAll('.window-control')];
-     return {bar:rect('.desktop-titlebar'),shell:rect('.shell'),search:rect('.sidebar-top .search'),plus:rect('#new-bot'),controls:controls.length,hit:controls.every(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}),pane:rect('#computer-panel > .panel-header'),visible:!document.querySelector('#computer-panel').hidden,overflow:document.documentElement.scrollWidth>innerWidth};
+     return {bar:rect('.desktop-titlebar'),shell:rect('.shell'),search:rect('#search-trigger'),plus:rect('#new-bot'),controls:controls.length,hit:controls.every(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}),pane:rect('#computer-panel > .panel-header'),visible:!document.querySelector('#computer-panel').hidden,overflow:document.documentElement.scrollWidth>innerWidth};
     });
     assert.equal(metric.controls,3);assert(metric.hit&&!metric.overflow,JSON.stringify(metric));
     assert.equal(metric.bar.h,32);assert.equal(metric.bar.w,width);assert.equal(metric.shell.y,32);

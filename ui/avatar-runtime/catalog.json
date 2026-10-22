@@ -120,7 +120,7 @@
   "defaults": [
     "blob",
     "pebble",
-    "squircle",
+    "square",
     "tablet",
     "wedge",
     "hex",
@@ -197,5 +197,22 @@
     "writing",
     "alerting",
     "powering-down"
+  ],
+  "pickerBodies": [
+    "blob",
+    "cloud",
+    "square",
+    "sparkle",
+    "clover",
+    "heart",
+    "flower",
+    "teardrop",
+    "tablet",
+    "wedge",
+    "house",
+    "star",
+    "hex",
+    "gem",
+    "pebble"
   ]
 }

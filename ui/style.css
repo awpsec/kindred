@@ -3127,7 +3127,7 @@ input[type="checkbox"]:checked::after {
 .avatar-customize {padding:0;border:0;background:none;border-radius:18px;cursor:pointer;}
 .avatar-customize:hover {background:var(--hover);}
 .avatar-popover {position:absolute;top:92%;left:50%;transform:translate(-50%,-5px);width:256px;max-width:calc(100vw - 48px);padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 38px #0005;z-index:30;opacity:0;visibility:hidden;transition:opacity .18s,transform .18s,visibility .18s;}
-.avatar-menu:hover .avatar-popover,.avatar-menu:focus-within .avatar-popover,.avatar-menu.menu-open .avatar-popover {opacity:1;visibility:visible;transform:translate(-50%,0);}
+.avatar-menu.menu-open .avatar-popover {opacity:1;visibility:visible;transform:translate(-50%,0);}
 .quick-colors {display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:12px 0;}
 .quick-colors .color-option {width:25px;height:25px;}
 .avatar-popover .quick-shapes {gap:2px;margin:10px 0 14px;}

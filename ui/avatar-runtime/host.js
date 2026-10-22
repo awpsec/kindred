@@ -49,7 +49,8 @@ export function mountArtwork(box,profile,size=44){
   commitSvgTree(canvas,renderSvgTree(snapshot,renderAppearance,size*fillScale(artworkFill),id,{displaySize:size,extent:'100%'}));dirty=false;
  }
  function releaseGaze(){if(!gazeHeld)return;gazeHeld=false;engine.setGaze(null);engine.setGazeAlways(false);settled=false;}
- function isStill(){return reducedMotion()||p.animated===false||controller.state==='sleeping';}
+ // Rest uses the normal neutral idle pose; sleeping remains a semantic state only.
+ function isStill(){return reducedMotion()||p.animated===false;}
  function staticPose(){releaseGaze();engine.pause();engine.seek(0);hold(true);for(let j=0;j<60;j++)engine.advance(.1);const snapshot=engine.frame();orbitScale=orbitTarget(snapshot);settled=true;draw(snapshot);}
  const i={box,visible:false,
   active(){return connected&&!dead&&box.isConnected&&i.visible&&!document.hidden&&!isStill()&&!settled;},
@@ -64,7 +65,7 @@ export function mountArtwork(box,profile,size=44){
  const api={
   connect:i.attach,
   update(next,nextSize=size){if(dead)return;const nextA=appearance(next),changed=JSON.stringify(nextA)!==JSON.stringify(a);p=next;if(changed){const old=a;a=nextA;if(a.body!==old.body)engine.setBody(resolveBody(a.body),{isInstant:isStill()});hold();dirty=true;settled=false;}if(size!==nextSize){size=nextSize;if(size<48)orbitScale=1;controller.setCompact(size<48);syncMorph();settled=false;box.style.width=size+'px';box.style.height=size+'px';dirty=true;}i.attach();i.refresh();},
-  setState(next,eventKey=''){if(dead||(next===state&&!eventKey)||!animationStates[next])return;if(next===state&&eventKey)controller.setState('idle');state=next;idleTime=0;controller.setResting(false);controller.setState(next);syncMorph();hold();dirty=true;settled=false;box.dataset.avatarState=next;i.attach();i.refresh();},
+  setState(next,eventKey=''){if(dead||(next===state&&!eventKey)||!animationStates[next])return;if(next===state&&eventKey)controller.setState('idle');state=next;idleTime=0;controller.setResting(false);controller.setState(next==='sleeping'?'idle':next);syncMorph();hold();dirty=true;settled=false;box.dataset.avatarState=next;i.attach();i.refresh();},
   lookAt(point){if(dead)return;const allowed=point&&!isStill()&&!document.hidden&&i.visible;if(allowed){gazeHeld=true;engine.setGazeAlways(true);engine.setGaze(point);settled=false;}else releaseGaze();i.refresh();},
   poke(kind,opts){if(dead||isStill()||document.hidden||!i.visible)return;engine.poke(kind,opts);settled=false;wake();},
   destroy(){if(dead)return;dead=true;i.detach();delete box._avatarHost;canvas.remove();},

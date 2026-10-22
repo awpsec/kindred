@@ -1,3 +1,5 @@
+import {createNavigationSearch} from './navigation-search.js';
+import {createBotCenter,libraryItems} from './bot-center.js';
 import {transcriptAttachments} from './transcript-attachments.js';
 import {mobileSession,mobileConversationKey,mobileRequestedChat,mobileRequestedEvent,installMobileNavigation} from './mobile.js';
 import {createServerUpdater} from './server-update.js';
@@ -7,7 +9,7 @@ import {groupActivity,transitionGroupActivity,visibleGroupWorkers,sharedConversa
 import { decisionReceipt } from './decision-receipts.js';
 import {installThemedSelects} from "./select-menu.js";
 import {enhanceMarkdown,fileCard,artifactPreview,inlineShard} from "./artifacts.js";
-import {chatMedia,chatMediaType,resetChatMedia,collectChatMedia} from "./chat-media.js";
+import {openChatMedia,chatMedia,chatMediaType,resetChatMedia,collectChatMedia} from "./chat-media.js";
 import {createRoutineFlights} from './routine-flight.js';
 import {connectorCatalog} from "./connector-catalog.js";
 import {connectorCard,connectorCardSignature} from "./connector-cards.js";
@@ -43,7 +45,8 @@ import {
 document.addEventListener('pointerdown',()=>{document.documentElement.dataset.inputModality='pointer';},true);
 document.addEventListener('keydown',e=>{if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','Enter',' '].includes(e.key))document.documentElement.dataset.inputModality='keyboard';},true);
 const UI_VERSION = "0.63.0";
-let commandsUI, dictationUI, composerLists;
+let commandsUI, dictationUI, composerLists, navigationSearch, botCenter;
+function syncBotCenter(){botCenter?.sync();}
 const CHAT_PAGE_SIZE=50, CHAT_WINDOW_SIZE=150, CHAT_CACHE_SIZE=6;
 const chatHistory=new Map();
 let chatOpening=null;
@@ -538,6 +541,7 @@ async function chooseBot(b) {
   $('details-content').querySelector('.artifact-library')?.remove();
   rememberChatPosition();
   captureUnreadBoundary(b.id ? `dm-${b.id}` : '');
+  if(state.desktopNavigationHidden){leaveControlPane();disconnectDesktop();}
   state.screenBotId = b.id;
   if (!$("computer-panel").hidden) {
     disconnectDesktop();
@@ -1238,9 +1242,12 @@ function renderSidebar() {
       ),
     );
   for(const [key,avatar] of avatarCache)if(/^stack-(row|tile)-/.test(key)&&!avatar.isConnected)avatarCache.delete(key);
+  for(const entry of document.querySelectorAll(".sidebar .bot-link,.sidebar .pinned-bot"))followCharacterPointer(entry,()=>entry.querySelector(".character"));
+  navigationSearch?.refresh();
   restoreSidebarFocus(focus);glideSidebar(places);continueLoops($("bots"));
 }
 function renderHeader() {
+  syncBotCenter();
   renderPendingFiles();
   const b = state.chat?.shared?null:state.bot,
     busy = state.allRuns.some((r) => r.bot_id === b?.id && active(r));
@@ -1553,10 +1560,11 @@ function openDetails(view = "details") {
   if (!state.bot) return;
   state.view = view;
   showPane($("details-panel"));
+  if(state.rfb&&state.desktopConnected){state.desktopNavigationHidden=true;state.desktopNavigationBot=screenBotId();state.desktopNavigationExpanded=false;}else disconnectDesktop();
   hidePane($("computer-panel"));
-  disconnectDesktop();
   state.panelKey = "";
   view === "settings" ? renderBotSettings() : renderDetails();
+  syncBotCenter();
 }
 function renderDetails() {
   const b = state.bot;
@@ -1569,19 +1577,17 @@ function renderDetails() {
   $("details-back").hidden = true;
   $("bot-settings").hidden = false;
   const root = $("details-content");
-  followCharacterPointer($('details-panel'),()=>root.querySelector('.avatar-customize .character'));
+  followCharacterPointer($('details-panel'),()=>$('details-panel').querySelector('.bot-center-avatar .avatar-customize .character')||root.querySelector('.avatar-customize .character'));
+  const preferences=root.querySelector('.bot-center-preferences')||node('details','bot-center-preferences');
+  if(!preferences.firstChild)preferences.append(node('summary','','Edit bot details'));
   const previousForm=root.querySelector('.bot-identity-form');
   const form=previousForm?.dataset.botId===b.id?previousForm:botIdentityForm(b);
   form.updateIdentity(b);
-  const previousMenu = root.querySelector('.avatar-menu');
-  const avatar = previousMenu?.dataset.botId === b.id ? previousMenu : avatarMenu(b);
   const previousRoutines = root.querySelector('.bot-detail-routines');
   const focusedChoice = root.contains(document.activeElement) ? document.activeElement : null;
-  avatar.updateProfile(b);
   root.replaceChildren();
-  const card = node("div", "bot-identity");
-  card.append(avatar);
-  root.append(card,form);
+  preferences.replaceChildren(preferences.firstElementChild,form);
+  root.append(preferences);
   focusedChoice?.focus({preventScroll:true});
   root.append(
     button(
@@ -1604,7 +1610,9 @@ function renderBotDetailRoutines(root,routines,focused){
   const old=new Map([...root.querySelectorAll('[data-routine-id]')].map(row=>[row.dataset.routineId,row])),restore=routineFocus(root);
   const heading=root.querySelector('h3')||node('h3','','Routines');heading.id='bot-detail-routines-title';root.setAttribute('aria-labelledby',heading.id);
   const list=root.querySelector('ul')||node('ul','bot-detail-routine-list');
-  root.replaceChildren(heading,list);
+  const toolbar=root.querySelector('.section-toolbar')||node('div','section-toolbar');
+  if(!toolbar.children.length)toolbar.append(heading,iconButton('plus','Create routine',()=>editRoutine()));
+  root.replaceChildren(toolbar,list);
   const keep=new Set();
   for(const value of routines){
     let row=old.get(value.id);
@@ -1728,6 +1736,7 @@ async function refreshPreview() {
 // pipeline from stale server data while an enable/disable request is in flight.
 const botSettingsDrafts = new Map();
 function renderBotSettings() {
+  syncBotCenter();
   const b = state.bot;
   if (!b) return;
   $("details-title").textContent = "Bot settings";
@@ -3581,6 +3590,7 @@ function closeScreenPicker(focus=false){
 }
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.screen-picker-wrap'))closeScreenPicker();});
 function disconnectDesktop() {
+  state.desktopNavigationHidden=false;state.desktopNavigationBot=null;
   if(state.teaching){state.teaching.paused=true;renderTeaching();}
   state.stopDesktopGlass?.();state.stopDesktopGlass=null;
   state.stopComputerPointer?.();state.stopComputerPointer=null;
@@ -3709,8 +3719,10 @@ async function retryDesktop(generation, message, allowRetry=true, explicitPhase=
   state.desktopRetryTimer = setTimeout(() => perform(() => connectDesktop({wake:false})), delay);
 }
 async function openComputer(controlRequested = false, expanded = false) {
+  state.view="details";
+  hidePane($("details-panel"));
   if(state.desktopNavigationHidden && state.rfb && state.desktopConnected && state.desktopNavigationBot===screenBotId() && (!controlRequested||state.desktopControlRequested)){
-    state.desktopNavigationHidden=false;state.controlPaneEngaged=true;showPane($('computer-panel'));setComputerExpanded(expanded||state.desktopNavigationExpanded);renderControlNotice();return;
+    state.desktopNavigationHidden=false;state.controlPaneEngaged=true;showPane($('computer-panel'));setComputerExpanded(expanded||state.desktopNavigationExpanded);renderControlNotice();syncBotCenter();return;
   }
 
   // Workspace settings may preview any bot; opening it enters that bot's chat.
@@ -3727,6 +3739,7 @@ async function openComputer(controlRequested = false, expanded = false) {
   setComputerExpanded(expanded);
   renderComputerRoutines();
   renderScreenPicker();
+  syncBotCenter();
   await Promise.all([connectDesktop({wake:controlRequested===true}), refreshResources()]);
 }
 async function connectDesktop({isCurrent=()=>true,allowRetry=true,wake=true}={}) {
@@ -3951,7 +3964,7 @@ async function openApp(app) {
 }
 for (const [id, symbol] of Object.entries({
   "new-bot": "plus",
-  "search-icon": "search",
+  "search-trigger": "search",
   "show-computer": "computer",
   "composer-actions": "plus",
   send: "send",
@@ -4023,10 +4036,12 @@ $("bot-details").onclick = () =>
   state.chat && !state.chat.id.startsWith('dm-') ? editChat(state.chat) : openDetails();
 $("bot-settings").onclick = () => openDetails("settings");
 $("details-back").onclick = () => openDetails();
-$("details-close").onclick = () => hidePane($("details-panel"));
+$("details-close").onclick = () => {if(state.desktopNavigationHidden){$('computer-close').click();state.desktopNavigationHidden=false;}hidePane($("details-panel"));botCenter?.hidePreview();};
 $("composer-actions").onclick = toggleComposerMenu;
 $("show-computer").onclick = () => perform(openComputer);
 $("computer-close").onclick = () => {
+  state.desktopNavigationHidden=false;
+  botCenter?.hidePreview();
   leaveControlPane();
   const still=desktopStill();
   disconnectDesktop();
@@ -4343,10 +4358,9 @@ $("routine-form").onsubmit = (e) => {
   },e.target.querySelector('button[type="submit"]'));
 };
 document.addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k" && (!document.querySelector("dialog[open]")||navigationSearch?.isOpen)) {
     e.preventDefault();
-    $("app").classList.add("sidebar-open");
-    $("search").focus();
+    navigationSearch?.open();
   }
 });
 matchMedia("(prefers-color-scheme:dark)").addEventListener(
@@ -4415,6 +4429,7 @@ async function chooseChat(chat) {
   $('details-content').querySelector('.artifact-library')?.remove();
   rememberChatPosition();
   captureUnreadBoundary(chat.id);
+  if(state.desktopNavigationHidden){leaveControlPane();disconnectDesktop();}
   state.screenBotId = chat.shared?chat.participants.find(p=>p.kind==='bot'&&state.bots.some(b=>b.id===p.bot_id))?.bot_id||'':chat.members[0];
   if (!$("computer-panel").hidden) {
     disconnectDesktop();
@@ -5217,7 +5232,7 @@ function editReminder(reminder){
 }
 
 async function openArtifacts(){
-  const bot=state.bot;if(!bot)return;state.view='artifacts';state.panelKey='';
+  const bot=state.bot;if(!bot)return;state.view='artifacts';state.panelKey='';syncBotCenter();
   showPane($('details-panel'));hidePane($('computer-panel'));disconnectDesktop();
   $('details-title').textContent='Artifacts';$('details-back').hidden=false;$('bot-settings').hidden=true;
   const root=node('section','artifact-library'),intro=node('p','muted','Files, shards, hosted artifacts, lists and reminders saved by '+bot.name+'. Ask in chat to create or update them.'),toolbar=node('div','artifact-library-toolbar');
@@ -7023,9 +7038,9 @@ function mountArtifactNavigation(sidebar,leave){
  const footer=document.querySelector('#sidebar .sidebar-bottom')||document.querySelector('.sidebar-bottom');
  const placeholder=document.createComment('Sidebar navigation');footer.before(placeholder);
  const entry=$('artifacts-button'),originalClick=entry.onclick,originalContents=[...entry.childNodes];
- closeIdentityMenu();entry.replaceChildren(icon('chat'),node('span','','Chats'));entry.onclick=leave;
+ closeIdentityMenu();entry.hidden=false;entry.replaceChildren(icon('chat'),node('span','','Chats'));entry.onclick=leave;
  sidebar.append(footer);const removeResizer=mountLibraryResizer(sidebar);
- return ()=>{closeIdentityMenu();removeResizer();entry.replaceChildren(...originalContents);entry.onclick=originalClick;placeholder.replaceWith(footer);};
+ return ()=>{closeIdentityMenu();removeResizer();entry.replaceChildren(...originalContents);entry.hidden=true;entry.onclick=originalClick;placeholder.replaceWith(footer);};
 }
 let artifactWorkspace=null,artifactWorkspaceToken=null,artifactChatReturn=null;
 function restoreArtifactChat(){const saved=artifactChatReturn;artifactChatReturn=null;if(!saved||saved.chat!==currentConversationId())return;requestAnimationFrame(()=>{const content=$('content');content.scrollTop=saved.scroll;content.querySelector('[data-workspace-artifact="'+CSS.escape(saved.id)+'"] .workspace-artifact-link')?.focus({preventScroll:true});});}
@@ -7052,7 +7067,8 @@ async function openMobileNotification(){
     if(chat)await chooseChat(chat);else notice('This conversation is no longer available in this profile.',true);
   }catch(e){notice(e.message||'Could not open this conversation.',true);}
 }
-$('artifacts-button').onclick=()=>{history.pushState({},'','/artifacts');syncArtifactRoute();};
+function openArtifactWorkspace(){history.pushState({},'','/artifacts');syncArtifactRoute();}
+$('artifacts-button').onclick=openArtifactWorkspace;
 $('artifacts-button').replaceChildren(icon('folder'),node('span','','Artifacts'));
 $("marketplace-button").onclick = () => perform(openMarketplace);
 document.addEventListener("click", (e) => {
@@ -7145,6 +7161,12 @@ function toggleIdentityMenu() {
       "settings",
     ),
   );
+  menu.prepend(button("Artifacts",()=>{closeIdentityMenu();return openArtifactWorkspace();},"identity-menu-item","folder"),button("Marketplace",()=>{closeIdentityMenu();return openMarketplace();},"identity-menu-item","marketplace"));
+  menu.addEventListener('keydown',event=>{
+    if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key)||event.target.closest('.usage-flyout'))return;
+    event.preventDefault();const items=[...menu.querySelectorAll(':scope > button,:scope > .usage-branch > button')].filter(b=>!b.hidden&&!b.disabled),current=items.indexOf(document.activeElement);
+    const next=event.key==='Home'?0:event.key==='End'?items.length-1:(current+(event.key==='ArrowUp'?-1:1)+items.length)%items.length;items[next]?.focus();
+  });
   if(window.__KINDRED_DESKTOP && state.updateRelease)menu.append(button("Update Kindred client",()=>{closeIdentityMenu();return clientUpdateAction();},"identity-menu-item","download"));
   const branch=node('div','usage-branch'),entry=button('Usage',()=>perform(showUsage),'identity-menu-item','clock'),fly=node('div','usage-flyout provider-usage-list');
   entry.append(icon('chevron',14));entry.setAttribute('aria-haspopup','menu');entry.setAttribute('aria-expanded','false');fly.hidden=true;branch.append(entry,fly);menu.append(branch);
@@ -7185,7 +7207,9 @@ function toggleIdentityMenu() {
   fly.addEventListener('focusout',()=>queueMicrotask(()=>{if(menu.isConnected&&!fly.hidden&&!fly.contains(document.activeElement))showUsage();}));
   branch.onmouseenter=()=>perform(showUsage);entry.onfocus=()=>perform(showUsage);
   branch.onmouseleave=()=>{if(!branch.contains(document.activeElement)){fly.hidden=true;entry.setAttribute('aria-expanded','false');}};
+  for(const item of menu.querySelectorAll('button'))item.setAttribute('role','menuitem');
   document.body.append(menu);
+  menu.querySelector('button')?.focus({preventScroll:true});
   $("identity-button").setAttribute("aria-expanded","true");
   const anchor = $("identity-button").getBoundingClientRect();
   menu.style.left = anchor.left + "px";
@@ -7825,14 +7849,15 @@ function mountLibraryResizer(library){
 function avatarMenu(bot) {
   const wrap=node('div','avatar-menu');
   wrap.dataset.botId=bot.id;
-  const trigger=button('',()=>wrap.classList.toggle('menu-open'),'avatar-customize');
+  const trigger=button('',()=>{const open=!wrap.classList.contains('menu-open');closeAvatarMenus();wrap.classList.toggle('menu-open',open);trigger.setAttribute('aria-expanded',String(open));},'avatar-customize');
+  trigger.setAttribute('aria-expanded','false');
   trigger.title="Edit avatar";
   trigger.setAttribute('aria-label','Customize '+bot.name);trigger.append(character(portrait(bot),82));
   const menu=node('div','avatar-popover');
   menu.append(node('strong','','Customize'));
   const shapeChoices=node('div','shape-options quick-shapes');
   shapeChoices.setAttribute('role','group');shapeChoices.setAttribute('aria-label','Shape');
-  const choose=async patch=>{wrap.classList.add('menu-open');await saveAvatarChoice(bot,patch);};
+  const choose=async patch=>{wrap.classList.add('menu-open');trigger.setAttribute('aria-expanded','true');await saveAvatarChoice(bot,patch);};
   for(const shape of shapes) {
     const b=button('',()=>choose({avatarPatch:{body:shape}}),'shape-option');
     b.onclick=()=>perform(()=>choose({avatarPatch:{body:shape}}));
@@ -7858,7 +7883,7 @@ function avatarMenu(bot) {
     }
   };
   wrap.updateProfile(bot);
-  const more=button('Custom color…',()=>{wrap.classList.remove('menu-open');pickAvatar(portrait(bot),p=>perform(()=>choose({avatar:p.avatar,shape:p.shape,eyes:p.eyes,color:p.color})));},'outline-button');
+  const more=button('Custom color…',()=>{closeAvatarMenus();pickAvatar(portrait(bot),p=>perform(()=>choose({avatar:p.avatar,shape:p.shape,eyes:p.eyes,color:p.color})));},'outline-button');
   menu.append(shapeChoices,swatches,more);
   wrap.append(trigger,menu);return wrap;
 }
@@ -8146,8 +8171,8 @@ function saveAvatarChoice(bot,patch){
   const next=previous.catch(()=>{}).then(async()=>{const current=state.bots.find(b=>b.id===bot.id)||bot;state.botWriteEpoch=(state.botWriteEpoch||0)+1;const updated=await api('/bots/'+bot.id,'PUT',{...current,preserve_text:true,profile:patch.avatarPatch?selectAppearance(profile(current),patch.avatarPatch):{...profile(current),...patch}});state.botWriteEpoch++;state.bots=state.bots.map(b=>b.id===bot.id?updated:b);if(state.bot?.id===bot.id)state.bot=updated;renderSidebar();renderHeader();state.panelKey='';if(state.view==='details')renderDetails();await renderChat(true,'cached');});
   avatarQueues.set(bot.id,next);return next;
 }
-document.addEventListener('pointerdown',e=>{if(!e.target.closest('.avatar-menu'))document.querySelectorAll('.avatar-menu.menu-open').forEach(n=>n.classList.remove('menu-open'));});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelectorAll('.avatar-menu.menu-open').forEach(n=>n.classList.remove('menu-open'));$('new-menu').hidden=true;}});
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('.avatar-menu'))closeAvatarMenus();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAvatarMenus();$('new-menu').hidden=true;}});
 const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0,disclosure:null,disclosureSummary:null,disclosureFrame:0};
 function captureChatAnchor(){
   const area=$('content'),top=area.getBoundingClientRect().top;
@@ -8843,16 +8868,14 @@ document.addEventListener('click',event=>{
 });
 function initDesktopChrome() {
   const isMac=window.__KINDRED_DESKTOP?.platform==='macos'||(!window.__KINDRED_DESKTOP&&/Mac/.test(navigator.platform));
-  const shortcut=document.querySelector('.search kbd');if(shortcut)shortcut.textContent=isMac?'⌘ K':'Ctrl K';
-  $('search')?.setAttribute('aria-keyshortcuts',isMac?'Meta+K':'Control+K');
+  $('search-trigger').title='Search ('+(isMac?'⌘ K':'Ctrl K')+')';
+  $('search-trigger').setAttribute('aria-keyshortcuts',isMac?'Meta+K':'Control+K');
   if(!window.__KINDRED_DESKTOP)return;
   if(window.__KINDRED_NATIVE_FRAME)return;
   const mac=window.__KINDRED_DESKTOP.platform==='macos',linux=window.__KINDRED_DESKTOP.platform==='linux';
   if(linux){
     document.documentElement.classList.add('linux-desktop');
-    const top=document.querySelector('.sidebar-top'),search=document.querySelector('.sidebar > .search');
-    top?.querySelector('.wordmark')?.remove();
-    if(top&&search)top.prepend(search);
+
   }
   document.documentElement.classList.add('native-desktop');
   if(mac)document.documentElement.classList.add('mac-desktop');
@@ -9252,3 +9275,71 @@ installMobileNavigation({
    return valid;
  }
 });
+
+// Shared navigation palette uses current local conversations and real actions.
+navigationSearch=createNavigationSearch({shortcut:false,
+ getItems:()=>[
+  ...state.bots.filter(b=>!profile(b).archived).map(b=>({id:'bot:'+b.id,title:b.name,label:profile(b).label,subtitle:profile(b).description||'Open conversation',keywords:state.allRuns.filter(r=>r.bot_id===b.id).map(r=>r.prompt+' '+r.output).join(' '),group:'Conversations',bot:b,run:()=>chooseBot(b)})),
+  ...state.chats.filter(c=>!c.archived&&!c.id.startsWith('dm-')).map(c=>({id:'chat:'+c.id,title:channelTitle(c),subtitle:c.shared?(c.participants||[]).map(p=>p.name).join(', '):(c.members||[]).map(id=>state.bots.find(b=>b.id===id)?.name||'Bot').join(', '),group:'Conversations',chat:c,run:()=>chooseChat(c)})),
+  {id:'new-bot',title:'New bot',group:'Actions',iconName:'plus',run:()=>newBot()},
+  {id:'new-chat',title:'New chat',group:'Actions',iconName:'chat',run:()=>editChat()},
+  ...[['general','General'],['connections','Connections'],['bot-computer','Bot Computer'],['routines','Routines'],['skills','Skills']].map(([id,title])=>({id:'settings:'+id,title:'Settings: '+title,group:'Actions',iconName:'settings',run:()=>openSettings(id)})),
+  {id:'marketplace',title:'Marketplace',group:'Actions',iconName:'marketplace',run:()=>openMarketplace()},
+  {id:'artifacts',title:'Artifacts',group:'Actions',iconName:'folder',run:()=>openArtifactWorkspace()},
+ ],
+ renderIcon:item=>item.bot?character({...profile(item.bot),animated:false},28):item.chat?participantStack(item.chat,'row','search-stack'):icon(item.iconName||'search',19),
+ onOpen:()=>{closeIdentityMenu();$('new-menu').hidden=true;},onError:error=>notice(error.message),
+});
+$('search-trigger').onclick=()=>navigationSearch.open();
+
+function botLibraryFile(item){return item.kind==='attachment'&&item.file.kind!=='file'?{...item.file,name:item.file.title||'Screenshot.png',mime:'image/png'}:item.file;}
+function botLibraryReader(item){
+ const token=state.token,file=botLibraryFile(item);
+ return async(signal)=>{
+  if(state.token!==token)throw Error('Connection changed');
+  const route=item.kind==='upload'?(file.shared?'/server-uploads/':'/uploads/'):item.file.kind==='file'?'/deliverables/':'/attachments/';
+  const response=await fetch('/api'+route+encodeURIComponent(file.id),{headers:{Authorization:'Bearer '+token},cache:'no-store',signal});
+  if(!response.ok)throw Error('This file is unavailable. Try again.');
+  const blob=await response.blob();if(state.token!==token)throw Error('Connection changed');
+  if(blob.size>8*1024*1024)throw Error('File exceeds the chat preview limit.');
+  return new Blob([blob],{type:file.mime||blob.type});
+ };
+}
+async function downloadBotLibraryItem(item){
+ if(item.kind==='artifact')return;
+ if(item.kind==='attachment'&&item.file.kind==='file'&&window.__KINDRED_FILE_DELIVERY){await nativeInvoke('save_chat_file',{id:item.file.id});return;}
+ const blob=await botLibraryReader(item)(),url=URL.createObjectURL(blob),link=node('a');
+ link.href=url;link.download=botLibraryFile(item).name||'Screenshot.png';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+async function botLibraryPreview(item,signal){if(item.kind==='artifact')return null;const file=botLibraryFile(item),type=chatMediaType(file);return type&&!type.video?botLibraryReader(item)(signal):null;}
+async function openBotLibraryItem(item,origin){
+ if(item.kind==='artifact'){history.pushState({},'', '/artifacts/'+encodeURIComponent(item.file.id));syncArtifactRoute();return;}
+ const file=botLibraryFile(item),name=file.name||file.title||'File',type=chatMediaType(file),getBlob=botLibraryReader(item),download=()=>perform(()=>downloadBotLibraryItem(item));
+ if(type){openChatMedia({name,type,getBlob,download,icon,origin});return;}
+ const extension=name.split('.').pop().toLowerCase();
+ if(!['docx','xlsx','pdf','html','htm','jsx','md','txt','csv','json'].includes(extension)){await download();return;}
+ const token=state.token,getPagePreview=item.kind==='attachment'&&item.file.kind==='file'?async(signal)=>{
+  if(state.token!==token)throw Error('Connection changed');
+  const response=await fetch('/api/deliverables/'+encodeURIComponent(file.id)+'/preview',{headers:{Authorization:'Bearer '+token},cache:'no-store',signal});
+  if(!response.ok||!response.headers.get('Content-Type')?.startsWith('application/pdf'))throw Error('Page preview unavailable');
+  const blob=await response.blob();if(state.token!==token)throw Error('Connection changed');if(blob.size>32*1024*1024)throw Error('Preview exceeds limit');return blob;
+ }:null;
+ const {openDocumentPreview}=await import('./document-preview.js');
+ await openDocumentPreview({card:origin,name,extension,getBlob,getPagePreview,download,renderMarkdown:markdown,artifactPreview});
+}
+
+botCenter=createBotCenter({
+ detailsPanel:$('details-panel'),computerPanel:$('computer-panel'),detailsContent:$('details-content'),
+ getContext:()=>({bot:state.chat&&!state.chat.id.startsWith('dm-')?null:state.bot,chatId:currentConversationId(),scope:state.token,tab:!$('computer-panel').hidden&&!$('computer-panel').inert?'computer':state.view==='library'?'library':'details',enabled:!!state.bot&&!['settings','artifacts'].includes(state.view)}),
+ createAvatar:bot=>avatarMenu(bot),icon,
+ onNavigate:tab=>tab==='computer'?perform(()=>openComputer()):openDetails(tab),
+ onSettings:()=>openDetails('settings'),onClose:panel=>$(panel.id==='computer-panel'?'computer-close':'details-close').click(),
+ readPage:(chatId,query,signal)=>api('/chats/'+encodeURIComponent(chatId)+'?'+new URLSearchParams(query),'GET',undefined,{signal}),
+ seedItems:({chatId})=>[...libraryItems(chatHistory.get(chatId)?.messages||[]),...[...state.details.values()].filter(d=>d.run?.chat_id===chatId).flatMap(d=>(d.attachments||[]).map(file=>({key:'attachment:'+file.id,kind:'attachment',file,created:Number(file.created||d.run.created)||0,sender:d.run.bot_id})))],
+ onOpenItem:(item,origin)=>perform(()=>openBotLibraryItem(item,origin)),onDownloadItem:item=>perform(()=>downloadBotLibraryItem(item)),getPreview:botLibraryPreview,
+});
+for(const panel of [$('details-panel'),$('computer-panel')])followCharacterPointer(panel,()=>panel.querySelector('.bot-center-avatar .avatar-customize .character'));
+syncBotCenter();
+
+function closeAvatarMenus(){for(const menu of document.querySelectorAll('.avatar-menu.menu-open')){menu.classList.remove('menu-open');menu.querySelector('.avatar-customize')?.setAttribute('aria-expanded','false');}}
+document.addEventListener('pointerdown',event=>{if(!event.target.closest('.avatar-menu'))closeAvatarMenus();});

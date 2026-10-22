@@ -13,6 +13,9 @@
     <script src="/startup.js"></script>
     <script type="module" src="/app.js"></script>
   <link rel="stylesheet" href="/select-menu.css">
+  <link rel="stylesheet" href="/navigation-search.css">
+  <link rel="stylesheet" href="/bot-center.css">
+  <link rel="stylesheet" href="/shell-polish.css">
 </head>
   <body>
     <div id="startup-status" role="status">Opening Kindred…</div>
@@ -37,32 +40,18 @@
     <div id="app" class="shell" hidden>
       <aside class="sidebar" aria-label="Bots">
         <div class="sidebar-top">
-          <span class="wordmark"
-            >kindred<span class="wordmark-dot">.</span></span
-          ><button
-            id="new-bot"
-            class="icon-button"
-            aria-label="New bot or chat"
-            title="New bot or chat"
-          ></button>
+          <button id="search-trigger" class="icon-button" aria-label="Search conversations and actions" title="Search (Ctrl K)" aria-haspopup="dialog"></button>
+          <button id="new-bot" class="icon-button" aria-label="New bot or chat" title="New bot or chat"></button>
         </div>
         <div id="new-menu" class="new-menu" hidden></div>
-        <label class="search"
-          ><span id="search-icon"></span
-          ><input
-            id="search"
-            placeholder="Search"
-            aria-label="Search bots and recent messages"
-            autocomplete="off"
-          /><kbd>Ctrl K</kbd></label
-        >
+        <input id="search" type="hidden" value="" />
         <div id="pinned-bots" class="pinned-bots" hidden></div>
         <nav id="bots" aria-label="Conversations"></nav>
         <div class="sidebar-bottom">
-          <button id="artifacts-button" class="sidebar-settings">Artifacts</button>
-          <button id="marketplace-button" class="sidebar-settings">
+          <button id="artifacts-button" hidden class="sidebar-settings">Artifacts</button>
+          <button id="marketplace-button" hidden class="sidebar-settings">
             Marketplace</button
-          ><button id="settings-button" class="sidebar-settings"></button
+          ><button id="settings-button" hidden class="sidebar-settings"></button
           ><div id="identity-row" class="identity-row"><button id="identity-button" class="identity-button" aria-expanded="false" aria-controls="identity-menu">
             <span class="user-avatar" id="user-avatar">Y</span
             ><span id="identity-name">You</span

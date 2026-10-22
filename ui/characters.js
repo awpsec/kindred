@@ -1,9 +1,9 @@
 // Supplied Grok Bot artwork/runtime; see avatar-runtime/PROVENANCE.json and THIRD-PARTY-NOTICES.md.
-import {avatarCatalog,bodies,expressions,palettes,appearance,selectAppearance} from './avatar-runtime/catalog.js';
+import {avatarCatalog,pickerBodies,expressions,palettes,appearance,selectAppearance} from './avatar-runtime/catalog.js';
 import {mountArtwork,reducedMotion} from './avatar-runtime/host.js';
 import {tributeIdentity,tributeState,createTribute,applyTributeState,startTributeReveal,renderTribute} from './tributes.js';
 export {appearance as avatarAppearance,selectAppearance,expressions,palettes};
-export const shapes=bodies;
+export const shapes=pickerBodies;
 export const colors=palettes.map(p=>[p.label,p.value,p.id]);
 export const defaultProfile={label:'',description:'',shape:'round',color:'#2475ff',eyes:'curious',animated:true,pinned:false,archived:false,notifications:true};
 export function newAvatarProfile(seed='') {const n=[...seed].reduce((a,c)=>(a*31+c.charCodeAt(0))>>>0,0);return selectAppearance({...defaultProfile},{body:seed?avatarCatalog.defaults[n%avatarCatalog.defaults.length]:'blob',expression:'neutral',palette:'blue',custom_color:null});}
@@ -56,7 +56,7 @@ export function setActivity(box,action='idle',options={}){
  const newEvent=eventKey&&c.terminal!==eventKey;
  if(c.action===next&&!newEvent)return;c.action=next;if(eventKey)c.terminal=eventKey;box.dataset.action=next;box._artwork.setState(next,newEvent?eventKey:'');
 }
-// Only explicitly bound editing surfaces react to the pointer. No global mouse listener.
+// Only explicitly bound surfaces react to the pointer. No global mouse listener.
 export function followCharacterPointer(surface,findCharacter){
  if(surface._characterPointerBound)return;surface._characterPointerBound=true;
  let previous=null;

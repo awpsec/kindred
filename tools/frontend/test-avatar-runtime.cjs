@@ -18,7 +18,7 @@ const result=await page.evaluate(async()=>{
  for(const [a,state]of cases)check(m.activityState(a,100).action===state,'facts '+JSON.stringify(a));
  const root=document.querySelector('#test');root.style.cssText='display:flex;flex-wrap:wrap;width:1000px';
  for(const body of c.bodies){const p=m.newAvatarProfile('same');p.avatar={...p.avatar,body};const b=m.character({...p,animated:false},48);root.append(b);check(b.querySelector('svg'),'svg '+body);}
- check(root.children.length===25,'25 bodies');await wait(100);const ids=[...root.querySelectorAll('[id]')].map(n=>n.id);check(new Set(ids).size===ids.length,'unique SVG ids');
+ check(root.children.length===25,'25 bodies');check(m.shapes.length===15&&new Set(m.shapes).size===15,'15 unique picker shapes');check(c.avatarCatalog.defaults.every(body=>m.shapes.includes(body)),'new default shapes are selectable');check(m.shapes.includes('flower')&&m.shapes.includes('gem')&&m.shapes.includes('pebble'),'curated extras');await wait(100);const ids=[...root.querySelectorAll('[id]')].map(n=>n.id);check(new Set(ids).size===ids.length,'unique SVG ids');
  window.sampleRoot=root;
  const p=m.newAvatarProfile('stable'),b=m.character({...p,bot_id:'stable'},96);root.append(b);m.setActivity(b,'working');await wait(200);
  const runtime=b._artwork;m.updateCharacter(b,{...p,bot_id:'stable',color:'#123456'},96);check(b._artwork===runtime,'mounted once');
@@ -32,8 +32,8 @@ const result=await page.evaluate(async()=>{
  m.updateCharacter(b,{...p,animated:true},96);m.setActivity(b,'working');await wait(100);document.documentElement.dataset.motion='off';await wait(80);const reduced=window.avatarFrames;await wait(180);check(window.avatarFrames===reduced,'live reduced zero RAF');
  document.documentElement.dataset.theme='dark';await wait(40);check(b.innerHTML.includes('#0E74E0'),'app theme palette');
  document.documentElement.dataset.motion='on';m.setActivity(b,'idle');await wait(4200);const settled=window.avatarFrames;await wait(200);check(window.avatarFrames===settled,'settled idle zero RAF');
- m.setActivity(b,'sleeping');await wait(120);const asleep=b.innerHTML,sleepFrames=window.avatarFrames;await wait(300);check(b.innerHTML===asleep,'sleeping pose remains static');check(window.avatarFrames===sleepFrames,'sleeping zero RAF');
- b._artwork.lookAt([1,1]);await wait(100);check(b.innerHTML===asleep,'sleeping ignores pointer gaze');
+ const idleEyes=[...b.querySelectorAll('mask path')].map(n=>n.getAttribute('d'));check(idleEyes.length===2,'neutral eye mask paths exist');m.setActivity(b,'sleeping');await wait(4200);const asleep=b.innerHTML,sleepFrames=window.avatarFrames;await wait(300);check(b.innerHTML===asleep,'resting pose remains static');check(window.avatarFrames===sleepFrames,'resting zero RAF');check(JSON.stringify([...b.querySelectorAll('mask path')].map(n=>n.getAttribute('d')))===JSON.stringify(idleEyes),'rest has neutral idle eyes');
+ b._artwork.lookAt([1,1]);await wait(1200);check(b.innerHTML!==asleep,'resting identity follows hover gaze');b._artwork.lookAt(null);await wait(1400);check(!b._avatarHost.active(),'rest gaze settles');
  m.setActivity(b,'working');await wait(200);check(window.avatarFrames>sleepFrames,'sleep resumes working');
  m.setActivity(b,'idle');await wait(4200);const centered=b.innerHTML;b._artwork.lookAt([1,.5]);await wait(1200);const right=b.innerHTML;check(right!==centered,'gaze turns resting preview toward pointer');
  b._artwork.lookAt([-1,-.5]);await wait(1200);check(b.innerHTML!==right,'gaze follows opposite pointer');b._artwork.lookAt(null);await wait(1400);const gazeSettled=window.avatarFrames;await wait(200);check(window.avatarFrames===gazeSettled,'released gaze settles without RAF');
@@ -42,7 +42,7 @@ const result=await page.evaluate(async()=>{
  document.documentElement.dataset.motion='off';await wait(100);const reducedGaze=b.innerHTML;b._artwork.lookAt([1,1]);await wait(200);check(b.innerHTML===reducedGaze,'reduced motion ignores gaze');document.documentElement.dataset.motion='on';await wait(200);
  for(let j=0;j<30;j++){const n=m.character({...p,bot_id:'churn'+j},32);root.append(n);await Promise.resolve();n.remove();}await wait(100);
  b.remove();await wait(80);const detached=window.avatarFrames;await wait(180);check(window.avatarFrames===detached,'detached zero RAF');
- return {catalog:25,identityCases:Object.keys(c.avatarCatalog.legacyBodies).length,precedence:cases.length,hiddenPaused:true,stillPaused:true,reducedPaused:true,idleSettled:true,sleepingStatic:true,gazeTracks:true,gazeSettles:true,reducedGazeIgnored:true,detachedPaused:true};
+ return {catalog:25,identityCases:Object.keys(c.avatarCatalog.legacyBodies).length,precedence:cases.length,hiddenPaused:true,stillPaused:true,reducedPaused:true,idleSettled:true,neutralRest:true,pickerShapes:15,gazeTracks:true,gazeSettles:true,reducedGazeIgnored:true,detachedPaused:true};
 });
 await page.screenshot({path:path.join(out,(process.env.WEBKIT?'webkit':'chromium')+'-catalog.png')});
 assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,(process.env.WEBKIT?'webkit':'chromium')+'-runtime.json'),JSON.stringify(result,null,2));console.log(result);

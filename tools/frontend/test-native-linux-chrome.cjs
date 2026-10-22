@@ -21,7 +21,7 @@ try{
  document.documentElement.dataset.motion='off';
  check(!document.querySelector('.desktop-window-title,.sidebar-top .wordmark'),'Branding remains');
  function measure(pane){
-  const r=e=>e.getBoundingClientRect(),bar=r(document.querySelector('.desktop-titlebar')),search=r(document.querySelector('.sidebar-top .search')),plus=r(document.querySelector('#new-bot'));
+  const r=e=>e.getBoundingClientRect(),bar=r(document.querySelector('.desktop-titlebar')),search=r(document.querySelector('#search-trigger')),plus=r(document.querySelector('#new-bot'));
   const controls=[...document.querySelectorAll('.window-control')];check(controls.length===3,'OS-control owner count');
   check(bar.height===32&&bar.width===innerWidth&&bar.y===0,'Strip geometry');check(r(document.querySelector('.shell')).y===32,'Shell overlaps strip');
   check(Math.abs(search.y-plus.y)<2&&search.right<=plus.x,'Search/+ not compact row');

@@ -1,0 +1,55 @@
+/* Shared desktop/web shell. Neutral fills communicate selection; focus rings
+   remain reserved for keyboard navigation. */
+:root {
+  --bg:#111111; --sidebar:#111111; --panel:#141414; --surface:#202020;
+  --hover:#252525; --selected:#2b2b2b; --bubble:#242424;
+  --line:rgba(255,255,255,.075); --fg:#f0f0f0; --muted:#a0a0a0;
+}
+:root[data-theme="light"] {
+  --bg:#fafafa; --sidebar:#fafafa; --panel:#f7f7f7; --surface:#f0f0f0;
+  --hover:#e9e9e9; --selected:#e2e2e2; --bubble:#ededed;
+  --line:rgba(0,0,0,.085); --fg:#171717; --muted:#626262;
+}
+.sidebar-top {display:flex;align-items:center;justify-content:flex-end;gap:8px;min-height:54px;padding:10px 14px;}
+.sidebar-top .icon-button {width:34px;height:34px;flex:0 0 34px;border-radius:50%;background:var(--surface);border:1px solid var(--line);}
+.sidebar-top .icon-button:hover {background:var(--hover);}
+.sidebar-bottom {padding:8px 12px 12px;}
+.sidebar-bottom > [hidden] {display:none!important;}
+.identity-button {border:1px solid var(--line);border-radius:24px;background:var(--surface);min-height:36px;padding:4px 9px;}
+.identity-button:hover,.identity-button[aria-expanded="true"] {background:var(--hover);}
+.identity-menu {min-width:220px;max-width:calc(100vw - 24px);padding:7px;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:0 12px 40px #0005;}
+.identity-menu-item {border-radius:8px;padding:9px 11px;}
+.sidebar :is(.bot-link,.pinned-bot).has-unread {background:color-mix(in srgb,var(--fg) 4%,var(--sidebar));box-shadow:none;}
+.sidebar :is(.bot-link,.pinned-bot):is(.active,.has-unread.active) {background:var(--selected);box-shadow:none;outline:none;}
+.sidebar :is(.bot-link,.pinned-bot):hover {background:var(--hover);box-shadow:none;}
+.sidebar :is(.bot-link,.pinned-bot):focus-visible {outline:2px solid var(--soft);outline-offset:2px;}
+.unread-dot,.profile-notification,.profile-switch-button.has-profile-activity::after {background:var(--soft);}
+.conversation-header {border-bottom:1px solid var(--line);background:var(--bg);}
+#bot-details {padding:5px 12px 5px 6px;gap:7px;border-radius:24px;background:var(--surface);min-height:36px;max-width:calc(100% - 90px);}
+#bot-details::after {content:'›';font-size:20px;line-height:1;color:var(--muted);margin-left:2px;}
+#bot-details:hover {background:var(--hover);}
+#header-avatar {width:26px;height:26px;display:grid;place-items:center;}
+#header-avatar > .character {transform:scale(.765);transform-origin:center;}
+#heading {font-size:13px;}
+.pinned-bot {border-radius:12px;}
+.bot-link {border-radius:10px;}
+.pane-resizer {background:transparent;}
+.bot-center-preferences {margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:12px;}
+.bot-center-preferences > summary {cursor:pointer;font-size:13px;color:var(--muted);padding:8px 0;}
+.bot-center-preferences[open] > summary {margin-bottom:10px;}
+.linux-desktop .sidebar-top {justify-content:flex-end;gap:8px;padding:10px 14px;}
+.linux-desktop .sidebar-top #new-bot,.linux-desktop .sidebar-top #search-trigger {width:34px;height:34px;flex:0 0 34px;}
+@media (max-width:700px) {.sidebar-top {min-height:54px;} #bot-details {max-width:calc(100% - 130px);}}
+@media(prefers-reduced-motion:reduce) {.identity-menu {animation:none;}}
+.sidebar :is(.bot-link,.pinned-bot).has-unread:hover {background:var(--hover);box-shadow:none;}
+/* Prioritize identity when the sidebar is narrow or reading text is enlarged. */
+.bot-info {container-type:inline-size;}
+@container (max-width:160px) {
+  .bot-title-row .bot-label {display:none;}
+  .bot-title-row {grid-template-columns:minmax(0,1fr) auto;}
+  .bot-title-row .bot-time {grid-column:2;}
+}
+@container (max-width:140px) {
+  .bot-title-row .bot-time {display:none;}
+  .bot-title-row {grid-template-columns:minmax(0,1fr);}
+}
