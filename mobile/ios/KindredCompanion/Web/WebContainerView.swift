@@ -67,133 +67,38 @@ final class WebHostView: UIView {
     private var hasDivision = false
     private var railSampleScheduled = false
     private var railOnLeft = false
-    // A local decoration covers intermediate web layouts without replacing the
-    // account's WKWebView or disturbing its responder/input ownership.
-    private struct Pose: Equatable {
-        let window: ObjectIdentifier
-        let size: CGSize
-        let orientation: Int
-        let inner: Bool
-        let divisions: String
-    }
-    private var pose: Pose?
-    private var frost: UIVisualEffectView?
-    private var frostGeneration = 0
-    private var frostActive = false
-    private var frostRevision = 0
-    private var frostLayout: String?
-    private var frostSettle: DispatchWorkItem?
-    private var frostDeadline: DispatchWorkItem?
-
-    private func resetFrost() {
-        frostGeneration += 1
-        frostSettle?.cancel()
-        frostDeadline?.cancel()
-        frostSettle = nil
-        frostDeadline = nil
-        frostActive = false
-        frostLayout = nil
-        pose = nil
-        frost?.layer.removeAllAnimations()
-        frost?.isHidden = true
-    }
-
     @objc private func sceneWillDeactivate(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene,
-              scene === window?.windowScene else { return }
-        resetFrost()
+              scene === window?.windowScene, let window, let session,
+              hasDivision || session.presentation.usesNativeRail else { return }
+        // Install before iOS transfers the retained page to its other display.
+        session.displayHandoff.suspend(in: window, canvas: session.presentation.canvas)
     }
 
     @objc private func sceneDidActivate(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene,
               scene === window?.windowScene else { return }
-        setNeedsLayout() // Establish a fresh baseline without replaying a cover.
+        setNeedsLayout()
     }
 
     private func updatePose(inner: Bool) {
-        guard let window, window.windowScene?.activationState == .foregroundActive else {
-            resetFrost()
-            return
-        }
+        guard let window, let session else { return }
         var divisions = ""
         if #available(iOS 27.1, *) {
             divisions = window.reservedRegions(kind: .division, options: .includeInactive)
                 .map { "\($0.isActive):\($0.frame)" }.sorted().joined(separator: "|")
         }
-        let next = Pose(window: ObjectIdentifier(window), size: window.bounds.size,
-                        orientation: window.windowScene?.effectiveGeometry.interfaceOrientation.rawValue ?? 0,
-                        inner: inner, divisions: divisions)
-        defer { pose = next }
-        guard let previous = pose else { return } // Cold launch owns its animation.
-        // The retained web controls animate same-display resizing/hinge changes.
-        // Frost is only a bridge between outer/inner navigation architectures;
-        // covering every hinge update would hide their actual movement.
-        guard next.inner != previous.inner || frostActive else { return }
-        // Trigger on window pose only. Once covered, also wait for the local
-        // host/keyboard guide/safe-area layout to settle before uncovering it.
-        let layout = "\(bounds)|\(session?.webView.frame ?? .zero)|\(session?.webView.safeAreaInsets ?? .zero)|\(safeAreaInsets)"
-        guard next != previous || (frostActive && frostLayout != layout) else { return }
-        frostLayout = layout
-        frostRevision += 1
-        if !frostActive {
-            frostGeneration += 1
-            frostActive = true
-            let view = frost ?? UIVisualEffectView()
-            frost = view
-            view.isUserInteractionEnabled = false
-            view.accessibilityElementsHidden = true
-            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            view.frame = bounds
-            view.overrideUserInterfaceStyle = session?.webView.overrideUserInterfaceStyle ?? .unspecified
-            view.effect = UIAccessibility.isReduceTransparencyEnabled ? nil : UIBlurEffect(style: .systemUltraThinMaterial)
-            view.contentView.backgroundColor = (session?.presentation.canvas ?? .systemBackground)
-                .withAlphaComponent(UIAccessibility.isReduceTransparencyEnabled ? 1 : 0.18)
-            if view.superview !== self { addSubview(view) }
-            bringSubviewToFront(view)
-            view.layer.removeAllAnimations()
-            view.alpha = 1
-            view.isHidden = false
-            let generation = frostGeneration
-            // A fixed deadline prevents an interrupted/repeated resize from
-            // leaving a cover behind. Further layouts cannot extend it.
-            let deadline = DispatchWorkItem { [weak self] in self?.finishFrost(generation, animated: false) }
-            frostDeadline = deadline
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65, execute: deadline)
-        } else {
-            frost?.layer.removeAllAnimations()
-            frost?.alpha = 1
-        }
-        frostSettle?.cancel()
-        let generation = frostGeneration
-        let revision = frostRevision
-        let settle = DispatchWorkItem { [weak self] in
-            guard let self, self.pose == next, self.frostRevision == revision else { return }
-            self.finishFrost(generation, animated: true)
-        }
-        frostSettle = settle
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: settle)
-    }
-
-    private func finishFrost(_ generation: Int, animated: Bool) {
-        guard frostActive, frostGeneration == generation else { return }
-        guard animated, window?.windowScene?.activationState == .foregroundActive else {
-            resetFrostKeepingPose()
-            return
-        }
-        let revision = frostRevision
-        UIView.animate(withDuration: UIAccessibility.isReduceMotionEnabled ? 0.08 : 0.22,
-                       delay: 0, options: [.beginFromCurrentState, .curveEaseOut, .allowUserInteraction]) {
-            self.frost?.alpha = 0
-        } completion: { [weak self] finished in
-            guard let self, finished, self.frostGeneration == generation, self.frostRevision == revision else { return }
-            self.resetFrostKeepingPose()
-        }
-    }
-
-    private func resetFrostKeepingPose() {
-        let previous = pose
-        resetFrost()
-        pose = previous
+        let pose = DisplayHandoff.Pose(window: ObjectIdentifier(window), size: window.bounds.size,
+            orientation: window.windowScene?.effectiveGeometry.interfaceOrientation.rawValue ?? 0,
+            inner: inner, divisions: divisions)
+        let layout = "\(bounds)|\(session.webView.frame)|\(session.webView.safeAreaInsets)|\(safeAreaInsets)|\(session.railRevision)"
+        session.displayHandoff.update(pose: pose, layout: layout, in: window,
+            canvas: session.presentation.canvas,
+            active: window.windowScene?.activationState == .foregroundActive,
+            waitForPaint: { [weak session] completion in
+                guard let session else { completion(); return }
+                session.waitForDisplayPaint(completion)
+            })
     }
 
     override func layoutSubviews() {
@@ -214,6 +119,7 @@ final class WebHostView: UIView {
         guard let session, let window, window.windowScene?.activationState == .foregroundActive else { return }
         let web = session.webView
         guard session.presentation.usesNativeRail else { session.updateRailFrame(nil); return }
+        defer { updatePose(inner: session.presentation.isDuoInner) }
         if session.presentation.isDuoInner {
             let identity = session.toolbarIdentityFrame
             session.updateRailFrame(identity, identity: identity)
@@ -265,7 +171,7 @@ final class WebHostView: UIView {
         guard let session else { return }
         // Cover Duo changes before publishing the new web geometry.
         if hasDivision || usesNativeRail { updatePose(inner: isDuoInner) }
-        else { resetFrost() }
+        else { session.displayHandoff.cancel() }
         let keyboardVisible = session.webView.frame.maxY < bounds.maxY - safeAreaInsets.bottom - 1
         var insets = session.webView.safeAreaInsets
         if #available(iOS 27.1, *), usesNativeRail {
@@ -308,7 +214,6 @@ final class WebHostView: UIView {
         super.didMoveToWindow()
         session?.computerHostAttachmentChanged()
         if window == nil {
-            resetFrost()
             session?.detachVisibleHost()
         }
         setNeedsLayout()
@@ -383,7 +288,7 @@ final class WebHostView: UIView {
     }
 
     func attach(_ session: WebSession) {
-        if self.session !== session { resetFrost() }
+        if self.session !== session { self.session?.displayHandoff.cancel() }
         self.session = session
         hasDivision = hasDivision || session.presentation.isDuo
         let webView = session.webView

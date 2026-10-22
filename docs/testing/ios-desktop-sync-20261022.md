@@ -243,3 +243,23 @@ replace the intermediate taller frame after its controls disappear. Native
 open-to-closed verification confirms the final 148-point menu height, the same
 leading user-message gutter beside and below it, and recovered trailing space
 below the menu.
+
+## Display handoff
+
+Opening or closing the Duo now uses one session-owned frost and dissolve. It
+survives host detachment and scene deactivation, covers the native toolbar along
+with the retained page, and transfers to the incoming window before new web
+geometry is published. Cold launch and same-display hinge/resize motion retain
+their existing animations.
+
+The cover holds through the native toolbar handoff, then waits for quiet layout,
+finite web effects and two painted frames before its 280 ms dissolve. A late
+toolbar measurement or quick reversal invalidates an earlier paint completion.
+The bounded fallback also dissolves instead of abruptly removing the cover.
+App/system Reduce Motion shortens the fade; Reduce Transparency uses an opaque
+canvas. The account, WKWebView, conversation, draft and computer remain retained.
+
+Five app-hosted UIKit tests cover cold launch/resize, transfer between windows,
+inactive-to-active handoff, late layout/reversal, unresponsive-page fallback and
+Reduce Motion cleanup. Native Duo recordings were inspected in both directions:
+the layout settles under the cover and fades into view without a cleanup snap.

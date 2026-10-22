@@ -76,6 +76,7 @@ final class WebSession: NSObject {
     let origin: ServerOrigin
     let webView: WKWebView
     let presentation = WebPresentationState()
+    let displayHandoff = DisplayHandoff()
     private var conversationTarget: ConversationMenuTarget?
     private var contextMenuPreview: UITargetedPreview?
     private weak var nativeMenuAlert: UIAlertController?
@@ -89,6 +90,7 @@ final class WebSession: NSObject {
     private var layoutKeyboardVisible = false
     private var layoutRailSide = "none"
     private var railLayoutGeneration: UInt64 = 0
+    private(set) var railRevision = 0
     private var lastRailFrame: CGRect?
     private var lastIdentityFrame: CGRect?
     private var identityWindowFrame: CGRect?
@@ -317,6 +319,26 @@ final class WebSession: NSObject {
             "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait], in: nil, in: .page) { _ in }
     }
 
+    func waitForDisplayPaint(_ completion: @escaping () -> Void) {
+        guard origin.matches(webView.url) else { completion(); return }
+        webView.callAsyncJavaScript("""
+        if (window.top !== window.self || location.origin !== expectedOrigin) return;
+        const paint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await paint();
+        // Wait for finite layout effects already scheduled by the native shim.
+        // Activity indicators and other repeating animations cannot hold this.
+        const effects = document.getAnimations().filter(animation => {
+            const end = animation.effect?.getComputedTiming().endTime;
+            return Number.isFinite(end) && animation.playState !== 'finished';
+        });
+        await Promise.race([
+            Promise.allSettled(effects.map(animation => animation.finished)),
+            new Promise(resolve => setTimeout(resolve, 500))
+        ]);
+        await paint();
+        """, arguments: ["expectedOrigin": origin.serialized], in: nil, in: .page) { _ in completion() }
+    }
+
     var toolbarIdentityFrame: CGRect? {
         guard presentation.toolbarIdentity, let frame = identityWindowFrame else { return nil }
         let local = webView.convert(frame, from: nil)
@@ -339,6 +361,7 @@ final class WebSession: NSObject {
         let next = frame
         guard next != lastRailFrame || identity != lastIdentityFrame else { return }
         lastRailFrame = next; lastIdentityFrame = identity
+        railRevision += 1
         func rect(_ value: CGRect) -> [String: Double] { ["x": Double(value.minX), "y": Double(value.minY), "width": Double(value.width), "height": Double(value.height)] }
         let value: Any = next.map { frame -> Any in
             var result = rect(frame).mapValues { $0 as Any }
@@ -508,6 +531,7 @@ final class WebSession: NSObject {
                let title = body["title"] as? String, title.count <= 160, let listVisible = body["listVisible"] as? Bool {
                 // Keep conditional toolbar items in the same native transaction
                 // so the glass bar and its controls change together.
+                displayHandoff.reduceMotion = body["reduceMotion"] as? Bool == true
                 let animate = presentation.hasLoadedChats && presentation.usesNativeRail &&
                     !UIAccessibility.isReduceMotionEnabled && (body["reduceMotion"] as? Bool != true)
                 withAnimation(animate ? .smooth(duration: 0.28) : nil) {
