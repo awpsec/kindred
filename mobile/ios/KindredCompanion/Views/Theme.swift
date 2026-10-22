@@ -99,6 +99,14 @@ struct BotToolbarAvatar: View {
         .accessibilityHidden(true)
     }
 
+    // A real image lets the system vertical bar use the avatar as an icon,
+    // rather than converting a custom Canvas label into its text fallback.
+    func image(scale: CGFloat) -> UIImage? {
+        let renderer = ImageRenderer(content: self)
+        renderer.scale = scale
+        return renderer.uiImage?.withRenderingMode(.alwaysOriginal)
+    }
+
     private var characterPath: Path {
         var path = Path()
         switch shape {

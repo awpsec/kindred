@@ -329,7 +329,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert(Math.abs(bookChat.x-(bookList.x+bookList.width))<2,'book conversation retains the space after its narrow list');
     const bookComposer=await page.locator('#composer').boundingBox();
     assert(bookComposer.x>=division.x+division.width || bookComposer.x+bookComposer.width<=division.x,'composer controls must avoid the active book division');
-    assert(await page.locator('.bot-heading').isHidden(),'the native bot avatar replaces the HTML tag');
+    assert(await page.locator('.bot-heading').isVisible(),'the inner display retains its centered identity tag');
     await assertRetained(baseline); await assertAnchor(anchor);
     await page.screenshot({path:path.join(out,'book-list-chat.png')});
     await relay(inner,{regions:[division],insets:{top:0,right:21,bottom:0,left:12}});
@@ -351,7 +351,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     await relay(inner,{regions:[camera,bottomCamera]});
     const clearComposer=await page.locator('#composer-area').boundingBox();
     const intersects=(a,b)=>a.x<b.x+b.width && a.x+a.width>b.x && a.y<b.y+b.height && a.y+a.height>b.y;
-    assert(await page.locator('.bot-heading').isHidden(),'native rail avatar leaves no web tag to collide with camera regions');
+    assert(!intersects(await page.locator('.bot-heading').boundingBox(),camera),'the restored inner identity tag clears active camera regions');
     assert(!intersects(await page.locator('#composer').boundingBox(),bottomCamera),'the composer controls must clear a lower active occlusion');
     await page.locator('#content').evaluate(area=>{
       window.duoReadingPosition=area.scrollTop;
@@ -367,7 +367,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     await settled();
     await page.screenshot({path:path.join(out,'active-camera-clearance.png')});
     await relay(inner);
-    assert.equal(await page.locator('.conversation').evaluate(node=>parseFloat(getComputedStyle(node).getPropertyValue('--ios-chat-top'))),0,'native rail leaves no HTML header gap');
+    assert.equal(await page.locator('.conversation').evaluate(node=>parseFloat(getComputedStyle(node).getPropertyValue('--ios-chat-top'))),64,'inner tag reserves only its measured header clearance');
     assert.equal(await page.locator('#composer-area').evaluate(node=>getComputedStyle(node).bottom),'0px','inactive occlusions must not leave an empty composer gap');
 
     // The native gear targets the existing settings form only on Details.
@@ -715,7 +715,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     }
     assert.notEqual(appearanceEvidence[0].body,appearanceEvidence[1].body,'the light and dark backgrounds must actually change');
     // Use the same system-text event as the native host. Large text must grow
-    // the conversation without recreating an HTML header or reloading it.
+    // the centered identity tag and conversation without reloading them.
     const largeTextLoad=(await ui()).loadID;
     await relay(inner);
     for(const scale of [2,3.1176470588235294]) {
@@ -729,7 +729,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
         return {font:parseFloat(getComputedStyle(tag.querySelector('strong')).fontSize),line:parseFloat(getComputedStyle(tag.querySelector('strong')).lineHeight),tag:tag.getBoundingClientRect().toJSON(),header:header.getBoundingClientRect().toJSON(),clearance:parseFloat(getComputedStyle(conversation).getPropertyValue('--ios-chat-top'))};
       });
       assert(Math.abs(metrics.font-15*scale)<.1 && Math.abs(metrics.line-20*scale)<.1,'the Duo bot tag must honor Dynamic Type once');
-      assert.equal(metrics.tag.height,0);assert.equal(metrics.header.height,0);assert.equal(metrics.clearance,0,'native avatar keeps the HTML header absent at every text size');
+      assert(metrics.tag.height>=44,'inner identity remains visible at larger text sizes');assert(metrics.header.height>=metrics.tag.height+20-.5,'header clearance grows with the tag');assert.equal(metrics.clearance,metrics.header.height,'history uses the measured inner identity clearance');
       assert.equal((await ui()).loadID,largeTextLoad,'changing Dynamic Type must not reload the conversation');
       assert.equal(await prompt.evaluate(node=>node.value),draft);
       await page.locator('#content').evaluate(area=>{area.scrollTop=area.scrollHeight;area.dispatchEvent(new Event('scroll'));});

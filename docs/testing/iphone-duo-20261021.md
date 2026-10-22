@@ -153,3 +153,9 @@ presentation also removes the obsolete global top blur and legacy shell block
 padding so the first conversation row is not blurred or offset.
 
 The final on-device simulator keyboard check exposed the native rail covering the composer’s trailing action while typing. The host now publishes keyboard visibility alongside measured safe insets; the iOS shim reserves the measured right inset only while the keyboard is visible. Dismissal restores the full-width bottom lane. Both current and historical server fixtures verify this transition.
+
+## Toolbar identity and overflow follow-up
+
+The closed-display avatar now uses a true original-color image in an iOS 27.1 vertical-preferred toolbar item. The open display restores the existing centered avatar-and-name tag; its measured clearance grows with Dynamic Type. Other web navigation controls and the full-width status blur remain hidden.
+
+Replaced the separate app More menu with the public ToolbarOverflowMenu, so Artifacts/Marketplace share one native ellipsis with any overflowing Search/New controls. No new keyboard state or navigation bridge was added. Actual Duo simulator checks confirmed the closed avatar appears in the rail and opens Details, the inner tag opens Details, and keyboard-visible native overflow presents one ellipsis with both New bot/New chat available.

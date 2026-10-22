@@ -8,6 +8,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var launchFrame = KindredLaunchFrame.at(milliseconds: 0)
 
@@ -152,20 +153,34 @@ struct RootView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if usesDuoNavigation, let session = activeSession {
+        if #available(iOS 27.1, *), usesDuoNavigation, let session = activeSession {
+            if #available(iOS 27.1, *), !session.presentation.isDuoInner,
+               session.presentation.route == "bot-chat", session.presentation.botDetailsAvailable {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        session.performDuoAction(.botDetails)
+                    } label: {
+                        Label {
+                            Text(session.presentation.chatTitle + " details")
+                        } icon: {
+                            if let image = BotToolbarAvatar(shape: session.presentation.botAvatarShape, color: session.presentation.botAvatarColor).image(scale: displayScale) {
+                                Image(uiImage: image)
+                            } else {
+                                Image(systemName: "person.crop.circle")
+                            }
+                        }
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonBorderShape(.circle)
+                    .accessibilityLabel(session.presentation.chatTitle + " details")
+                }
+                .axisBehavior(.verticalPreferred)
+            }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if session.presentation.route != "chat-list" && !(session.presentation.route == "bot-chat" && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {
                     Button {
                         session.performDuoAction(.back)
                     } label: { Label("Back", systemImage: "chevron.backward") }
-                }
-                if session.presentation.route == "bot-chat" && session.presentation.botDetailsAvailable {
-                    Button {
-                        session.performDuoAction(.botDetails)
-                    } label: {
-                        BotToolbarAvatar(shape: session.presentation.botAvatarShape, color: session.presentation.botAvatarColor)
-                    }
-                    .accessibilityLabel(session.presentation.chatTitle + " details")
                 }
                 if session.presentation.route == "details" && session.presentation.botSettingsAvailable {
                     Button {
@@ -194,10 +209,6 @@ struct RootView: View {
                     Button {
                         session.performDuoAction(.settings)
                     } label: { Label("Settings and accounts", systemImage: "person.crop.circle") }
-                    Menu {
-                        Button("Artifacts", systemImage: "folder") { session.performDuoAction(.artifacts) }
-                        Button("Marketplace", systemImage: "square.grid.2x2") { session.performDuoAction(.marketplace) }
-                    } label: { Label("More", systemImage: "ellipsis") }
                     Button {
                         session.performDuoAction(.search)
                     } label: { Label("Search chats", systemImage: "magnifyingglass") }
@@ -213,6 +224,12 @@ struct RootView: View {
                     Button {
                         session.performDuoAction(.newChat)
                     } label: { Label("New artifact", systemImage: "plus") }
+                }
+            }
+            if session.presentation.route == "chat-list" || session.presentation.listVisible {
+                ToolbarOverflowMenu {
+                    Button("Artifacts", systemImage: "folder") { session.performDuoAction(.artifacts) }
+                    Button("Marketplace", systemImage: "square.grid.2x2") { session.performDuoAction(.marketplace) }
                 }
             }
         } else {

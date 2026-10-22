@@ -334,6 +334,12 @@ html[data-kindred-ios][data-ios-duo=true] .bot-heading { left:calc(50% + (var(--
 html[data-kindred-ios][data-ios-duo=true] .shell { padding-inline:0; padding-block:0; }
 html[data-kindred-ios][data-ios-duo=true] #ios-status-blur { display:none; }
 html[data-kindred-ios][data-ios-duo=true] .conversation-header { display:none; }
+/* The inner display has room for the original centered identity tag. The
+   closed display uses its native vertical avatar item instead. */
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=true] .conversation-header { display:block; height:calc(20px + max(44px,20px * var(--text-scale,1) + 12px)); }
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=true] .conversation-header::before { display:none; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=true] .conversation-header>:not(.bot-heading) { display:none; }
+
 @media (min-width:600px) and (max-height:500px) {
   html[data-kindred-ios][data-ios-duo=true][data-ios-slab=true] .computer-panel:not([hidden]) { grid-template-rows:minmax(0,1fr); }
   html[data-kindred-ios][data-ios-duo=true][data-ios-slab=true] .computer-panel>:is(.desktop,.ios-computer-controls) { grid-row:1; }

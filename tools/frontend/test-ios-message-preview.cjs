@@ -62,7 +62,7 @@ const legacy=modern.slice(0,start)+`        const rect=group.querySelector('.mes
           return {posts,key:group.dataset.mobileMessageKey,bubble:{x:r.x,y:r.y,width:r.width,height:r.height},row:{x:row.x,y:row.y,width:row.width,height:row.height},view:{x:view.x,y:view.y,width:view.width,height:view.height},headerBottom:h.bottom,tagBottom:t.bottom,composerTop:c.top,pill:{top:p.top,bottom:p.bottom},expected:[Math.max(0,r.left,view.left),side==='above'?top:Math.max(top,p.bottom),Math.min(innerWidth,r.right,view.right)-Math.max(0,r.left,view.left),(side==='above'?Math.min(bottom,p.top):bottom)-(side==='above'?top:Math.max(top,p.bottom))]};
         },side);
         assert(result.bubble.y<0&&result.bubble.y+result.bubble.height>result.composerTop,'the fixture bubble crosses the header and composer');
-        if (rail) assert.equal(result.tagBottom,0,'the native rail removes the HTML bot tag');
+        if (rail&&!inner) assert.equal(result.tagBottom,0,'the closed native rail removes the HTML bot tag');
         else assert(result.tagBottom>result.headerBottom,'the bot tag exercises its own obstruction below the header');
         assert(result.posts.length>=2,'the older full-row post must be followed by the bundled corrective post');
         const initial=result.posts[0],last=result.posts.at(-1);
