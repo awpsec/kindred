@@ -4599,14 +4599,20 @@ details.decision-receipt-disclosure[open]>.decision-receipt-summary,
 }
 .bot-dialog.is-teammate-draft #new-avatar-button{height:80px;margin-bottom:8px}
 
-/* Linux uses GTK resize borders and integrated, theme-matched header controls. */
-/* Keep the controls above the header divider; the overlay must not paint over it. */
-.linux-desktop .desktop-titlebar{position:absolute;top:0;right:0;height:56px;width:126px;background:transparent;border:0;pointer-events:none}
-.linux-desktop .desktop-window-title{display:none}
-.linux-desktop .window-controls{pointer-events:auto;width:100%}
-.linux-desktop .window-control{width:42px}
-.linux-desktop .shell,.linux-desktop #connect{height:100dvh}
-.linux-desktop .conversation-header,.linux-desktop .panel-header{padding-right:140px}
+/* Linux window controls have one owner above all application surfaces. */
+.linux-desktop .desktop-titlebar{position:relative;inset:auto;width:100%;height:32px;min-height:32px;justify-content:flex-end;background:var(--bg);border-bottom:1px solid var(--line);z-index:120}
+.linux-desktop .window-controls{flex:none;height:31px}
+.linux-desktop .window-control{width:42px;min-height:0;padding:0}
+.linux-desktop .window-control .window-symbol{font-size:18px}
+.linux-desktop .window-maximize .window-symbol{font-size:15px}
+.linux-desktop .window-maximize.maximized .window-symbol{font-size:0}
+.linux-desktop .window-maximize.maximized .window-symbol::after{font-size:14px}
+.linux-desktop .shell,.linux-desktop #connect{height:calc(100dvh - 32px)}
+.linux-desktop .sidebar-top{height:57px;min-height:57px;flex:none;gap:6px;padding:10px 12px 12px}
+.linux-desktop .sidebar-top>.search{flex:1;min-width:0;margin:0;height:33px}
+.linux-desktop .sidebar-top>.search input{width:100%}
+.linux-desktop .sidebar-top>#new-bot{flex:none;width:30px;height:33px}
+.linux-desktop .sidebar-top .search kbd{font-size:10px}
 
 .chat-context-item.has-submenu{display:flex;align-items:center;gap:8px}
 .chat-context-item.has-submenu>svg:last-child{margin-left:auto}
@@ -4733,7 +4739,7 @@ details.bot-chat-section>summary::before{top:calc(50% - 7px)}
 @media(max-width:760px){.artifact-studio{grid-template-columns:180px minmax(0,1fr)}.artifact-studio-library{padding:16px 8px}.artifact-workbench-header{align-items:flex-start;flex-direction:column;gap:10px;padding:16px}.artifact-workbench-body{padding:12px}.artifact-open-link{display:none}.artifact-source-fields{flex-wrap:wrap}.artifact-source-fields input{flex-basis:100%}.artifact-starter-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:500px){.artifact-studio{grid-template-columns:1fr}.artifact-studio-library{max-height:180px;border-right:0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}.artifact-studio-library-status{display:none}.artifact-studio-library .artifact-studio-library-brand{margin:0}.artifact-studio-library-search{grid-column:1/-1}.artifact-studio-library-list{grid-column:1/-1;flex-direction:row;min-height:36px}.artifact-studio-library-item{width:180px;flex-shrink:0}.artifact-studio-empty{margin:30px auto}.artifact-studio{grid-template-rows:auto minmax(0,1fr)}}
 
-.native-desktop:not(.linux-desktop):not(.mac-desktop) .artifact-studio{top:32px}.linux-desktop .artifact-workbench-header{padding-right:140px}.mac-desktop .artifact-studio-library{padding-top:65px}
+.native-desktop:not(.mac-desktop) .artifact-studio{top:32px}.mac-desktop .artifact-studio-library{padding-top:65px}
 
 .artifact-render-error{padding:24px;color:var(--fg);white-space:pre-wrap;overflow-wrap:anywhere}
 
@@ -6246,3 +6252,8 @@ html[data-ios-reserved=true] :is(.conversation-header,.composer-area,.computer-p
 .expression-option[aria-pressed="true"] {background:var(--fg);color:var(--bg);}
 .avatar-custom-color {display:flex;align-items:center;gap:12px;margin:12px 0;}
 .avatar-popover .quick-shapes {max-height:260px;overflow:auto;}
+/* Compact Linux sidebar rail keeps both actions inside the original header. */
+@media(min-width:761px){
+.linux-desktop .sidebar-rail:not(.sidebar-peek)>.sidebar .sidebar-top{height:57px;min-height:57px;flex-wrap:nowrap;gap:2px;padding:8px 6px}
+.linux-desktop .sidebar-rail:not(.sidebar-peek)>.sidebar .sidebar-top>.search{flex:none;width:30px;height:33px;margin:0}
+}
