@@ -43,10 +43,17 @@ final class WebHostView: UIView {
     private func updateEnvironment() {
         var isDuoInner = false
         var usesNativeRail = false
+        var railSide = "none"
         if #available(iOS 27.1, *) {
             isDuoInner = !(window?.reservedRegions(kind: .division, options: .includeInactive).isEmpty ?? true)
             hasDivision = hasDivision || isDuoInner
             usesNativeRail = isDuoInner || traitCollection.verticalBarEdge != .unspecified
+            let rightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
+            switch traitCollection.verticalBarEdge {
+            case .leading: railSide = rightToLeft ? "right" : "left"
+            case .trailing: railSide = rightToLeft ? "left" : "right"
+            default: break
+            }
         }
         guard let session else { return }
         let keyboardVisible = session.webView.frame.maxY < bounds.maxY - safeAreaInsets.bottom - 1
@@ -70,7 +77,7 @@ final class WebHostView: UIView {
         let windowBounds = window?.bounds ?? bounds
         session.updateLayout(topInset: insets.top, bottomInset: keyboardVisible ? 0 : insets.bottom,
                              leftInset: insets.left, rightInset: insets.right, isDuo: hasDivision || usesNativeRail,
-                             isDuoInner: isDuoInner, usesNativeRail: usesNativeRail,
+                             isDuoInner: isDuoInner, usesNativeRail: usesNativeRail, railSide: railSide,
                              composerBottomInset: keyboardVisible ? 0 : composerBottom, keyboardVisible: keyboardVisible, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
                              viewportHeight: session.webView.bounds.height,
                              isPortrait: windowBounds.height >= windowBounds.width)
@@ -131,7 +138,7 @@ final class WebHostView: UIView {
 
     private func observeTextSize() {
         if #available(iOS 27.1, *) {
-            registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge) { (view: WebHostView, _: UITraitCollection) in
+            registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge + [UITraitLayoutDirection.self]) { (view: WebHostView, _: UITraitCollection) in
                 view.setNeedsLayout()
             }
         }

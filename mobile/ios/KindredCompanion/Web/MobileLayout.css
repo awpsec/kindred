@@ -304,7 +304,7 @@ html[data-kindred-ios][data-ios-reserved=true] :is(.document-dialog,.workspace-a
 
 /* The installed app owns its inner-display list width, including on servers
    that assign half of a book pose to the sidebar. */
-html[data-kindred-ios][data-ios-native-sidebar=true] .shell>.sidebar { display:flex!important; flex:0 0 var(--ios-native-sidebar-width)!important; width:var(--ios-native-sidebar-width)!important; margin-right:0!important; }
+html[data-kindred-ios][data-ios-native-sidebar=true] .shell>.sidebar { display:flex!important; flex:0 0 var(--ios-native-sidebar-width)!important; width:var(--ios-native-sidebar-width)!important; margin-right:0!important; box-sizing:border-box; padding-left:var(--ios-native-sidebar-leading,0px); }
 html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-hidden=true] .shell>.sidebar { display:none!important; }
 html[data-kindred-ios][data-ios-native-sidebar=true] .sidebar>.ios-duo-resizer { display:block; position:absolute; inset:0 -12px 0 auto; width:24px; z-index:35; touch-action:none; user-select:none; -webkit-user-select:none; }
 html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rail=true] .sidebar :is(.bot-info,.pinned-bot>span:last-child,.sidebar-bottom,.bot-chat-section>summary) { display:none; }
@@ -324,7 +324,7 @@ html[data-kindred-ios][data-ios-native-computer=true] .computer-panel>.ios-duo-r
 
 /* Measure controls against the actual conversation, after native pane sizing.
    Stale server camera offsets must not preserve a former half-screen composer. */
-html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area { left:0; right:0; width:100%; max-width:none; margin-inline:0; box-sizing:border-box; padding-left:max(10px,var(--ios-native-control-left,0px)); padding-right:max(10px,var(--ios-native-control-right,0px),var(--ios-composer-keyboard-right,0px)); padding-bottom:calc(8px + var(--ios-composer-safe-bottom,var(--ios-safe-bottom))); }
+html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area { left:0; right:0; width:100%; max-width:none; margin-inline:0; box-sizing:border-box; padding-left:max(10px,var(--ios-native-control-left,0px),var(--ios-composer-keyboard-left,0px)); padding-right:max(10px,var(--ios-native-control-right,0px),var(--ios-composer-keyboard-right,0px)); padding-bottom:calc(8px + var(--ios-composer-safe-bottom,var(--ios-safe-bottom))); }
 html[data-kindred-ios][data-ios-duo=true] .conversation-header { padding-left:max(12px,var(--ios-native-control-left,0px)); padding-right:max(12px,var(--ios-native-control-right,0px)); }
 html[data-kindred-ios][data-ios-duo=true] .bot-heading { left:calc(50% + (var(--ios-native-control-left,0px) - var(--ios-native-control-right,0px)) / 2); max-width:calc(100% - 24px - var(--ios-native-control-left,0px) - var(--ios-native-control-right,0px)); }
 
@@ -361,3 +361,22 @@ html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .
 html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .progress-update-time { max-width:100%; font-size:calc(12px * var(--text-scale,1)); line-height:1.5; vertical-align:baseline; white-space:normal; }
 html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .progress-update-clock { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
 html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .progress-update-time-toggle { display:inline-flex; align-items:center; min-width:44px; min-height:44px; padding:0; margin-block:min(0px,calc((1.5em - 44px) / 2)); vertical-align:baseline; }
+
+/* Native rail clearance belongs to reading and panel content; the independent
+   composer still uses the available bottom lane. */
+html[data-kindred-ios][data-ios-duo=true] .conversation>.conversation-history { margin-left:var(--ios-content-left,0px); margin-right:var(--ios-content-right,0px); }
+html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area>.jump-latest { right:calc(24px + var(--ios-content-right,0px)); max-width:calc(100% - 48px - var(--ios-content-left,0px) - var(--ios-content-right,0px)); }
+html[data-kindred-ios][data-ios-duo=true] #app.shell>.details-panel:not([hidden]) { position:absolute!important; inset:0 0 0 var(--ios-details-left,0px)!important; width:auto!important; height:auto!important; max-width:none!important; min-width:0; z-index:9; border:0; box-shadow:none; background:var(--bg); }
+html[data-kindred-ios][data-ios-duo=true] .details-panel>:is(.panel-header,.pane-resizer),
+html[data-kindred-ios][data-ios-duo=true] #details-back { display:none!important; }
+html[data-kindred-ios][data-ios-duo=true] .details-panel>.panel-content { padding:24px calc(20px + var(--ios-content-right,0px)) 24px calc(20px + var(--ios-content-left,0px)); }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-draggable=false] .sidebar>.ios-duo-resizer { pointer-events:none; visibility:hidden; }
+html[data-kindred-ios][data-ios-duo=true] .computer-panel { box-sizing:border-box; padding-left:var(--ios-content-left,0px); padding-right:var(--ios-content-right,0px); }
+html[data-kindred-ios][data-ios-duo=true] .sidebar>.search { width:auto; margin-left:calc(12px + var(--ios-list-left,0px)); margin-right:calc(12px + var(--ios-list-right,0px)); }
+html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .nav-entry { box-sizing:border-box; width:calc(100% - var(--ios-list-left,0px) - var(--ios-list-right,0px)); margin-left:var(--ios-list-left,0px); transition:width .2s ease,margin-left .2s ease; }
+html[data-kindred-ios][data-ios-native-sidebar-rail=true] .sidebar #bots .nav-entry { width:60px; margin-inline:auto; }
+html[data-kindred-ios][data-ios-duo=true] .sidebar .nav-entry[data-ios-leading-corner],
+html[data-kindred-ios][data-ios-duo=true] .sidebar .nav-entry[data-ios-leading-corner]>.bot-link { border-top-left-radius:28px; }
+@media(prefers-reduced-motion:reduce) {
+ html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .nav-entry { transition:none; }
+}

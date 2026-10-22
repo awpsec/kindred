@@ -84,6 +84,7 @@ final class WebSession: NSObject {
     private var layoutHeight: CGFloat = 0
     private var layoutComposerBottom: CGFloat = 0
     private var layoutKeyboardVisible = false
+    private var layoutRailSide = "none"
     private(set) var composerExtent: CGFloat = 0
     private var layoutIsPortrait = true
     private var computerInputWanted = false
@@ -254,9 +255,11 @@ final class WebSession: NSObject {
     /// Presentation values only, delivered to the trusted main frame. The host
     /// extends behind system chrome while WebKit avoids the keyboard.
     func updateLayout(topInset: CGFloat, bottomInset: CGFloat, leftInset: CGFloat = 0, rightInset: CGFloat = 0,
-                      isDuo: Bool = false, isDuoInner: Bool = false, usesNativeRail: Bool = false, composerBottomInset: CGFloat? = nil, keyboardVisible: Bool = false, isSlab: Bool, viewportHeight: CGFloat = 0, isPortrait: Bool = true) {
+                      isDuo: Bool = false, isDuoInner: Bool = false, usesNativeRail: Bool = false, railSide: String = "none", composerBottomInset: CGFloat? = nil, keyboardVisible: Bool = false, isSlab: Bool, viewportHeight: CGFloat = 0, isPortrait: Bool = true) {
         let composerBottom = composerBottomInset ?? bottomInset
-        guard layoutKeyboardVisible != keyboardVisible || layoutComposerBottom != composerBottom || layoutTop != topInset || layoutBottom != bottomInset || layoutLeft != leftInset || layoutRight != rightInset || presentation.isDuo != isDuo || presentation.isDuoInner != isDuoInner || presentation.usesNativeRail != usesNativeRail || layoutIsSlab != isSlab || layoutHeight != viewportHeight || layoutIsPortrait != isPortrait else { return }
+        let side = ["left", "right", "none"].contains(railSide) ? railSide : "none"
+        guard layoutRailSide != side || layoutKeyboardVisible != keyboardVisible || layoutComposerBottom != composerBottom || layoutTop != topInset || layoutBottom != bottomInset || layoutLeft != leftInset || layoutRight != rightInset || presentation.isDuo != isDuo || presentation.isDuoInner != isDuoInner || presentation.usesNativeRail != usesNativeRail || layoutIsSlab != isSlab || layoutHeight != viewportHeight || layoutIsPortrait != isPortrait else { return }
+        layoutRailSide = side
         layoutComposerBottom = composerBottom
         layoutKeyboardVisible = keyboardVisible
         layoutTop = topInset
@@ -277,13 +280,13 @@ final class WebSession: NSObject {
         guard origin.matches(webView.url) else { return }
         let script = """
         if (window.top !== window.self || location.origin !== expectedOrigin) return;
-        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, leftInset, rightInset, isDuo, isDuoInner, usesNativeRail, composerBottomInset, keyboardVisible, isSlab, viewportHeight, isPortrait};
+        window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, leftInset, rightInset, isDuo, isDuoInner, usesNativeRail, railSide, composerBottomInset, keyboardVisible, isSlab, viewportHeight, isPortrait};
         window.dispatchEvent(new CustomEvent('kindred-ios-layout', {detail: window.__KINDRED_IOS_LAYOUT}));
         """
         webView.callAsyncJavaScript(script, arguments: ["expectedOrigin": origin.serialized,
             "topInset": Double(layoutTop), "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab,
             "leftInset": Double(layoutLeft), "rightInset": Double(layoutRight), "isDuo": presentation.isDuo,
-            "isDuoInner": presentation.isDuoInner, "usesNativeRail": presentation.usesNativeRail,
+            "isDuoInner": presentation.isDuoInner, "usesNativeRail": presentation.usesNativeRail, "railSide": layoutRailSide,
             "composerBottomInset": Double(layoutComposerBottom), "keyboardVisible": layoutKeyboardVisible,
             "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait], in: nil, in: .page) { _ in }
     }
