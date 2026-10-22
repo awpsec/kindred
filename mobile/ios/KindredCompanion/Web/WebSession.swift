@@ -88,6 +88,7 @@ final class WebSession: NSObject {
     private var layoutComposerBottom: CGFloat = 0
     private var layoutKeyboardVisible = false
     private var layoutRailSide = "none"
+    private var railLayoutGeneration: UInt64 = 0
     private var lastRailFrame: CGRect?
     private var lastIdentityFrame: CGRect?
     private var identityWindowFrame: CGRect?
@@ -283,6 +284,22 @@ final class WebSession: NSObject {
         layoutIsPortrait = isPortrait
         computerHostAttachmentChanged()
         publishLayout()
+        if usesNativeRail { refreshRailLayout() }
+    }
+
+    private func refreshRailLayout() {
+        railLayoutGeneration &+= 1
+        let generation = railLayoutGeneration
+        // UIKit removes outgoing toolbar items after the SwiftUI transaction.
+        // Refresh through that bounded handoff so an intermediate tall menu
+        // cannot keep reserving empty space after the phone folds closed.
+        for delay in [0.0, 0.32, 0.7] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.railLayoutGeneration == generation,
+                      self.presentation.usesNativeRail else { return }
+                self.webView.superview?.setNeedsLayout()
+            }
+        }
     }
 
     private func publishLayout() {
@@ -512,7 +529,7 @@ final class WebSession: NSObject {
                     presentation.computerExpanded = body["computerExpanded"] as? Bool == true
                     presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
                 }
-                DispatchQueue.main.async { [weak self] in self?.webView.superview?.setNeedsLayout() }
+                refreshRailLayout()
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "composer-extent",

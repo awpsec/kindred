@@ -236,3 +236,10 @@ the animation and keeps user replies visibly separate from bot replies. The
 focused motion check verifies the inset alongside the existing recovery,
 reversal and Reduce Motion checks. Stored accounts are preserved during
 in-place simulator updates.
+
+After a fold or navigation change, the host refreshes the measured rail through
+the native toolbar's outgoing-item animation. Coalesced, bounded layout passes
+replace the intermediate taller frame after its controls disappear. Native
+open-to-closed verification confirms the final 148-point menu height, the same
+leading user-message gutter beside and below it, and recovered trailing space
+below the menu.
