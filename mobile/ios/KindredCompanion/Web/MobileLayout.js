@@ -54,12 +54,21 @@
     const height = nativeHeight || window.visualViewport?.height || window.innerHeight;
     html.style.setProperty('--ios-viewport-height', `${height}px`);
     html.toggleAttribute('data-ios-short-viewport', height <= 180);
+    requestAnimationFrame(resetRootScroll);
   };
   window.visualViewport?.addEventListener('resize', updateViewport);
   window.addEventListener('resize', updateViewport);
-  window.visualViewport?.addEventListener('scroll', () => {
-    if (nativeHeight && (window.scrollY || window.scrollX)) window.scrollTo(0,0);
-  });
+  const resetRootScroll = () => {
+    // WebKit can scroll the fixed body's overflow-hidden box to reveal focus
+    // even while window.scrollY remains zero. Nested chat/editor scrolling is
+    // intentional; only the two viewport roots are reset.
+    for (const root of [html,document.body]) if (root && (root.scrollTop || root.scrollLeft)) root.scrollTo(0,0);
+    if (window.scrollY || window.scrollX) window.scrollTo(0,0);
+  };
+  window.visualViewport?.addEventListener('scroll',resetRootScroll);
+  window.addEventListener('scroll',resetRootScroll);
+  document.addEventListener('scroll',event => { if (event.target === html || event.target === document.body) resetRootScroll(); },true);
+  document.addEventListener('focusin',() => requestAnimationFrame(resetRootScroll));
   updateViewport();
   const compact = matchMedia('(max-width:760px), (max-height:500px)');
   const menu = document.querySelector('#mobile-menu');
@@ -898,7 +907,61 @@
   },true);
   new MutationObserver(() => syncNativeSidebar()).observe(html,{attributes:true,attributeFilter:['style','data-ios-layout','data-ios-duo-inner']});
   new MutationObserver(() => syncNativeSidebar()).observe(sidebar,{childList:true});
-  new MutationObserver(records => { syncNativeSidebar(); if (records.some(record => record.target === shell || record.target.matches?.('.details-panel,.computer-panel'))) scheduleContentClearance(); }).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','open','class']});
+  // The deployed desktop slide also animates a flex reservation. Native pane
+  // widths and its resize callback can invalidate that frame before it ends.
+  // Settle through the server's own cancellation closure before paint; a bounded opacity effect
+  // then fades the retained pane at its final native geometry. No navigation,
+  // computer connection or completion handler is replaced.
+  const paneFades = new Map();
+  const finishPaneFades = () => { for (const fade of [...paneFades.values()]) fade.finish(); };
+  for (const type of ['pagehide','resize']) window.addEventListener(type,finishPaneFades);
+  document.addEventListener('visibilitychange',() => { if (document.hidden) finishPaneFades(); });
+  matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',event => { if (event.matches) finishPaneFades(); });
+  new MutationObserver(() => { if (html.dataset.motion === 'off') finishPaneFades(); }).observe(html,{attributes:true,attributeFilter:['data-motion']});
+  function settleNativePaneFrames() {
+    if (!nativeDuo) return;
+    for (const panel of shell.querySelectorAll(':scope>.pane-layout-frame')) {
+      const motion = panel.getAnimations().find(animation => animation.effect?.getKeyframes().some(frame => frame.transform && frame.width));
+      if (!motion) continue;
+      const frames = motion.effect.getKeyframes(), first = frames[0];
+      const offset = new DOMMatrix(first.transform);
+      const exit = {left:(parseFloat(panel.style.left)||0)+offset.m41,
+        top:(parseFloat(panel.style.top)||0)+offset.m42,width:parseFloat(first.width),height:parseFloat(first.height)};
+      const closing = panel.inert;
+      motion.cancel();
+      // Animation cancel events are queued. Invoke the same owner callback
+      // now so its held frame/reservation is gone before this paint.
+      if (panel.classList.contains('pane-layout-frame')) motion.dispatchEvent(new Event('cancel'));
+      const previous = paneFades.get(panel);
+      const startOpacity = previous ? Number(getComputedStyle(panel).opacity) : (closing?1:0);
+      previous?.finish();
+      panel.classList.remove('ios-pane-closing');
+      const reduced = html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches;
+      if (reduced) continue;
+      if (closing && panel.hidden && Object.values(exit).every(Number.isFinite)) {
+        for (const [name,value] of Object.entries(exit)) panel.style.setProperty('--ios-pane-exit-'+name,value+'px');
+        panel.classList.add('ios-pane-closing');
+      }
+      const fade = panel.animate([{opacity:startOpacity},{opacity:closing?0:1}],{duration:200,easing:'ease-out',fill:'both'});
+      let timer,done=false;
+      const finish = () => {
+        if (done) return; done=true; clearTimeout(timer);
+        if (paneFades.get(panel)?.animation !== fade) return;
+        paneFades.delete(panel); panel.classList.remove('ios-pane-closing');
+        for (const name of Object.keys(exit)) panel.style.removeProperty('--ios-pane-exit-'+name);
+        fade.onfinish = fade.oncancel = null; fade.cancel();
+      };
+      paneFades.set(panel,{animation:fade,finish});
+      fade.onfinish = fade.oncancel = finish;
+      timer=setTimeout(finish,320);
+    }
+  }
+  new MutationObserver(records => {
+    settleNativePaneFrames(); syncNativeSidebar();
+    if (records.some(record => record.target === shell || record.target.matches?.('.details-panel,.computer-panel'))) {
+      updateNativeContentClearance(); scheduleContentClearance();
+    }
+  }).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','open','class']});
   new MutationObserver(() => { if (nativeSidebarDrag && nativeSidebarBlocked()) nativeSidebarDrag.cancel(); }).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
   document.addEventListener('visibilitychange',() => { if (document.hidden) nativeSidebarDrag?.cancel(); });
   for (const type of ['pagehide','blur','popstate','hashchange']) window.addEventListener(type,() => nativeSidebarDrag?.cancel());
@@ -950,6 +1013,8 @@
     html.style.setProperty('--ios-composer-keyboard-right',`${html.dataset.iosRailSide === 'right' ? keyboardRight : 0}px`);
     nativeHeight = Math.max(0, Number(value.viewportHeight) || 0);
     nativePortrait = typeof value.isPortrait === 'boolean' ? value.isPortrait : undefined;
+    // Use window pose, never the keyboard-shortened web viewport.
+    html.dataset.iosOuterLandscape = String(nativeDuo && value.isDuoInner !== true && nativePortrait === false);
     updateViewport();
     updateReservedControls();
     window.__kindredComputerInput?.focus();
@@ -1059,7 +1124,9 @@
     }
     const area = document.querySelector('#composer-area');
     if (area && !sharedRegions) {
-      const rect = area.getBoundingClientRect();
+      // Side projection already keeps the input clear of corner/status
+      // occlusions. Testing the full-width wrapper would lift it a second time.
+      const rect = (area.querySelector('#composer') || area).getBoundingClientRect();
       const move = Math.max(0,...occlusions.filter(r => intersects(rect,r)).map(r => rect.bottom-r.y+8));
       html.style.setProperty('--ios-composer-obstruction',`${move}px`);
     }

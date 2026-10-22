@@ -175,7 +175,7 @@ html[data-kindred-ios] .conversation>.composer-area::before {
 }
 html[data-kindred-ios] .conversation-header { isolation:isolate; }
 html[data-kindred-ios] .conversation-header::before { top:var(--ios-safe-top); }
-html[data-kindred-ios] .conversation>.composer-area::before { top:-28px; -webkit-mask-image:linear-gradient(transparent,#000); mask-image:linear-gradient(transparent,#000); }
+html[data-kindred-ios] .conversation>.composer-area::before { top:-24px; bottom:-12px; -webkit-mask-image:linear-gradient(transparent,#000 36%,#000 64%,transparent); mask-image:linear-gradient(transparent,#000 36%,#000 64%,transparent); }
 html[data-kindred-ios] .jump-latest { bottom:calc(var(--ios-chat-bottom,62px) + 8px); }
 html[data-kindred-ios] :is(.dictation-settings,.version-actions,[data-client-update-status]) { display:none !important; }
 @media (prefers-reduced-transparency:reduce) {
@@ -233,8 +233,8 @@ html[data-kindred-ios][data-ios-duo=true] .bot-heading strong { font-size:calc(1
 html[data-kindred-ios][data-ios-duo=true] #chat-actions { display:none; }
 html[data-kindred-ios][data-ios-duo=true][data-ios-layout=regular] .shell>.sidebar { display:flex; position:relative; inset:auto; flex:0 0 var(--ios-sidebar-width,210px); width:var(--ios-sidebar-width,210px); margin:0 var(--ios-division-gap,0px) 0 0; z-index:auto; border:0; background:var(--bg); }
 html[data-kindred-ios][data-ios-duo=true][data-ios-layout=regular] .shell>.conversation { visibility:visible; }
-html[data-kindred-ios][data-ios-duo=true][data-ios-computer=side] .shell>.computer-panel:not([hidden]):not(.expanded) { position:relative!important; inset:auto!important; flex:0 0 var(--ios-computer-width,280px); width:var(--ios-computer-width,280px)!important; min-width:0; margin-left:var(--ios-division-gap,0px); z-index:auto; }
-html[data-kindred-ios][data-ios-duo=true][data-ios-computer=side] .shell>.details-panel:not([hidden]) { position:absolute; inset:0; width:100%; max-width:100%; z-index:9; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-computer=side] .shell>.computer-panel:not([hidden]):not(.expanded):not(.pane-layout-frame) { position:relative!important; inset:auto!important; flex:0 0 var(--ios-computer-width,280px); width:var(--ios-computer-width,280px)!important; min-width:0; margin-left:var(--ios-division-gap,0px); z-index:auto; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-computer=side] .shell>.details-panel:not([hidden]):not(.pane-layout-frame) { position:absolute; inset:0; width:100%; max-width:100%; z-index:9; }
 html[data-kindred-ios][data-ios-duo=true] .pane-resizer { display:none; }
 html[data-kindred-ios][data-ios-duo=true] .sidebar>.search { display:none; flex:none; height:auto; min-height:44px; min-width:0; margin:calc(8px + var(--ios-safe-top)) 12px 12px; padding:8px 12px; border-radius:22px; }
 html[data-kindred-ios][data-ios-duo=true] .sidebar.ios-searching>.search { display:flex; }
@@ -298,7 +298,7 @@ html[data-kindred-ios][data-ios-fold=horizontal] .conversation>.composer-area { 
 html[data-kindred-ios][data-ios-fold=horizontal] .conversation .messages { padding-bottom:12px; scroll-padding-bottom:12px; }
 /* Native computer controls use the lower half; the shared browser overlay
    otherwise places the entire panel in the upper half. */
-html[data-kindred-ios][data-ios-duo=true][data-ios-fold=horizontal] #app>.computer-panel:not([hidden]) { inset:0!important; width:100%!important; height:100%!important; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-fold=horizontal] #app>.computer-panel:not([hidden]):not(.pane-layout-frame) { inset:0!important; width:100%!important; height:100%!important; }
 html[data-kindred-ios][data-ios-reserved=true] #settings-dialog[open] { inset:auto auto calc(100% - var(--ios-safe-y) - var(--ios-safe-height)) var(--ios-safe-x); width:min(760px,var(--ios-safe-width)); max-width:var(--ios-safe-width); height:min(calc(100% - 76px),var(--ios-safe-height)); max-height:var(--ios-safe-height); margin:0; }
 html[data-kindred-ios][data-ios-reserved=true] :is(.document-dialog,.workspace-artifact-dialog,.screenshot-dialog,.chat-media-dialog)[open] { inset:var(--ios-safe-y) auto auto var(--ios-safe-x); width:var(--ios-safe-width); max-width:var(--ios-safe-width); height:var(--ios-safe-height); max-height:var(--ios-safe-height); }
 
@@ -319,7 +319,7 @@ html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rai
 
 /* A flat inner display gets a compact computer pane even when an older server
    publishes its desktop width. Real division poses retain SDK placement. */
-html[data-kindred-ios][data-ios-native-computer=true] #app.shell>.computer-panel:not([hidden]):not(.expanded) { flex:0 0 var(--ios-native-computer-width)!important; width:var(--ios-native-computer-width)!important; margin-left:0; }
+html[data-kindred-ios][data-ios-native-computer=true] #app.shell>.computer-panel:not([hidden]):not(.expanded):not(.pane-layout-frame) { flex:0 0 var(--ios-native-computer-width)!important; width:var(--ios-native-computer-width)!important; margin-left:0; }
 html[data-kindred-ios][data-ios-native-computer=true] .computer-panel>.ios-duo-resizer { display:block; position:absolute; inset:0 auto 0 -12px; width:24px; z-index:35; touch-action:none; user-select:none; -webkit-user-select:none; }
 
 /* Measure controls against the actual conversation, after native pane sizing.
@@ -366,7 +366,7 @@ html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .
    composer still uses the available bottom lane. */
 html[data-kindred-ios][data-ios-duo=true] .conversation>.conversation-history { margin-left:var(--ios-content-left,0px); margin-right:var(--ios-content-right,0px); }
 html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area>.jump-latest { right:calc(24px + var(--ios-content-right,0px)); max-width:calc(100% - 48px - var(--ios-content-left,0px) - var(--ios-content-right,0px)); }
-html[data-kindred-ios][data-ios-duo=true] #app.shell>.details-panel:not([hidden]) { position:absolute!important; inset:0 0 0 var(--ios-details-left,0px)!important; width:auto!important; height:auto!important; max-width:none!important; min-width:0; z-index:9; border:0; box-shadow:none; background:var(--bg); }
+html[data-kindred-ios][data-ios-duo=true] #app.shell>.details-panel:not([hidden]):not(.pane-layout-frame) { position:absolute!important; inset:0 0 0 var(--ios-details-left,0px)!important; width:auto!important; height:auto!important; max-width:none!important; min-width:0; z-index:9; border:0; box-shadow:none; background:var(--bg); }
 html[data-kindred-ios][data-ios-duo=true] .details-panel>:is(.panel-header,.pane-resizer),
 html[data-kindred-ios][data-ios-duo=true] #details-back { display:none!important; }
 html[data-kindred-ios][data-ios-duo=true] .details-panel>.panel-content { padding:24px calc(20px + var(--ios-content-right,0px)) 24px calc(20px + var(--ios-content-left,0px)); }
@@ -380,3 +380,43 @@ html[data-kindred-ios][data-ios-duo=true] .sidebar .nav-entry[data-ios-leading-c
 @media(prefers-reduced-motion:reduce) {
  html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .nav-entry { transition:none; }
 }
+
+/* The short outer display needs a compact input, while the opened display
+   retains the full conversation-width composer. Keep its hit targets intact. */
+html[data-kindred-ios][data-ios-outer-landscape=true] .conversation>.composer-area {
+  right:auto; width:min(100%,640px); left:50%; transform:translateX(-50%);
+}
+
+/* Focusing a single line opens UIKit's keyboard, not a second empty input row.
+   Drafts, attachments, replies and questions still grow to their natural size. */
+html[data-kindred-ios] #composer:focus-within:not(:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating)) {
+  grid-template-rows:auto auto auto minmax(44px,auto); min-height:56px; padding:5px 10px; align-content:start; border-radius:28px;
+}
+html[data-kindred-ios] #composer:focus-within:not(:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating)) #prompt {
+  grid-column:2/4; grid-row:4; align-self:center; min-height:24px; padding:0 4px; margin:0;
+}
+
+/* The nested chat scroller, including its indicator, ends above the input.
+   Message padding no longer reserves the same composer space a second time. */
+html[data-kindred-ios] .conversation>.conversation-history { margin-bottom:var(--ios-chat-bottom,62px); }
+html[data-kindred-ios] .conversation .messages { padding-bottom:12px; scroll-padding-bottom:12px; }
+
+/* Retained native panes fade at their final geometry. A disappearing side
+   pane is removed from flex at the start, not in the fade's final frame. */
+html[data-kindred-ios][data-ios-duo=true] #app>:is(.computer-panel,.details-panel).ios-pane-closing[hidden] {
+  display:flex!important; position:fixed!important; inset:auto!important; margin:0!important; flex:none!important;
+  left:var(--ios-pane-exit-left)!important; top:var(--ios-pane-exit-top)!important;
+  width:var(--ios-pane-exit-width)!important; height:var(--ios-pane-exit-height)!important;
+  min-width:0!important; max-width:none!important; z-index:20; pointer-events:none;
+}
+html[data-kindred-ios][data-motion=off] #app>:is(.computer-panel,.details-panel) { transition:none; }
+@media (prefers-reduced-motion:reduce) {
+  html[data-kindred-ios] #app>:is(.computer-panel,.details-panel) { transition:none; }
+}
+
+html[data-kindred-ios] #composer:not(:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating)) {
+  grid-template-rows:auto auto auto minmax(44px,auto);
+}
+
+/* Tabletop already places scrolling history and input in separate grid rows. */
+html[data-kindred-ios][data-ios-fold=horizontal] .conversation>.conversation-history { margin-bottom:0; }

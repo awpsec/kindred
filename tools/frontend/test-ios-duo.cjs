@@ -340,7 +340,7 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert.equal(paddedChat.x+paddedChat.width,inner.width,'global bar insets must not waste the bottom conversation lane');
     await relay(inner,{regions:[tabletop]});
     const tabletopHistory=await page.locator('.conversation-history').boundingBox(),tabletopComposer=await page.locator('#composer-area').boundingBox();
-    assert(tabletopHistory.y+tabletopHistory.height<=tabletop.y+1,'native floating header must not displace tabletop history across the division');
+    assert(Math.abs(tabletopHistory.y+tabletopHistory.height-tabletop.y)<2,'tabletop history fills the upper row without a second composer margin');
     assert(tabletopComposer.y>=tabletop.y+tabletop.height,'native composer stays in the lower tabletop half');
     assert.equal(await page.locator('.messages').evaluate(node=>parseFloat(getComputedStyle(node).paddingBottom)),12,'tabletop history does not reserve a second composer gap');
     await relay(inner);

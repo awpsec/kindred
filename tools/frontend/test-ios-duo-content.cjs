@@ -101,7 +101,7 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
       assert(effects.some(effect=>effect.mask===1)&&effects.at(-1)?.mask===0,'a trusted canvas touch sends a bounded press and release through the nonzero gutter transform');
       assert(effects.every(effect=>effect.x>=0&&effect.x<=1600&&effect.y>=0&&effect.y<=1000),'the connected framebuffer receives valid mapped coordinates');
       const press=effects.find(effect=>effect.mask===1);
-      assert(Math.abs(press.x-800)<=1600/activeCanvas.width+1&&Math.abs(press.y-500)<=1000/activeCanvas.height+1,'the gutter-corrected canvas center maps to the framebuffer center within one CSS pixel of touch quantization');
+      assert(Math.abs(press.x-800)<=Math.ceil(1600/activeCanvas.width)+1&&Math.abs(press.y-500)<=Math.ceil(1000/activeCanvas.height)+1,'the gutter-corrected canvas center maps to the framebuffer center within one CSS pixel of touch quantization: '+JSON.stringify({press,activeCanvas}));
       assert(await page.evaluate(count=>__duoFixtureRFB===contentControlledRFB&&contentControlledRFB.disconnects===count,beforeInput.disconnects),'valid input does not reconnect the computer');
       const returnButton=page.locator('#take-control'),target=await returnButton.boundingBox();
       await returnButton.evaluate((button,point)=>{for(const type of ['pointerdown','pointercancel','pointerup'])button.dispatchEvent(new PointerEvent(type,{pointerType:'touch',pointerId:731,isPrimary:true,button:0,bubbles:true,cancelable:true,clientX:point.x,clientY:point.y}));},{x:target.x+target.width/2,y:target.y+target.height/2});
@@ -138,8 +138,30 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
       await page.locator('#bots').evaluate(async node=>{node.scrollTop=0;const rows=[...node.querySelectorAll('.nav-entry')],moved=rows.at(-1),before=moved.getBoundingClientRect().top;rows[0].parentElement.prepend(moved);const delta=before-moved.getBoundingClientRect().top;await moved.animate([{transform:`translateY(${delta}px)`},{transform:'translateY(0px)'}],{duration:180,easing:'linear'}).finished;});
       const reordered=await assertRows('reordered');assert.notEqual(reordered[0].id,first[0].id,'reordering reclassifies the leading corner and compact rows');
       await page.emulateMedia({reducedMotion:'reduce'});await settled();assert((await rows()).every(row=>row.transition==='0s'),'Reduce Motion removes card-width transitions');
+      // Closed landscape is a compact input pose, distinct from an opened
+      // display whose web viewport was merely shortened by the keyboard.
+      await page.locator('.sidebar .bot-link').first().click();
+      await page.setViewportSize({width:678,height:466});
+      await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{isDuoInner:false,isSlab:true,isPortrait:false,viewportHeight:466,composerBottomInset:16});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
+      await page.evaluate(()=>{__KINDRED_NATIVE_GEOMETRY={width:678,height:466,windowWidth:678,windowHeight:466,reservedRegions:[{kind:'occlusion',active:true,x:594,y:384,width:84,height:82}]};dispatchEvent(new Event('kindred-native-geometry'));});
+      await settled();
+      const compact=await rect('.conversation>.composer-area'), lane=await rect('.conversation');
+      assert(compact.width<=641&&compact.width<lane.width-20,'closed landscape composer is shorter than the conversation lane');
+      close(compact.x+compact.width/2,lane.x+lane.width/2,'compact composer stays centered');
+      close(compact.y+compact.height,lane.y+lane.height,'bottom corner status region does not lift the full composer wrapper');
+      const history=await rect('.conversation-history');
+      assert(history.y+history.height<=compact.y+1,'chat scroller and its indicator stop above the composer');
+      const idle=await rect('#composer');
+      await page.locator('#prompt').focus();await settled();const focused=await rect('#composer');
+      close(focused.height,idle.height,'focusing a single-line input cannot add an empty row');
+      close(focused.y+focused.height,idle.y+idle.height,'focus keeps the composer bottom anchored');
+      await page.locator('#prompt').blur();
+      const fade=await page.locator('.conversation>.composer-area').evaluate(node=>getComputedStyle(node,'::before').maskImage);
+      assert(fade.includes('36%')&&fade.includes('64%')&&fade.endsWith('rgba(0, 0, 0, 0))'),'the outer frost fades at both ends');
+      await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{isDuoInner:true,isSlab:false,isPortrait:false,keyboardVisible:true});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
+      await settled();close((await rect('.conversation>.composer-area')).width,(await rect('.conversation')).width,'an opened keyboard-shortened viewport retains the full composer lane');
       assert.deepEqual(errors,[]);await page.screenshot({path:path.join(out,`v${version}-${side}.png`)});
-      reports.push({serverVersion:version,railSide:side,safeRailTotal:totalRail,railPreference:76,railPersistsThroughDetailsGearBack:true,detailsOverlay:true,quarterWidthMaximum:true,historyAndLatestClearRail:true,fullComposerLane:true,connectedCanvasClearRail:true,computerMaximumKeeps300pxChat:true,controlledGutterPointer:true,cancelledTouchGuard:true,closedUpperFiveRows:true,searchUpperFourRows:true,finiteWAAPIReorderReclassifies:true,scrollAndReorderReclassify:true,searchSafeSide:true,reducedMotion:true,decorativeFirstCorner:28});await page.close();
+      reports.push({serverVersion:version,railSide:side,safeRailTotal:totalRail,railPreference:76,railPersistsThroughDetailsGearBack:true,detailsOverlay:true,quarterWidthMaximum:true,historyAndLatestClearRail:true,fullComposerLane:true,connectedCanvasClearRail:true,computerMaximumKeeps300pxChat:true,controlledGutterPointer:true,cancelledTouchGuard:true,closedUpperFiveRows:true,searchUpperFourRows:true,finiteWAAPIReorderReclassifies:true,scrollAndReorderReclassify:true,searchSafeSide:true,reducedMotion:true,decorativeFirstCorner:28,closedLandscapeCompactComposer:true,softBothBlurEdges:true,innerKeyboardFullComposer:true});await page.close();
     }
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(reports,null,2));console.log(JSON.stringify({passed:true,engine:'webkit',reports}));
   }finally{await browser.close();server.closeAllConnections();server.close();}

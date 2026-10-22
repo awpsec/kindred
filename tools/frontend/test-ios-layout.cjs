@@ -409,9 +409,9 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       const send=await page.locator('#send').boundingBox();
       assert(send.width>=44 && send.height>=44 && send.x+send.width<=size.width+1 && send.y+send.height<=size.height+1 && (send.x>=box.x+box.width-1 || send.y>=box.y+box.height-1),'send target must fit without overlapping the draft');
       const history=await page.locator('.conversation-history').boundingBox(),composer=await page.locator('#composer-area').boundingBox();
-      assert(history.y<composer.y && history.y+history.height>=composer.y+composer.height-1,'messages should scroll behind the floating composer');
+      assert(history.height===0 || history.y+history.height<=composer.y+1,'chat scroller and its indicator must end above the composer');
       const clearance=await page.locator('.messages').evaluate(node=>({bottom:parseFloat(getComputedStyle(node).paddingBottom),top:parseFloat(getComputedStyle(node).paddingTop)}));
-      assert(clearance.bottom>=composer.height+10,'last message needs clearance above the floating composer');
+      assert(clearance.bottom>=12 && clearance.bottom<24,'the shortened scroll viewport must not reserve composer space twice');
       const header=await page.locator('.conversation-header').boundingBox();
       assert(clearance.top>=(header?.height||0),'first message needs clearance below the floating header');
       assert.equal(await page.locator('.conversation-header').evaluate(node=>getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)');
@@ -435,7 +435,7 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.waitForTimeout(100);
     assert(await page.locator('.conversation-header').isHidden());
     const keyboardComposer=await page.locator('#composer-area').boundingBox();
-    assert(Math.abs(keyboardComposer.y+keyboardComposer.height-120)<2,'composer must stop at the visible keyboard boundary, without a second inset');
+    assert(Math.abs(keyboardComposer.y+keyboardComposer.height-120)<2,'composer must stop at the visible keyboard boundary, without a second inset: '+JSON.stringify(keyboardComposer));
     await page.evaluate(()=>{delete window.visualViewport.height;window.visualViewport.dispatchEvent(new Event('resize'));});
     // The physical app receives UIKit's actual height above the keyboard.
     // Transient focus/animation heights in visualViewport must not shrink it a
