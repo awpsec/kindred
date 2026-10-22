@@ -180,7 +180,8 @@ struct RootView: View {
                 if session.presentation.route != "chat-list" && !(session.presentation.route == "bot-chat" && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {
                     Button {
                         session.performDuoAction(.back)
-                    } label: { Label("Back", systemImage: "chevron.backward") }
+                    } label: { Label(session.presentation.route == "bot-chat" ? "Chat list" : "Back",
+                                   systemImage: session.presentation.route == "bot-chat" ? "line.3.horizontal" : "chevron.backward") }
                 }
                 if session.presentation.route == "details" && session.presentation.botSettingsAvailable {
                     Button {
@@ -200,7 +201,7 @@ struct RootView: View {
                         session.performDuoAction(.chats)
                     } label: { Label(session.presentation.listVisible ? "Hide chat list" : "Show chat list", systemImage: "sidebar.left") }
                 }
-                if ["bot-chat", "computer"].contains(session.presentation.route) {
+                if session.presentation.route == "bot-chat" || (session.presentation.route == "computer" && !session.presentation.hasBotCenter) {
                     Button {
                         session.performDuoAction(.computer)
                     } label: { Label(session.presentation.route == "computer" ? "Close computer" : "Bot computer", systemImage: "desktopcomputer") }

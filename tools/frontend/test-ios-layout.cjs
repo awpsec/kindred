@@ -27,9 +27,9 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       },{once:true});
     },{token,css:fs.readFileSync(path.join(resources,'MobileLayout.css'),'utf8'),js:fs.readFileSync(path.join(resources,'MobileLayout.js'),'utf8')});
     const page = await context.newPage();
-    const openNativeMenu = async trigger => {
+    const openNativeMenu = async (trigger,compatibilityOnly=false) => {
       const count = await page.evaluate(()=>window.accountRequests.length);
-      await trigger.click();
+      if(compatibilityOnly)await trigger.evaluate(n=>n.click());else await trigger.click();
       await page.waitForFunction(count=>window.accountRequests.slice(count).some(value=>value.action==='native-menu'),count);
       return page.evaluate(()=>window.accountRequests.filter(value=>value.action==='native-menu').at(-1));
     };
@@ -526,6 +526,8 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     });
     assert.deepEqual(await page.evaluate(()=>window.iosRemoteKeys),['H','i',' ','é','Backspace','Enter','中'],'native text, delete, return and composed characters reach the remote keyboard');
     await page.setViewportSize({width:402,height:490});
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{viewportHeight:490,isSlab:true,isPortrait:true,keyboardVisible:true}})));
+    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
     const portraitScreen=await page.locator('#desktop').boundingBox(),portraitActions=await page.locator('.desktop-toolbar').boundingBox();
     assert(portraitActions.y>=portraitScreen.y+portraitScreen.height-1,'actions remain below the top-aligned screen');
     assert(portraitActions.y+portraitActions.height<=490,'computer actions remain above the software keyboard');
@@ -542,16 +544,18 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{isSlab:true,bottomInset:0}})));
     assert(await page.locator('#computer-expand').isHidden(),'slab computer already occupies its own screen');
     assert.equal(await page.locator('#screen-picker span').first().evaluate(node=>getComputedStyle(node).webkitUserSelect),'none','screen picker label must not select text');
-    const screens=await openNativeMenu(page.locator('#screen-picker'));
+    assert(await page.locator('#screen-picker').isHidden(),'the unified center no longer exposes the desktop screen picker');
+    const screens=await openNativeMenu(page.locator('#screen-picker'),true);
     assert(screens.items.some(item=>item.selected),'native screen menu retains the selected bot');
     assert(await page.locator('#screen-picker-menu').isHidden(),'desktop screen menu is suppressed');
     await page.evaluate(key=>window.__kindredNativeMenus.cancel(key),screens.key);
     await page.setViewportSize({width:874,height:350});
     await page.waitForTimeout(350);
     const desktop=await page.locator('#desktop').boundingBox(),computerActions=await page.locator('.desktop-toolbar').boundingBox();
-    assert(desktop.x+desktop.width<=computerActions.x+1,'landscape resources and actions belong to the right of the computer');
+    assert(computerActions.y>=desktop.y+desktop.height-1,'landscape controls stay below the fitted computer');
+    assert(computerActions.y+computerActions.height<=350,'landscape controls stay within the visible computer destination');
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:{bottomInset:0,isSlab:false}})));
-    assert(await page.locator('#computer-expand').isVisible(),'foldable/tablet computer retains expansion');
+    assert(await page.locator('#computer-expand').isHidden(),'the full bot-center destination needs no desktop expand control');
     await page.locator('#computer-panel .bot-center-actions [aria-label="Close bot center"]').click();
     // Older servers use a textarea instead of the current contenteditable.
     await page.evaluate(()=>{const old=document.querySelector('#prompt');const textarea=document.createElement('textarea');textarea.id='prompt';old.replaceWith(textarea);});

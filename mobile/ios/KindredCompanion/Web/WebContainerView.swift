@@ -22,6 +22,7 @@ struct WebContainerView: UIViewRepresentable {
         session.setNativeNavigationBlocked(navigationBlocked)
         session.refreshSystemTextSize()
         host.attach(session)
+        host.setNeedsLayout()
     }
 }
 
@@ -29,6 +30,8 @@ struct WebContainerView: UIViewRepresentable {
 final class WebHostView: UIView {
     private weak var session: WebSession?
     private var hasDivision = false
+    private var railSampleScheduled = false
+    private var railOnLeft = false
     // A local decoration covers intermediate web layouts without replacing the
     // account's WKWebView or disturbing its responder/input ownership.
     private struct Pose: Equatable {
@@ -161,6 +164,42 @@ final class WebHostView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         updateEnvironment()
+        scheduleRailSample()
+    }
+
+    private func scheduleRailSample() {
+        guard !railSampleScheduled else { return }; railSampleScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }; self.railSampleScheduled = false
+            self.sampleRailControls()
+        }
+    }
+
+    private func sampleRailControls() {
+        guard let session, let window, window.windowScene?.activationState == .foregroundActive else { return }
+        let web = session.webView
+        guard session.presentation.usesNativeRail, !session.presentation.isDuoInner else { session.updateRailFrame(nil); return }
+        let left = railOnLeft
+        let inset = left ? web.safeAreaInsets.left : web.safeAreaInsets.right
+        guard inset > 0, web.bounds.height > 0 else { session.updateRailFrame(nil); return }
+        let x = left ? inset / 2 : web.bounds.maxX - inset / 2
+        var union = CGRect.null
+        // Public hit testing identifies the native controls without depending on
+        // private bar classes or children. It sends no touches/actions. Gaps are
+        // included in the final union, and the page keeps its own corner regions.
+        for y in stride(from: CGFloat(4), to: web.bounds.height, by: 8) {
+            var hit = window.hitTest(web.convert(CGPoint(x: x, y: y), to: window), with: nil)
+            if hit?.isDescendant(of: web) == true { continue }
+            while let view = hit, view !== window {
+                if view is UIControl {
+                    let frame = web.convert(view.bounds, from: view)
+                    if frame.width > 0, frame.width <= inset + 24, frame.intersects(web.bounds) { union = union.union(frame) }
+                    break
+                }
+                hit = view.superview
+            }
+        }
+        session.updateRailFrame(union.isNull ? nil : union)
     }
 
     override func safeAreaInsetsDidChange() {
@@ -183,6 +222,7 @@ final class WebHostView: UIView {
             default: break
             }
         }
+        railOnLeft = railSide == "left"
         guard let session else { return }
         // Cover Duo changes before publishing the new web geometry.
         if hasDivision || usesNativeRail { updatePose(inner: isDuoInner) }

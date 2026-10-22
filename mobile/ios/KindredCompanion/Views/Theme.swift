@@ -130,9 +130,24 @@ struct BotToolbarAvatar: View {
     // A real image lets the system vertical bar use the avatar as an icon,
     // rather than converting a custom Canvas label into its text fallback.
     func image(scale: CGFloat) -> UIImage? {
-        let renderer = ImageRenderer(content: self)
-        renderer.scale = scale
-        return renderer.uiImage?.withRenderingMode(.alwaysOriginal)
+        // Draw synchronously. ImageRenderer can reuse a retained Canvas's
+        // previous silhouette while a toolbar item's identity stays the same.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        let value = UInt32(color.dropFirst(), radix: 16) ?? 0x2475ff
+        let r = CGFloat((value >> 16) & 255) / 255, g = CGFloat((value >> 8) & 255) / 255, b = CGFloat(value & 255) / 255
+        return UIGraphicsImageRenderer(size: CGSize(width: 30, height: 30), format: format).image { image in
+            let context = image.cgContext
+            context.scaleBy(x: 0.3, y: 0.3)
+            context.addPath(characterPath.cgPath)
+            context.setFillColor(UIColor(red: r, green: g, blue: b, alpha: 1).cgColor)
+            context.fillPath()
+            if let artwork = ToolbarArtwork.catalog[shape] {
+                context.addPath(ToolbarArtwork.path(artwork.eyes).cgPath)
+                context.setFillColor((r * 0.2126 + g * 0.7152 + b * 0.0722 < 0.08 ? UIColor.white : UIColor.black).cgColor)
+                context.fillPath()
+            }
+        }.withRenderingMode(.alwaysOriginal)
     }
 
     private var characterPath: Path {

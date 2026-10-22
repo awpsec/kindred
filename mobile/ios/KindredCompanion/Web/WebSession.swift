@@ -14,6 +14,7 @@ final class KindredWebView: WKWebView {
 @Observable
 final class WebPresentationState {
     var hasChatInterface = false
+    var hasBotCenter = false
     var hasLoadedChats = false
     var canvas = UIColor(named: "Canvas") ?? .systemBackground
     var isDark: Bool?
@@ -85,6 +86,7 @@ final class WebSession: NSObject {
     private var layoutComposerBottom: CGFloat = 0
     private var layoutKeyboardVisible = false
     private var layoutRailSide = "none"
+    private var lastRailFrame: CGRect?
     private(set) var composerExtent: CGFloat = 0
     private var layoutIsPortrait = true
     private var computerInputWanted = false
@@ -291,6 +293,19 @@ final class WebSession: NSObject {
             "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait], in: nil, in: .page) { _ in }
     }
 
+    // Actual public UIControl frames, projected by this web view's host.
+    func updateRailFrame(_ frame: CGRect?) {
+        guard origin.matches(webView.url) else { return }
+        let next = frame
+        guard next != lastRailFrame else { return }; lastRailFrame = next
+        let value: Any = next.map { ["x": Double($0.minX), "y": Double($0.minY), "width": Double($0.width), "height": Double($0.height)] as Any } ?? NSNull()
+        webView.callAsyncJavaScript("""
+        if (window.top !== window.self || location.origin !== expectedOrigin) return;
+        window.__KINDRED_IOS_TOOLBAR = frame;
+        window.dispatchEvent(new Event('kindred-ios-toolbar'));
+        """, arguments: ["expectedOrigin": origin.serialized, "frame": value], in: nil, in: .page) { _ in }
+    }
+
     func computerHostAttachmentChanged() {
         ComputerOrientation.shared.update(webView: webView, active: computerInputWanted && webView.window != nil, isSlab: layoutIsSlab)
     }
@@ -457,6 +472,7 @@ final class WebSession: NSObject {
                    color.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil {
                     presentation.botAvatarColor = color
                 }
+                presentation.hasBotCenter = body["botCenterAvailable"] as? Bool == true
                 presentation.computerExpandAvailable = body["computerExpandAvailable"] as? Bool == true
                 presentation.computerExpanded = body["computerExpanded"] as? Bool == true
                 presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
@@ -514,7 +530,9 @@ final class WebSession: NSObject {
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "interface-ready" {
                 presentation.hasChatInterface = true
+                lastRailFrame = nil
                 publishLayout()
+                webView.superview?.setNeedsLayout()
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "appearance",

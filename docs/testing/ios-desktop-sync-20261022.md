@@ -57,3 +57,40 @@ Physical-device acceptance remains distinct from simulator checks.
 Matching shared UI changes must be deployed from the server integration branch.
 No release version, signing material, live account data or production service was
 changed during this integration; release packaging/deployment remain swarm-owned.
+
+## Mac follow-up: responsive native bot center
+
+The installed iOS adapter now presents Computer in the same content destination
+as Details and Library, beside the retained chat list. It removes the redundant
+third column, computer separator and expansion action. Native Back retains the
+computer connection and control ownership. Older server layouts keep their
+existing fallback.
+
+The computer fits its available width and height after resizing. CPU, memory and
+disk share a compact summary row; the screen reserves the measured height of its
+tabs, actions and resources. Normal viewports need neither horizontal nor vertical
+scrolling. Larger accessibility text can still scroll rather than reducing the
+screen to an unusable sliver.
+
+On the closed Duo display, public UIKit hit testing measures the native rail's
+actual control bounds without sending input. Messages reserve the rail gutter
+only while alongside it and reclaim the space below. Latest messages uses the
+full bottom lane; the chat-list action uses the horizontal-lines symbol. Native
+avatars render synchronously from the catalog so changing shapes updates the
+silhouette as well as the color.
+
+Mac checks passed: `test-ios-native-center-layout.cjs`, `test-ios-duo.cjs`,
+`test-ios-duo-content.cjs`, `test-ios-sidebar.cjs`, `test-ios-layout.cjs`,
+`test-ios-bot-center.cjs` (current and historical adapter), and
+`test-ios-duo-motion.cjs`. The focused center test checks phone/inner/outer layouts,
+resizing, both scroll axes, retained connection/draft, avatar bridge data and
+message clearance. Native `ToolbarAvatarTests` passed in Xcode 27.1 beta's Duo
+simulator, comparing distinct cloud, wedge and capsule images at the same color.
+An actual closed-display simulator capture confirms the measured rail and wider
+messages below it. Native hands-on switching between all toolbar shapes remains
+pending because the Mac locked during the final visual pass.
+
+The simulator uses an explicitly selected local redesign preview with sample
+chats, not the older live-server UI. Existing account records are preserved.
+These follow-up layout overrides are confined to the installed iOS app; they do
+not modify the shared desktop UI or deploy a production server.
