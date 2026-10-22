@@ -1402,6 +1402,7 @@
     }
   }
   const messageClearance = new WeakMap();
+  let messageReadingEpoch = 0, messageGeometryEpoch = 0, messageReadingActive = false;
   function updateNativeContentClearance() {
     updateNativeSheets();
     updateAvatarPickers();
@@ -1438,12 +1439,22 @@
       const user = !!group.querySelector('.message-row.user');
       group.toggleAttribute('data-ios-user-message',user);
       const rect = group.getBoundingClientRect();
-      const buffer = messageClearance.get(group) ? 12 : 6;
+      const previous = messageClearance.get(group);
+      const buffer = previous?.blocked ? 12 : 6;
       const overlaps = user && zones.some(zone => rect.top < zone.y+zone.height+buffer && rect.bottom > zone.y-buffer);
-      messageClearance.set(group,!!flow && overlaps);
+      let blocked = !!flow && overlaps;
+      const sameGeometry = previous?.geometry === messageGeometryEpoch;
+      if (flow && previous && sameGeometry && blocked !== previous.blocked) {
+        // Width reflows can restore the reading anchor or turn bottom-follow
+        // on/off. Those generated scrolls must not reverse their own resize.
+        const moving = group.getAnimations().some(a => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime));
+        if (moving || (!blocked && previous.reading === messageReadingEpoch)) blocked = previous.blocked;
+      }
+      messageClearance.set(group,{blocked,geometry:messageGeometryEpoch,
+        reading:!previous || blocked !== previous.blocked ? messageReadingEpoch : previous.reading});
       // Grow the trailing edge into the lower lane. A long bubble's leading
       // edge stays put; short, right-aligned bubbles slide with that edge.
-      setContentInset(group,'--ios-user-clearance',flow && overlaps ? laneRight : 0);
+      setContentInset(group,'--ios-user-clearance',blocked ? laneRight : 0);
     }
     if (!sidebar) return;
     const base = sidebar.getBoundingClientRect(), sidebarStyle = getComputedStyle(sidebar);
@@ -1474,6 +1485,19 @@
   const scheduleContentClearance = () => {
     if (!contentClearanceFrame) contentClearanceFrame = requestAnimationFrame(() => {contentClearanceFrame=0;updateNativeContentClearance();});
   };
+  const readingHistory = document.querySelector('#content');
+  const readingIntent = event => {
+    if (event.type === 'keydown' && (!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(event.key) || event.target.closest('input,textarea,[contenteditable=true]'))) return;
+    messageReadingEpoch++; messageReadingActive = true;
+  };
+  for (const name of ['wheel','touchstart','touchmove','pointerdown','keydown']) readingHistory?.addEventListener(name,readingIntent,{passive:true});
+  document.querySelector('.jump-latest')?.addEventListener('click',readingIntent);
+  readingHistory?.addEventListener('scrollend',() => {
+    if (!messageReadingActive) return;
+    messageReadingActive = false; messageReadingEpoch++; scheduleContentClearance();
+  });
+  readingHistory?.addEventListener('transitionend',scheduleContentClearance);
+  for (const name of ['resize','kindred-ios-layout','kindred-ios-toolbar','kindred-native-geometry']) window.addEventListener(name,() => { messageGeometryEpoch++; scheduleContentClearance(); });
   document.addEventListener('scroll',event => {if(event.target === document.querySelector('#bots') || event.target === sidebar || event.target === document.querySelector('#content') || event.target.matches?.('.navigation-search-results')) scheduleContentClearance();},true);
   observeUI(scheduleContentClearance).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
   window.addEventListener('resize',scheduleContentClearance);
@@ -1507,6 +1531,9 @@
         if (!control) continue;
         const rect = control.getBoundingClientRect(); let left = rect.left, right = rect.right;
         for (const region of regions) {
+          // The writing surface spans the chat in book pose. Only hardware
+          // occlusions constrain it; the identity still stays on one leaf.
+          if (control.id === 'composer-area' && region.kind === 'division' && region.height > region.width) continue;
           if (region.y >= rect.bottom || region.y+region.height <= rect.top || region.x >= right || region.x+region.width <= left) continue;
           if (region.x-left > right-region.x-region.width) right = Math.max(left,region.x);
           else left = Math.min(right,region.x+region.width);

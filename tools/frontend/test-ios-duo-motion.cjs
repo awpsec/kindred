@@ -131,7 +131,8 @@ const root=path.resolve(__dirname,'../..'),bundle=path.join(root,'mobile/ios/Kin
    const edges=[];const widths=[];for(const time of [0,70,140,279]){motions.forEach(a=>a.currentTime=time);widths.push(form.getBoundingClientRect().width);const f=form.getBoundingClientRect(),m=document.querySelector('.dictation-button').getBoundingClientRect();edges.push({right:f.right,mic:m.right});}motions.forEach(a=>a.finish());
    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {widths,edges,translations:motions.filter(a=>a.effect.target===form).flatMap(a=>a.effect.getKeyframes().map(f=>f.translate)),end:form.getBoundingClientRect().width};
   });assert(Math.abs(bookOpen.widths[0]-book.width)<2,'half-open book begins at its painted input width');
-  assert(bookOpen.widths.some(w=>w>book.width+2&&w<bookOpen.end-2),'half-open to flat visibly expands through intermediate bounds');
+  for(const width of bookOpen.widths)assert(Math.abs(width-book.width)<2,'book and flat poses share the full chat composer width');
+  const bookLane=await p.locator('.conversation').boundingBox();assert(book.width>bookLane.width-40,'book composer spans the conversation instead of one leaf');
   assert(Math.abs(bookOpen.widths.at(-1)-bookOpen.end)<2,'book completion cannot teleport');
   // Seeking a paused WebKit animation samples width/translate atomically and
   // hid a native compositor race. A stationary right edge needs no horizontal
