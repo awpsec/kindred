@@ -26,7 +26,10 @@
 .unread-dot,.profile-notification,.profile-switch-button.has-profile-activity::after {background:var(--soft);}
 .conversation-header {border-bottom:1px solid var(--line);background:var(--bg);}
 #bot-details {padding:5px 12px 5px 6px;gap:7px;border-radius:24px;background:var(--surface);min-height:36px;max-width:calc(100% - 90px);}
-#bot-details::after {content:'›';font-size:20px;line-height:1;color:var(--muted);margin-left:2px;}
+#bot-details::after {content:'›';font-size:20px;line-height:1;color:var(--muted);margin-left:2px;opacity:0;transition:opacity .12s ease;}
+#bot-details:is(:hover,:focus-visible)::after {opacity:1;}
+@media(prefers-reduced-motion:reduce){#bot-details::after{transition:none;}}
+html[data-motion=off] #bot-details::after{transition:none;}
 #bot-details:hover {background:var(--hover);}
 #header-avatar {width:26px;height:26px;flex:none;display:flex;align-items:center;justify-content:center;line-height:0;}
 #header-avatar > .character {transform:scale(.765);transform-origin:center;}
