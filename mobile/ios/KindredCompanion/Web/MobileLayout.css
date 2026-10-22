@@ -19,8 +19,8 @@ html[data-kindred-ios] .conversation .messages { padding-top:calc(var(--ios-chat
 html[data-kindred-ios] #composer #composer-hint { display:none !important; }
 html[data-kindred-ios] :is(#screen-picker,#screen-picker *) { -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
 /* Menu data stays available to the native adapter, without a desktop flash. */
-html[data-kindred-ios] :is([role=menu],#new-menu,.deliverable-menu,.avatar-popover,.themed-select-menu),
-html[data-kindred-ios] :is([role=menu],#new-menu,.deliverable-menu,.avatar-popover,.themed-select-menu) * { visibility:hidden !important; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+html[data-kindred-ios] :is([role=menu],#new-menu,.deliverable-menu,.themed-select-menu),
+html[data-kindred-ios] :is([role=menu],#new-menu,.deliverable-menu,.themed-select-menu) * { visibility:hidden !important; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 html[data-kindred-ios] #ios-computer-back { display:none; }
 html[data-kindred-ios] .ios-computer-controls { display:contents; }
 html[data-kindred-ios] .computer-panel.expanded .ios-computer-controls>.resource-stats { display:none; }
@@ -515,3 +515,23 @@ html[data-kindred-ios][data-motion=off] dialog[data-ios-sheet],html[data-kindred
 @media(prefers-reduced-motion:reduce) {
  html[data-kindred-ios] dialog[data-ios-sheet],html[data-kindred-ios] dialog[data-ios-sheet] *,html[data-kindred-ios] .bot-center-preferences>summary::before { animation:none; transition:none; }
 }
+
+/* Avatar choices are visual content: actual character previews and palette
+   swatches together, anchored to the avatar instead of nested text menus. */
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] {
+ box-sizing:border-box; position:fixed; inset:auto; margin:0; width:var(--ios-avatar-width,336px); max-width:none;
+ max-height:var(--ios-avatar-height,calc(100dvh - 24px)); padding:14px; border-radius:22px;
+ transform:none!important; opacity:1; visibility:visible; overflow:auto; overscroll-behavior:contain;
+ color:var(--fg); background:var(--panel); transition:none; -webkit-touch-callout:none; user-select:none;
+}
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker]:popover-open { display:block; }
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker]>strong { display:block; min-height:36px; padding:6px 42px 6px 2px; font-size:14px; }
+html[data-kindred-ios] .avatar-popover .ios-avatar-picker-close { position:absolute; top:6px; right:6px; display:flex; align-items:center; justify-content:center; width:44px; height:44px; min-height:44px; padding:0; border:0; border-radius:50%; background:none; color:var(--muted); font:24px/1 sans-serif; }
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .quick-shapes { grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; max-height:none; overflow:visible; margin:8px 0 12px; }
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .shape-option { min-width:44px; min-height:52px; padding:4px; border-radius:12px; }
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .shape-option[aria-pressed=true] { background:var(--hover); box-shadow:inset 0 0 0 1px var(--soft); }
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .quick-colors { grid-template-columns:repeat(6,minmax(0,1fr)); gap:4px; margin:8px 0 12px; }
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .color-option { justify-self:center; width:44px; height:44px; min-height:44px; border-radius:50%; border:8px solid var(--panel); outline-offset:-5px; }
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .outline-button { width:100%; min-height:44px; }
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .outline-button[aria-pressed=true] { background:var(--hover); border-color:var(--soft); }
+html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] button:focus-visible { outline:2px solid var(--fg); outline-offset:-2px; }

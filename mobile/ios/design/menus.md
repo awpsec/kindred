@@ -1,7 +1,9 @@
 # iOS action menu audit
 
 Kindred's first-party action menus use UIKit presentation inside the iOS app.
-Desktop hover panels must not become visible in the app. This is bundled with
+Avatar customization uses a visual picker with the desktop's shape previews
+and color swatches, as requested by the owner. Other desktop hover panels must
+not become visible in the app. This is bundled with
 the companion, including when connected to an older server.
 
 | Surface | iOS presentation |
@@ -10,7 +12,7 @@ the companion, including when connected to an older server.
 | Conversation list +: New bot / New chat | Native action sheet |
 | Profile: Settings / Artifacts / Marketplace / Manage accounts | Native action sheet on ordinary iOS; SwiftUI Menu on the Duo rail |
 | Computer screen picker | Native action sheet with selected screen marked |
-| Bot avatar customization | Native Shape / Color submenus with selected choices marked |
+| Bot avatar customization | Tap the avatar for an anchored visual grid of shapes and palette swatches, with selected choices marked and existing save callbacks retained |
 | Artifact +: document / sheet / slides / app / folder | Native action sheet |
 | Artifact context actions: pin / rename / move / details | UIKit press context menu; native action sheet for keyboard/context-event entry; desktop library pinning omitted |
 | Delivered file More: preview / source link / repeat download | Native action sheet preserving available actions |
@@ -35,7 +37,7 @@ typing and embedded document/app content are separate content interfaces.
 
 Verification: the WebKit iOS layout fixture exercises composer attachment,
 new conversation, library navigation, artifact creation/context actions,
-avatar groups, screen choice, cancellation, and stale actions. Simulator-hosted
+visual avatar choices, screen choice, cancellation, and stale actions. Simulator-hosted
 tests cover native sheets, nested/selected/disabled/destructive choices,
 appearance, and malformed bridge data. Native gesture timing on a physical
 iPhone remains a device acceptance check.

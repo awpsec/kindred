@@ -1315,6 +1315,7 @@
   }
   function updateNativeContentClearance() {
     updateNativeSheets();
+    updateAvatarPickers();
     const value = window.__KINDRED_IOS_LAYOUT || {}, side = html.dataset.iosRailSide;
     const edgeLeft = nativeDuo && side === 'left' ? Math.min(innerWidth,Math.max(0,Number(value.leftInset)||0)) : 0;
     const edgeRight = nativeDuo && side === 'right' ? Math.min(innerWidth,Math.max(0,Number(value.rightInset)||0)) : 0;
@@ -1571,9 +1572,73 @@
   }
   observeUI(updateAppearance).observe(html, {attributes:true, attributeFilter:['data-theme', 'class', 'style']});
   updateAppearance();
+  // Avatar customization is a visual picker, using the server's actual shape
+  // previews, swatches and save closures. Keep it in the top layer so retained
+  // pane scrolling/animation cannot crop it into a narrow menu.
+  const avatarPickerMotions = new Map();
+  let avatarPickerID = 0;
+  const closeAvatarPicker = wrap => { wrap.classList.remove('menu-open'); wrap.querySelector('.avatar-customize')?.setAttribute('aria-expanded','false'); };
+  function updateAvatarPickers() {
+    const layout = window.__KINDRED_IOS_LAYOUT || {}, height = nativeHeight || innerHeight;
+    const reduced = html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches;
+    for (const wrap of document.querySelectorAll('.avatar-menu')) {
+      const menu = wrap.querySelector('.avatar-popover'), trigger = wrap.querySelector('.avatar-customize');
+      if (!menu || !trigger) continue;
+      if (!menu.dataset.iosAvatarPicker) {
+        menu.dataset.iosAvatarPicker = 'true'; menu.setAttribute('popover','manual');
+        menu.id ||= 'ios-avatar-picker-'+(++avatarPickerID); menu.setAttribute('role','dialog'); menu.setAttribute('aria-label','Customize bot avatar');
+        trigger.setAttribute('aria-haspopup','dialog'); trigger.setAttribute('aria-controls',menu.id);
+        const close = document.createElement('button'); close.type='button'; close.className='ios-avatar-picker-close';
+        close.setAttribute('aria-label','Close avatar picker'); close.textContent='×';
+        close.onclick=()=>{closeAvatarPicker(wrap);trigger.focus({preventScroll:true});}; menu.prepend(close);
+      }
+      const anchor=trigger.getBoundingClientRect();
+      const available = !trigger.closest('[hidden],[inert]') && anchor.width>0 && anchor.height>0 && anchor.bottom>0 && anchor.top<height && anchor.right>0 && anchor.left<innerWidth && getComputedStyle(trigger).visibility !== 'hidden';
+      if(!available && wrap.classList.contains('menu-open'))closeAvatarPicker(wrap);
+      const open = available && wrap.classList.contains('menu-open') && !document.querySelector('dialog[open]');
+      let previous = avatarPickerMotions.get(menu);
+      if(reduced && previous){previous.animation.cancel();avatarPickerMotions.delete(menu);previous=null;}
+      if (!open) {
+        if (!menu.matches(':popover-open') || previous?.closing) continue;
+        menu.inert=true;
+        if (!available || reduced) { previous?.animation.cancel();avatarPickerMotions.delete(menu);menu.hidePopover();continue; }
+        const painted=getComputedStyle(menu),start={opacity:painted.opacity,translate:painted.translate};previous?.animation.cancel();
+        const animation=menu.animate([start,{opacity:0,translate:'0 -4px'}],{duration:160,easing:'ease-out',fill:'both'});
+        avatarPickerMotions.set(menu,{animation,closing:true});
+        animation.finished.catch(()=>{}).then(()=>{if(avatarPickerMotions.get(menu)?.animation!==animation)return;menu.hidePopover();animation.cancel();avatarPickerMotions.delete(menu);});
+        continue;
+      }
+      const entering = !menu.matches(':popover-open') || previous?.closing;
+      const start=previous?.closing?{opacity:getComputedStyle(menu).opacity,translate:getComputedStyle(menu).translate}:{opacity:0,translate:'0 -6px'};
+      if (previous?.closing) { previous.animation.cancel();avatarPickerMotions.delete(menu); }
+      menu.inert=false;
+      if (!menu.matches(':popover-open')) menu.showPopover();
+      const pane=trigger.closest('.details-panel,.computer-panel')?.getBoundingClientRect();
+      let left=Math.max(12,(Number(layout.leftInset)||0)+12,pane?.left || 0),right=Math.min(innerWidth-12,innerWidth-(Number(layout.rightInset)||0)-12,pane?.right || innerWidth);
+      let top=Math.max(12,(Number(layout.topInset)||0)+8),bottom=height-(Number(layout.bottomInset)||0)-12;
+      if ((window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).some(r=>r.kind==='division' && r.active!==false && r.x+r.width>0 && r.x<innerWidth && r.y+r.height>0 && r.y<height)) {
+        const style=getComputedStyle(html),read=name=>parseFloat(style.getPropertyValue('--ios-safe-'+name))||0;
+        left=Math.max(left,read('x')+12);right=Math.min(right,read('x')+read('width')-12);top=Math.max(top,read('y')+12);bottom=Math.min(bottom,read('y')+read('height')-12);
+      }
+      const width=Math.max(0,Math.min(336,right-left));
+      menu.style.setProperty('--ios-avatar-width',width+'px');
+      const below=bottom-anchor.bottom-10,above=anchor.top-top-10,under=below>=Math.min(420,bottom-top) || below>=above;
+      menu.style.setProperty('--ios-avatar-height',Math.max(0,under?below:above)+'px');
+      const rect=menu.getBoundingClientRect(),x=Math.max(left,Math.min(right-width,anchor.left+anchor.width/2-width/2));
+      menu.style.left=x+'px';menu.style.top=(under?anchor.bottom+10:Math.max(top,anchor.top-rect.height-10))+'px';
+      if (entering) {
+        if(!reduced){const animation=menu.animate([start,{opacity:1,translate:'0 0'}],{duration:180,easing:'ease-out'});avatarPickerMotions.set(menu,{animation,closing:false});animation.finished.catch(()=>{}).then(()=>{if(avatarPickerMotions.get(menu)?.animation===animation)avatarPickerMotions.delete(menu);});}
+        (menu.querySelector('[aria-pressed=true]') || menu.querySelector('button'))?.focus({preventScroll:true});
+      }
+    }
+  }
+  observeUI(scheduleContentClearance).observe(html,{attributes:true,attributeFilter:['data-motion']});
+  matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',scheduleContentClearance);
+  document.addEventListener('scroll',event=>{if([...document.querySelectorAll('.avatar-popover:popover-open')].some(menu=>event.target!==menu && !menu.contains(event.target)))scheduleContentClearance();},true);
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'){const wrap=event.target.closest?.('.avatar-menu') || document.querySelector('.avatar-popover:popover-open')?.closest('.avatar-menu');if(wrap){closeAvatarPicker(wrap);wrap.querySelector('.avatar-customize')?.focus({preventScroll:true});}}});
   // Adapt action menus at their presentation boundary. Keep the server's
-  // closures, but never render its hover menus/flyouts in the native app.
-  const actionMenuSelector = '[role="menu"],#new-menu,.deliverable-menu,.avatar-popover';
+  // closures; avatar previews/swatches above are content, not action submenus.
+  const actionMenuSelector = '[role="menu"],#new-menu,.deliverable-menu';
   const menuActions = new Map();
   let actionMenuSerial = 0, lastMenuSource = null;
   const menuContext = () => `${location.pathname}:${document.querySelector('#heading')?.textContent || ''}`;
@@ -1585,12 +1650,10 @@
   const openActionMenu = element => {
     if (element.closest('.conversation-submenu') || element.closest('[hidden],[inert]')) return false;
     if (element.hasAttribute('popover')) return element.matches(':popover-open');
-    if (element.matches('.avatar-popover')) return element.parentElement.classList.contains('menu-open');
     return getComputedStyle(element).display !== 'none';
   };
   const closeActionMenu = (element, source) => {
-    if (element.matches('.avatar-popover')) element.parentElement?.classList.remove('menu-open');
-    else if (element.hasAttribute('popover')) { if (element.matches(':popover-open')) element.hidePopover(); }
+    if (element.hasAttribute('popover')) { if (element.matches(':popover-open')) element.hidePopover(); }
     else element.hidden = true;
     source?.setAttribute('aria-expanded', 'false');
     // Reset the server's transient menu state without running any action.
@@ -1599,7 +1662,7 @@
     }
   };
   const presentActionMenu = (element, present = true, toolbarSource = null) => {
-    const source = toolbarSource || (element.matches('.avatar-popover') ? element.parentElement.querySelector('button') : lastMenuSource);
+    const source = toolbarSource || lastMenuSource;
     if (!source?.isConnected || source.closest('[hidden],[inert]')) { closeActionMenu(element, source); return; }
     if (toolbarSource && (!source.getClientRects().length || getComputedStyle(source).visibility === 'hidden')) { closeActionMenu(element, source); return; }
     menuActions.clear();
@@ -1614,7 +1677,7 @@
         destructive:button.classList.contains('danger') || /^(Delete|Remove|Archive)\b/.test(title)};
     };
     const choices = parent => [...parent.querySelectorAll('button,a[href]')]
-      .filter(button => !button.closest('[hidden]') && button.closest('[role=menu],.avatar-popover,.deliverable-menu,#new-menu') === parent)
+      .filter(button => !button.closest('[hidden]') && button.closest('[role=menu],.deliverable-menu,#new-menu') === parent)
       .map(button => {
         if (button.matches('.has-submenu')) {
           button.click(); // Builds choices without invoking a leaf action.
@@ -1623,9 +1686,7 @@
         }
         return remember(button);
       }).filter(Boolean);
-    const items = element.matches('.avatar-popover')
-      ? [...[...element.querySelectorAll('[role=group]')].map(group => ({title:group.getAttribute('aria-label'),children:[...group.querySelectorAll('button')].map(remember).filter(Boolean)})), ...[...element.querySelectorAll(':scope > button')].map(remember).filter(Boolean)]
-      : choices(element);
+    const items = choices(element);
     // Library pinning belongs to desktop's drawer, which iOS replaces with pages.
     const allowed = items.filter(item => !/^(Close|Unpin|Pin) (artifact )?library$/.test(item.title));
     const bounds = source.getBoundingClientRect();
@@ -1664,12 +1725,12 @@
       if (action.context !== menuContext() || !action.source.isConnected ||
           action.source.closest('[hidden],[inert]') || !action.source.getClientRects().length || action.button.disabled || action.button.getAttribute('aria-disabled') === 'true') return;
       action.button.click();
-      // Avatar choice closures reopen the desktop flyout while saving.
       closeActionMenu(action.element, action.source);
     },
     cancel(key) { if (key === String(actionMenuSerial)) menuActions.clear(); },
   };
   const scanActionMenus = () => {
+    updateAvatarPickers();
     for (const element of document.querySelectorAll(actionMenuSelector)) {
       if (openActionMenu(element)) { presentActionMenu(element); break; }
     }

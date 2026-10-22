@@ -176,3 +176,22 @@ New Chat, and Details; the local redesign sample server remains selected.
 
 Changes are confined to the installed iOS presentation adapter and regression
 coverage. No shared desktop assets, production server or signing data changed.
+
+## Visual avatar picker
+
+Tapping a bot's avatar now opens its actual desktop shape previews and palette
+swatches together. The iOS action-menu adapter no longer turns those controls
+into nested Shape/Color text menus. Existing selection markers, serialized avatar
+writes, previews and custom-color action remain owned by the shared UI.
+
+The visual picker uses a top-layer popover anchored to the avatar, with measured
+pane/native-rail clearance and active fold-region bounds. Shape/color hit targets
+are at least 44 points. Close, outside taps, Escape and navigation dismiss it;
+Escape restores focus to the avatar. Opening/closing fades respect Reduce Motion.
+
+The focused WebKit avatar suite verifies visual previews/swatches, successful
+shape/palette saves, preservation of other bot details and the conversation
+draft, matching native-avatar state, outer/inner resizing, custom-color access,
+dismissal and Reduce Motion. Existing iOS menu/layout and sheet suites pass.
+Actual Duo simulator checks cover the cover/open displays and immediate shape
+updates without reopening a submenu. The sample bot's original shape was restored.
