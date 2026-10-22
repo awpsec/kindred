@@ -1252,6 +1252,7 @@ function renderHeader() {
   const b = state.chat?.shared?null:state.bot,
     busy = state.allRuns.some((r) => r.bot_id === b?.id && active(r));
   const group=state.chat&&!state.chat.id.startsWith('dm-');
+  $('bot-details').closest('.conversation').classList.toggle('group-conversation',!!group);
   $('bot-details').disabled=!(b||group);
   const key = JSON.stringify([b, busy, state.chat,channelTitle(state.chat),state.general.name,primaryBotId(),state.bots.map(b=>[b.id,b.name,b.profile])]);
   if (key !== state.headerKey) {
@@ -6925,6 +6926,25 @@ async function refreshResources() {
     state.computerPower={token,power:'running',ready:true};renderComputerPower();
     const size = (n) => (n / 1024 ** 3).toFixed(1) + " GB";
     for (const target of targets) {
+      if(target.closest('#computer-panel')){
+        const summary=target.querySelector('.resource-summary')||node('div','resource-summary');summary.setAttribute('aria-label','Computer resources');
+        let index=0;
+        const compactSize=n=>(n/(n>=1024**4?1024**4:1024**3)).toFixed(1)+(n>=1024**4?' TB':' GB');
+        const updated=`Uptime ${Math.floor(r.uptime_seconds/3600)}h ${Math.floor((r.uptime_seconds%3600)/60)}m · Updated ${clock(r.sampled_at)}`;
+        for(const [label,value,detail] of [
+          ['CPU',r.cpu_percent.toFixed(1)+'%',`${r.cpus} vCPU`],
+          ['Memory',`${compactSize(r.memory_used)} / ${compactSize(r.memory_total)}`,''],
+          ['Disk',`${compactSize(r.disk_used)} / ${compactSize(r.disk_total)}`,''],
+        ]){
+          const cell=summary.children[index++]||node('div','resource-summary-item');cell.tabIndex=0;
+          cell.title=[label,value,detail,updated].filter(Boolean).join(' · ');
+          cell.setAttribute('aria-label',cell.title);
+          if(!cell.children.length)cell.append(node('span','muted'),node('span','resource-summary-value'));
+          cell.firstElementChild.textContent=label;cell.lastElementChild.textContent=value;
+          if(!cell.parentElement)summary.append(cell);
+        }
+        if(summary.parentElement!==target)target.replaceChildren(summary);continue;
+      }
       target.replaceChildren(node("h3", "", "Resources"));
       for (const [label, percent, detail] of [
         ["CPU", r.cpu_percent, `${r.cpus} vCPU · ${r.cpu_percent.toFixed(1)}%`],
@@ -7600,7 +7620,7 @@ function showPane(panel){
 }
 function hidePane(panel){
   if(panel.hidden||panel.inert)return;
-  if(panel.contains(document.activeElement))$(panel.id==='computer-panel'?'show-computer':'bot-details')?.focus({preventScroll:true});
+  if(panel.contains(document.activeElement))$('bot-details')?.focus({preventScroll:true});
   transitionPaneLayout(()=>{
     panel.hidden=true;panel.inert=true;
     if(panel.id==='details-panel'&&state.view==='artifacts'){panel.dataset.clearPaneOnClose='true';state.view='details';state.panelKey='';}
@@ -9344,7 +9364,7 @@ botCenter=createBotCenter({
  detailsPanel:$('details-panel'),computerPanel:$('computer-panel'),detailsContent:$('details-content'),
  getContext:()=>({bot:state.chat&&!state.chat.id.startsWith('dm-')?null:state.bot,chatId:currentConversationId(),scope:state.token,tab:!$('computer-panel').hidden&&!$('computer-panel').inert?'computer':state.view==='library'?'library':'details',enabled:!!state.bot&&!['settings','artifacts'].includes(state.view)}),
  createAvatar:bot=>avatarMenu(bot),icon,
- onNavigate:tab=>tab==='computer'?perform(()=>openComputer()):openDetails(tab),
+ onNavigate:tab=>tab==='computer'?perform(()=>{state.screenBotId=state.bot.id;return openComputer();}):openDetails(tab),
  onSettings:()=>openDetails('settings'),onClose:panel=>$(panel.id==='computer-panel'?'computer-close':'details-close').click(),
  readPage:(chatId,query,signal)=>api('/chats/'+encodeURIComponent(chatId)+'?'+new URLSearchParams(query),'GET',undefined,{signal}),
  seedItems:({chatId})=>[...libraryItems(chatHistory.get(chatId)?.messages||[]),...[...state.details.values()].filter(d=>d.run?.chat_id===chatId).flatMap(d=>(d.attachments||[]).map(file=>({key:'attachment:'+file.id,kind:'attachment',file,created:Number(file.created||d.run.created)||0,sender:d.run.bot_id})))],

@@ -93,3 +93,15 @@ html[data-kindred-ios][data-ios-duo-pose=tabletop] #computer-panel>.bot-center-h
 }
 
 html[data-kindred-ios] #heading { font-size:calc(15px * var(--text-scale,1)); line-height:calc(20px * var(--text-scale,1)); }
+
+/* Desktop identity floats over the transcript; mobile keeps its native header. */
+@media(min-width:761px){
+html:not([data-mobile]) .conversation{position:relative;}
+html:not([data-mobile]) .conversation-header{position:absolute;inset:0 0 auto;height:57px;padding:0;border:0;background:transparent;z-index:5;pointer-events:none;}
+html:not([data-mobile]) .conversation-header #bot-details{position:absolute;left:50%;top:8px;transform:translateX(-50%);max-width:calc(100% - 32px);margin:0;pointer-events:auto;}
+html:not([data-mobile]) .conversation:not(.group-conversation) .header-actions{display:none;}
+html:not([data-mobile]) .group-conversation .header-actions{position:absolute;right:16px;top:8px;pointer-events:auto;}
+html:not([data-mobile]) .group-conversation .conversation-header #bot-details{max-width:calc(100% - 180px);}
+html:not([data-mobile]) .conversation-header .chat-window-drag{display:none;}
+html:not([data-mobile]) .conversation .messages{padding-top:65px;scroll-padding-top:65px;}
+}
