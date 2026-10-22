@@ -55,6 +55,7 @@ const near=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
    near(start.right,449,'a lower user bubble reaches the full trailing content edge');
    const botBefore=await page.locator('#content [data-message="62"]').evaluate(n=>{const r=n.getBoundingClientRect(),b=n.querySelector('.message-bubble').getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,bubble:[b.width,b.height]};});
    near(botBefore.right,376,'bot messages keep a six-point gap from the controls');
+   assert(start.left-botBefore.left>=32,'user bubbles retain a distinct leading inset from bot replies');
    // Move the measured controls over this retained message. This same path is
    // used when scrolling puts a message beside a stationary native dock.
    const contraction=await page.evaluate(async()=>{

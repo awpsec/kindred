@@ -228,7 +228,11 @@ native avatar test covers layout before window attachment. Native-center and
 pane/fold/composer motion checks also pass. The native build and avatar tests
 pass. Changes remain confined to iOS presentation and regression coverage.
 
-Native cover-display verification confirms a valid 44-by-148-point menu frame,
-a full 466-point reading viewport, a 364-point user bubble beside the controls
-and a 442-point bubble below them. The lower bubble visibly fills the previously
-unused strip. Stored accounts are preserved during in-place simulator updates.
+Native cover-display verification confirms a valid 44-by-148-point menu frame
+and a full 466-point reading viewport. User bubbles retain a distinct leading
+gutter of 12% of the lane, bounded to 32–56 points, while their trailing edge
+expands into the space below the controls. That inset remains steady throughout
+the animation and keeps user replies visibly separate from bot replies. The
+focused motion check verifies the inset alongside the existing recovery,
+reversal and Reduce Motion checks. Stored accounts are preserved during
+in-place simulator updates.
