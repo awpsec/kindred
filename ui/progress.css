@@ -24,3 +24,7 @@ progress::-moz-progress-bar{background:var(--progress-accent)}
 .message-group.task-commentary{margin-block:4px;padding-inline-start:24px}
 .message-group.task-commentary .message-row>.message-bubble{background:transparent;border:0;border-radius:0;box-shadow:none;padding:0;font-size:calc(12px * var(--text-scale,1));line-height:1.5;max-width:100%}
 .message-group.task-commentary .message-bubble p{margin:4px 0}
+
+/* Keep the bot identity legible beside both compact activity and staged work. */
+.task-activity .summary-progress-author{flex:0 1 auto;max-width:28%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--fg)}
+.task-activity .summary-progress-task{min-width:0}

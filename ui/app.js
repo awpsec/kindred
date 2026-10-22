@@ -5061,12 +5061,12 @@ function summaryProgress(items,entry,runs){
   const details=node('details','summary-progress-disclosure');details.open=completing||manual||(staged&&!finished&&!entry.progressClosed.has(key));
   const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender);
   const chevron=node('span','summary-progress-chevron','⌄');chevron.setAttribute('aria-hidden','true');title.append(chevron);
-  if(bot){const avatar=buddy(bot,18);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
+  if(bot){const avatar=buddy(bot,22);avatar.setAttribute('aria-hidden','true');title.append(avatar,node('span','summary-progress-author',bot.name));}
   const status=finished?({completed:'Finished',failed:'Failed',cancelled:'Stopped',interrupted:'Interrupted'}[(terminal?.status||run?.status)]||'Finished'):!run?'Recorded activity':(waiting||run?.status==='awaiting_user')?'Waiting for your answer':run?.status==='cancelling'?'Stopping':run?.status==='awaiting_approval'?'Waiting for your approval':run?.status==='queued'?'Queued':null;
   const phase={preparing:'Preparing the next action',thinking:'Thinking through the next step',writing:'Writing a response',waiting:'Waiting for the model'}[activity?.phase];
   const current=activity?.current?.label||activity?.current_label;
-  const taskName=(first.progress.task_title||rootRun?.task_title||'Task progress').trim();
-  const label=staged?taskName:(status||current||phase||'Working');
+  const taskName=(first.progress.task_title||rootRun?.task_title||'').trim();
+  const label=staged?(taskName||'Task progress'):(status||current||phase||taskName||'Activity');
   const task=node('span','summary-progress-task'),text=node('span','summary-progress-name',label);if(staged&&!finished&&run?.status==='running'){text.classList.add('is-working');text.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}task.title=label;task.append(text);title.append(task);
   const started=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
   const ended=terminal?.ended||phaseFinal?.created||(finished?(endedEvent?.created||activity?.last_at||items.at(-1).created):run?Math.floor(Date.now()/1000):(activity?.last_at||items.at(-1).created));
