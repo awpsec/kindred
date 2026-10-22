@@ -216,3 +216,19 @@ leftward book-to-flat expansion. Multiline, explicit line breaks, natural wrappi
 and shrinking drafts assert a fixed form bottom and an unchanged native action-row
 query. Existing sidebar, safe-area, keyboard and ordinary-phone checks also pass.
 Simulator checks do not substitute for physical-device verification.
+
+
+## Native compositor contraction follow-up
+
+Paused WebKit geometry samples concealed a native rendering race: width
+reflow and a compositor translation could be painted at different progress,
+briefly moving the mic beyond its intended trailing edge. The retained form
+now resizes as an end-aligned flex item, with no horizontal translation when
+its trailing edge is stationary. End alignment permits the old wider form to
+extend left of a narrower destination; auto margins cannot do that.
+
+The actual Duo native trace now samples both open-to-book contraction and
+book-to-open expansion: form right=941 and mic right=930 throughout, with zero
+sideways translation. Regression coverage checks contraction while the form
+is wider than its parent, expansion, and absence of the racing translation,
+in addition to the existing intermediate/final bound assertions.

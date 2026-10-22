@@ -1053,12 +1053,15 @@
         chromeTargets.set(node,target);
         // Centered identity and trailing Latest controls already change their
         // layout origin as width changes. Subtract that anchor movement once.
-        const anchor = node.matches('.bot-heading') ? 0.5 : node.matches('.jump-latest') ? 1 : 0;
+        const anchor = node.matches('.bot-heading') ? 0.5 : 1;
         const dx = from.x-target.x-(target.width-from.width)*anchor;
         const editing = node.id === 'composer';
         // Keep the live editor's height natural while its width changes. New
         // keystrokes/attachments must never be clipped by a held animation box.
-        const constraints = editing ? {minWidth:'0px',maxWidth:'none'}
+        // Anchor the live form by its trailing edge as width changes.
+        // A left-origin translation plus a changing width can drift past the
+        // rail while UIKit publishes intermediate hinge geometry.
+        const constraints = editing ? {minWidth:'0px',maxWidth:'none',alignSelf:'flex-end',marginLeft:'0px',marginRight:'0px'}
           : {minWidth:'0px',maxWidth:'none',minHeight:Math.min(from.height,target.height)+'px',overflow:'clip'};
         const motion = node.animate([
           {...constraints,translate:`${dx}px ${from.y-target.y}px`,width:from.width+'px',...(editing?{}:{height:from.height+'px'}),opacity:prior?1:0},

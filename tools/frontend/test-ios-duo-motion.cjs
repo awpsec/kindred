@@ -82,17 +82,30 @@ const root=path.resolve(__dirname,'../..'),bundle=path.join(root,'mobile/ios/Kin
   // window's size or inner-display classification at all.
   await p.evaluate(()=>{
    __KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:true,x:475,y:0,width:28,height:669}];dispatchEvent(new Event('kindred-native-geometry'));
-  });await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));await p.waitForFunction(()=>!document.documentElement.dataset.iosChromeMorphing);
+  });await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  const contraction=await p.evaluate(async()=>{
+   const form=document.querySelector('#composer'),mic=document.querySelector('.dictation-button');
+   const motions=form.getAnimations().filter(a=>a.effect.getKeyframes().some(f=>'translate' in f));motions.forEach(a=>a.pause());
+   const frames=[];for(const t of [0,70,140,279]){motions.forEach(a=>a.currentTime=t);frames.push({right:form.getBoundingClientRect().right,mic:mic.getBoundingClientRect().right,width:form.getBoundingClientRect().width});}
+   const translations=motions.flatMap(a=>a.effect.getKeyframes().map(f=>f.translate));motions.forEach(a=>a.finish());await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {frames,translations};
+  });
+  for(const frame of contraction.frames){assert(Math.abs(frame.right-contraction.frames.at(-1).right)<1,'contraction keeps its trailing form edge even when wider than the destination');assert(Math.abs(frame.mic-contraction.frames.at(-1).mic)<1,'contraction cannot push the native mic offscreen');}
+  for(const translate of contraction.translations)assert(Math.abs(parseFloat(translate))<0.01,'contraction needs no racing sideways translation');
+  await p.waitForFunction(()=>!document.documentElement.dataset.iosChromeMorphing);
   const book=await p.locator('#composer').boundingBox();
   await p.evaluate(()=>{__KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:false,x:475,y:0,width:0,height:669}];dispatchEvent(new Event('kindred-native-geometry'));});
   await p.waitForFunction(()=>document.documentElement.dataset.iosChromeMorphing==='true');
   const bookOpen=await p.evaluate(async()=>{
    const form=document.querySelector('#composer'),motions=form.getAnimations().filter(a=>a.effect.getKeyframes().some(f=>'translate' in f));motions.forEach(a=>a.pause());
    const edges=[];const widths=[];for(const time of [0,70,140,279]){motions.forEach(a=>a.currentTime=time);widths.push(form.getBoundingClientRect().width);const f=form.getBoundingClientRect(),m=document.querySelector('.dictation-button').getBoundingClientRect();edges.push({right:f.right,mic:m.right});}motions.forEach(a=>a.finish());
-   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {widths,edges,end:form.getBoundingClientRect().width};
+   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {widths,edges,translations:motions.flatMap(a=>a.effect.getKeyframes().map(f=>f.translate)),end:form.getBoundingClientRect().width};
   });assert(Math.abs(bookOpen.widths[0]-book.width)<2,'half-open book begins at its painted input width');
   assert(bookOpen.widths.some(w=>w>book.width+2&&w<bookOpen.end-2),'half-open to flat visibly expands through intermediate bounds');
   assert(Math.abs(bookOpen.widths.at(-1)-bookOpen.end)<2,'book completion cannot teleport');
+  // Seeking a paused WebKit animation samples width/translate atomically and
+  // hid a native compositor race. A stationary right edge needs no horizontal
+  // translation at all: only its right-anchored width may animate.
+  for(const translate of bookOpen.translations)assert(Math.abs(parseFloat(translate))<0.01,'leftward growth must not race width against a compositor translation');
   const interrupted=await p.evaluate(async()=>{
    __KINDRED_NATIVE_GEOMETRY.reservedRegions=[{kind:'division',active:true,x:475,y:0,width:28,height:669}];dispatchEvent(new Event('kindred-native-geometry'));
    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
@@ -120,6 +133,6 @@ const root=path.resolve(__dirname,'../..'),bundle=path.join(root,'mobile/ios/Kin
   for(const frame of growth.frames){assert(Math.abs(frame.bottom-growth.frames[0].bottom)<1,'typing grows upward without lifting the bottom edge');assert.equal(frame.root+frame.body,0,'draft growth cannot scroll viewport roots');}
   for(const request of growth.requests)assert(Math.abs(request.height-growth.initial)<1,'native bottom-bar query is independent of draft height');
   await p.emulateMedia({reducedMotion:'reduce'});await relay(false);assert.equal(await p.locator('html').getAttribute('data-ios-chrome-morphing'),null,'Reduce Motion settles display bounds immediately');
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,reports,fold,bookOpen,interrupted,growth}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,reports,fold,contraction,bookOpen,interrupted,growth}));
  } finally {await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});
