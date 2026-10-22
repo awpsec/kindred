@@ -37,7 +37,7 @@ on:
         required: true
         default: all
         type: choice
-        options: [all, windows, macos]
+        options: [all, windows, macos, linux]
 permissions:
   contents: read
 concurrency:
@@ -52,12 +52,12 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"}]' || inputs.platforms == 'macos' && '[{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]' || '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"},{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"},{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]') }}
+        include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"}]' || inputs.platforms == 'macos' && '[{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]' || inputs.platforms == 'linux' && '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]' || '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"},{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"},{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ matrix.os == 'macos-26' && 15 || matrix.os == 'windows-2025' && 20 || 45 }}
     env:
       KINDRED_PACKAGE_SOURCE_ROOT: ${{ github.workspace }}
-      CARGO_BUILD_JOBS: 2
+      CARGO_BUILD_JOBS: ${{ matrix.os == 'ubuntu-22.04' && 1 || 2 }}
       RELEASE_VERSION: ${{ inputs.version }}
       NO_STRIP: "true"
     steps:
@@ -234,6 +234,60 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/kindred-paste-browsers
           KINDRED_TEST_MAC_PASTE_SELECTED: ${{ inputs.mac_paste_smoke && '1' || '0' }}
         run: python .release-tools/scripts/release/test-macos-package.py --directory package-artifacts --source . --version "$RELEASE_VERSION" --source-commit "$(git rev-parse HEAD)" --target ${{ matrix.target }} --output mac-validation
+      - name: Export exact generated Linux UI assets for independent binary range review
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python3 - <<'PYCODEGEN'
+          import hashlib, json, os, shutil, subprocess, stat, re
+          from pathlib import Path
+          root=Path('desktop/target/x86_64-unknown-linux-gnu/release/build')
+          out=Path('linux-codegen-custody')
+          assert not out.exists() and not out.is_symlink()
+          for ancestor in [root, *root.parents]:
+              assert stat.S_ISDIR(ancestor.lstat().st_mode) and not ancestor.is_symlink()
+          root_real=root.resolve(strict=True)
+          files=[]
+          for assets in sorted(root.glob('*/out/tauri-codegen-assets')):
+              for ancestor in [assets, *assets.parents]:
+                  assert stat.S_ISDIR(ancestor.lstat().st_mode) and not ancestor.is_symlink()
+              assert assets.resolve(strict=True).is_relative_to(root_real)
+              for directory, dirs, names in os.walk(assets, followlinks=False):
+                  assert not dirs, 'Generated assets must be flat; no source/Git subtrees' 
+                  for name in sorted(names):
+                      src=Path(directory)/name
+                      assert re.fullmatch(r'[0-9a-f]{64}\.(?:css|html|js|json|md|mjs|svg|ttf|txt|wav|woff2)', name), 'Unexpected generated asset name'
+                      before=src.lstat()
+                      assert stat.S_ISREG(before.st_mode) and not before.st_mode & 0o111 and before.st_nlink==1
+                      assert before.st_size<=64*1024*1024 and src.resolve(strict=True).is_relative_to(root_real)
+                      rel=src.relative_to(root)
+                      fd=os.open(src, os.O_RDONLY|os.O_NOFOLLOW)
+                      with os.fdopen(fd,'rb') as stream:
+                          opened=os.fstat(stream.fileno())
+                          assert (opened.st_dev,opened.st_ino,opened.st_size)==(before.st_dev,before.st_ino,before.st_size)
+                          data=stream.read(64*1024*1024+1)
+                      assert len(data)==before.st_size and not data.startswith((b'\x7fELF',b'MZ',b'\xcf\xfa\xed\xfe',b'\xfe\xed\xfa\xcf'))
+                      files.append((src,rel,len(data),hashlib.sha256(data).hexdigest()))
+          assert files and sum(x[2] for x in files)<=64*1024*1024
+          for src,rel,size,digest in files:
+              dst=out/'build'/rel
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              fd=os.open(src,os.O_RDONLY|os.O_NOFOLLOW)
+              with os.fdopen(fd,'rb') as stream:
+                  data=stream.read(64*1024*1024+1)
+              assert len(data)==size and hashlib.sha256(data).hexdigest()==digest
+              dst.write_bytes(data)
+              assert dst.stat().st_size==size and hashlib.sha256(dst.read_bytes()).hexdigest()==digest
+          (out/'manifest.json').write_text(json.dumps({'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'version':os.environ['RELEASE_VERSION'],'target':'x86_64-unknown-linux-gnu','files':{str(rel):{'size':size,'sha256':digest} for _,rel,size,digest in files}},indent=2)+'\n')
+          PYCODEGEN
+      - name: Preserve generated Linux UI custody
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux-codegen-${{ inputs.version }}-${{ matrix.target }}
+          path: linux-codegen-custody/
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload verified packages without publishing
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
