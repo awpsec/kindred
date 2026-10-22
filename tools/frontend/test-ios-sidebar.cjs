@@ -102,8 +102,8 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
         const navigation=await page.evaluate(()=>accountRequests.filter(value=>value.action==='duo-navigation').at(-1));assert.equal(navigation.botDetailsAvailable,true);assert.equal(navigation.botAvatarShape,'triangle');assert.match(navigation.botAvatarColor,/^#[a-f0-9]{6}$/i);
       }
       await page.waitForFunction(()=>accountRequests.some(value=>value.action==='composer-extent'));
-      const measuredExtent=await page.evaluate(()=>({sent:accountRequests.filter(value=>value.action==='composer-extent').at(-1).height,actual:Math.round(document.querySelector('#composer').getBoundingClientRect().height*100)/100}));
-      assert.equal(measuredExtent.sent,measuredExtent.actual,'native bottom-row query receives the actual visible form extent');
+      const measuredExtent=await page.evaluate(()=>({sent:accountRequests.filter(value=>value.action==='composer-extent').at(-1).height,actual:Math.round((document.querySelector('#composer-actions').getBoundingClientRect().height+2*(document.querySelector('#composer').getBoundingClientRect().bottom-document.querySelector('#composer-actions').getBoundingClientRect().bottom))*100)/100}));
+      assert.equal(measuredExtent.sent,measuredExtent.actual,'native bottom-row query receives the actual visible action-row extent');
       await page.evaluate(()=>{__KINDRED_IOS_LAYOUT.composerBottomInset=16;dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
       assert.equal(await page.locator('#composer-area').evaluate(node=>getComputedStyle(node).paddingBottom),'24px','native rail uses the measured bottom-row inset16 instead of viewport inset21');
       const extentCount=await page.evaluate(()=>accountRequests.filter(value=>value.action==='composer-extent').length);

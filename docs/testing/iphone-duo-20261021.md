@@ -144,8 +144,8 @@ adapter corrects full-row targets while retaining the server's action closures.
 
 The final native simulator measurement confirmed a 951×669 full web viewport.
 The whole-view safe area reserved 34 points at the bottom; the SDK bottom-bar
-region reserved 16 for a 64-point row. The composer now reports its actual form
-height through a bounded, deduplicated bridge; UIKit queries that bottom row
+region reserved 16 for a 64-point row. The composer reports its measured action-row extent
+through a bounded, deduplicated bridge; UIKit queries that bottom row
 and publishes only its validated bottom clearance for the composer. It never
 copies the row's large top inset into page padding. Keyboard-visible clearance
 remains zero. Other surfaces retain their own safe-area policy. Native rail
@@ -181,7 +181,7 @@ The installed adapter settles only the server's temporary pane-frame animation t
 
 Automated WebKit coverage includes current/historical navigation, left/right gutters, outer landscape bottom-corner status regions, focused/blurred input height, keyboard boundaries, scrollbar viewport, tabletop history fill, draft/anchor retention and controlled-input cancellation. The pane regression reproduces the former 240-point final-frame chat-width jump and now samples opacity and unchanged lane bounds through completion; it also covers rapid reversal, resize interruption and Reduce Motion. Native Swift build and source review cover the host lifecycle and guards.
 
-Final visual folding/keyboard/pane timing remains pending: Device Hub became inaccessible when the Mac locked during this pass. Do not treat automated geometry checks or source review as visual certification on the simulator or physical Duo.
+Subsequent native checks after the Mac unlocked exercised closed/book/open transitions, pane opening/closing, and the software keyboard on both displays. Physical Duo verification remains pending.
 
 
 ## Continuous display chrome (October 22 follow-up)
@@ -192,4 +192,27 @@ Keyboard-only viewport changes, initial attachment, background return, pane drag
 
 The motion fixture now samples closed-to-open and same-window half-open-book-to-flat transitions, including intermediate composer widths, centered identity growth, cleanup continuity, rapid fold reversal and keyboard/Reduce Motion exclusions under current and historical navigation. Existing geometry tests wait for finite chrome motion before checking their final bounds.
 
-Messages comparison is unavailable in this iOS 27.1 runtime: installed-app metadata and the runtime Applications bundle contain Messages compose/extension services, but no Messages conversation app. The closed-screen reading/Latest clearance policy is unchanged. Native visual verification also remains pending while the Mac is locked.
+Messages comparison is unavailable in this iOS 27.1 runtime: installed-app metadata and the runtime Applications bundle contain Messages compose/extension services, but no Messages conversation app. The closed-screen reading/Latest clearance policy is unchanged. Native dark-mode fold, pane and software-keyboard checks were subsequently exercised after unlocking the Mac. Light mode and Reduce Motion remain automated coverage rather than completed native visual checks.
+
+
+## Multiline composer anchoring (October 22)
+
+The native simulator reproduced the draft-growth jump: a single line used a
+12-point composer bottom inset, while a second line changed it to 34, lifting
+the form by 22 points. The bottom-bar SDK query was receiving the entire form
+height, including the editor. It now receives only the measured action row with
+symmetric padding. The reported extent stays independent of draft wrapping,
+reply content and width-driven editor growth. This is confined to the iOS bundle.
+
+Native checks in the closed portrait display confirmed the form bottom remains
+658 points through one-line and wrapped drafts without the software keyboard.
+With the onboard keyboard visible, touch-key typing through expanded and wrapped
+drafts kept the form bottom at 366 points, its action row bottom at 360, and
+viewport-root scroll offsets at zero. Test drafts were cleared without sending.
+
+Current and historical server motion fixtures now enable the native dictation UI
+and assert that both the form trailing edge and mic remain stationary during
+leftward book-to-flat expansion. Multiline, explicit line breaks, natural wrapping
+and shrinking drafts assert a fixed form bottom and an unchanged native action-row
+query. Existing sidebar, safe-area, keyboard and ordinary-phone checks also pass.
+Simulator checks do not substitute for physical-device verification.

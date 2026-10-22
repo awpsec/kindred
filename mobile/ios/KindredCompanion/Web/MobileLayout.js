@@ -1270,7 +1270,17 @@
       !document.querySelector('dialog[open],.artifact-studio') && document.querySelector('#details-panel')?.hidden !== false &&
       (computer?.hidden || (html.dataset.iosComputer === 'side' && !computer.classList.contains('expanded')));
     if (!visible) { lastComposerExtent = null; return; }
-    const height = Math.round((chromeTargets.get(form)?.height ?? rect.height)*100)/100;
+    // The SDK asks for a bottom *bar*, not the whole writing surface.
+    // Including the editor made a second line select a different safe-area
+    // row and lift the entire composer. Measure only the retained action row,
+    // with the same breathing room above and below; draft wrapping must not
+    // move that anchor.
+    const actions = [...form.querySelectorAll('#composer-actions,#send,.dictation-button,.dictation-cancel')]
+      .filter(node => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden')
+      .map(node => node.getBoundingClientRect()).filter(box => box.height > 0);
+    if (!actions.length) return;
+    const rowTop = Math.min(...actions.map(box => box.top)), rowBottom = Math.max(...actions.map(box => box.bottom));
+    const height = Math.round((rowBottom-rowTop+2*Math.max(0,rect.bottom-rowBottom))*100)/100;
     if (Number.isFinite(height) && height !== lastComposerExtent) {
       lastComposerExtent = height;
       window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'composer-extent',height});

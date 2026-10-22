@@ -11,6 +11,8 @@ const root=path.resolve(__dirname,'../..'),bundle=path.join(root,'mobile/ios/Kin
   await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,'ui/app.js'),'utf8')+'\nexport {showPane,hidePane,finishComputerTransition};'}));
   await p.addInitScript(({token,profileID,css,js})=>{
    sessionStorage.setItem('kindred-token',token);Object.assign(window,{__KINDRED_MOBILE:true,__KINDRED_MOBILE_PLATFORM:'ios',__KINDRED_MOBILE_PROFILE:profileID,__KINDRED_NATIVE_SESSION_BOOTSTRAP:true});
+   window.accountRequests=[];window.webkit={messageHandlers:{kindredAccounts:{postMessage:v=>accountRequests.push(v)},kindredDictation:{postMessage:()=>{}}}};
+   window.__KINDRED_IOS_DICTATION={supported:true,protocolVersion:1,engine:'apple-on-device',onDeviceOnly:true,documentID:'duo-motion-test',onDeviceAvailable:true};
    window.__KINDRED_IOS_LAYOUT={topInset:24,bottomInset:34,leftInset:16,rightInset:84,railSide:'right',isDuo:true,isDuoInner:true,usesNativeRail:true,isPortrait:false,viewportHeight:669};
    window.__KINDRED_NATIVE_GEOMETRY={width:951,height:669,windowWidth:951,windowHeight:669,reservedRegions:[{kind:'division',active:false,x:475,y:0,width:0,height:669},{kind:'occlusion',active:true,x:867,y:0,width:84,height:120}]};
    addEventListener('DOMContentLoaded',()=>{const style=document.createElement('style');style.textContent=css;document.head.append(style);(0,eval)(js);},{once:true});
@@ -86,8 +88,8 @@ const root=path.resolve(__dirname,'../..'),bundle=path.join(root,'mobile/ios/Kin
   await p.waitForFunction(()=>document.documentElement.dataset.iosChromeMorphing==='true');
   const bookOpen=await p.evaluate(async()=>{
    const form=document.querySelector('#composer'),motions=form.getAnimations().filter(a=>a.effect.getKeyframes().some(f=>'translate' in f));motions.forEach(a=>a.pause());
-   const widths=[];for(const time of [0,70,140,279]){motions.forEach(a=>a.currentTime=time);widths.push(form.getBoundingClientRect().width);}motions.forEach(a=>a.finish());
-   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {widths,end:form.getBoundingClientRect().width};
+   const edges=[];const widths=[];for(const time of [0,70,140,279]){motions.forEach(a=>a.currentTime=time);widths.push(form.getBoundingClientRect().width);const f=form.getBoundingClientRect(),m=document.querySelector('.dictation-button').getBoundingClientRect();edges.push({right:f.right,mic:m.right});}motions.forEach(a=>a.finish());
+   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {widths,edges,end:form.getBoundingClientRect().width};
   });assert(Math.abs(bookOpen.widths[0]-book.width)<2,'half-open book begins at its painted input width');
   assert(bookOpen.widths.some(w=>w>book.width+2&&w<bookOpen.end-2),'half-open to flat visibly expands through intermediate bounds');
   assert(Math.abs(bookOpen.widths.at(-1)-bookOpen.end)<2,'book completion cannot teleport');
@@ -102,10 +104,22 @@ const root=path.resolve(__dirname,'../..'),bundle=path.join(root,'mobile/ios/Kin
    const motions=[...document.querySelectorAll('#composer,.bot-heading,.jump-latest')].flatMap(n=>n.getAnimations()).filter(a=>a.effect.getKeyframes().some(f=>'translate' in f));
    motions.forEach(a=>{a.pause();a.currentTime=0;});const after=rect();motions.forEach(a=>a.finish());await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return {before,after};
   });for(const axis of ['x','y','width'])assert(Math.abs(interrupted.before[axis]-interrupted.after[axis])<2,'a reversed fold resumes from the last painted '+axis);
+  for(const frame of bookOpen.edges){assert(Math.abs(frame.right-bookOpen.edges[0].right)<1,'leftward expansion keeps the trailing form edge anchored');assert(Math.abs(frame.mic-bookOpen.edges[0].mic)<1,'native mic stays anchored while input expands leftward');}
   // Keyboard-only changes are UIKit-owned, and Reduce Motion settles bounds.
-  await p.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{keyboardVisible:true,viewportHeight:400});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
+  await p.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{keyboardVisible:true,composerBottomInset:0,bottomInset:0,viewportHeight:400});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
   await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));assert.equal(await p.locator('html').getAttribute('data-ios-chrome-morphing'),null,'typing does not start a fold animation');
+  const growth=await p.evaluate(async()=>{
+   const form=document.querySelector('#composer'),editor=document.querySelector('#prompt');editor.focus();
+   const sample=()=>{const r=form.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height,root:document.documentElement.scrollTop,body:document.body.scrollTop};};
+   const initial=accountRequests.filter(v=>v.action==='composer-extent').at(-1).height;const frames=[];for(const value of ['Hello','Hello\nSecond line','Hello\nSecond line\nThird line','A naturally wrapping draft with enough words to exceed a single line in this input. '.repeat(3),'Hello']){
+    editor.value=value;editor.dispatchEvent(new Event('input',{bubbles:true}));
+    for(let i=0;i<8;i++){await new Promise(requestAnimationFrame);frames.push({value,...sample()});}
+   }return {frames,initial,requests:accountRequests.filter(v=>v.action==='composer-extent')};
+  });
+  assert(growth.frames.some(f=>f.height>growth.frames[0].height+20),'draft actually grows to multiple lines');
+  for(const frame of growth.frames){assert(Math.abs(frame.bottom-growth.frames[0].bottom)<1,'typing grows upward without lifting the bottom edge');assert.equal(frame.root+frame.body,0,'draft growth cannot scroll viewport roots');}
+  for(const request of growth.requests)assert(Math.abs(request.height-growth.initial)<1,'native bottom-bar query is independent of draft height');
   await p.emulateMedia({reducedMotion:'reduce'});await relay(false);assert.equal(await p.locator('html').getAttribute('data-ios-chrome-morphing'),null,'Reduce Motion settles display bounds immediately');
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,reports,fold,bookOpen,interrupted}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,reports,fold,bookOpen,interrupted,growth}));
  } finally {await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

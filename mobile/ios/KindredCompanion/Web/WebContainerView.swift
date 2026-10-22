@@ -195,7 +195,8 @@ final class WebHostView: UIView {
         let ordinaryBottom = session.webView.safeAreaInsets.bottom
         var composerBottom = ordinaryBottom
         if #available(iOS 27.1, *), usesNativeRail, session.composerExtent > 0 {
-            // Query the actual bottom row; the whole-view safe area also
+            // Query the fixed bottom action row, excluding the growing editor.
+            // The whole-view safe area also
             // contains the vertical bar and can leave unnecessary blank space.
             let extent = min(session.webView.bounds.height, session.composerExtent + 16)
             let rowInsets = session.webView.edgeInsets(for: .bar(onEdge: UIRectEdge.bottom, extent: extent))
