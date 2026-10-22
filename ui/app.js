@@ -7655,7 +7655,12 @@ function showPane(panel){
 }
 function hidePane(panel){
   if(panel.hidden||panel.inert)return;
-  if(panel.contains(document.activeElement))$('bot-details')?.focus({preventScroll:true});
+  if(panel.contains(document.activeElement)){
+    $('bot-details')?.focus({preventScroll:true});
+    // Native layouts can hide the return target while a closed pane still
+    // renders its exit fade. Release focus if that transfer did not succeed.
+    if(panel.contains(document.activeElement))document.activeElement.blur();
+  }
   transitionPaneLayout(()=>{
     panel.hidden=true;panel.inert=true;
     if(panel.id==='details-panel'&&state.view==='artifacts'){panel.dataset.clearPaneOnClose='true';state.view='details';state.panelKey='';}
