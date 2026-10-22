@@ -5072,7 +5072,7 @@ function summaryProgress(items,entry,runs){
     while(entry.taskTerminalRuns.size>CHAT_WINDOW_SIZE)entry.taskTerminalRuns.delete(entry.taskTerminalRuns.keys().next().value);
   }
   if(finished&&!terminal){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
-  if(finished&&!staged)return null;
+  // A persisted marker retains a compact completion receipt without inventing stages.
   const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
   const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open&&!previous.querySelector('details').classList.contains('is-collapsing');
@@ -5085,7 +5085,7 @@ function summaryProgress(items,entry,runs){
   const phase={preparing:'Preparing the next action',thinking:'Thinking through the next step',writing:'Writing a response',waiting:'Waiting for the model'}[activity?.phase];
   const current=activity?.current?.label||activity?.current_label;
   const taskName=(first.progress.task_title||rootRun?.task_title||'').trim();
-  const label=staged?(taskName||'Task progress'):(status||current||phase||taskName||'Activity');
+  const label=staged?(taskName||'Task progress'):finished?(taskName?taskName+' · '+status:status):(status||current||phase||taskName||'Activity');
   const task=node('span','summary-progress-task'),text=node('span','summary-progress-name',label);if(staged&&!finished&&run?.status==='running'){text.classList.add('is-working');text.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}task.title=label;task.append(text);title.append(task);
   const started=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
   const ended=terminal?.ended||phaseFinal?.created||(finished?(endedEvent?.created||activity?.last_at||items.at(-1).created):run?Math.floor(Date.now()/1000):(activity?.last_at||items.at(-1).created));
