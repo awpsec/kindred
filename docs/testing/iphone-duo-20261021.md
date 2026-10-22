@@ -151,3 +151,5 @@ copies the row's large top inset into page padding. Keyboard-visible clearance
 remains zero. Other surfaces retain their own safe-area policy. Native rail
 presentation also removes the obsolete global top blur and legacy shell block
 padding so the first conversation row is not blurred or offset.
+
+The final on-device simulator keyboard check exposed the native rail covering the composer’s trailing action while typing. The host now publishes keyboard visibility alongside measured safe insets; the iOS shim reserves the measured right inset only while the keyboard is visible. Dismissal restores the full-width bottom lane. Both current and historical server fixtures verify this transition.

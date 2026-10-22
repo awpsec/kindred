@@ -930,6 +930,12 @@
     const composerBottomInset = typeof value.composerBottomInset === 'number' && Number.isFinite(value.composerBottomInset)
       ? Math.max(0,value.composerBottomInset) : Math.max(0,Number(value.bottomInset) || 0);
     html.style.setProperty('--ios-composer-safe-bottom',`${composerBottomInset}px`);
+    // The system rail extends to the keyboard edge while typing. Keep the
+    // composer's trailing action outside its measured safe inset, while using
+    // the full bottom lane again as soon as the keyboard is dismissed.
+    const keyboardRight = nativeDuo && value.keyboardVisible === true && Number.isFinite(value.rightInset)
+      ? Math.max(0,Math.min(innerWidth,value.rightInset)) : 0;
+    html.style.setProperty('--ios-composer-keyboard-right',`${keyboardRight}px`);
     nativeHeight = Math.max(0, Number(value.viewportHeight) || 0);
     nativePortrait = typeof value.isPortrait === 'boolean' ? value.isPortrait : undefined;
     updateViewport();

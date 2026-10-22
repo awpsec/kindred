@@ -71,7 +71,7 @@ final class WebHostView: UIView {
         session.updateLayout(topInset: insets.top, bottomInset: keyboardVisible ? 0 : insets.bottom,
                              leftInset: insets.left, rightInset: insets.right, isDuo: hasDivision || usesNativeRail,
                              isDuoInner: isDuoInner, usesNativeRail: usesNativeRail,
-                             composerBottomInset: keyboardVisible ? 0 : composerBottom, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
+                             composerBottomInset: keyboardVisible ? 0 : composerBottom, keyboardVisible: keyboardVisible, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
                              viewportHeight: session.webView.bounds.height,
                              isPortrait: windowBounds.height >= windowBounds.width)
         session.refreshSystemTextSize()
