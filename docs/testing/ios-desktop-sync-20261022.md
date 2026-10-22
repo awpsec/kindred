@@ -87,10 +87,42 @@ resizing, both scroll axes, retained connection/draft, avatar bridge data and
 message clearance. Native `ToolbarAvatarTests` passed in Xcode 27.1 beta's Duo
 simulator, comparing distinct cloud, wedge and capsule images at the same color.
 An actual closed-display simulator capture confirms the measured rail and wider
-messages below it. Native hands-on switching between all toolbar shapes remains
-pending because the Mac locked during the final visual pass.
+messages below it. The subsequent unlocked native pass verified cloud, wedge and
+capsule switching and the bot-details action.
 
 The simulator uses an explicitly selected local redesign preview with sample
 chats, not the older live-server UI. Existing account records are preserved.
 These follow-up layout overrides are confined to the installed iOS app; they do
 not modify the shared desktop UI or deploy a production server.
+
+## Open portrait identity and preview uploads
+
+The native toolbar's actual edge now controls identity placement. An open Duo
+with a horizontal top bar uses the avatar in that bar; a vertical inner rail keeps
+the centered name tag. Details reserves the top safe area in horizontal-bar
+poses. Keyboard height does not change this placement.
+
+A temporary inert, accessibility-hidden copy morphs between the retained web
+tag and the native avatar's measured window coordinates. It fades the name while
+changing size and position, preserves its painted bounds on reversal, and cleans
+up under Reduce Motion, page hiding or a bounded timeout. The native avatar is a
+44-point UIButton with a public layout callback; a detached SwiftUI label's
+geometry is not its on-screen toolbar position. The bridge now validates shape
+names against the bundled catalog, including canonical names such as `wedge`,
+rather than rejecting them through the obsolete eight-shape allowlist.
+
+`test-ios-duo-identity.cjs` passes portrait/landscape handoff, intermediate and final
+bounds, quick reversal, Reduce Motion, keyboard stability, retained draft, Details
+clearance and screenshot upload/read/delete. The existing Duo motion and center
+resize suites pass. Both native ToolbarAvatarTests pass. Actual Xcode 27.1 beta
+Duo checks cover portrait/landscape rotation, native avatar actions and shapes,
+Details/Computer clearance, and closing the phone with the selected chat intact.
+A recording of the inner display was inspected separately from the inactive
+outer display.
+
+The screenshot error was reproduced as HTTP 404 `Missing fixture /api/uploads`:
+the preview server delegated that missing route to its desktop fixture. The Duo
+fixture now supports authenticated, bounded, in-memory uploads, download,
+removal and attachment metadata on sample messages. A 300 KB synthetic PNG goes
+through the real composer path. Files disappear when the fixture exits; this
+does not change or validate production-server upload handling.

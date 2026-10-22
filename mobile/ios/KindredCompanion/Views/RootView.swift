@@ -154,27 +154,16 @@ struct RootView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         if #available(iOS 27.1, *), usesDuoNavigation, let session = activeSession {
-            if #available(iOS 27.1, *), !session.presentation.isDuoInner,
+            if #available(iOS 27.1, *), session.presentation.toolbarIdentity,
                session.presentation.route == "bot-chat", session.presentation.botDetailsAvailable {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        session.performDuoAction(.botDetails)
-                    } label: {
-                        Label {
-                            Text(session.presentation.chatTitle + " details")
-                        } icon: {
-                            if let image = BotToolbarAvatar(shape: session.presentation.botAvatarShape, color: session.presentation.botAvatarColor).image(scale: displayScale) {
-                                Image(uiImage: image)
-                            } else {
-                                Image(systemName: "person.crop.circle")
-                            }
-                        }
-                    }
-                    .labelStyle(.iconOnly)
-                    .buttonBorderShape(.circle)
-                    .accessibilityLabel(session.presentation.chatTitle + " details")
+                    ToolbarAvatarButton(image: BotToolbarAvatar(shape: session.presentation.botAvatarShape, color: session.presentation.botAvatarColor).image(scale: displayScale),
+                                        title: session.presentation.chatTitle + " details",
+                                        action: { session.performDuoAction(.botDetails) },
+                                        frameChanged: { session.updateToolbarIdentityFrame(inWindow: $0) })
+                        .frame(width: 44, height: 44)
                 }
-                .axisBehavior(.verticalPreferred)
+                .axisBehavior(session.presentation.isDuoInner ? .automatic : .verticalPreferred)
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if session.presentation.route != "chat-list" && !(session.presentation.route == "bot-chat" && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {

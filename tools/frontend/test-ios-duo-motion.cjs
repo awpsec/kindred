@@ -29,9 +29,9 @@ const root=path.resolve(__dirname,'../..'),bundle=path.join(root,'mobile/ios/Kin
     const timeout=setTimeout(()=>{restore();reject(new Error('No native chrome effect was created'));},1500);
     Element.prototype.animate=function(...args){
      const effect=animate.apply(this,args);
-     if(this.matches('#composer,.bot-heading,.jump-latest')&&effect.effect.getKeyframes().some(frame=>'translate' in frame)){
+     if(this.matches('#composer,.bot-heading,.jump-latest')&&effect.effect.getKeyframes().some(frame=>'translate' in frame||this.matches('.ios-identity-handoff')&&'left' in frame)){
       effect.pause();effect.currentTime=0;effects.push(effect);
-      if(!queued){queued=true;queueMicrotask(()=>{restore();resolve(effects);});}
+      if(!queued){queued=true;requestAnimationFrame(()=>requestAnimationFrame(()=>{restore();resolve(effects);}));}
      }
      return effect;
     };
@@ -93,15 +93,15 @@ const root=path.resolve(__dirname,'../..'),bundle=path.join(root,'mobile/ios/Kin
    },{inner,width,height,capture});
    if(!capture)await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   };
-  await relay(false);await p.waitForFunction(()=>!document.documentElement.dataset.iosChromeMorphing);
+  await relay(false);await p.waitForFunction(()=>!document.documentElement.dataset.iosChromeMorphing&&!document.documentElement.hasAttribute('data-ios-identity-handoff'));
   const beforeFold=await p.locator('#composer').boundingBox();await relay(true,true);
   const fold=await p.evaluate(async()=>{
-   const form=document.querySelector('#composer'),tag=document.querySelector('.bot-heading');
+   const form=document.querySelector('#composer'),tag=document.querySelector('.ios-identity-handoff')||document.querySelector('.bot-heading');
    const motions=capturedChrome;
    const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
    const frames=[];for(const time of [0,70,140,210,279]){motions.forEach(a=>a.currentTime=time);frames.push({form:rect(form),tag:rect(tag)});}
    motions.forEach(a=>a.finish());await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-   return {motions:motions.length,frames,after:{form:rect(form),tag:rect(tag)}};
+   return {motions:motions.length,frames,after:{form:rect(form),tag:rect(document.querySelector('.conversation-header .bot-heading'))}};
   });
   assert(fold.motions>=2,'composer and identity share a display geometry animation');
   assert(Math.abs(fold.frames[0].form.width-beforeFold.width)<2,'composer starts at its last painted width: '+JSON.stringify({beforeFold,fold}));

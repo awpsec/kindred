@@ -101,9 +101,50 @@ private struct ToolbarArtwork: Decodable {
 }
 
 /// Native toolbar identity shares the web catalog's static neutral silhouettes.
+@MainActor
+struct ToolbarAvatarButton: UIViewRepresentable {
+    let image: UIImage?
+    let title: String
+    let action: () -> Void
+    let frameChanged: (CGRect) -> Void
+
+    func makeUIView(context: Context) -> MeasuredAvatarButton {
+        let button = MeasuredAvatarButton()
+        var configuration = UIButton.Configuration.plain()
+        configuration.contentInsets = .zero
+        button.configuration = configuration
+        button.accessibilityIdentifier = "kindred-bot-identity"
+        button.addAction(UIAction { [weak button] _ in button?.activate?() }, for: .primaryActionTriggered)
+        return button
+    }
+
+    func updateUIView(_ button: MeasuredAvatarButton, context: Context) {
+        button.configuration?.image = image ?? UIImage(systemName: "person.crop.circle")
+        button.accessibilityLabel = title
+        button.activate = action
+        button.frameChanged = frameChanged
+        button.setNeedsLayout()
+    }
+}
+
+@MainActor
+final class MeasuredAvatarButton: UIButton {
+    var activate: (() -> Void)?
+    var frameChanged: ((CGRect) -> Void)?
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let window else { return }
+        let frame = convert(bounds, to: window)
+        // Publish after UIKit's bar layout, never the detached label's local box.
+        DispatchQueue.main.async { [weak self] in self?.frameChanged?(frame) }
+    }
+}
+
 struct BotToolbarAvatar: View {
     let shape: String
     let color: String
+
+    static func supports(shape: String) -> Bool { ToolbarArtwork.catalog[shape] != nil }
 
     var body: some View {
         let value = UInt32(color.dropFirst(), radix: 16) ?? 0x2475ff

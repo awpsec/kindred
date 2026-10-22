@@ -21,6 +21,7 @@ final class WebPresentationState {
     var isDuo = false
     var isDuoInner = false
     var usesNativeRail = false
+    var toolbarIdentity = false
     var botDetailsAvailable = false
     var botAvatarShape = "round"
     var botAvatarColor = "#2475ff"
@@ -87,6 +88,8 @@ final class WebSession: NSObject {
     private var layoutKeyboardVisible = false
     private var layoutRailSide = "none"
     private var lastRailFrame: CGRect?
+    private var lastIdentityFrame: CGRect?
+    private var identityWindowFrame: CGRect?
     private(set) var composerExtent: CGFloat = 0
     private var layoutIsPortrait = true
     private var computerInputWanted = false
@@ -271,6 +274,9 @@ final class WebSession: NSObject {
         presentation.isDuo = isDuo
         presentation.isDuoInner = isDuoInner
         presentation.usesNativeRail = usesNativeRail
+        let toolbarIdentity = usesNativeRail && (!isDuoInner || side == "none")
+        if presentation.toolbarIdentity != toolbarIdentity { identityWindowFrame = nil }
+        presentation.toolbarIdentity = toolbarIdentity
         layoutIsSlab = isSlab
         layoutHeight = viewportHeight
         layoutIsPortrait = isPortrait
@@ -293,12 +299,32 @@ final class WebSession: NSObject {
             "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait], in: nil, in: .page) { _ in }
     }
 
-    // Actual public UIControl frames, projected by this web view's host.
-    func updateRailFrame(_ frame: CGRect?) {
+    var toolbarIdentityFrame: CGRect? {
+        guard presentation.toolbarIdentity, let frame = identityWindowFrame else { return nil }
+        let local = webView.convert(frame, from: nil)
+        return webView.bounds.insetBy(dx: -1, dy: -1).contains(local) ? local : nil
+    }
+
+    func updateToolbarIdentityFrame(inWindow frame: CGRect) {
+        guard presentation.toolbarIdentity,
+              [frame.minX,frame.minY,frame.width,frame.height].allSatisfy({ $0.isFinite }),
+              frame.width > 0, frame.width <= 100, frame.height > 0, frame.height <= 100 else { return }
+        identityWindowFrame = frame
+        if let local = toolbarIdentityFrame { updateRailFrame(lastRailFrame ?? local, identity: local) }
+    }
+
+    // Public native layout measurements projected into this retained web view.
+    func updateRailFrame(_ frame: CGRect?, identity: CGRect? = nil) {
         guard origin.matches(webView.url) else { return }
         let next = frame
-        guard next != lastRailFrame else { return }; lastRailFrame = next
-        let value: Any = next.map { ["x": Double($0.minX), "y": Double($0.minY), "width": Double($0.width), "height": Double($0.height)] as Any } ?? NSNull()
+        guard next != lastRailFrame || identity != lastIdentityFrame else { return }
+        lastRailFrame = next; lastIdentityFrame = identity
+        func rect(_ value: CGRect) -> [String: Double] { ["x": Double(value.minX), "y": Double(value.minY), "width": Double(value.width), "height": Double(value.height)] }
+        let value: Any = next.map { frame -> Any in
+            var result = rect(frame).mapValues { $0 as Any }
+            result["identity"] = identity.map { rect($0) as Any } ?? NSNull()
+            return result
+        } ?? NSNull()
         webView.callAsyncJavaScript("""
         if (window.top !== window.self || location.origin !== expectedOrigin) return;
         window.__KINDRED_IOS_TOOLBAR = frame;
@@ -465,7 +491,7 @@ final class WebSession: NSObject {
                 presentation.botSettingsAvailable = body["botSettingsAvailable"] as? Bool == true
                 presentation.botDetailsAvailable = body["botDetailsAvailable"] as? Bool == true
                 if let shape = body["botAvatarShape"] as? String,
-                   ["round", "pebble", "square", "capsule", "triangle", "hexagon", "cloud", "drop"].contains(shape) {
+                   BotToolbarAvatar.supports(shape: shape) {
                     presentation.botAvatarShape = shape
                 }
                 if let color = body["botAvatarColor"] as? String,
@@ -531,6 +557,7 @@ final class WebSession: NSObject {
             if let body = message.body as? [String: Any], body["action"] as? String == "interface-ready" {
                 presentation.hasChatInterface = true
                 lastRailFrame = nil
+                lastIdentityFrame = nil
                 publishLayout()
                 webView.superview?.setNeedsLayout()
                 return

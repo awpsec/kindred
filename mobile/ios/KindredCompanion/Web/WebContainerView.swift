@@ -178,28 +178,43 @@ final class WebHostView: UIView {
     private func sampleRailControls() {
         guard let session, let window, window.windowScene?.activationState == .foregroundActive else { return }
         let web = session.webView
-        guard session.presentation.usesNativeRail, !session.presentation.isDuoInner else { session.updateRailFrame(nil); return }
+        guard session.presentation.usesNativeRail, session.presentation.toolbarIdentity else { session.updateRailFrame(nil); return }
+        if session.presentation.isDuoInner {
+            let identity = session.toolbarIdentityFrame
+            session.updateRailFrame(identity, identity: identity)
+            return
+        }
         let left = railOnLeft
         let inset = left ? web.safeAreaInsets.left : web.safeAreaInsets.right
-        guard inset > 0, web.bounds.height > 0 else { session.updateRailFrame(nil); return }
+        guard web.bounds.height > 0 else { session.updateRailFrame(nil); return }
         let x = left ? inset / 2 : web.bounds.maxX - inset / 2
         var union = CGRect.null
+        var identity = session.toolbarIdentityFrame
+        var seen = Set<ObjectIdentifier>()
         // Public hit testing identifies the native controls without depending on
         // private bar classes or children. It sends no touches/actions. Gaps are
         // included in the final union, and the page keeps its own corner regions.
-        for y in stride(from: CGFloat(4), to: web.bounds.height, by: 8) {
-            var hit = window.hitTest(web.convert(CGPoint(x: x, y: y), to: window), with: nil)
-            if hit?.isDescendant(of: web) == true { continue }
+        func sample(_ point: CGPoint) {
+            var hit = window.hitTest(web.convert(point, to: window), with: nil)
+            if hit?.isDescendant(of: web) == true { return }
+            var isIdentity = false
             while let view = hit, view !== window {
+                isIdentity = isIdentity || view.accessibilityIdentifier == "kindred-bot-identity" || view.accessibilityLabel == session.presentation.chatTitle + " details"
                 if view is UIControl {
                     let frame = web.convert(view.bounds, from: view)
-                    if frame.width > 0, frame.width <= inset + 24, frame.intersects(web.bounds) { union = union.union(frame) }
+                    if frame.width > 0, frame.width <= 100, frame.height > 0, frame.height <= 100, frame.intersects(web.bounds) {
+                        if isIdentity { identity = frame }
+                        if seen.insert(ObjectIdentifier(view)).inserted { union = union.union(frame) }
+                    }
                     break
                 }
                 hit = view.superview
             }
         }
-        session.updateRailFrame(union.isNull ? nil : union)
+        if inset > 0 {
+            for y in stride(from: CGFloat(4), to: web.bounds.height, by: 8) { sample(CGPoint(x: x, y: y)) }
+        }
+        session.updateRailFrame(union.isNull ? identity : union, identity: identity)
     }
 
     override func safeAreaInsetsDidChange() {

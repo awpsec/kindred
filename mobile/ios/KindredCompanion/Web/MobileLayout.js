@@ -1030,6 +1030,87 @@
   // rather than scale transforms, keep text and touch targets at their real size.
   const chromeNodes = () => [...document.querySelectorAll('#composer,.conversation-header .bot-heading,.conversation>.composer-area>.jump-latest')];
   const chromeRects = new Map(), chromePainted = new Map(), chromeTargets = new Map(), chromeMotions = new Map();
+  let identityGhost = null, identityTimer = 0, identityWait = 0, identityGeneration = 0, identityReady = null;
+  let lastIdentityRect = null;
+  const identityFrame = (remembered = false) => {
+    const rect = window.__KINDRED_IOS_TOOLBAR?.identity;
+    if (rect && ['x','y','width','height'].every(key => Number.isFinite(rect[key])) && rect.width > 0 && rect.height > 0) {
+      lastIdentityRect = {...rect}; return lastIdentityRect;
+    }
+    return remembered ? lastIdentityRect : null;
+  };
+  window.addEventListener('kindred-ios-toolbar',() => identityFrame());
+  const finishIdentityHandoff = () => {
+    identityGeneration++; clearTimeout(identityTimer); clearTimeout(identityWait);
+    if (identityReady) window.removeEventListener('kindred-ios-toolbar',identityReady); identityReady = null;
+    identityTimer = identityWait = 0; identityGhost?.remove(); identityGhost = null;
+    delete html.dataset.iosIdentityHandoff;
+  };
+  // The live identity remains one accessible button. A temporary, inert visual
+  // bridges its web tag and the system toolbar's measured avatar bounds.
+  function updateIdentityPlacement(inToolbar) {
+    const previous = html.dataset.iosToolbarIdentity;
+    if (previous === String(inToolbar)) return;
+    const tag = document.querySelector('.conversation-header .bot-heading');
+    const source = identityGhost?.getBoundingClientRect() || (previous === 'true' ? identityFrame(true) : chromePainted.get(tag) || chromeRects.get(tag) || tag?.getBoundingClientRect());
+    const sourceOpacity = identityGhost ? Number(getComputedStyle(identityGhost).opacity) : previous === 'true' ? 0 : 1;
+    const nameOpacity = identityGhost ? Number(getComputedStyle(identityGhost.lastElementChild).opacity) : previous === 'true' ? 0 : 1;
+    finishIdentityHandoff();
+    html.dataset.iosToolbarIdentity = String(inToolbar);
+    const covered = computer?.hidden === false || document.querySelector('#details-panel')?.hidden === false ||
+      document.querySelector('.artifact-studio,dialog[open]') || conversation.inert;
+    if (previous === undefined || previous === String(inToolbar) || !tag || !nativeDuo || document.hidden || covered ||
+        html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+    const generation = identityGeneration;
+    html.dataset.iosIdentityHandoff = 'true';
+    const ghost = tag.cloneNode(true); ghost.classList.add('ios-identity-handoff');
+    ghost.removeAttribute('id'); ghost.removeAttribute('disabled'); ghost.inert = true; ghost.setAttribute('aria-hidden','true');
+    const svgIDs = new Map();
+    for (const node of ghost.querySelectorAll('[id]')) {
+      if (node.closest('svg')) { const next = 'ios-handoff-'+generation+'-'+node.id; svgIDs.set(node.id,next); node.id = next; }
+      else node.removeAttribute('id');
+    }
+    for (const node of ghost.querySelectorAll('svg,svg *')) for (const attr of [...node.attributes]) {
+      let value = attr.value;
+      for (const [before,after] of svgIDs) value = value.replaceAll('#'+before,'#'+after);
+      if (value !== attr.value) node.setAttribute(attr.name,value);
+    }
+    ghost.firstElementChild.style.cssText = 'display:flex;flex:none;align-items:center';
+    const avatar = ghost.querySelector('.character'); if (avatar) avatar.style.cssText += ';width:30px!important;height:30px!important';
+    const name = ghost.lastElementChild;
+    name.style.cssText += ';min-width:0;overflow:hidden;white-space:nowrap;flex:1';
+    ghost.style.cssText = 'position:fixed!important;left:0;top:0;transform:none!important;margin:0!important;max-width:none!important;min-width:0!important;min-height:0!important;pointer-events:none!important;z-index:30;overflow:hidden;box-sizing:border-box;visibility:visible!important;';
+    if (source?.width && source.height) {
+      Object.assign(ghost.style,{left:source.x+'px',top:source.y+'px',width:source.width+'px',height:source.height+'px',opacity:String(sourceOpacity)});
+      document.body.append(ghost); identityGhost = ghost;
+    }
+    let started = false;
+    const start = (fallback = false) => {
+      if (started || generation !== identityGeneration) return;
+      const natural = tag.getBoundingClientRect(), native = identityFrame();
+      if (inToolbar && !native && !fallback) return;
+      const target = inToolbar ? native || (source && {x:source.x+source.width/2-19,y:source.y,width:38,height:38}) : natural;
+      if (!target?.width || !target.height) { finishIdentityHandoff(); return; }
+      started = true; clearTimeout(identityWait);
+      const from = source?.width && source.height ? source : {...target,x:target.x+target.width/2-19,width:38,height:38};
+      ghost.style.opacity = '';
+      document.body.append(ghost); identityGhost = ghost;
+      html.dataset.iosIdentityHandoff = 'true';
+      const frame = rect => ({left:rect.x+'px',top:rect.y+'px',width:rect.width+'px',height:rect.height+'px'});
+      const motion = ghost.animate([
+        {...frame(from),padding:inToolbar?'5px 12px 5px 8px':'4px',gap:inToolbar?'8px':'0px',opacity:sourceOpacity},
+        {...frame(target),padding:inToolbar?'4px':'5px 12px 5px 8px',gap:inToolbar?'0px':'8px',opacity:inToolbar?0:1},
+      ],{duration:280,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});
+      name.animate([{opacity:nameOpacity},{opacity:inToolbar?0:1}],{duration:220,fill:'both'});
+      motion.finished.then(() => { if(generation === identityGeneration) finishIdentityHandoff(); },() => {});
+      identityTimer = setTimeout(() => { if(generation === identityGeneration) finishIdentityHandoff(); },650);
+    };
+    // UIKit can publish its final control frame one layout pass after the pose.
+    requestAnimationFrame(() => requestAnimationFrame(() => start()));
+    const ready = () => { if (generation === identityGeneration) start(); window.removeEventListener('kindred-ios-toolbar',ready); };
+    if (inToolbar) { identityReady = ready; window.addEventListener('kindred-ios-toolbar',ready,{once:true}); }
+    identityWait = setTimeout(() => { window.removeEventListener('kindred-ios-toolbar',ready); start(true); },180);
+  }
   let chromePose = '', chromeLayout = '', chromeKeyboard, chromeFrame = 0, chromeTimer = 0, chromeActive = false;
   const chromeRect = node => {
     if (!node.getClientRects().length || getComputedStyle(node).visibility === 'hidden') return null;
@@ -1040,7 +1121,7 @@
     const geometry = window.__KINDRED_NATIVE_GEOMETRY, layout = window.__KINDRED_IOS_LAYOUT;
     if (!nativeDuo || !geometry || !layout) return '';
     // Host height/safe-area changes caused by the keyboard are intentionally absent.
-    return JSON.stringify([geometry.windowWidth,geometry.windowHeight,layout.isDuoInner,layout.isPortrait,
+    return JSON.stringify([geometry.windowWidth,geometry.windowHeight,layout.isDuoInner,layout.isPortrait,layout.railSide,
       (geometry.reservedRegions || []).filter(r => r.kind === 'division' && r.active !== false && r.width>0 && r.height>0)
         .map(r => r.height>r.width ? ['vertical',r.x,r.width] : ['horizontal',r.y,r.height]).sort()]);
   };
@@ -1091,7 +1172,7 @@
       for (const node of chromeNodes()) {
         const target = chromeRect(node), prior = before.get(node);
         chromeRects.set(node,target);
-        if (!target || node.classList.contains('is-morphing')) continue;
+        if (!target || node.classList.contains('is-morphing') || (node.matches('.bot-heading') && html.hasAttribute('data-ios-identity-handoff'))) continue;
         const from = prior || (node.matches('.bot-heading') ? {...target,x:target.x+target.width/2-22,width:44} : null);
         if (!from || (!changed && Math.abs(from.x-target.x)+Math.abs(from.y-target.y)+Math.abs(from.width-target.width)+Math.abs(from.height-target.height)<1)) continue;
         chromeTargets.set(node,target);
@@ -1128,10 +1209,10 @@
   for (const type of ['kindred-native-geometry','kindred-ios-layout']) window.addEventListener(type,scheduleChromeMotion);
   const chromeLayoutObserver = new ResizeObserver(scheduleChromeMotion);
   for (const node of [shell,conversation,...chromeNodes()]) if (node) chromeLayoutObserver.observe(node);
-  document.addEventListener('visibilitychange',() => { if (document.hidden) { chromePose = ''; finishChromeMotion(); } });
-  window.addEventListener('pagehide',() => { chromePose = ''; finishChromeMotion(); });
-  matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',event => { if (event.matches) finishChromeMotion(); });
-  observeUI(() => { if (html.dataset.motion === 'off') finishChromeMotion(); }).observe(html,{attributes:true,attributeFilter:['data-motion']});
+  document.addEventListener('visibilitychange',() => { if (document.hidden) { chromePose = ''; finishChromeMotion(); finishIdentityHandoff(); } });
+  window.addEventListener('pagehide',() => { chromePose = ''; finishChromeMotion(); finishIdentityHandoff(); });
+  matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',event => { if (event.matches) { finishChromeMotion(); finishIdentityHandoff(); } });
+  observeUI(() => { if (html.dataset.motion === 'off') { finishChromeMotion(); finishIdentityHandoff(); } }).observe(html,{attributes:true,attributeFilter:['data-motion']});
   scheduleChromeMotion();
 
   function updateEnvironment(value) {
@@ -1141,6 +1222,7 @@
     html.style.setProperty('--ios-safe-right', `${Math.max(0, Number(value.rightInset) || 0)}px`);
     const duoCapable = value.isDuo === true;
     nativeDuo = typeof value.usesNativeRail === 'boolean' ? value.usesNativeRail : duoCapable;
+    updateIdentityPlacement(nativeDuo && (value.isDuoInner !== true || value.railSide === 'none'));
     html.dataset.iosDuo = String(nativeDuo);
     html.dataset.iosDuoInner = String(value.isDuoInner === true);
     html.dataset.iosRailSide = nativeDuo ? (['left','right','none'].includes(value.railSide) ? value.railSide : 'right') : 'none';
@@ -1556,6 +1638,7 @@
   const publishDuoNavigation = () => {
     if (!nativeDuo) return;
     const route = duoRoute();
+    if (route !== 'bot-chat' && html.hasAttribute('data-ios-identity-handoff')) finishIdentityHandoff();
     const listAvailable = (route === 'bot-chat' || (!botCenter() && route === 'computer')) && nativeSidebarActive();
     const avatar = document.querySelector('#header-avatar .character'), shape = avatar?.dataset.avatarBody || avatar?.dataset.shape || 'round', color = avatar?.dataset.avatarColor || (avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '');
     const state = {action:'duo-navigation', botCenterAvailable:botCenter(), route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160),

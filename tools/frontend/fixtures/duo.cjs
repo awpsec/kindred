@@ -25,6 +25,8 @@ const histories = new Map(chats.map(chat => [chat.id,Array.from({length:72},(_,i
 let settings = {name:'Duo tester',identity:'Local test account only.',theme:'dark',reduced_motion:false,approval_mode:'auto',show_activity:false,separate_bot_chats:false,notifications:'none',timezone:'America/New_York',timezone_mode:'auto'};
 let controlledBot = null,runCounter = 0,artifactCounter = 0;
 const runs = [],requestIDs = new Set(),mutes = {};
+// Preview-only attachments live in memory and disappear when this fixture exits.
+const uploads = new Map(); let uploadCounter = 0;
 const artifacts = [{id:'duo-document',path:'/artifacts/duo-document',key:'duo-document',title:'Duo test document',language:'markdown',source:'# Duo test document\n\nThis document stays open through outer and inner display changes.\n\n'+Array.from({length:20},(_,i)=>`## Section ${i+1}\n\nA scroll anchor should remain readable after folding and rotating.`).join('\n\n'),state:{},revision:1,chat_id:'dm-piper',creator_name:'Duo tester',created:fixedCreated,updated:fixedCreated,archived:false,type:'document'}];
 const telemetry = {events:[],probes:[],loads:0,requests:{},lastProbe:null};
 let eventSequence = 0;
@@ -46,9 +48,9 @@ function page(chat,url) {
   messages = after?messages.slice(0,limit):messages.slice(-limit);
   return {chat,messages,page:{has_before:!!messages.length&&all[0].seq<messages[0].seq,has_after:!!messages.length&&all.at(-1).seq>messages.at(-1).seq},pending_waits:[],commands:[],workers:[]};
 }
-async function readBody(req) {
+async function readBody(req,limit=262144) {
   let bytes = 0,text = '';
-  for await(const part of req) {bytes+=part.length;if(bytes>262144)throw new Error('Fixture request is too large');text+=part;}
+  for await(const part of req) {bytes+=part.length;if(bytes>limit)throw new Error('Fixture request is too large');text+=part;}
   return text?JSON.parse(text):{};
 }
 function send(res,data,status=200) {
@@ -140,10 +142,10 @@ const probeScript = `
 async function request(req,res) {
   const url = new URL(req.url,'http://localhost'),route = url.pathname,method=req.method;
   telemetry.requests[method+' '+route]=(telemetry.requests[method+' '+route]||0)+1;
-  const handled = route.startsWith('/identity/')||route.startsWith('/fixture/state')||route==='/fixture/telemetry'||route==='/fixture/probe.js'||route==='/fixture/bootstrap.js'||route==='/'||route==='/index.html'||route==='/vendor.js'||route==='/api/bots'||route.startsWith('/api/bots/')||route==='/api/chats'||route.startsWith('/api/chats/')||route==='/api/settings'||route==='/api/status'||route==='/api/runs'||route.startsWith('/api/runs/')||route==='/api/takeover'||route.startsWith('/api/computer')||route.startsWith('/api/mobile/')||route==='/api/attention'||route==='/api/activity'||route.startsWith('/api/notification-mutes/')||route==='/api/workspace-artifacts'||route.startsWith('/api/workspace-artifacts/')||route==='/api/composio'||route==='/api/marketplace';
+  const handled = route.startsWith('/identity/')||route.startsWith('/fixture/state')||route==='/fixture/telemetry'||route==='/fixture/probe.js'||route==='/fixture/bootstrap.js'||route==='/'||route==='/index.html'||route==='/vendor.js'||route==='/api/bots'||route.startsWith('/api/bots/')||route==='/api/chats'||route.startsWith('/api/chats/')||route==='/api/settings'||route==='/api/status'||route==='/api/runs'||route.startsWith('/api/runs/')||route==='/api/takeover'||route.startsWith('/api/computer')||route.startsWith('/api/mobile/')||route==='/api/attention'||route==='/api/activity'||route.startsWith('/api/notification-mutes/')||route==='/api/workspace-artifacts'||route.startsWith('/api/workspace-artifacts/')||route==='/api/composio'||route==='/api/marketplace'||route==='/api/uploads'||route.startsWith('/api/uploads/');
   if(!handled)return original(req,res);
   securityHeaders(req,res);
-  const body = method==='GET'||method==='HEAD'?{}:await readBody(req);
+  const body = method==='GET'||method==='HEAD'?{}:await readBody(req,route==='/api/uploads'?12*1024*1024:262144);
   if(route==='/fixture/state') {
     if(method==='POST'){const probe=safeProbe(body);telemetry.lastProbe=probe;telemetry.probes.push(probe);if(telemetry.probes.length>2000)telemetry.probes.shift();return send(res,{ok:true});}
     if(method==='DELETE'){telemetry.events.length=0;telemetry.probes.length=0;return send(res,{ok:true});}
@@ -175,6 +177,20 @@ async function request(req,res) {
   if(route==='/identity/profiles')return send(res,{account_id:accountID,username:'duo-test',active:profileID,profiles:[{id:profileID,name:'Duo fixture',active:true}],legacy:false});
   if(route==='/identity/logout')return send(res,{ok:true});
   if(route==='/identity/switch')return body.profile_id===profileID?send(res,{token,profile_id:profileID}):send(res,{error:'Unknown fixture profile'},404);
+  if(route==='/api/uploads'&&method==='POST') {
+    if(!chats.some(chat=>chat.id===body.chat_id)||typeof body.name!=='string'||typeof body.data!=='string')return send(res,{error:'Invalid fixture upload'},400);
+    const bytes=Buffer.from(body.data,'base64');
+    if(bytes.length>8*1024*1024||uploads.size>=24)return send(res,{error:'Fixture upload limit reached'},413);
+    const mime=bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))?'image/png':bytes[0]===255&&bytes[1]===216?'image/jpeg':'application/octet-stream';
+    const file={id:'duo-upload-'+(++uploadCounter),name:body.name.slice(0,255),mime,size:bytes.length};
+    uploads.set(file.id,{file,bytes,chatID:body.chat_id});return send(res,file);
+  }
+  if(route.startsWith('/api/uploads/')) {
+    const id=route.slice('/api/uploads/'.length),upload=uploads.get(id);if(!upload)return send(res,{error:'Unknown fixture upload'},404);
+    if(method==='DELETE'){uploads.delete(id);return send(res,{ok:true});}
+    if(method==='GET'){res.writeHead(200,{'Content-Type':upload.file.mime,'Cache-Control':'no-store'});return res.end(upload.bytes);}
+    return send(res,{error:'Unsupported fixture upload operation'},405);
+  }
   if(route==='/api/bots')return send(res,bots);
   if(route.startsWith('/api/bots/')) {
     const index=bots.findIndex(bot=>bot.id===route.slice('/api/bots/'.length));if(index<0)return send(res,{error:'Unknown fixture bot'},404);
@@ -191,7 +207,8 @@ async function request(req,res) {
       if(requestID&&requestIDs.has(requestID))return send(res,{ok:true});
       if(requestID)requestIDs.add(requestID);
       const history=histories.get(id),next=history.at(-1).seq+1,prompt=String(body.prompt||'').slice(0,64000),runID='duo-run-'+(++runCounter);
-      history.push({seq:next,sender:'user',text:prompt,kind:'message',created:fixedCreated+next,run_id:'',reply_to:body.reply_to??null},{seq:next+1,sender:chat.members[0],text:'Local fixture received: '+prompt,kind:'result',created:fixedCreated+next+1,run_id:runID});
+      const files=(Array.isArray(body.files)?body.files:[]).map(fileID=>uploads.get(fileID)).filter(upload=>upload?.chatID===id).map(upload=>upload.file);
+      history.push({seq:next,sender:'user',text:prompt,files,kind:'message',created:fixedCreated+next,run_id:'',reply_to:body.reply_to??null},{seq:next+1,sender:chat.members[0],text:'Local fixture received: '+prompt,kind:'result',created:fixedCreated+next+1,run_id:runID});
       runs.push({id:runID,bot_id:chat.members[0],chat_id:id,prompt,status:'completed',output:'Local fixture received: '+prompt,error:'',created:fixedCreated+next,depth:0});record('send',{chatID:id,prompt,requestID});return send(res,{ok:true});
     }
     if(!action&&method==='GET')return send(res,page(chat,url));
