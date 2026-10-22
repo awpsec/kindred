@@ -1,6 +1,41 @@
 import SwiftUI
 import WebKit
 
+/// A single concentric contour in web-host coordinates. Resolving the native
+/// continuous shape avoids CSS's radius normalization on a 60-point avatar row.
+enum DisplayCornerContour {
+    static func commands(in rect: CGRect, radii: [String: Double], inset: CGFloat = 8) -> [[Double]] {
+        guard inset.isFinite, inset >= 0,
+              [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite),
+              rect.width > inset * 2, rect.height > inset * 2,
+              radii.values.allSatisfy(\.isFinite) else { return [] }
+        func radius(_ key: String) -> CGFloat { max(0, CGFloat(radii[key] ?? 0) - inset) }
+        let shape = UnevenRoundedRectangle(topLeadingRadius: radius("topLeft"),
+            bottomLeadingRadius: radius("bottomLeft"), bottomTrailingRadius: radius("bottomRight"),
+            topTrailingRadius: radius("topRight"), style: .continuous)
+        var commands: [[Double]] = []
+        shape.path(in: rect.insetBy(dx: inset, dy: inset)).cgPath.applyWithBlock { pointer in
+            let element = pointer.pointee
+            let opcode: Double, count: Int
+            switch element.type {
+            case .moveToPoint: opcode = 0; count = 1
+            case .addLineToPoint: opcode = 1; count = 1
+            case .addQuadCurveToPoint: opcode = 2; count = 2
+            case .addCurveToPoint: opcode = 3; count = 3
+            case .closeSubpath: opcode = 4; count = 0
+            @unknown default: return
+            }
+            var command = [opcode]
+            for index in 0..<count {
+                command.append(Double(element.points[index].x))
+                command.append(Double(element.points[index].y))
+            }
+            commands.append(command)
+        }
+        return commands
+    }
+}
+
 /// Hosts an account's existing WKWebView. The web view belongs to its
 /// WebSession, not to SwiftUI, so rotation, split view, Stage Manager resizing
 /// and account switches move the same view (and its page state) between hosts
@@ -308,10 +343,20 @@ final class WebHostView: UIView {
                 }
             }
         }
+        var corners: [String: Double] = [:]
+        if #available(iOS 26.0, *) {
+            corners = ["topLeft": Double(effectiveRadius(corner: .topLeft)),
+                       "topRight": Double(effectiveRadius(corner: .topRight)),
+                       "bottomLeft": Double(effectiveRadius(corner: .bottomLeft)),
+                       "bottomRight": Double(effectiveRadius(corner: .bottomRight))]
+        }
+        let contour = DisplayCornerContour.commands(in: session?.webView.convert(bounds, from: self) ?? bounds,
+                                                     radii: corners)
         session?.updateGeometry(width: session?.webView.bounds.width ?? bounds.width,
             height: session?.webView.bounds.height ?? bounds.height,
             windowWidth: window.bounds.width, windowHeight: window.bounds.height,
-            safeArea: session?.webView.safeAreaInsets ?? safeAreaInsets, reservedRegions: regions)
+            safeArea: session?.webView.safeAreaInsets ?? safeAreaInsets, reservedRegions: regions,
+            displayCorners: corners, displayContour: contour)
     }
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -330,6 +375,9 @@ final class WebHostView: UIView {
     }
 
     private func observeTextSize() {
+        if #available(iOS 26.0, *) {
+            cornerConfiguration = .corners(radius: .containerConcentric(minimum: 0))
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(sceneWillDeactivate),
             name: UIScene.willDeactivateNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(sceneDidActivate),

@@ -1258,6 +1258,17 @@
     const text = Math.max(0,Math.round(value*100)/100)+'px';
     if (node && node.style.getPropertyValue(name) !== text) node.style.setProperty(name,text);
   };
+  const displayContour = rect => {
+    const commands = window.__KINDRED_NATIVE_GEOMETRY?.displayContour, names=['M','L','Q','C','Z'], lengths=[3,3,5,7,1];
+    if (!Array.isArray(commands) || !commands.length || commands.length > 128) return null;
+    const path=[];
+    for (const command of commands) {
+      if (!Array.isArray(command) || command.length !== lengths[command[0]] || !command.every(Number.isFinite)) return null;
+      const values=command.slice(1).map((value,index)=>Math.round((value-(index%2?rect.top:rect.left))*1000)/1000);
+      path.push(names[command[0]]+' '+values.join(' '));
+    }
+    return `path("${path.join(' ')}")`;
+  };
   // Shared dialogs retain their forms, selection and close handlers. Only
   // their presentation belongs to the installed app's current safe rectangle.
   const sheetSelector = 'dialog.navigation-search,dialog.bot-dialog,dialog.chat-dialog,dialog.server-chat-dialog';
@@ -1313,6 +1324,7 @@
       }
     }
   }
+  const messageClearance = new WeakMap();
   function updateNativeContentClearance() {
     updateNativeSheets();
     updateAvatarPickers();
@@ -1332,12 +1344,30 @@
       ['x','y','width','height'].every(key => Number.isFinite(toolbar[key])) && toolbar.width > 0 && toolbar.height > 0;
     html.toggleAttribute('data-ios-message-flow',!!flow);
     const zones = flow ? [toolbar,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).filter(region => region.kind === 'occlusion' && region.active !== false)] : [];
-    const readingInset = insetFor(conversation.getBoundingClientRect());
-    for (const group of document.querySelectorAll('#content>*')) {
+    const history = document.querySelector('#content'), historyRect = history?.getBoundingClientRect();
+    const historyStyle = history && getComputedStyle(history);
+    const lane = historyRect && {left:historyRect.left+history.clientLeft+(parseFloat(historyStyle.paddingLeft)||0),right:historyRect.left+history.clientLeft+history.clientWidth-(parseFloat(historyStyle.paddingRight)||0)};
+    let laneLeft = 0, laneRight = 0;
+    // Both authors keep a stable line length on the cover. Use the actual
+    // controls' edge plus a small gap, rather than shrinking the bot's text
+    // again every time it scrolls beside the dock.
+    for (const zone of lane && flow ? zones : []) {
+      if (zone.x >= lane.right || zone.x+zone.width <= lane.left) continue;
+      if (zone.x+zone.width/2 > (lane.left+lane.right)/2) laneRight = Math.max(laneRight,lane.right-zone.x+6);
+      else laneLeft = Math.max(laneLeft,zone.x+zone.width+6-lane.left);
+    }
+    setContentInset(conversation,'--ios-message-lane-left',laneLeft);
+    setContentInset(conversation,'--ios-message-lane-right',laneRight);
+    for (const group of history?.children || []) {
+      const user = !!group.querySelector('.message-row.user');
+      group.toggleAttribute('data-ios-user-message',user);
       const rect = group.getBoundingClientRect();
-      const overlaps = zones.some(zone => rect.top < zone.y+zone.height+12 && rect.bottom > zone.y-12);
-      setContentInset(group,'--ios-message-left',flow && overlaps ? readingInset.left : 0);
-      setContentInset(group,'--ios-message-right',flow && overlaps ? readingInset.right : 0);
+      const buffer = messageClearance.get(group) ? 28 : 12;
+      const overlaps = user && zones.some(zone => rect.top < zone.y+zone.height+buffer && rect.bottom > zone.y-buffer);
+      messageClearance.set(group,!!flow && overlaps);
+      // Right-aligned user bubbles keep their larger, constant width and move
+      // as one piece. Translation carries the text without rewrapping it.
+      setContentInset(group,'--ios-user-clearance',flow && overlaps ? laneRight : 0);
     }
     if (!sidebar) return;
     const base = sidebar.getBoundingClientRect(), sidebarStyle = getComputedStyle(sidebar);
@@ -1346,8 +1376,9 @@
     const scroll = document.querySelector('#bots'), viewport = scroll?.getBoundingClientRect() || base;
     const rows = [...sidebar.querySelectorAll('#bots .nav-entry')];
     const visible = rows.filter(node => {const r=node.getBoundingClientRect();return r.height>0 && r.bottom>Math.max(base.top,viewport.top) && r.top<Math.min(base.bottom,viewport.bottom);});
-    const leadingViewport = nativeDuo && viewport.width > 0 && viewport.height > 0 && viewport.top < 28 && !sidebar.classList.contains('ios-searching');
-    if (scroll?.hasAttribute('data-ios-leading-viewport') !== leadingViewport) scroll?.toggleAttribute('data-ios-leading-viewport',leadingViewport);
+    const contour = nativeDuo && viewport.width > 0 && viewport.height > 0 ? displayContour(viewport) : null;
+    if (contour && scroll.style.getPropertyValue('--ios-display-contour') !== contour) scroll.style.setProperty('--ios-display-contour',contour);
+    if (!contour) scroll?.style.removeProperty('--ios-display-contour');
     // The compact-list design shortens four rows below search. When search
     // is hidden, one more row occupies its slot. This is a content rule, not
     // a fabricated system rail/occlusion frame.
@@ -1355,8 +1386,6 @@
     for (const row of rows) {
       setContentInset(row,'--ios-list-left',upper.has(row)?inset.left:0);
       setContentInset(row,'--ios-list-right',upper.has(row)?inset.right:0);
-      const corner = leadingViewport && row === visible[0];
-      if (row.hasAttribute('data-ios-leading-corner') !== corner) row.toggleAttribute('data-ios-leading-corner',corner);
     }
     const search = sidebar.querySelector(':scope>.search');
     setContentInset(search,'--ios-list-left',inset.left);

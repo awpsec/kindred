@@ -129,11 +129,13 @@ does not change or validate production-server upload handling.
 
 ## Alert corner and dock item changes
 
-The first visible card uses a larger leading curve, and the list viewport clips
-to a concentric outer curve when it starts at the display's upper edge. This
-keeps selected/unread fills inside the cutout during scrolling and reordering;
-search and lists positioned farther down retain their ordinary shape. Radius
-changes ease with row movement and stop under Reduce Motion.
+The list viewport now receives one continuous contour in native web-host
+coordinates. UIKit resolves each display corner independently; the sharp folded
+edge stays sharp, and the rounded corners follow rotation. Cards retain their
+ordinary radius instead of combining a guessed 48-point row radius with a
+second 56-point viewport radius. Selection and unread fills share the same
+physical contour while rows scroll and reorder. The full host rectangle stays
+physical when the keyboard shortens the web view.
 
 Native navigation updates now share one SwiftUI animation transaction after
 chat loading, so conditional dock items and their glass container can reflow
@@ -141,8 +143,12 @@ together. The installed adapter forwards the app/system Reduce Motion preference
 to disable that transaction; UIKit's accessibility setting is also checked.
 
 `test-ios-duo-content.cjs` passes both server adapters and left/right rails,
-including hit exclusion in the curved cutout for normal, selected and unread
-states, row reordering and native Reduce Motion forwarding. The identity suite
+including row reordering and native Reduce Motion forwarding. The focused
+`test-ios-display-contour.cjs` uses captured UIKit paths for open, closed and both
+closed landscape orientations; it verifies normal/selected/unread hit exclusion,
+sharp-edge hit inclusion, stable scrolling/reordering and malformed-path fallback.
+`DisplayCornerContourTests` covers independent corners, keyboard bounds and invalid
+geometry. Native Duo inspection confirms the open and rotated cover contours. The identity suite
 passes, the native target builds, and a WebKit alert-card capture was inspected.
 The subsequent unlocked native check recorded both collapse and expansion on
 the actual inner display. Frame review shows the glass container resizing and
@@ -195,3 +201,22 @@ draft, matching native-avatar state, outer/inner resizing, custom-color access,
 dismissal and Reduce Motion. Existing iOS menu/layout and sheet suites pass.
 Actual Duo simulator checks cover the cover/open displays and immediate shape
 updates without reopening a submenu. The sample bot's original shape was restored.
+
+## Cover message motion
+
+Bot replies keep one fixed line length on the closed display, ending six points
+before the measured dock/status edge. Only user messages adjust dynamically.
+Their larger bubbles use the available fixed lane at full bubble width, and
+translate horizontally as one piece around the controls. This preserves bubble
+shape, line breaks, attachment positions and the vertical reading anchor. A
+280 ms ease continues from its current position on reversal; a small release
+buffer prevents boundary chatter. App/system Reduce Motion removes the slide.
+
+`test-ios-message-clearance-motion.cjs` seeks real WebKit transitions through
+intermediate and final positions, reverses mid-slide, and checks constant bubble
+width/height, fixed bot geometry, retained composer/draft, real scroll crossings,
+settled bounds, leading-edge rotation and both Reduce Motion preferences. The
+existing pane/fold/composer motion, native-center, Duo content (both server
+adapters and rail sides) and iOS layout suites also pass. The native target builds
+and its three contour tests pass. The updated sample-chat build remains installed
+in the Duo simulator, preserving all stored accounts.

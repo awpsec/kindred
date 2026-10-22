@@ -431,7 +431,8 @@ final class WebSession: NSObject {
     }
 
     func updateGeometry(width: CGFloat, height: CGFloat, windowWidth: CGFloat,
-                        windowHeight: CGFloat, safeArea: UIEdgeInsets, reservedRegions: [[String: Any]] = []) {
+                        windowHeight: CGFloat, safeArea: UIEdgeInsets, reservedRegions: [[String: Any]] = [],
+                        displayCorners: [String: Double] = [:], displayContour: [[Double]] = []) {
         let values = [width, height, windowWidth, windowHeight]
         guard values.allSatisfy({ $0.isFinite && $0 > 0 }) else { return }
         let insets = [safeArea.top, safeArea.right, safeArea.bottom, safeArea.left]
@@ -440,7 +441,7 @@ final class WebSession: NSObject {
             "windowWidth": Double(windowWidth), "windowHeight": Double(windowHeight),
             "safeArea": ["top": Double(safeArea.top), "right": Double(safeArea.right),
                          "bottom": Double(safeArea.bottom), "left": Double(safeArea.left)],
-            "reservedRegions": reservedRegions]
+            "reservedRegions": reservedRegions, "displayCorners": displayCorners, "displayContour": displayContour]
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
               let next = String(data: data, encoding: .utf8), next != geometry else { return }
         edgeBack?.cancel()

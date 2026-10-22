@@ -379,12 +379,11 @@ html[data-kindred-ios][data-ios-duo=true] .computer-panel { box-sizing:border-bo
 html[data-kindred-ios][data-ios-duo=true] .sidebar>.search { width:auto; margin-left:calc(12px + var(--ios-list-left,0px)); margin-right:calc(12px + var(--ios-list-right,0px)); }
 html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .nav-entry { box-sizing:border-box; width:calc(100% - var(--ios-list-left,0px) - var(--ios-list-right,0px)); margin-left:var(--ios-list-left,0px); transition:width .2s ease,margin-left .2s ease; }
 html[data-kindred-ios][data-ios-native-sidebar-rail=true] .sidebar #bots .nav-entry { width:60px; margin-inline:auto; }
-html[data-kindred-ios][data-ios-duo=true] .sidebar .nav-entry[data-ios-leading-corner],
-html[data-kindred-ios][data-ios-duo=true] .sidebar .nav-entry[data-ios-leading-corner]>.bot-link { border-top-left-radius:48px; }
-/* The viewport keeps alert/selection fills inside the corner while cards scroll
-   or trade places. Its radius includes the list's eight-point inner gutter. */
-html[data-kindred-ios][data-ios-duo=true] .sidebar #bots[data-ios-leading-viewport] { clip-path:inset(0 round 56px 0 0 0); }
-html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .bot-link { transition:background .18s ease,border-top-left-radius .22s ease; }
+/* One native continuous contour follows the actual display's independent
+   corners through folding/rotation. Cards retain their ordinary corner radius;
+   selected/unread fills share the same viewport contour while scrolling. */
+html[data-kindred-ios][data-ios-duo=true] .sidebar #bots { clip-path:var(--ios-display-contour,none); }
+html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .bot-link { transition:background .18s ease; }
 @media(prefers-reduced-motion:reduce) {
  html[data-kindred-ios][data-ios-duo=true] .sidebar #bots :is(.nav-entry,.bot-link) { transition:none; }
 }
@@ -446,10 +445,27 @@ html[data-kindred-ios][data-ios-bot-center] .computer-panel.ios-keyboard-active>
 /* Latest is an independent floating action in the full bottom lane. */
 html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area>.jump-latest { right:10px; max-width:calc(100% - 20px); }
 
-/* A measured native toolbar protects only the messages beside it. Reading
-   below the glass controls uses the full outer-display width. */
+/* Cover messages keep a stable line length. Bot replies sit just before the
+   controls; user bubbles use the larger lane and slide around the dock as a
+   single piece, keeping their shape, attachments and text wrapping intact. */
 html[data-kindred-ios][data-ios-message-flow] .conversation>.conversation-history { margin-inline:0; }
-html[data-kindred-ios][data-ios-message-flow] #content>* { margin-left:var(--ios-message-left,0px); margin-right:var(--ios-message-right,0px); max-width:calc(100% - var(--ios-message-left,0px) - var(--ios-message-right,0px)); }
+html[data-kindred-ios][data-ios-message-flow] #content>* {
+ margin-left:var(--ios-message-lane-left,0px); margin-right:var(--ios-message-lane-right,0px);
+ max-width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-message-lane-right,0px));
+}
+html[data-kindred-ios][data-ios-message-flow] #content>[data-ios-user-message] {
+ width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-message-lane-right,0px));
+ margin-left:auto; margin-right:0;
+}
+html[data-kindred-ios][data-ios-message-flow] #content .message-row>.message-bubble { max-width:100%; }
+html[data-kindred-ios][data-ios-duo=true] #content>[data-ios-user-message] {
+ translate:calc(-1 * var(--ios-user-clearance,0px)) 0;
+ transition:translate .28s cubic-bezier(.2,.8,.2,1);
+}
+html[data-kindred-ios][data-ios-duo=true][data-motion=off] #content>[data-ios-user-message] { transition:none; }
+@media(prefers-reduced-motion:reduce) {
+ html[data-kindred-ios][data-ios-duo=true] #content>[data-ios-user-message] { transition:none; }
+}
 
 /* Fit the computer and its status summary to the retained content width. */
 html[data-kindred-ios][data-ios-bot-center] #app.shell>.computer-panel.has-bot-center { overflow-x:hidden; }

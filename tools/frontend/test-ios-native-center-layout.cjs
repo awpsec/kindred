@@ -35,8 +35,12 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
   if(pose==='outer'){
    await page.evaluate(()=>{__KINDRED_IOS_TOOLBAR={x:399,y:175,width:38,height:142};dispatchEvent(new Event('kindred-ios-toolbar'));const content=document.querySelector('#content');content.scrollTop=content.scrollHeight;});
    await page.waitForFunction(()=>document.documentElement.hasAttribute('data-ios-message-flow'));await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-   const flow=await page.evaluate(()=>[...document.querySelectorAll('#content>.message-group')].map(n=>{const r=n.getBoundingClientRect();return {top:r.top,bottom:r.bottom,right:r.right};}).filter(r=>r.bottom>0&&r.top<innerHeight-100));
-   assert(flow.some(r=>r.top>329&&r.right>400),'messages below native controls reclaim the right gutter');assert(flow.filter(r=>r.top<329&&r.bottom>0).every(r=>r.right<=382),'messages beside the toolbar/status stay clear');
+   await page.waitForFunction(()=>[...document.querySelectorAll('#content>[data-ios-user-message]')].every(n=>n.getAnimations().every(a=>a.playState!=='running')));
+   await page.evaluate(()=>{const content=document.querySelector('#content');content.dispatchEvent(new WheelEvent('wheel',{deltaY:-1}));content.scrollTop+=content.querySelector('[data-message="71"]').getBoundingClientRect().top-390;content.dispatchEvent(new Event('scroll'));});
+   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+   await page.waitForFunction(()=>[...document.querySelectorAll('#content>[data-ios-user-message]')].every(n=>n.getAnimations().every(a=>a.playState!=='running')));
+   const flow=await page.evaluate(()=>[...document.querySelectorAll('#content>.message-group')].map(n=>{const r=n.getBoundingClientRect();return {top:r.top,bottom:r.bottom,right:r.right,user:n.hasAttribute('data-ios-user-message')};}).filter(r=>r.bottom>0&&r.top<innerHeight-100));
+   assert(flow.some(r=>r.user&&r.top>329&&r.right>400),'user messages below native controls reclaim the right gutter');assert(flow.filter(r=>r.top<329&&r.bottom>0).every(r=>r.right<=382),'messages beside the toolbar/status stay clear');
   }
   assert.deepEqual(errors,[]);reports.push({pose,...fit});await page.close();
  }console.log(JSON.stringify({passed:true,reports}));}finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
