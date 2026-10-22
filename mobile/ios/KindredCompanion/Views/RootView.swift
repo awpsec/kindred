@@ -220,9 +220,6 @@ struct RootView: View {
                     } label: { Label("New artifact", systemImage: "plus") }
                 }
             }
-            if session.presentation.route == "chat-list" || session.presentation.listVisible {
-                ToolbarOverflowMenu {}
-            }
         } else {
         ToolbarItem(placement: .principal) {
             if let account = model.activeAccount {
