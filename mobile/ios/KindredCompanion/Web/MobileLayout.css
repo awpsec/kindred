@@ -251,15 +251,17 @@ html[data-kindred-ios][data-ios-duo=true] :is(.ios-artifact-navigation,.artifact
 html[data-kindred-ios][data-ios-duo=true] .conversation-header { height:calc(max(64px,20px * var(--text-scale,1) + 32px) + var(--ios-header-obstruction,0px)); }
 html[data-kindred-ios][data-ios-duo=true] .bot-heading { top:calc(10px + var(--ios-header-obstruction,0px)); }
 html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area { bottom:var(--ios-composer-obstruction,0px); }
-html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden]) #desktop { flex:0 1 calc(var(--ios-tabletop-top) - 64px); max-height:calc(100% - 128px); min-height:0; }
+html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area { max-width:none; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden]) #desktop { flex:0 1 var(--ios-tabletop-top); max-height:calc(100% - 56px); min-height:0; }
 html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden])>.ios-computer-controls { flex:1; min-height:56px; padding-top:var(--ios-tabletop-gap,0px); box-sizing:border-box; overflow:auto; }
 html[data-kindred-ios][data-ios-duo=true] .ios-artifact-navigation { height:0; min-height:0; padding:0; overflow:hidden; }
 html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden])>.ios-computer-controls { display:flex; flex-direction:column; }
 
 /* Native toolbar settings and inner-display pane affordances. */
 html[data-kindred-ios][data-ios-duo=true] #bot-settings { visibility:hidden; pointer-events:none; }
-html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=false] #computer-expand { display:none!important; }
 html[data-kindred-ios][data-ios-slab=false] #computer-expand { display:inline-flex; }
+html[data-kindred-ios][data-ios-duo=true] .computer-panel>.panel-header { display:none; border:0; }
+html[data-kindred-ios][data-ios-duo=true] :is(#screen-picker,#computer-expand) { display:none!important; }
 html[data-kindred-ios][data-ios-duo=true][data-ios-sidebar-hidden=true] .shell>.sidebar { display:none; }
 html[data-kindred-ios] .ios-duo-resizer { display:none; }
 html[data-kindred-ios][data-ios-duo-inner=true][data-ios-duo-pose=flat][data-ios-layout=regular][data-ios-sidebar-hidden=false] .sidebar>.ios-duo-resizer,
@@ -285,3 +287,38 @@ html[data-kindred-ios] .screenshot-dialog>img { flex:1; min-height:0; width:100%
 html[data-kindred-ios] .chat-media-dialog>.chat-media-view { flex:1; min-height:0; max-height:none; }
 html[data-kindred-ios] .chat-media-dialog :is(.chat-media-toolbar,.chat-media-loading) { color:var(--muted); }
 html[data-kindred-ios] .chat-media-dialog .chat-media-control { color:var(--fg); }
+
+/* Current shared fold layouts retain native floating controls and sheets.
+   Older servers lack these attributes and keep the bundled fallback above. */
+html[data-kindred-ios]:is([data-ios-reserved=true],[data-ios-native-reserved=true]) :is(.conversation-header,.computer-panel .panel-header) { padding-left:max(12px,var(--ios-camera-left,0px)); padding-right:max(12px,var(--ios-camera-right,0px)); }
+html[data-kindred-ios]:is([data-ios-reserved=true],[data-ios-native-reserved=true]) .conversation>.composer-area { padding-left:max(10px,var(--ios-camera-left,0px)); padding-right:max(10px,var(--ios-camera-right,0px)); }
+html[data-kindred-ios]:is([data-ios-reserved=true],[data-ios-native-reserved=true]) .bot-heading { left:calc(50% + (var(--ios-camera-left,0px) - var(--ios-camera-right,0px)) / 2); max-width:calc(100% - 24px - var(--ios-camera-left,0px) - var(--ios-camera-right,0px)); }
+html[data-kindred-ios][data-ios-fold=horizontal] .conversation>.conversation-history { grid-row:1 / 3; min-height:0; }
+html[data-kindred-ios][data-ios-fold=horizontal] .conversation>.composer-area { position:relative; inset:auto; grid-row:3; }
+html[data-kindred-ios][data-ios-fold=horizontal] .conversation .messages { padding-bottom:12px; scroll-padding-bottom:12px; }
+/* Native computer controls use the lower half; the shared browser overlay
+   otherwise places the entire panel in the upper half. */
+html[data-kindred-ios][data-ios-duo=true][data-ios-fold=horizontal] #app>.computer-panel:not([hidden]) { inset:0!important; width:100%!important; height:100%!important; }
+html[data-kindred-ios][data-ios-reserved=true] #settings-dialog[open] { inset:auto auto calc(100% - var(--ios-safe-y) - var(--ios-safe-height)) var(--ios-safe-x); width:min(760px,var(--ios-safe-width)); max-width:var(--ios-safe-width); height:min(calc(100% - 76px),var(--ios-safe-height)); max-height:var(--ios-safe-height); margin:0; }
+html[data-kindred-ios][data-ios-reserved=true] :is(.document-dialog,.workspace-artifact-dialog,.screenshot-dialog,.chat-media-dialog)[open] { inset:var(--ios-safe-y) auto auto var(--ios-safe-x); width:var(--ios-safe-width); max-width:var(--ios-safe-width); height:var(--ios-safe-height); max-height:var(--ios-safe-height); }
+
+/* The installed app owns its inner-display list width, including on servers
+   that assign half of a book pose to the sidebar. */
+html[data-kindred-ios][data-ios-native-sidebar=true] .shell>.sidebar { display:flex!important; flex:0 0 var(--ios-native-sidebar-width)!important; width:var(--ios-native-sidebar-width)!important; margin-right:0!important; }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-hidden=true] .shell>.sidebar { display:none!important; }
+html[data-kindred-ios][data-ios-native-sidebar=true] .sidebar>.ios-duo-resizer { display:block; position:absolute; inset:0 -12px 0 auto; width:24px; z-index:35; touch-action:none; user-select:none; -webkit-user-select:none; }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rail=true] .sidebar :is(.bot-info,.pinned-bot>span:last-child,.sidebar-bottom,.bot-chat-section>summary) { display:none; }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rail=true] .sidebar>.search { display:none; }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rail=true] .sidebar #bots { padding:0 8px; }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rail=true] .sidebar .nav-entry { width:60px; margin:0 auto; }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rail=true] .sidebar .bot-link { justify-content:center; width:60px; height:60px; min-height:60px; padding:8px; gap:0; }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rail=true] .sidebar .pinned-bots { flex-direction:column; align-items:center; max-height:40%; overflow:auto; gap:4px; padding:8px; }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rail=true] .sidebar .pinned-bot { justify-content:center; width:60px; height:60px; min-height:60px; padding:8px; gap:0; }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rail=true] .sidebar :is(.bot-link,.pinned-bot)>.character { flex:none; width:44px!important; height:44px!important; }
+html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-rail=true] .sidebar .participant-stack { flex:none; width:44px; height:44px; }
+
+/* A flat inner display gets a compact computer pane even when an older server
+   publishes its desktop width. Real division poses retain SDK placement. */
+html[data-kindred-ios][data-ios-native-computer=true] #app.shell>.computer-panel:not([hidden]):not(.expanded) { flex:0 0 var(--ios-native-computer-width)!important; width:var(--ios-native-computer-width)!important; margin-left:0; }
+html[data-kindred-ios][data-ios-native-computer=true] .computer-panel>.ios-duo-resizer { display:block; position:absolute; inset:0 auto 0 -12px; width:24px; z-index:35; touch-action:none; user-select:none; -webkit-user-select:none; }
+

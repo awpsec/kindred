@@ -20,6 +20,8 @@ final class WebPresentationState {
     var isDuo = false
     var isDuoInner = false
     var botSettingsAvailable = false
+    var computerExpandAvailable = false
+    var computerExpanded = false
     var listToggleAvailable = false
     var route = "chat-list"
     var chatTitle = ""
@@ -68,6 +70,7 @@ final class WebSession: NSObject {
     let webView: WKWebView
     let presentation = WebPresentationState()
     private var conversationTarget: ConversationMenuTarget?
+    private var contextMenuPreview: UITargetedPreview?
     private weak var nativeMenuAlert: UIAlertController?
     private var layoutTop: CGFloat = 0
     private var layoutBottom: CGFloat = 0
@@ -148,11 +151,11 @@ final class WebSession: NSObject {
         if active {
             refreshSystemTextSize()
             restoreComputerKeyboard(force: true)
-        } else { edgeBack?.cancel() }
+        } else { edgeBack?.cancel(); cancelSidebarResize() }
     }
 
     enum DuoAction: String {
-        case back, computer, botSettings, chats, settings, artifacts, marketplace, search, newChat
+        case back, computer, botSettings, chats, settings, artifacts, marketplace, search, newChat, newBot, newConversation, expandComputer
     }
 
     func performDuoAction(_ action: DuoAction) {
@@ -161,18 +164,29 @@ final class WebSession: NSObject {
         edgeBack?.cancel()
         webView.callAsyncJavaScript("""
         if (window.top !== window.self || location.origin !== expectedOrigin) return;
+        window.__kindredNativeSidebar?.cancel();
         window.__kindredDuoActions?.perform(action);
         """, arguments: ["expectedOrigin": origin.serialized, "action": action.rawValue], in: nil, in: .page) { _ in }
     }
 
     func detachVisibleHost() {
         edgeBack?.cancel()
+        cancelSidebarResize()
         invalidateDictationContext(reason: "account-changed", preserveVerifiedChat: true)
     }
 
     func setNativeNavigationBlocked(_ blocked: Bool) {
+        if blocked && !nativeNavigationBlocked { cancelSidebarResize() }
         nativeNavigationBlocked = blocked
         if blocked { edgeBack?.cancel(); invalidateDictationContext(reason: "context-changed", preserveVerifiedChat: true) }
+    }
+
+    private func cancelSidebarResize() {
+        guard origin.matches(webView.url) else { return }
+        webView.callAsyncJavaScript("""
+        if (window.top !== window.self || location.origin !== expectedOrigin) return;
+        window.__kindredNativeSidebar?.cancel();
+        """, arguments: ["expectedOrigin": origin.serialized], in: nil, in: .page) { _ in }
     }
 
     /// Replaces the document-start script so the next load (reload, crash
@@ -419,6 +433,8 @@ final class WebSession: NSObject {
                 presentation.chatTitle = title
                 presentation.listVisible = listVisible
                 presentation.botSettingsAvailable = body["botSettingsAvailable"] as? Bool == true
+                presentation.computerExpandAvailable = body["computerExpandAvailable"] as? Bool == true
+                presentation.computerExpanded = body["computerExpanded"] as? Bool == true
                 presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
                 return
             }
@@ -948,6 +964,7 @@ extension WebSession: UIContextMenuInteractionDelegate {
         guard origin.matches(webView.url), let target = conversationTarget,
               ProcessInfo.processInfo.systemUptime - target.receivedAt < 2,
               target.rect.contains(location) else { return nil }
+        contextMenuPreview = nil
         return UIContextMenuConfiguration(identifier: target.key as NSString, previewProvider: nil) { [weak self] _ in
             let deferred = UIDeferredMenuElement.uncached { completion in
                 guard let self, self.origin.matches(self.webView.url) else { completion([]); return }
@@ -1003,12 +1020,23 @@ extension WebSession: UIContextMenuInteractionDelegate {
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                 previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
         guard let target = conversationTarget,
-              let snapshot = webView.resizableSnapshotView(from: target.rect, afterScreenUpdates: false, withCapInsets: .zero) else { return nil }
+              configuration.identifier as? String == target.key else { return nil }
+        let rect = target.rect.intersection(webView.bounds)
+        guard !rect.isNull, rect.width > 0, rect.height > 0,
+              let snapshot = webView.resizableSnapshotView(from: rect, afterScreenUpdates: false, withCapInsets: .zero) else { return nil }
+        snapshot.frame = CGRect(origin: .zero, size: rect.size)
         let parameters = UIPreviewParameters()
         parameters.backgroundColor = presentation.canvas
-        parameters.visiblePath = UIBezierPath(roundedRect: CGRect(origin: .zero, size: target.rect.size), cornerRadius: 12)
-        return UITargetedPreview(view: snapshot, parameters: parameters,
-            target: UIPreviewTarget(container: webView, center: CGPoint(x: target.rect.midX, y: target.rect.midY)))
+        parameters.visiblePath = UIBezierPath(roundedRect: snapshot.bounds, cornerRadius: 12)
+        let preview = UITargetedPreview(view: snapshot, parameters: parameters,
+            target: UIPreviewTarget(container: webView, center: CGPoint(x: rect.midX, y: rect.midY)))
+        contextMenuPreview = preview
+        return preview
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
+        contextMenuPreview
     }
 
     func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
@@ -1016,6 +1044,8 @@ extension WebSession: UIContextMenuInteractionDelegate {
         // UIKit may end its animation before the selected page action runs.
         // Its next describe() replaces old closures; do not clear a pending action.
         conversationTarget = nil
+        animator?.addCompletion { [weak self] in self?.contextMenuPreview = nil }
+        if animator == nil { contextMenuPreview = nil }
     }
 }
 

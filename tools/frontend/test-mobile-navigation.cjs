@@ -64,7 +64,24 @@ await p.evaluate(()=>{const d=document.createElement('div');d.id='fixture-scroll
 await p.evaluate(()=>document.documentElement.dataset.motion='off');assert(await phase('begin',{x:5,y:300}));assert(await phase('update',{progress:.4}));assert.equal(await p.locator('.conversation').evaluate(n=>n.style.transform),'');assert(await phase('cancel'));await p.waitForTimeout(180);assert(!(await p.locator('#app').getAttribute('class')).includes('sidebar-open'));
 await p.evaluate(()=>document.documentElement.dataset.motion='off');assert.equal((await completionMotion('.conversation','.sidebar',false)).reduced,true);
 await p.evaluate(()=>document.documentElement.dataset.motion='on');
-await p.locator('#show-computer').click();await p.waitForFunction(()=>!!window.activeRFB&&document.querySelector('#desktop-mode').textContent.includes('Watching'));await p.waitForFunction(()=>navigation.at(-1).target==='bot-chat');await p.locator('#computer-panel [data-resources]').getByText('Resource usage unavailable',{exact:true}).waitFor();assert.equal(await p.locator('#computer-panel [data-resources]').getByText(/Cannot read|toFixed/).count(),0);badResources=false;await p.locator('#computer-panel [data-resources]').getByRole('heading',{name:'Resources',exact:true}).waitFor();await p.locator('#take-control').click();await p.waitForFunction(()=>document.querySelector('#desktop-mode').textContent.includes('You have control'));const beforeWrites=writes.length,beforeSessions=sessions.length;await p.evaluate(()=>window.retainedRFB=activeRFB);
+await p.locator('#show-computer').click();await p.waitForFunction(()=>!!window.activeRFB&&document.querySelector('#desktop-mode').textContent.includes('Watching'));await p.waitForFunction(()=>navigation.at(-1).target==='bot-chat');await p.locator('#computer-panel [data-resources]').getByText(/^Resource usage unavailable[.]/).waitFor();assert.equal(await p.locator('#computer-panel [data-resources]').getByText(/Cannot read|toFixed/).count(),0);badResources=false;await p.locator('#computer-panel [data-resources]').getByRole('heading',{name:'Resources',exact:true}).waitFor();await p.locator('#take-control').click();await p.waitForFunction(()=>document.querySelector('#desktop-mode').textContent.includes('You have control'));const beforeWrites=writes.length,beforeSessions=sessions.length;await p.evaluate(()=>window.retainedRFB=activeRFB);
+if(process.env.KINDRED_DUO_COMPUTER){
+ for(const [width,height,regions] of [
+  [1000,800,[{kind:'division',active:false,x:500,y:0,width:0,height:800}]],
+  [1000,800,[{kind:'division',active:true,x:490,y:0,width:20,height:800}]],
+  [1000,800,[{kind:'division',active:true,x:0,y:380,width:1000,height:40}]],
+  [390,844,[]], [844,390,[]], [1000,800,[]]]){
+  await p.setViewportSize({width,height});
+  await p.evaluate(({width,height,regions})=>{window.__KINDRED_NATIVE_GEOMETRY={width,height,windowWidth:width,windowHeight:height,reservedRegions:regions};window.dispatchEvent(new Event('kindred-native-geometry'));},{width,height,regions});
+  await p.waitForFunction(()=>!document.querySelector('#app').dataset.mobileResizing);
+  assert.equal(await p.evaluate(()=>activeRFB===retainedRFB&&activeRFB.disconnects===0),true);
+  assert.equal(sessions.length,beforeSessions);assert.equal(writes.length,beforeWrites);
+  assert.equal(await p.evaluate(()=>activeRFB.keys.length+activeRFB.pointer.length),0);
+  if(regions[0]?.active){const rect=await p.locator('#computer-panel').boundingBox();if(regions[0].width<regions[0].height)assert(rect.x>=510);else assert(rect.y+rect.height<=380);}
+ }
+ assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,computerPoses:6,retainedConnection:true,noRemoteInput:true}));return;
+}
+
 await completionMotion('#computer-panel','.conversation',false);
 assert(await p.locator('#computer-panel').isVisible(),'cancelled computer motion must retain its page');
 await completionMotion('#computer-panel','.conversation',true);await p.locator('#computer-panel').waitFor({state:'hidden'});

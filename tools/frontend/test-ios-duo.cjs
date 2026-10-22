@@ -59,6 +59,9 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
       await page.setViewportSize({width:bounds.width,height:bounds.height});
       await page.evaluate(({bounds,regions,insets}) => {
         const isDuoInner=bounds.windowWidth>=945;
+        // The SDK reports inactive divisions on a flat inner display. Their
+        // nonzero frames identify capability without reserving fold space.
+        if (isDuoInner && !regions.some(region=>region.kind==='division')) regions=[...regions,{kind:'division',active:false,x:bounds.width/2,y:0,width:28,height:bounds.height}];
         window.__KINDRED_IOS_LAYOUT = {topInset:insets.top,bottomInset:insets.bottom,leftInset:insets.left,rightInset:insets.right,isSlab:!isDuoInner,isDuo:true,isDuoInner,isPortrait:bounds.windowHeight>=bounds.windowWidth,viewportHeight:bounds.height};
         window.__KINDRED_NATIVE_GEOMETRY = {...bounds,safeArea:insets,reservedRegions:regions};
         window.dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:window.__KINDRED_IOS_LAYOUT}));
@@ -98,6 +101,10 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     const assertHitTarget=async(locator,min=44)=>{
       const result=await locator.evaluate(node=>{const rect=node.getBoundingClientRect(),hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);return {width:rect.width,height:rect.height,hittable:node.contains(hit)};});
       assert(result.width>=min && result.height>=min && result.hittable,`the visible control must be a reachable hit target: ${JSON.stringify(result)}`);
+    };
+    const assertReservedBounds=async locator=>{
+      const rect=await locator.boundingBox(),safe=await page.evaluate(()=>Object.fromEntries(['x','y','width','height'].map(name=>[name,parseFloat(document.documentElement.style.getPropertyValue('--ios-safe-'+name))])));
+      assert(rect.x>=safe.x-1 && rect.y>=safe.y-1 && rect.x+rect.width<=safe.x+safe.width+1 && rect.y+rect.height<=safe.y+safe.height+1,`native presentation must fit its current usable region: ${JSON.stringify({rect,safe})}`);
     };
     const dragPane=async(kind,delta)=>{
       const handle=page.locator(`.ios-duo-resizer[data-pane="${kind}"]`);
@@ -143,6 +150,25 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     };
     const chooseNative=(menu,title)=>page.evaluate(id=>window.__kindredNativeMenus.perform(id),menu.items.find(item=>item.title===title).id);
     await relay(inner);
+    for(const regions of [
+      [{kind:'division',active:false,x:0,y:300,width:inner.width,height:28}],
+      [{kind:'division',active:true,x:-80,y:0,width:20,height:inner.height}],
+      [{kind:'division',active:false,x:420,y:0,width:27,height:inner.height},{kind:'occlusion',active:false,x:300,y:0,width:200,height:80}],
+    ]) {
+      await relay(inner,{regions});
+      assert.equal(await page.locator('html').getAttribute('data-ios-duo-pose'),'flat','inactive and offscreen regions do not select a native fold pose');
+      assert.equal(await page.locator('html').getAttribute('data-ios-reserved'),'false','only active intersecting regions reserve placement space');
+      assert(await page.locator('.sidebar>.ios-duo-resizer').isVisible(),'a flat inner display retains its pane controls');
+    }
+    await relay(inner);
+    const menuCountBeforeLeaves=(await nativeMenus()).length;
+    await action('newBot');await page.locator('#bot-dialog').waitFor({state:'visible'});
+    assert.equal((await nativeMenus()).length,menuCountBeforeLeaves,'native New bot directly opens its form without an intermediate menu');
+    await page.getByRole('button',{name:'Close new bot',exact:true}).click();
+    await action('newConversation');
+    const directChat=page.locator('dialog[aria-label="New chat"]');await directChat.waitFor({state:'visible'});
+    assert.equal((await nativeMenus()).length,menuCountBeforeLeaves,'native New chat directly opens its form without an intermediate menu');
+    await directChat.getByRole('button',{name:'Close',exact:true}).click();await directChat.waitFor({state:'detached'});
     const coldAdd=await nativeAdd('.sidebar','#new-menu');
     assert.deepEqual(coldAdd.items.map(item=>item.title),['New bot','New chat']);
     await chooseNative(coldAdd,'New bot');
@@ -282,18 +308,26 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
 
     // A real reserved division aligns independent panes to opposite book halves.
     const division={kind:'division',x:420,y:0,width:27,height:inner.height};
+    const tabletop={kind:'division',x:0,y:300,width:inner.width,height:28};
     await relay(inner,{regions:[division]});
     const bookList=await page.locator('.sidebar').boundingBox(),bookChat=await page.locator('.conversation').boundingBox();
-    assert(Math.abs(bookList.width-division.x)<2,'book list must finish at its half of the division');
-    assert(Math.abs(bookChat.x-(division.x+division.width))<2,'book chat must begin after the reserved division');
+    assert(Math.abs(bookList.width-210)<2,'book list stays narrow instead of consuming a fold half');
+    assert(Math.abs(bookChat.x-(bookList.x+bookList.width))<2,'book conversation retains the space after its narrow list');
+    const bookTag=await page.locator('.bot-heading').boundingBox(),bookComposer=await page.locator('#composer').boundingBox();
+    for(const rect of [bookTag,bookComposer]) assert(rect.x>=division.x+division.width || rect.x+rect.width<=division.x,'floating controls must avoid the active book division');
     await assertRetained(baseline); await assertAnchor(anchor);
     await page.screenshot({path:path.join(out,'book-list-chat.png')});
     await relay(inner,{regions:[division],insets:{top:0,right:21,bottom:0,left:12}});
     const paddedList=await page.locator('.sidebar').boundingBox(),paddedChat=await page.locator('.conversation').boundingBox();
     assert.equal(paddedList.x,12,'book layout must retain the left hardware inset');
-    assert(Math.abs(paddedList.x+paddedList.width-division.x)<2,'book division coordinates must be converted from web view to padded content');
-    assert(Math.abs(paddedChat.x-(division.x+division.width))<2,'asymmetric padding must not displace the hinge gap');
+    assert(Math.abs(paddedList.width-210)<2,'asymmetric padding must retain the narrow list');
+    assert(Math.abs(paddedChat.x-(paddedList.x+paddedList.width))<2,'asymmetric padding must not introduce a second fold gap');
     assert(paddedChat.x+paddedChat.width<=inner.width-21+1,'book chat must retain the separate right inset');
+    await relay(inner,{regions:[tabletop]});
+    const tabletopHistory=await page.locator('.conversation-history').boundingBox(),tabletopComposer=await page.locator('#composer-area').boundingBox();
+    assert(tabletopHistory.y+tabletopHistory.height<=tabletop.y+1,'native floating header must not displace tabletop history across the division');
+    assert(tabletopComposer.y>=tabletop.y+tabletop.height,'native composer stays in the lower tabletop half');
+    assert.equal(await page.locator('.messages').evaluate(node=>parseFloat(getComputedStyle(node).paddingBottom)),12,'tabletop history does not reserve a second composer gap');
     await relay(inner);
 
     const tag=await page.locator('.bot-heading').boundingBox(),composer=await page.locator('#composer-area').boundingBox();
@@ -301,8 +335,9 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     const bottomCamera={kind:'occlusion',x:composer.x+composer.width/2-24,y:inner.height-32,width:48,height:32};
     await relay(inner,{regions:[camera,bottomCamera]});
     const clearTag=await page.locator('.bot-heading').boundingBox(),clearComposer=await page.locator('#composer-area').boundingBox();
-    assert(clearTag.y>=camera.y+camera.height+7,'the bot tag must clear an active camera occlusion');
-    assert(clearComposer.y+clearComposer.height<=bottomCamera.y-7,'the composer must clear a lower active occlusion');
+    const intersects=(a,b)=>a.x<b.x+b.width && a.x+a.width>b.x && a.y<b.y+b.height && a.y+a.height>b.y;
+    assert(!intersects(clearTag,camera),'the bot tag must clear an active camera occlusion');
+    assert(!intersects(await page.locator('#composer').boundingBox(),bottomCamera),'the composer controls must clear a lower active occlusion');
     await page.locator('#content').evaluate(area=>{
       window.duoReadingPosition=area.scrollTop;
       area.scrollTop=area.scrollHeight;area.dispatchEvent(new Event('scroll'));
@@ -377,11 +412,44 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert(previewStyle.svg && previewStyle.radius==='50%' && previewStyle.blur.includes('blur'),'preview Close must use the same glass circle and SVG controls as mobile chat');
     assert(previewStyle.top>=57,'preview controls must clear the native status area');
     assert(await documentDialog.getByRole('button',{name:'Download',exact:true}).isHidden(),'mobile preview omits the desktop download control');
+    for(const regions of [[division],[tabletop]]) {
+      await relay(inner,{regions});
+      await assertReservedBounds(documentDialog);
+      await assertHitTarget(previewClose);
+    }
     await previewClose.click();await documentDialog.waitFor({state:'detached'});
     assert.equal(await page.evaluate(()=>duoPreviewDownloads),0);
     await page.evaluate(()=>document.querySelector('#duo-document-preview').remove());
+    for(const regions of [[division],[tabletop]]) {
+      await relay(inner,{regions});
+      await action('settings');await page.locator('#settings-dialog').waitFor({state:'visible'});
+      await page.locator('#settings-dialog').evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished)));
+      await assertReservedBounds(page.locator('#settings-dialog'));
+      await page.getByRole('button',{name:'Close settings sheet',exact:true}).click();
+      await page.locator('#settings-dialog').waitFor({state:'hidden'});
+    }
     await relay(inner);
     assert.equal(await prompt.evaluate(node=>node.value),draft);
+
+    // The mobile composer fills its conversation, including a wide inner
+    // viewport with the list hidden; it never extends under a visible list.
+    const wide={width:1280,height:720,windowWidth:1358,windowHeight:760};
+    const assertComposerFill=async()=>{
+      const conversation=await page.locator('.conversation').boundingBox(),form=await page.locator('#composer').boundingBox();
+      assert(conversation.width>992,'the regression must exceed the desktop composer cap');
+      assert(Math.abs(form.x-conversation.x-10)<1 && Math.abs(form.x+form.width-(conversation.x+conversation.width-10))<1,'native composer fills only its conversation with 10px side margins');
+    };
+    await relay(wide);await assertComposerFill();
+    const visibleList=await page.locator('.sidebar').boundingBox();
+    assert((await page.locator('#composer').boundingBox()).x>=visibleList.x+visibleList.width+9,'composer does not extend under the sidebar');
+    await action('chats');await settled();await assertComposerFill();
+    const wideDivision={kind:'division',active:true,x:600,y:0,width:30,height:720},wideCamera={kind:'occlusion',active:true,x:1200,y:650,width:80,height:70};
+    await relay(wide,{regions:[wideDivision,wideCamera]});
+    const safeWideForm=await page.locator('#composer').boundingBox();
+    assert(safeWideForm.x>=630 && safeWideForm.x+safeWideForm.width<=1200,'wide fill preserves active hinge and camera avoidance');
+    await relay(wide);await action('chats');await settled();
+    await relay(inner);
+    assert.equal(await prompt.evaluate(node=>node.value),draft,'wide composer changes preserve the draft');
 
     // Native toolbar actions open the same live computer path as the app.
     await action('computer');
@@ -413,8 +481,8 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-240)<2);
     await dragPane('computer',-20);
     assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-300)<2);
-    const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('kindred-ios-duo-panes-v1')));
-    assert.equal(saved.sidebar,240);assert.equal(saved.computer,300);
+    const saved=await page.evaluate(()=>({native:JSON.parse(localStorage.getItem('kindred-ios-sidebar-v1:'+window.__KINDRED_MOBILE_PROFILE)),shared:JSON.parse(localStorage.getItem('kindred-ios-duo-panes-v1'))}));
+    assert.equal(saved.native.width,240);assert.equal(saved.shared.computer,300);
     await action('chats');await settled();
     assert(await page.locator('.sidebar').isHidden());
     assert.equal((await ui()).iosLayout,'regular','manual list hiding must preserve a fitting inner architecture');
@@ -422,9 +490,11 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     await action('chats');await settled();
     assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-240)<2,'restoring the list retains its chosen width');
     await dragPane('sidebar',-200);
-    assert(await page.locator('.sidebar').isHidden(),'dragging the list fully closed must commit the hide');
-    await action('chats');await settled();
-    await dragPane('sidebar',50);await dragPane('computer',20);
+    assert.equal(Math.round((await page.locator('.sidebar').boundingBox()).width),76,'dragging inward collapses to a visible avatar rail');
+    assert(await page.locator('.sidebar .bot-info').first().isHidden(),'the avatar rail omits conversation text');
+    await page.locator('.sidebar .bot-link[aria-label="Vivienne"]').click();await settled();
+    assert.equal(await prompt.evaluate(node=>node.value),draft,'selecting the rail conversation retains its draft');
+    await dragPane('sidebar',134);await dragPane('computer',20);
     assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-210)<2);
     assert(Math.abs((await page.locator('#computer-panel').boundingBox()).width-280)<2);
     assert.equal((await ui()).loadID,paneLoad);assert.equal(await prompt.evaluate(node=>node.value),draft);
@@ -442,13 +512,18 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
     assert(await page.locator('.ios-duo-resizer[data-pane="computer"]').isHidden(),'outer capability suppresses inner pane handles');
     await relay(inner);
     assert(Math.abs((await page.locator('.sidebar').boundingBox()).width-210)<2,'a cancelled fold-time drag must restore the previous width');
-    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kindred-ios-duo-panes-v1')).sidebar),210,'a cancelled pane drag must not save its preview');
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kindred-ios-sidebar-v1:'+window.__KINDRED_MOBILE_PROFILE)).width),210,'a cancelled pane drag must not save its preview');
     assert.deepEqual(await localInputEffects(),localEffectsBaseline,'fold cancellation must not synthesize remote input');
     await relay(inner,{regions:[division]});
     assert.equal((await ui()).iosComputer,'side','book mode places chat and computer on opposite halves');
     assert.equal((await ui()).iosLayout,'compact','book mode must not squeeze a third pane into one half');
     const bookComputer=await page.locator('#computer-panel').boundingBox();
     assert(Math.abs(bookComputer.x-(division.x+division.width))<2,'computer must begin after the division');
+    await relay(inner,{regions:[division],insets:{top:0,right:21,bottom:0,left:12}});
+    const asymmetricComputer=await page.locator('#computer-panel').boundingBox();
+    assert(Math.abs(asymmetricComputer.x-(division.x+division.width))<2,'safe-area padding translates the book origin without scaling its division');
+    assert(Math.abs(asymmetricComputer.x+asymmetricComputer.width-(inner.width-21))<2,'computer retains the independent right inset');
+    await relay(inner,{regions:[division]});
     assert.equal(await page.evaluate(()=>document.activeElement.id),'ios-computer-input','Duo landscape remote input must remain focused');
     await relay({...inner,height:315},{regions:[{...division,height:315}]});
     assert.equal((await ui()).iosComputer,'side','remote keyboard must retain book layout');
@@ -456,7 +531,6 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
       const rect=await page.locator(selector).boundingBox();
       assert(rect && rect.y>=0 && rect.y+rect.height<=315,`${selector} must remain above the keyboard`);
     }
-    const tabletop={kind:'division',x:0,y:300,width:inner.width,height:28};
     await relay(inner,{regions:[tabletop]});
     assert.equal(await page.locator('html').getAttribute('data-ios-duo-pose'),'tabletop','an active horizontal division selects tabletop placement');
     const tabletopScreen=await page.locator('#desktop').boundingBox();

@@ -11,6 +11,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};
   const run={id:'summary-run',bot_id:'piper',chat_id:chat.id,status:'completed',created:now-240,prompt:'Review the report and its supporting evidence.',output:'The report is ready. I checked the supporting evidence and marked two items for review.',error:'',progress_started:now-240};
   const messages=[{seq:1,sender:'user',kind:'message',text:run.prompt,created:now-245},...[2,3,4,5].map((seq,i)=>({seq,sender:'piper',kind:'assistant',run_id:run.id,created:now-230+i*50,text:['I am comparing the report with the source material.','The first set of findings matches the supporting evidence.','I found two items that need a closer check before delivery.','The final checks are complete. I am preparing the summary.'][i]+' Here are the notes from this part of the review.',progress:{mode:'summaries',phase:'commentary',run_id:run.id,group_id:'phase-review'}})),{seq:6,sender:'piper',kind:'result',run_id:run.id,created:now,text:run.output}];
+  messages.splice(1,0,{...messages[1],seq:7,kind:'task_progress',text:'',created:now-240,progress:{...messages[1].progress,presentation:{mode:'staged',promoted:true,stages:['Review evidence','Verify report'],current_stage:1},activity:{completed:2,recent:[{label:'Read source file',created:now-120},{label:'Verify report',created:now-60}]}}});
   await p.route(origin+'/api/**',r=>{const n=new URL(r.request().url()).pathname,send=json=>r.fulfill({json});if(n==='/api/runs')return send([run]);if(n==='/api/runs/'+run.id)return send({run,events:[],attachments:[],approvals:[]});if(n==='/api/chats/'+chat.id)return send({chat,messages,page:{has_before:false,has_after:false}});if(n==='/api/activity')return send({});return r.continue();});
   await p.goto(origin);const disclosure=p.locator('.summary-progress-disclosure');await disclosure.waitFor();
   for(const width of [1100,390])for(const theme of ['light','dark']){
@@ -23,9 +24,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
     const sample=()=>{const b=body.getBoundingClientRect(),d=details.getBoundingClientRect(),n=next.getBoundingClientRect();let leaked=0;
      for(const y of [b.bottom+2,b.bottom+12,b.bottom+28])if(y>0&&y<innerHeight)for(const x of [b.left+20,b.left+b.width*.5])if(document.elementsFromPoint(x,y).some(el=>el!==body&&body.contains(el)))leaked++;
      return {height:b.height,details:d.height,bottom:b.bottom,next:n.top,leaked};};
-    const frames=[sample()];summary.click();const tween=body.getAnimations()[0];if(!tween)throw new Error('No collapse animation');tween.pause();
-    for(const time of [20,60,100,150,199]){tween.currentTime=time;frames.push(sample());}
-    tween.finish();await new Promise(requestAnimationFrame);frames.push(sample());return frames;
+    const frames=[sample()];summary.click();const tween=body.getAnimations()[0];if(!tween)throw new Error('No collapse animation');
+    const key=details.closest('[data-progress-group]').dataset.progressGroup,rows=[...document.querySelectorAll('[data-task-commentary]')].filter(n=>n.dataset.taskCommentary===key),motions=[tween,...rows.flatMap(n=>n.getAnimations())];
+    // The tracker and stable transcript siblings animate together. Freeze the
+    // whole transition instead of mixing a seeked header with wall-clock rows.
+    for(const motion of motions)motion.pause();
+    for(const time of [20,60,100,150,199,219]){for(const motion of motions)motion.currentTime=Math.min(time,Number(motion.effect.getTiming().duration)-.01);frames.push(sample());}
+    for(const motion of motions)motion.finish();await new Promise(requestAnimationFrame);frames.push(sample());return frames;
    });
    fs.writeFileSync(path.join(out,`${engine}-${width}-${theme}-frames.json`),JSON.stringify(frames,null,2));
    assert(frames.slice(1,-1).some(f=>f.height>0&&f.height<frames[0].height),'Must animate intermediate height');

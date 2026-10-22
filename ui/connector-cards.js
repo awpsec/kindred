@@ -46,7 +46,7 @@ export function connectorCardSignature(root){return cardSignatures.get(root)??ro
 export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botName,sanitizeHtml,inline=false}){
  inline=inline&&!card.email_send&&!['pending','changes_requested'].includes(card.status);
  // Presentation follows the email content; sending authority stays on email_send.
- const emailNotice=card.email_send||(!inline&&card.kind==='email');
+ const emailNotice=card.email_send||(!inline&&card.kind==='email'&&(card.email?.body||card.email?.subject));
  const request=!inline&&!emailNotice,leaf=String(card.tool||'').split('__').at(-1),actionTitle=actionTitles[leaf]||leaf||'Connector action';
  const root=el('section','connector-artifact connector-kind-'+card.kind);if(inline)root.classList.add('connector-inline');if(request){root.classList.add('connector-request');root.classList.toggle('connector-request-write',card.read_only!==true&&card.display_read_only!==true);root.classList.toggle('connector-request-pending',card.status==='pending');root.setAttribute('role','group');}root.dataset.connectorArtifact=card.id;if(card.approval_id)root.dataset.approval=card.approval_id;root.setAttribute('aria-label',request?`Approval request: ${actionTitle}`:`${card.connection||card.connector}: ${card.title}`);cardSignatures.set(root,JSON.stringify([card,botName,inline]));
  const previewMissing=card.email_send&&!(card.email?.to?.text&&card.email?.body);

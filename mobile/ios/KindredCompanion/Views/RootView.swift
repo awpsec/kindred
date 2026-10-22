@@ -147,7 +147,7 @@ struct RootView: View {
     }
 
     private var usesDuoNavigation: Bool {
-        isShowingConversation && activeSession?.presentation.isDuo == true
+        isShowingConversation && activeSession?.presentation.isDuoInner == true
     }
 
     @ToolbarContentBuilder
@@ -165,6 +165,14 @@ struct RootView: View {
                     Button {
                         session.performDuoAction(.botSettings)
                     } label: { Label("Bot settings", systemImage: "gearshape") }
+                }
+                if session.presentation.route == "computer" && session.presentation.computerExpandAvailable {
+                    Button {
+                        session.performDuoAction(.expandComputer)
+                    } label: {
+                        Label(session.presentation.computerExpanded ? "Collapse computer" : "Expand computer",
+                              systemImage: session.presentation.computerExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    }
                 }
                 if session.presentation.listToggleAvailable {
                     Button {
@@ -187,8 +195,9 @@ struct RootView: View {
                     Button {
                         session.performDuoAction(.search)
                     } label: { Label("Search chats", systemImage: "magnifyingglass") }
-                    Button {
-                        session.performDuoAction(.newChat)
+                    Menu {
+                        Button("New bot", systemImage: "plus") { session.performDuoAction(.newBot) }
+                        Button("New chat", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.newConversation) }
                     } label: { Label("New conversation", systemImage: "plus") }
                 }
                 if session.presentation.route == "artifacts" {
@@ -217,15 +226,22 @@ struct RootView: View {
                 Text("Kindred").font(.headline)
             }
         }
-        ToolbarItem(placement: .topBarTrailing) {
-            Button {
-                model.sheet = .accounts
-            } label: {
-                AccountAvatar(account: model.activeAccount, size: 30)
-            }
-            .accessibilityLabel("Accounts")
+        if #available(iOS 27.1, *) {
+            ToolbarItem(placement: .topBarTrailing) { accountsButton }
+                .axisBehavior(.verticalPreferred)
+        } else {
+            ToolbarItem(placement: .topBarTrailing) { accountsButton }
         }
         }
+    }
+
+    private var accountsButton: some View {
+        Button {
+            model.sheet = .accounts
+        } label: {
+            AccountAvatar(account: model.activeAccount, size: 30)
+        }
+        .accessibilityLabel("Accounts")
     }
 }
 

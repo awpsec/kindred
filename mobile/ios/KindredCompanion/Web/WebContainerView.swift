@@ -78,10 +78,13 @@ final class WebHostView: UIView {
         var regions: [[String: Any]] = []
         if #available(iOS 27.1, *), let webView = session?.webView {
             for (kind, name) in [(UIView.ReservedRegion.Kind.division, "division"), (.occlusion, "occlusion")] {
-                for region in webView.reservedRegions(kind: kind) {
-                    let rect = region.frame.intersection(webView.bounds)
-                    guard !rect.isNull else { continue }
-                    regions.append(["kind": name, "x": rect.minX, "y": rect.minY,
+                for region in webView.reservedRegions(kind: kind, options: kind == .division ? .includeInactive : []) {
+                    // Inactive folds can be zero-sized markers. Keep their
+                    // presence for display classification without reserving space.
+                    let rect = kind == .division || !region.isActive ? region.frame : region.frame.intersection(webView.bounds)
+                    guard !rect.isNull, [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite),
+                          rect.width >= 0, rect.height >= 0 else { continue }
+                    regions.append(["kind": name, "active": region.isActive, "x": rect.minX, "y": rect.minY,
                                     "width": rect.width, "height": rect.height])
                 }
             }

@@ -15,7 +15,7 @@ import {createProfileUI} from "./profiles.js";
 import {createWorkspaceImportUI} from "./workspace-import.js";
 import {createServerChatsUI} from "./server-chats.js";
 import {createCommandsUI} from "./commands.js";
-import {composerText,createComposerLists} from "./composer-text.js";
+import {composerText,createComposerLists,createComposerLinks} from "./composer-text.js";
 import {availableRelease, newerVersion} from "./updates.js";
 import {createMarkupCache} from "./markup-cache.js";
 import { RFB, marked, DOMPurify } from "./vendor.js";
@@ -219,7 +219,7 @@ async function perform(action, control) {
   try {
     return await action();
   } catch (e) {
-    if(e==='pagehide')return;
+    if(e==='pagehide'||e==='foreground-refresh')return;
     if(e?.controlFeedbackShown)return;
     notice(e.message || "Something went wrong.", true);
   } finally {
@@ -270,8 +270,10 @@ async function api(path, method = "GET", body, options = {}) {
     throw new Error("The server did not return a valid response.");
   }
   if (!res.ok) {const error=new Error(res.status===401&&profilesUI.signedOut()?"Your session has ended.":data.error || `Request failed (${res.status})`);error.status=res.status;error.screenState=data.screen_state;throw error;}
+  if(options.signal?.aborted)throw options.signal.reason;
   return data;
   } catch(e) {
+    if(options.signal?.reason==='foreground-refresh')throw 'foreground-refresh';
     if(timeout.signal.reason==='pagehide'){if(method==='GET')throw 'pagehide';const error=new Error('The page closed before the server confirmed the change. Check whether it completed before trying again.');error.uncertain=true;throw error;}
     if(timeout.signal.aborted && timeout.signal.reason!=='pagehide')throw new Error(method==='GET'?'The server took too long to respond. Try again.':'The response timed out. Check whether the change completed before retrying.');
     throw e;
@@ -557,23 +559,25 @@ async function refresh(force = false) {
     return;
   }
   state.refreshing = true;
+  const controller=new AbortController(),signal=controller.signal,token=state.token;state.refreshController=controller;
   let renderingId=null;
   const statusEpoch=state.statusEpoch||0,botEpoch=state.botWriteEpoch||0;
   try {
     const [fetchedBots, status, runs, approvals, routines, activities, privateChats, userTasks, attention, serverChats, questions] =
       await Promise.all([
-        api("/bots"),
-        api("/status"),
-        api("/runs"),
-        api("/approvals"),
-        api("/routines"),
-        api("/activity"),
-        api("/chats"),
-        api("/user-tasks"),
-        api("/attention"),
-        serverChatsUI.list(),
-        api("/questions").catch(error=>{if(error.status===404)return [];throw error;}),
+        api("/bots", "GET", undefined, {signal}),
+        api("/status", "GET", undefined, {signal}),
+        api("/runs", "GET", undefined, {signal}),
+        api("/approvals", "GET", undefined, {signal}),
+        api("/routines", "GET", undefined, {signal}),
+        api("/activity", "GET", undefined, {signal}),
+        api("/chats", "GET", undefined, {signal}),
+        api("/user-tasks", "GET", undefined, {signal}),
+        api("/attention", "GET", undefined, {signal}),
+        serverChatsUI.list({signal}),
+        api("/questions", "GET", undefined, {signal}).catch(error=>{if(error.status===404)return [];throw error;}),
       ]);
+    if(signal.aborted||token!==state.token)return;
     const chats=[...privateChats,...serverChats];
     for(const chat of serverChats){attention.chats??={};attention.chats[chat.id]={unread:chat.unread,cursor:chat.cursor,read_cursor:chat.unread?chat.read_cursor:chat.cursor,latest_message_seq:chat.cursor};}
     const bots=botEpoch===(state.botWriteEpoch||0)?fetchedBots:state.bots;
@@ -650,16 +654,18 @@ async function refresh(force = false) {
     renderSidebar();
     renderHeader();
     syncArtifactRoute();
-    renderingId=currentConversationId();await renderChat(force);
+    renderingId=currentConversationId();await renderChat(force,'sync',signal);
     if (!$("details-panel").hidden && state.view === "details") renderDetails();
     updateDesktopState();
     if(!$("computer-panel").hidden){renderScreenPicker();renderComputerRoutines();}
     updateReactions();
     scheduleReadReceipt();
   } catch(error) {
+    if(signal.aborted||error==='foreground-refresh')return;
     failConversationOpening(renderingId||currentConversationId(),error);
     throw error;
   } finally {
+    if(state.refreshController===controller)state.refreshController=null;
     state.refreshing = false;
     if (state.pendingRefresh) {
       state.pendingRefresh = false;
@@ -1368,10 +1374,10 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden)void check
 void checkUpdates(true);
 window.addEventListener('kindred-server-update',()=>browserUpdater.open());
 
-async function renderChat(force, mode='sync') {
+async function renderChat(force, mode='sync', signal) {
   const currentChat =
     state.chat || state.chats.find((c) => c.id === `dm-${state.bot?.id}`);
-  if (currentChat) return renderSharedChat(currentChat, force, mode);
+  if (currentChat) return renderSharedChat(currentChat, force, mode, signal);
   clearConversationOpening();
   const bot = state.bot,
     area = $("content");
@@ -1397,7 +1403,7 @@ async function renderChat(force, mode='sync') {
           !state.details.has(r.id) ||
           state.details.get(r.id).run.status !== r.status,
       )
-      .map(async (r) => state.details.set(r.id, await api("/runs/" + r.id))),
+      .map(async (r) => state.details.set(r.id, await api("/runs/" + r.id,"GET",undefined,{signal}))),
   );
   if (state.bot?.id !== bot.id) return;
   const key = JSON.stringify([
@@ -1703,6 +1709,9 @@ async function refreshPreview() {
     if(state.previewPending){state.previewPending=false;void refreshPreview();}
   }
 }
+// One pending editor per bot: reopening must not create a competing autosave
+// pipeline from stale server data while an enable/disable request is in flight.
+const botSettingsDrafts = new Map();
 function renderBotSettings() {
   const b = state.bot;
   if (!b) return;
@@ -1710,7 +1719,17 @@ function renderBotSettings() {
   $("details-back").hidden = false;
   $("bot-settings").hidden = true;
   const root = $("details-content");
+  for (const [id, entry] of botSettingsDrafts) {
+    if (!entry.saver.dirty || entry.token !== state.token) botSettingsDrafts.delete(id);
+  }
+  const pending = botSettingsDrafts.get(b.id);
+  if (pending) {
+    pending.initiative.refreshTimezone();
+    root.replaceChildren(...pending.nodes);
+    return;
+  }
   root.replaceChildren();
+  const editorToken = state.token;
   const draft = structuredClone(b),
     avatar = button(
       "",
@@ -1750,7 +1769,7 @@ function renderBotSettings() {
     pinned = switchField("Pin in sidebar", profile(b).pinned),
     notifications = switchField("Notifications", profile(b).notifications !== false),
     progress = botProgressControl(b);
-  const local = botLocalAccess(b);
+  const local = botLocalAccess(b), initiative = botInitiativeControl(b);
   notifications.input.addEventListener("change", () => {if(notifications.input.checked) void enableNotifications();});
   form.append(
     avatar,
@@ -1767,6 +1786,7 @@ function renderBotSettings() {
     button("Memory", () => editBotText(b.id, "memory"), "bot-text-button", "chevron"),
     button("Workspace origin", () => workspaceUI.origin(b), "bot-text-button", "chevron"),
     automatic.label,
+    initiative.root,
     pinned.label,
   );
   const saver = livePreferences(form, () => ({
@@ -1775,8 +1795,13 @@ function renderBotSettings() {
     preserve_text: true,
     auto_approve: false, approval_mode: automatic.input.value,
     profile: {...profile(draft), label: label.input.value, description: description.input.value,
+      initiative: initiative.input.checked, initiative_instructions: initiative.instructions(profile(draft).initiative_instructions||''),
       progress_updates:progress.input.value, pinned: pinned.input.checked, notifications: notifications.input.checked, animated: true, local_access: local.input.checked, local_device_id: local.device.value},
-  }), value => api("/bots/" + b.id, "PUT", value), value => {
+  }), value => {
+    if (state.token !== editorToken) throw new Error('Workspace changed. Reopen this bot’s settings to make changes.');
+    return api("/bots/" + b.id, "PUT", value);
+  }, value => {
+    if (state.token !== editorToken) return;
     Object.assign(draft, value);connectors.setProvider(value.provider,true);
     state.bots = state.bots.map(bot => bot.id === b.id ? value : bot);
     if (state.bot?.id === b.id) state.bot = value;
@@ -1787,6 +1812,24 @@ function renderBotSettings() {
     connectors,
     button("Archive bot", () => archiveBot(b.id), "danger-text"),
   );
+  botSettingsDrafts.set(b.id, {saver, initiative, token: editorToken, nodes: [...root.childNodes]});
+}
+function botInitiativeControl(bot) {
+  const root=node('section','bot-initiative-settings'),toggle=switchField('Take initiative',profile(bot).initiative===true);
+  const help=node('p','muted small','Do useful background research, prepare drafts, and bring you updates. Your existing permissions still apply. Turning this off leaves routines, monitoring, and teammate updates unchanged.');
+  help.id='bot-initiative-help';toggle.input.setAttribute('aria-describedby',help.id);
+  const details=node('div'),guidance=field('What should this bot keep an eye on?',profile(bot).initiative_instructions||'','textarea',{rows:3,maxLength:2000,placeholder:'For example, follow up on project plans and delivery updates. Bring useful results to our DM.'});
+  const budget=node('p','muted small');
+  const refreshTimezone=()=>{const zone=String(state.general.timezone||'').trim();budget.textContent='Up to 2 background checks a day, up to 15 minutes each. '+(zone?'Checks run between 08:00 and 20:00 ('+zone+'), using your Settings timezone.':'Set your timezone in Settings → General before background checks can start. Checks run between 08:00 and 20:00 in that timezone.');};
+  refreshTimezone();
+  budget.id='bot-initiative-budget';toggle.input.setAttribute('aria-describedby',help.id+' '+budget.id);
+  const validate=()=>guidance.input.setCustomValidity(toggle.input.checked&&new TextEncoder().encode(guidance.input.value).length>2000?'Shorten this guidance to 2,000 bytes or less.':'');
+  const paint=()=>{details.hidden=!toggle.input.checked;guidance.input.disabled=!toggle.input.checked;validate();};
+  toggle.input.addEventListener('change',paint);guidance.input.addEventListener('input',validate);paint();
+  details.append(guidance.label,budget);root.append(toggle.label,help,details);
+  // Disabling must work even when an unsaved guidance edit exceeds the byte limit.
+  const instructions=saved=>!toggle.input.checked&&new TextEncoder().encode(guidance.input.value).length>2000?saved:guidance.input.value;
+  return {root,input:toggle.input,instructions,refreshTimezone};
 }
 async function editBotText(id, key) {
   const latest = (await api('/bots')).find(b => b.id === id);
@@ -2665,7 +2708,7 @@ async function settingsConnections(revision) {
         const refresh=button('Refresh '+source+' connectors',refreshConnectors);
         const heading=node('div','connection-section-heading');heading.append(node('strong','',source+' account connectors'),refresh);
         inherited.append(heading,status,items);
-        if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Each connector call requires review.'));
+        if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Verified connections follow your bot’s access settings; provider restrictions and email-send reviews still apply.'));
         else{const manage=node('a','outline-button','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';inherited.append(manage);}
         row.body.append(inherited);
         if(codex)row.body.append(await decisionsConnection());
@@ -3968,11 +4011,13 @@ $("take-control").onclick = () => perform(()=>state.teaching && state.desktopCon
 $("teach-task").onclick = () => perform(()=>state.teaching ? reviewTeaching() : startTeaching());
 $("computer-settings-link").onclick = () =>
   perform(() => openSettings("bot-computer"));
+// Geometry recovery must not revive an earlier clipboard read or paste chunk.
+let computerPasteRevision=0;
 function computerInputReady(){return window.__KINDRED_MOBILE_PLATFORM!=='ios'||$('app').dataset.mobileResizing!=='true';}
-async function pasteIntoComputer(value) {
+async function pasteIntoComputer(value, pasteRevision=computerPasteRevision) {
   if (!state.rfb || !state.status.takeover || !state.desktopControlRequested)
     throw new Error("Take control of the computer first.");
-  if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
+  if(pasteRevision!==computerPasteRevision||!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
   if (!value) throw new Error("Your clipboard has no text to paste.");
   if (value.length > 16000) throw new Error("Paste up to 16,000 characters at a time.");
   // Use the current control session: the HTTP input path must evict its VNC lease.
@@ -3981,7 +4026,7 @@ async function pasteIntoComputer(value) {
   for (const character of value.replace(/\r\n?/g, "\n")) {
     if (state.rfb !== rfb || !state.desktopConnected || !state.status.takeover || !state.desktopControlRequested)
       throw new Error("Computer control ended before the paste finished.");
-    if(!computerInputReady())throw new Error(sent?"The computer view changed before the paste finished. Check the text before trying again.":"The computer view is adjusting. Try Paste again when it settles.");
+    if(pasteRevision!==computerPasteRevision||!computerInputReady())throw new Error(sent?"The computer view changed before the paste finished. Check the text before trying again.":"The computer view is adjusting. Try Paste again when it settles.");
     const point = character.codePointAt(0);
     const key = character === "\n" ? 0xff0d : character === "\t" ? 0xff09 : point <= 0xff ? point : 0x01000000 | point;
     rfb.sendKey(key);
@@ -3991,7 +4036,7 @@ async function pasteIntoComputer(value) {
 $("desktop-paste").onclick = async () => {await perform(async () => {
   if(!state.rfb||!state.desktopConnected||!state.status.takeover||!state.desktopControlRequested)throw new Error("Take control of the computer first.");
   if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
-  const expectedRFB=state.rfb;
+  const expectedRFB=state.rfb,pasteRevision=computerPasteRevision;
   let value;
   try {
     value = window.__KINDRED_NATIVE_CLIPBOARD_TEXT
@@ -4002,7 +4047,7 @@ $("desktop-paste").onclick = async () => {await perform(async () => {
     // failures through WebKit's second Paste prompt or the manual browser form.
     if(window.__KINDRED_NATIVE_CLIPBOARD_TEXT)throw error;
     if(state.rfb!==expectedRFB)throw new Error("The computer connection changed. Check the current computer before trying Paste again.");
-    if(!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
+    if(pasteRevision!==computerPasteRevision||!computerInputReady())throw new Error("The computer view is adjusting. Try Paste again when it settles.");
     // Some browsers deny clipboard reads. Keep a direct paste target outside chat.
     $("paste-text").value = "";
     $("text-dialog").showModal();
@@ -4010,7 +4055,7 @@ $("desktop-paste").onclick = async () => {await perform(async () => {
     return;
   }
   if(state.rfb!==expectedRFB)throw new Error("The computer connection changed. Check the current computer before trying Paste again.");
-  await pasteIntoComputer(value);
+  await pasteIntoComputer(value,pasteRevision);
 }, $("desktop-paste"));updateDesktopState();};
 $("text-form").onsubmit = (e) => {
   e.preventDefault();
@@ -4274,6 +4319,18 @@ matchMedia("(prefers-color-scheme:dark)").addEventListener(
   "change",
   applyGeneral,
 );
+let lastForegroundRefresh=-Infinity;
+function refreshOnForeground(){
+  if(!state.token||document.hidden||pageSuspended||performance.now()-lastForegroundRefresh<400)return;
+  lastForegroundRefresh=performance.now();
+  // Discard a suspended polling snapshot, never an approval/send or other write.
+  state.refreshController?.abort('foreground-refresh');
+  void perform(()=>refresh(true));
+}
+window.addEventListener('focus',refreshOnForeground);
+window.addEventListener('kindred-desktop-resume',refreshOnForeground);
+window.addEventListener('online',refreshOnForeground);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshOnForeground();});
 setInterval(() => {
   if (state.token && !document.hidden) perform(() => refresh());
 }, 2500);
@@ -4858,15 +4915,21 @@ function reminderWhen(reminder){
   return {label:dateLabel+', '+time,zone:zone===Intl.DateTimeFormat().resolvedOptions().timeZone?'':zoneLabel,full:date.toLocaleString([],{timeZone:zone,dateStyle:'full',timeStyle:'short'})+' · '+zone};
 }
 function progressGroups(messages){
-  const groups=new Map();for(const m of messages)if(['assistant','task_progress'].includes(m.kind)&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
-  // A work marker is an anchor, not proof of a long job. Require useful
-  // narration or sustained multi-action work, including for historical anchors.
-  for(const [key,items] of groups){
-    const updates=items.filter(m=>m.kind!=='task_progress'&&m.text?.trim()),activity=items.map(m=>m.progress.activity).filter(Boolean);
-    const sustained=activity.some(a=>a.actions>=3&&a.seconds>=120);
-    if(activity.length?updates.length<3&&!sustained:updates.length===0)groups.delete(key);
-  }
+  const groups=new Map();
+  for(const m of messages)if(['assistant','task_progress'].includes(m.kind)&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
+  // A persisted marker owns the activity disclosure. Neither elapsed time nor
+  // narration/tool counts establish a staged task. Historical prose stays put.
+  for(const [key,items] of groups)if(!items.some(m=>m.kind==='task_progress'))groups.delete(key);
   return groups;
+}
+function taskPresentation(items,entry){
+  entry.taskPresentations??=new Map();const key=items[0].progress.group_id;
+  const candidate=items.map(m=>m.progress.presentation).filter(p=>p?.mode==='staged'&&p.promoted===true&&Array.isArray(p.stages)&&p.stages.length>=2&&p.stages.length<=8&&p.stages.every(s=>typeof s==='string'&&s.trim())&&Number.isInteger(p.current_stage)&&p.current_stage>=0&&p.current_stage<p.stages.length).at(-1);
+  const saved=entry.taskPresentations.get(key);
+  // An incomplete reconnect snapshot must not demote a verified tracker. Stage
+  // progress is monotonic only for the same persisted plan; never infer steps.
+  if(candidate){const same=saved&&JSON.stringify(saved.stages)===JSON.stringify(candidate.stages);entry.taskPresentations.set(key,{...candidate,current_stage:same?Math.max(saved.current_stage,candidate.current_stage):candidate.current_stage});}
+  return entry.taskPresentations.get(key)||{mode:'compact'};
 }
 // Only persisted, same-conversation question links join a rendered task.
 function taskQuestions(items,entry){
@@ -4908,97 +4971,86 @@ function taskQuestionReceipt(m,entry,key,taskStarted){
     heading.addEventListener('click',()=>{
       const opening=!receipt.open||receipt.classList.contains('is-collapsing');
       opening?entry.questionDetails.add(q.id):entry.questionDetails.delete(q.id);
-      // Opening a read-only receipt is explicit expansion of its parent task.
-      entry.progressOpen.add(key);heading.setAttribute('aria-expanded',String(opening));
+      // Receipt expansion is independent of the activity tracker.
+      heading.setAttribute('aria-expanded',String(opening));
     },{capture:true});
   }
   return receipt;
 }
-function taskConnectorCalls(items,entry){
-  return (entry.messages||[]).filter(m=>{const c=m.connector_artifact;return c?.status==='completed'&&c.chat_id===entry.id&&items.some(i=>i.seq===c.progress_message_seq&&i.run_id===c.run_id&&i.sender===c.bot_id);});
+function appendProgressTimestamp(content,m,entry,run){
+  if(!Number.isFinite(m.created)||m.created<=0)return;
+  entry.progressTimePins??=new Set();
+  const date=new Date(m.created*1000),stamp=node('span','progress-update-time'),clock=node('time','progress-update-clock','('+date.toLocaleTimeString([],{timeZone:botTimezone(),hour:'numeric',minute:'2-digit'})+')');
+  clock.dateTime=date.toISOString();const fullDate=date.toLocaleString([],{timeZone:botTimezone(),dateStyle:'full',timeStyle:'short'});clock.setAttribute('aria-label',fullDate);clock.title=fullDate;
+  const started=[run?.progress_started,run?.created].find(value=>Number.isFinite(value)&&value>0);
+  if(started&&started<=m.created){const key=String(m.seq),elapsed=elapsedTime(m.created-started),toggle=button(elapsed,()=>{},'progress-update-time-toggle');toggle.setAttribute('aria-label',elapsed+' after task start. '+fullDate+'. Toggle timestamp.');
+    const paint=()=>{const pinned=entry.progressTimePins.has(key);stamp.dataset.pinned=String(pinned);toggle.setAttribute('aria-pressed',String(pinned));};
+    toggle.onclick=()=>{if(!toggle.isConnected||currentConversationId()!==entry.id)return;entry.progressTimePins.has(key)?entry.progressTimePins.delete(key):entry.progressTimePins.add(key);paint();};paint();stamp.append(toggle);
+  }else stamp.dataset.pinned='true';
+  stamp.append(clock);const last=content.lastElementChild;(last?.tagName==='P'?last:content).append(document.createTextNode(' '),stamp);
 }
-function taskConnectorDisclosure(calls,entry,key){
-  entry.taskConnectorDetails??=new Set();const anchor=String(calls[0].connector_artifact.progress_message_seq),id='task-call-details-'+anchor,wrap=node('span','task-connector-disclosure'),brands=[...new Map(calls.map(m=>{const c=m.connector_artifact,b=connectorBrand(c.connection||c.connector,c.tool);return [b.key,b];})).values()];
-  const toggle=button('',()=>{},'task-connector-toggle'),body=node('span','task-connector-detail');body.id=id;
-  const label=brands.map(b=>b.name).join(' and ')+': '+calls.length+' completed call'+(calls.length===1?'':'s');toggle.setAttribute('aria-label',label);toggle.title=label;toggle.setAttribute('aria-controls',id);
-  for(const brand of brands){const logo=connectorLogo(brand);logo.setAttribute('aria-hidden','true');wrap.dataset.theme=document.documentElement.dataset.theme;toggle.append(logo);}
-  body.textContent=brands.map(brand=>{const owned=calls.filter(m=>{const c=m.connector_artifact;return connectorBrand(c.connection||c.connector,c.tool).key===brand.key;}),actions=[...new Set(owned.map(m=>String(m.connector_artifact.tool||'').split('__').at(-1).replaceAll('_',' ')))];return brand.name+' · '+actions.join(', ')+' · '+owned.length+' completed call'+(owned.length===1?'':'s');}).join('\n');
-  const paint=()=>{const open=entry.taskConnectorDetails.has(anchor);toggle.setAttribute('aria-expanded',String(open));body.hidden=!open;};
-  toggle.onclick=()=>{entry.taskConnectorDetails.has(anchor)?entry.taskConnectorDetails.delete(anchor):entry.taskConnectorDetails.add(anchor);entry.progressOpen.add(key);paint();};paint();wrap.append(toggle,body);return wrap;
+function setTaskCommentaryExpanded(key,expanded,animate=true){
+  const rows=[...$('content').querySelectorAll('[data-task-commentary]')].filter(n=>n.dataset.taskCommentary===key);
+  for(const row of rows){
+    const height=row.hidden?0:row.getBoundingClientRect().height;
+    row.finishTaskCommentary?.();
+    row.hidden=false;
+    const target=row.getBoundingClientRect().height,margin=getComputedStyle(row).marginBlock;
+    if(!expanded&&row.contains(document.activeElement))$('content').querySelector('[data-progress-group="'+CSS.escape(key)+'"]>details>summary')?.focus({preventScroll:true});
+    if(!animate||!motionAllowed()){row.hidden=!expanded;continue;}
+    row.style.overflow='hidden';
+    const motion=row.animate([{height:height+'px',opacity:height?1:0,marginBlock:height?margin:'0px'},{height:(expanded?target:0)+'px',opacity:expanded?1:0,marginBlock:expanded?margin:'0px'}],{duration:220,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});
+    const finish=()=>{motion.cancel();row.hidden=!expanded;row.style.removeProperty('overflow');delete row.finishTaskCommentary;};
+    const control=trackMotion(motion,220,finish);row.finishTaskCommentary=()=>control.finish();
+  }
 }
 function summaryProgress(items,entry,runs){
-  const first=items[0],updates=items.filter(m=>m.kind!=='task_progress'),key=first.progress.group_id,questions=taskQuestions(items,entry),calls=taskConnectorCalls(items,entry),parentRunId=questions[0]?.question.run_id||first.run_id,rootRun=runs.find(r=>r.id===parentRunId)||state.allRuns.find(r=>r.id===parentRunId)||state.details.get(parentRunId)?.run;
+  const first=items.find(m=>m.kind==='task_progress'),key=first.progress.group_id,presentation=taskPresentation(items,entry),staged=presentation.mode==='staged',questions=taskQuestions(items,entry);
+  const rootRun=runs.find(r=>r.id===first.run_id)||state.allRuns.find(r=>r.id===first.run_id)||state.details.get(first.run_id)?.run;
+  const memberRuns=[...new Set([...items.map(m=>m.run_id),...questions.map(m=>m.question.continuation_run_id).filter(Boolean)])];
+  const currentRunId=memberRuns.at(-1)||first.run_id,run=[...runs,...state.allRuns].find(r=>r.id===currentRunId)||state.details.get(currentRunId)?.run;
   const activity=items.map(m=>m.progress.activity).filter(Boolean).at(-1);
-  const memberRuns=new Set([...items.map(m=>m.run_id),...questions.map(m=>m.question.continuation_run_id).filter(Boolean)]),run=[...runs,...state.allRuns].find(r=>r.id===[...memberRuns].at(-1))||rootRun;
-  const group=node('article','summary-progress');group.dataset.message=String(first.seq);group.dataset.scrollMessages=[...items,...questions,...calls].map(m=>m.seq).join(' ');group.dataset.progressGroup=key;
-  entry.progressOpen??=new Set();entry.progressClosed??=new Set();entry.progressFinished??=new Map();
-  const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key);
-  const phaseFinal=entry.messages.findLast(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer'&&(!run||m.run_id===run.id));
-  const finished=!questions.some(m=>m.question.status==='pending')&&(!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued'));
-  // Reading choices made while running expire on completion. Keep later,
-  // finished-task expansions across polling and conversation remounts.
-  if(finished&&entry.progressFinished.get(key)!==true){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
-  entry.progressFinished.set(key,finished);
-  const manual=entry.progressOpen.has(key);
+  const phaseFinal=entry.messages.findLast(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer'&&m.run_id===currentRunId);
+  const waiting=questions.some(m=>m.question.status==='pending');
+  entry.progressOpen??=new Set();entry.progressClosed??=new Set();entry.taskTerminalRuns??=new Map();
+  // Terminal state is sticky for this phase. A delayed reconnect snapshot must
+  // not resurrect it; an explicit continuation has its own live run evidence.
+  const terminalKey=JSON.stringify([key,currentRunId]),terminal=entry.taskTerminalRuns.get(terminalKey),endedEvent=state.details.get(run?.id)?.events?.findLast(e=>e.kind==='run_finished');
+  const finished=!!terminal||(!waiting&&(!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued')));
+  // Parent-only history pages must not erase a child's terminal receipt. Keep
+  // recent phase/run pairs within the existing conversation-window bound.
+  if(finished){
+    entry.taskTerminalRuns.delete(terminalKey);
+    entry.taskTerminalRuns.set(terminalKey,terminal||{id:currentRunId,status:['completed','failed','cancelled','interrupted'].includes(run?.status)?run.status:phaseFinal?'completed':run?.status,ended:phaseFinal?.created||endedEvent?.created||activity?.last_at||items.at(-1).created});
+    while(entry.taskTerminalRuns.size>CHAT_WINDOW_SIZE)entry.taskTerminalRuns.delete(entry.taskTerminalRuns.keys().next().value);
+  }
+  if(finished&&!terminal){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
+  if(finished&&!staged)return null;
+  const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
+  const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
   const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open;
-  group.dataset.progressFinished=String(finished);
-  const details=node('details','summary-progress-disclosure');details.open=completing||manual||(!finished&&!entry.progressClosed.has(key));
-  const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender),name=bot?.name||'Bot';
-  if(bot){const avatar=buddy(bot,20);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
-  const taskStarted=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
-  entry.progressTimePins??=new Set();
-  const endedEvent=state.details.get(run?.id)?.events?.findLast(e=>e.kind==='run_finished');
-  const taskEnded=phaseFinal?.created||(finished?(entry.messages.find(m=>m.kind==='result'&&m.run_id===run?.id)?.created||endedEvent?.created||activity?.last_at||items.at(-1).created):Math.floor(Date.now()/1000));
-  const elapsed=taskStarted&&taskStarted<=taskEnded?taskEnded-taskStarted:null;
-  const taskName=((first.progress?.work_qualified==null?rootRun?.task_title||first.progress?.task_title:first.progress?.task_title||rootRun?.task_title)||'Task progress').trim()||'Task progress',taskLabel=node('span','summary-progress-task'),taskText=node('span','summary-progress-name',taskName);taskLabel.title=taskName;taskLabel.append(taskText);
-  if(!finished&&run?.status==='running'){taskText.classList.add('is-working');taskText.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}
-  const taskChevron=node('span','summary-progress-chevron','⌄');taskChevron.setAttribute('aria-hidden','true');title.prepend(taskChevron);
-  title.append(node('strong','',name),taskLabel);
-  if(elapsed!==null){
-    const timer=node('span','muted small summary-progress-time',elapsedTime(elapsed));
-    // Tick locally with the existing one-second clock, independent of chat redraws.
-    if(!finished)timer.dataset.groupStarted=String(taskStarted);
-    title.append(timer);
-  }
-  const status=finished?({completed:'Task finished',failed:'Task failed',cancelled:'Task stopped',interrupted:'Task interrupted'}[run?.status]||(phaseFinal?'Phase complete':'Task ended')):questions.some(m=>m.question.status==='pending')?'Waiting for your answer':'In progress';
-  const counts=updates.length?`Show progress · ${updates.length} update${updates.length===1?'':'s'}`:'';
-  const answers=questions.filter(m=>m.question.status==='answered').length;
-  title.append(node('span','muted small summary-progress-count',[counts,answers?answers+' answer'+(answers===1?'':'s'):'',finished||!counts||questions.some(m=>m.question.status==='pending')?status:''].filter(Boolean).join(' · ')));
+  const details=node('details','summary-progress-disclosure');details.open=completing||manual||(staged&&!finished&&!entry.progressClosed.has(key));
+  const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender);
+  const chevron=node('span','summary-progress-chevron','⌄');chevron.setAttribute('aria-hidden','true');title.append(chevron);
+  if(bot){const avatar=buddy(bot,18);avatar.setAttribute('aria-hidden','true');title.append(avatar);}
+  const status=finished?({completed:'Finished',failed:'Failed',cancelled:'Stopped',interrupted:'Interrupted'}[(terminal?.status||run?.status)]||'Finished'):!run?'Recorded activity':(waiting||run?.status==='awaiting_user')?'Waiting for your answer':run?.status==='cancelling'?'Stopping':run?.status==='awaiting_approval'?'Waiting for your approval':run?.status==='queued'?'Queued':null;
+  const phase={preparing:'Preparing the next action',thinking:'Thinking through the next step',writing:'Writing a response',waiting:'Waiting for the model'}[activity?.phase];
+  const current=activity?.current?.label||activity?.current_label;
+  const taskName=(first.progress.task_title||rootRun?.task_title||'Task progress').trim();
+  const label=staged?taskName:(status||current||phase||'Working');
+  const task=node('span','summary-progress-task'),text=node('span','summary-progress-name',label);if(staged&&!finished&&run?.status==='running'){text.classList.add('is-working');text.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}task.title=label;task.append(text);title.append(task);
+  const started=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
+  const ended=terminal?.ended||phaseFinal?.created||(finished?(endedEvent?.created||activity?.last_at||items.at(-1).created):run?Math.floor(Date.now()/1000):(activity?.last_at||items.at(-1).created));
+  if(started&&ended>=started){const timer=node('span','muted small summary-progress-time',elapsedTime(ended-started));if(!finished&&run)timer.dataset.groupStarted=String(started);title.append(timer);}
+  if(staged)title.append(node('span','muted small summary-progress-count',status||presentation.stages[presentation.current_stage]));
   const body=node('div','summary-progress-body');
-  // Factual receipts remain visible when a model supplies no milestones. These
-  // are labelled system activity, never invented assistant updates or reasoning.
-  if(activity&&(!updates.length||(!finished&&Date.now()/1000-updates.at(-1).created>=120))){
-    const receipt=node('div','summary-progress-activity');receipt.setAttribute('aria-label','Recorded activity');
-    receipt.append(node('div','muted small','Recorded activity · '+activity.completed+' completed action'+(activity.completed===1?'':'s')+(activity.failed?' · '+activity.failed+' failed':'')));
-    for(const item of activity.recent||[]){const row=node('div','summary-progress-update',item.label+(item.count>1?' × '+item.count:'')+(item.failed?' · Failed':''));if(taskStarted&&item.created>=taskStarted)row.append(node('span','progress-update-time',' '+elapsedTime(item.created-taskStarted)));receipt.append(row);}
-    if(!finished){const phase={preparing:'Preparing the next action…',thinking:'Thinking through the next step…',writing:'Writing a response…',waiting:'Waiting for the model…'}[activity.phase];if(phase)receipt.append(node('div','muted small',phase));}
-    body.append(receipt);
-  }
-  // Calls may belong to the task marker before any written update exists.
-  const taskCalls=calls.filter(m=>!updates.some(update=>update.seq===m.connector_artifact.progress_message_seq));
-  if(taskCalls.length)body.append(taskConnectorDisclosure(taskCalls,entry,key));
-  for(const m of [...updates,...questions].sort((a,b)=>(a.question?.created??a.created)-(b.question?.created??b.created)||a.seq-b.seq)){if(m.question){body.append(taskQuestionReceipt(m,entry,key,taskStarted));continue;}const update=node('div','summary-progress-update');update.dataset.message=String(m.seq);const content=markdown(m.text),ownedCalls=calls.filter(call=>call.connector_artifact.progress_message_seq===m.seq);
-    if(Number.isFinite(m.created)&&m.created>0){
-      const date=new Date(m.created*1000),stamp=node('span','progress-update-time'),clock=node('time','progress-update-clock','('+date.toLocaleTimeString([],{timeZone:botTimezone(),hour:'numeric',minute:'2-digit'})+')');
-      clock.dateTime=date.toISOString();
-      const fullDate=date.toLocaleString([],{timeZone:botTimezone(),dateStyle:'full',timeStyle:'short'});clock.setAttribute('aria-label',fullDate);clock.title=fullDate;
-      const knownStart=Number.isFinite(taskStarted)&&taskStarted>0&&taskStarted<=m.created;
-      if(knownStart){
-        const messageKey=String(m.seq),elapsed=elapsedTime(m.created-taskStarted),toggle=button(elapsed,()=>{},'progress-update-time-toggle');
-        toggle.setAttribute('aria-label',elapsed+' after task start. '+fullDate+'. Toggle timestamp.');
-        const paint=()=>{const pinned=entry.progressTimePins.has(messageKey);stamp.dataset.pinned=String(pinned);toggle.setAttribute('aria-pressed',String(pinned));};
-        toggle.onclick=()=>{if(!toggle.isConnected||currentConversationId()!==entry.id)return;entry.progressTimePins.has(messageKey)?entry.progressTimePins.delete(messageKey):entry.progressTimePins.add(messageKey);paint();};paint();stamp.append(toggle);
-      }else stamp.dataset.pinned='true'; // Historical run unavailable: never invent elapsed time.
-      if(ownedCalls.length)stamp.append(document.createTextNode(' '),taskConnectorDisclosure(ownedCalls,entry,key));
-      stamp.append(clock);const last=content.lastElementChild;
-      (last?.tagName==='P'?last:content).append(document.createTextNode(' '),stamp);
-    }
-    else if(ownedCalls.length){const last=content.lastElementChild;(last?.tagName==='P'?last:content).append(document.createTextNode(' '),taskConnectorDisclosure(ownedCalls,entry,key));}
-    update.append(content);body.append(update);}
-  details.append(title,body);group.append(details);animateChatDisclosure(details,body);
-  title.addEventListener('click',()=>{if(details.open){entry.progressOpen.delete(key);entry.progressClosed.add(key);}else{entry.progressOpen.add(key);entry.progressClosed.delete(key);}},{capture:true});
-  // Use the same clipped disclosure motion as a user collapse, without recording a user choice.
-  if(completing)requestAnimationFrame(()=>{if(group.isConnected&&!entry.progressOpen.has(key)&&details.open){if(body.contains(document.activeElement))title.focus({preventScroll:true});title.onclick({preventDefault(){}});}});
+  if(staged){const stages=node('ol','task-stages');stages.setAttribute('aria-label','Task stages');presentation.stages.forEach((label,index)=>{const stage=node('li','task-stage',label);if(index<presentation.current_stage)stage.dataset.state='done';else if(index===presentation.current_stage){stage.dataset.state=finished?'ended':'current';stage.setAttribute('aria-current','step');if(finished)stage.setAttribute('aria-label',label+' · '+status);}else stage.dataset.state='pending';stages.append(stage);});body.append(stages);}
+  const receipt=node('div','summary-progress-activity');receipt.setAttribute('aria-label','Recorded activity');
+  if(activity){receipt.append(node('div','muted small','Recorded activity · '+(Number(activity.completed)||0)+' completed call'+(activity.completed===1?'':'s')+(activity.failed?' · '+activity.failed+' failed':'')));for(const item of activity.recent||[]){const row=node('div','summary-progress-update',item.label+(item.count>1?' × '+item.count:'')+(item.failed?' · Failed':''));if(started&&item.created>=started)row.append(node('span','progress-update-time',' '+elapsedTime(item.created-started)));receipt.append(row);}}
+  else receipt.append(node('div','muted small','No recorded actions yet.'));
+  body.append(receipt);details.append(title,body);group.append(details);animateChatDisclosure(details,body);
+  title.addEventListener('click',()=>{const opening=!details.open||details.classList.contains('is-collapsing');if(opening){entry.progressOpen.add(key);entry.progressClosed.delete(key);}else{entry.progressOpen.delete(key);entry.progressClosed.add(key);}if(staged)setTaskCommentaryExpanded(key,opening);},{capture:true});
+  if(completing)requestAnimationFrame(()=>{if(group.isConnected&&!entry.progressOpen.has(key)&&details.open){if(body.contains(document.activeElement))title.focus({preventScroll:true});if(staged)setTaskCommentaryExpanded(key,false);title.onclick({preventDefault(){}});}});
   return group;
 }
 function reminderBatch(messages,entry){
@@ -5431,15 +5483,15 @@ function failConversationOpening(id,error){
   },'subtle-button'));
   $('content').setAttribute('aria-busy','false');
 }
-function messagePage(entry,query={}){
-  return api('/chats/'+entry.id+'?'+new URLSearchParams({limit:CHAT_PAGE_SIZE,...query}));
+function messagePage(entry,query={},signal){
+  return api('/chats/'+entry.id+'?'+new URLSearchParams({limit:CHAT_PAGE_SIZE,...query}),'GET',undefined,{signal});
 }
 function acceptHistoryPage(entry,data){
   entry.pendingWaits=data.pending_waits||[];entry.commands=data.commands||[];entry.sharedWorkers=data.workers||[];
   entry.messages=data.messages.slice(-CHAT_WINDOW_SIZE);entry.loaded=true;
   entry.hasBefore=!!data.page?.has_before;entry.hasAfter=!!data.page?.has_after;entry.error=null;entry.wantLatest=false;
 }
-async function syncChatHistory(entry){
+async function syncChatHistory(entry,signal){
   if(entry.pending){await entry.pending;return;}
   const query={limit:Math.max(CHAT_PAGE_SIZE,entry.messages.length)};
   if(entry.loaded && entry.messages.length && !(chatScroll.follow && (!entry.hasAfter || entry.wantLatest))){
@@ -5450,7 +5502,7 @@ async function syncChatHistory(entry){
   const boundary=unreadBoundaries.get(entry.id),opening=boundary&&!boundary.fetched;
   if(opening){delete query.before;query.after=boundary.first||boundary.after;query.inclusive=!!boundary.first;query.limit=CHAT_PAGE_SIZE;}
   entry.pending=(async()=>{
-    const data=await messagePage(entry,query);
+    const data=await messagePage(entry,query,signal);
     if(opening)boundary.fetched=true;
     entry.pendingWaits=data.pending_waits||[];entry.commands=data.commands||[];
     // A reading gesture during a tail refresh takes precedence over removing its anchor.
@@ -5467,7 +5519,7 @@ async function syncChatHistory(entry){
     // Opening on the latest unread item can return only one message. Include
     // the preceding page before exposing the conversation and its scroll area.
     if((opening||!entry.ready||chatOpening?.id===entry.id)&&entry.hasBefore&&entry.messages.length<CHAT_PAGE_SIZE&&entry.messages.length){
-      const older=await messagePage(entry,{before:entry.messages[0].seq,limit:CHAT_PAGE_SIZE-entry.messages.length});
+      const older=await messagePage(entry,{before:entry.messages[0].seq,limit:CHAT_PAGE_SIZE-entry.messages.length},signal);
       entry.messages=[...older.messages,...entry.messages].filter((m,i,all)=>all.findIndex(other=>other.seq===m.seq)===i);
       entry.hasBefore=!!older.page?.has_before;
     }
@@ -5738,7 +5790,7 @@ function connectorStack(messages,entry){
   const latest=node('div','connector-stack-current');latest.append(connectorMessage(last,entry.id));
   group.append(details,latest);return group;
 }
-async function renderSharedChat(chat, force, mode='sync') {
+async function renderSharedChat(chat, force, mode='sync', signal) {
   const entry=conversationHistory(chat.id);
   // Use the refreshed unread cursor on initial load and each explicit visit,
   // without moving a reader when background activity arrives.
@@ -5746,8 +5798,8 @@ async function renderSharedChat(chat, force, mode='sync') {
   if(chatOpening?.id===chat.id&&chatOpening.failed)return;
   if((state.renderedChatId!==chat.id||chatOpening)&&!cachedConversationReady(entry))showConversationOpening(chat.id);
   if(mode==='cached'&&!cachedConversationReady(entry))return;
-  try{await renderPreparedSharedChat(chat,force,mode);}
-  catch(error){failConversationOpening(chat.id,error);throw error;}
+  try{await renderPreparedSharedChat(chat,force,mode,signal);}
+  catch(error){if(error!=='foreground-refresh')failConversationOpening(chat.id,error);throw error;}
 }
 // Keep queued direct-message turns together without rewriting send timestamps or
 // storage cursors. Explicit steering remains interleaved with its active turn.
@@ -5778,9 +5830,9 @@ function orderedDirectMessages(messages,runs){
   }
   return ordered;
 }
-async function renderPreparedSharedChat(chat, force, mode='sync') {
+async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   const id=chat.id,entry=conversationHistory(id),liveArea=$('content'),area=node('div');
-  if(mode==='sync')await syncChatHistory(entry);
+  if(mode==='sync')await syncChatHistory(entry,signal);
   if(currentConversationId()!==id || !entry.loaded)return;
   renderRequestTray(chat,entry);
   const data={messages:entry.messages.filter(m=>!withdrawnQueueMessage(m,id))},visibleRuns=new Set(data.messages.filter(m=>['assistant','result','task_progress'].includes(m.kind)).map(m=>m.run_id).filter(Boolean));
@@ -5794,7 +5846,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
     // Old visible results may no longer be in the recent-runs feed.
     for(let i=0;i<pending.length;i+=8){
       if(currentConversationId()!==id)return;
-      await Promise.all(pending.slice(i,i+8).map(async runId=>state.details.set(runId,await api('/runs/'+runId))));
+      await Promise.all(pending.slice(i,i+8).map(async runId=>state.details.set(runId,await api('/runs/'+runId,'GET',undefined,{signal}))));
     }
   }
   if (currentConversationId() !== id) return;
@@ -5802,7 +5854,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   if(mode==='sync' && durableReplies && !entry.hasAfter) {
     const persisted=new Set(data.messages.map(m=>m.source_event_seq)),latest=data.messages.at(-1)?.created||0;
     if(listedRuns.some(r=>(state.details.get(r.id)?.events||[]).some(e=>e.kind==='assistant' && e.created>=latest && !persisted.has(e.seq)))) {
-      await syncChatHistory(entry);data.messages=entry.messages.filter(m=>!withdrawnQueueMessage(m,id));
+      await syncChatHistory(entry,signal);data.messages=entry.messages.filter(m=>!withdrawnQueueMessage(m,id));
       if(currentConversationId()!==id)return;
     }
   }
@@ -5859,10 +5911,11 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
   let sequenceAvatar = null, previousSender = null,
     previousTime = 0;
   const boundary=unreadBoundaries.get(id);let unreadInserted=false;
-  const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq))),taskConnectorSeqs=new Set([...summaries.values()].flatMap(items=>taskConnectorCalls(items,entry).map(m=>m.seq)));
+  const batches=connectorBatches(data.messages,boundary,runs),artifactBatches=artifactUpdateBatches(data.messages),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
+  const taskTrackers=new Map([...summaries].map(([key,items])=>[key,summaryProgress(items,entry,runs)]));
   for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
   for (const m of data.messages) {
-    if(stacked.has(m.seq)||taskQuestionSeqs.has(m.seq)||taskConnectorSeqs.has(m.seq)||m.kind==='continuation')continue;
+    if(stacked.has(m.seq)||m.kind==='continuation')continue;
     if (!m.text?.trim()&&m.kind!=='task_progress') continue;
     if(m.kind==='task_progress'&&!summaries.has(m.progress?.group_id))continue;
     if(hiddenCompletionMessage(m) && !runs.find(r=>r.id===m.run_id)?.error)continue;
@@ -5872,7 +5925,8 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       if(boundary.seenAt&&Date.now()-boundary.seenAt>8000)divider.classList.add('has-faded');
       area.append(divider);unreadObserver.observe(divider);
     }
-    if(m.progress?.phase==='commentary'&&m.progress.group_id&&summaries.has(m.progress.group_id)){const items=summaries.get(m.progress.group_id);for(const item of items)stacked.add(item.seq);area.append(summaryProgress(items,entry,runs));previousSender=null;continue;}
+    if(m.kind==='task_progress'){const items=summaries.get(m.progress.group_id);if(items&&items.find(i=>i.kind==='task_progress').seq===m.seq){const tracker=taskTrackers.get(m.progress.group_id);if(tracker)area.append(tracker);}previousSender=null;continue;}
+    if(taskQuestionSeqs.has(m.seq)){const owner=runs.find(r=>r.id===m.question.run_id)||state.allRuns.find(r=>r.id===m.question.run_id)||state.details.get(m.question.run_id)?.run;area.append(taskQuestionReceipt(m,entry,m.question.task_group_id,owner?.progress_started||owner?.created||0));previousSender=null;continue;}
     if(m.kind==='connection_card'&&validConnectionCard(m.text)){
       const group=node('article','message-group connection-message');group.dataset.message=String(m.seq);group.append(chatConnectionCard(m.text));area.append(group);previousSender=null;continue;
     }
@@ -6004,6 +6058,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync') {
       row.append(bubble);
     } else row.append(markdown(m.text));
     const bubble=row.lastElementChild;
+    if(!isUser&&m.kind==='assistant'&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false){group.classList.add('progress-commentary');if(summaries.has(m.progress.group_id)){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker?.classList.contains('task-staged'))group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
     if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));
@@ -6247,7 +6302,61 @@ function connectorAdvance(group,next){
     const control=trackMotion(group.animate([{opacity:1},{opacity:1}],{duration}),duration,finish);group.finishConnectorAdvance=()=>control.finish();
   };
 }
+// Keep the outgoing row's space while its receipt moves to the owning task.
+// Only live transitions animate; history loads and reduced motion settle directly.
+function connectorTaskTransfers(target,desired){
+  const transfers=[];
+  for(const row of target.querySelectorAll('.connector-message')){
+    const card=row.querySelector('[data-connector-artifact]'),id=card?.dataset.connectorArtifact;
+    if(!id)continue;
+    const destination=[...desired.querySelectorAll('[data-connector-ids]')].find(n=>n.dataset.connectorIds.split(' ').includes(id));
+    const incoming=[...desired.querySelectorAll('.connector-message')].find(n=>n.querySelector('[data-connector-artifact]')?.dataset.connectorArtifact===id);
+    const collapsing=incoming&&!row.querySelector('.connector-call')&&incoming.querySelector('.connector-call');
+    if(!destination&&!collapsing)continue;
+    const rect=row.getBoundingClientRect(),viewport=target.getBoundingClientRect();
+    if((!rect.height||rect.bottom<viewport.top||rect.top>viewport.bottom)&&!row.contains(document.activeElement))continue;
+    const ghost=row.cloneNode(true);
+    for(const n of [ghost,...ghost.querySelectorAll('*')])for(const name of [...n.getAttributeNames()])if(name==='id'||name.startsWith('data-'))n.removeAttribute(name);
+    ghost.classList.add('connector-transfer-ghost');ghost.inert=true;ghost.setAttribute('aria-hidden','true');
+    Object.assign(ghost.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',margin:'0',pointerEvents:'none',overflow:'hidden',zIndex:'30',transformOrigin:'top left'});
+    transfers.push({id,rect,ghost,source:row,collapsing:!!collapsing,focused:row.contains(document.activeElement)});
+  }
+  return transfers;
+}
+function connectorTransferArrival(target,{id,collapsing}){
+  const destination=[...target.querySelectorAll('[data-connector-ids]')].find(n=>n.dataset.connectorIds.split(' ').includes(id));
+  const row=[...target.querySelectorAll('.connector-message')].find(n=>n.querySelector('[data-connector-artifact]')?.dataset.connectorArtifact===id);
+  return [collapsing?row?.querySelector('.connector-call>summary'):destination?.querySelector('button'),destination?.closest('.summary-progress')?.querySelector('summary'),row?.closest('.connector-stack')?.querySelector(':scope>summary')].find(n=>n?.getClientRects().length);
+}
+function animateConnectorTaskTransfers(target,transfers){
+  const controls=[],duration=300,easing='cubic-bezier(.2,.8,.2,1)';
+  for(const transfer of transfers){
+    const {id,rect,ghost,collapsing,focused,placeholder}=transfer;
+    const row=[...target.querySelectorAll('.connector-message')].find(n=>n.querySelector('[data-connector-artifact]')?.dataset.connectorArtifact===id);
+    const arrival=connectorTransferArrival(target,transfer);
+    if(!arrival){placeholder?.remove();continue;}
+    const end=arrival.getBoundingClientRect(),motions=[];
+    if(focused)arrival.focus({preventScroll:true});
+    document.body.append(ghost);
+    const dx=collapsing?0:Math.max(-rect.width,Math.min(rect.width,end.left-rect.left));
+    const dy=collapsing?0:Math.max(-240,Math.min(240,end.top-rect.top));
+    motions.push(ghost.animate([{opacity:1,transform:'none'},{opacity:0,transform:`translate(${dx}px,${dy}px) scale(${collapsing ? .96 : .3})`}],{duration:240,easing,fill:'both'}));
+    motions.push(arrival.animate([{opacity:0},{opacity:1}],{duration:180,delay:120,easing,fill:'both'}));
+    if(collapsing&&!row.getClientRects().length){ghost.remove();for(const motion of motions)motion.cancel();continue;}
+    const subject=collapsing?row:placeholder;
+    const height=collapsing?row.getBoundingClientRect().height:0;
+    subject.style.overflow='hidden';
+    const finish=()=>{for(const motion of motions)motion.cancel();ghost.remove();if(placeholder)placeholder.remove();else subject.style.removeProperty('overflow');};
+    controls.push(trackMotion(subject.animate([{height:rect.height+'px'},{height:height+'px'}],{duration,easing,fill:'both'}),duration,finish));
+  }
+  const finish=()=>{for(const control of controls)control.finish();target.removeEventListener('pointerdown',finish,true);target.removeEventListener('keydown',finish,true);if(target.finishConnectorTransfers===finish)delete target.finishConnectorTransfers;};
+  target.finishConnectorTransfers=finish;
+  target.addEventListener('pointerdown',finish,true);target.addEventListener('keydown',finish,true);
+  setTimeout(finish,duration+150);
+}
 function reconcileConversation(target,desired,animate=true){
+  target.finishConnectorTransfers?.();
+  const transfers=connectorTaskTransfers(target,desired),animateTransfers=animate&&motionAllowed();
   const focusedQuestion=target.contains(document.activeElement)?document.activeElement?.closest('[data-task-question]')?.dataset.taskQuestion:null;
   const formations=animate?connectorStackFormation(target,desired):[];
   for(const next of desired.querySelectorAll('.command-progress')){
@@ -6276,10 +6385,20 @@ function reconcileConversation(target,desired,animate=true){
     if(previous&&preserveShardMessage(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     conversationRenderSignatures.set(next,signature);return next;
   });
+  for(const transfer of transfers)if(animateTransfers&&!transfer.collapsing){
+    const placeholder=node('div','connector-transfer-space');placeholder.inert=true;placeholder.setAttribute('aria-hidden','true');
+    placeholder.style.height=transfer.rect.height+'px';transfer.placeholder=placeholder;
+    const source=transfer.source.closest('.connector-stack-group')||transfer.source;
+    let following=source.nextElementSibling,index=-1;
+    while(following&&index<0){index=nodes.findIndex(n=>n.dataset.message===following.dataset.message);following=following.nextElementSibling;}
+    nodes.splice(index<0?nodes.length:index,0,placeholder);
+  }
   const keep=new Set(nodes);for(const child of [...target.children])if(!keep.has(child))child.remove();
   let cursor=target.firstChild;
   for(const next of nodes){if(next===cursor){cursor=cursor.nextSibling;continue;}target.insertBefore(next,cursor);}
   for(const formation of formations)animateConnectorFormation(formation);
+  for(const transfer of transfers)if(transfer.focused)connectorTransferArrival(target,transfer)?.focus({preventScroll:true});
+  if(animateTransfers&&transfers.length)animateConnectorTaskTransfers(target,transfers);
   if(focusedQuestion&&!target.contains(document.activeElement))target.querySelector('[data-task-question="'+CSS.escape(focusedQuestion)+'"]>summary')?.focus({preventScroll:true});
   observeLongMessages(target);
   continueLoops(target);
@@ -6708,6 +6827,7 @@ Object.defineProperty($("prompt"), "value", {
     commandsUI?.refresh();
   },
 });
+createComposerLinks($("prompt"));
 composerLists=createComposerLists($("prompt"),chip=>{
   // Native list formatting can omit the decorative SVG; retain the live chip.
   if(!chip.querySelector('.character')){const bot=state.bots.find(b=>b.id===chip.dataset.mention);if(bot)chip.replaceChildren(...mentionBadge(bot).childNodes);}
@@ -8315,8 +8435,8 @@ function approvalCard(a,run) {
   a={...a,status:a.status||'pending'};
   if(a.connector_artifact)return connectorMessage({seq:'approval-'+a.id,connector_artifact:a.connector_artifact},run.chat_id);
   if(a.args?.artifact_id){
-    const box=node('div','task-card approval');box.dataset.approval=a.id;
-    box.append(node('strong','','Email review unavailable'),node('p','muted','Reload the conversation to review this action.'),button('Reload',()=>refresh(true),'outline-button'));
+    const box=node('div','connector-artifact connector-request connector-approval');box.dataset.approval=a.id;
+    box.append(node('strong','connector-request-title','Action review unavailable'),node('p','muted','Reload the conversation to review this action.'),button('Reload',()=>refresh(true),'outline-button'));
     return box;
   }
   if(a.tool==='chat_update')return chatEditApprovalCard(a,run);
@@ -8388,9 +8508,10 @@ function connectorActivityLabel(body) {
   return '';
 }
 function connectorApprovalCard(a,run) {
-  const box=node('div','task-card approval connector-approval');box.dataset.approval=a.id;
+  const box=node('div','connector-artifact connector-request approval connector-approval');box.dataset.approval=a.id;box.setAttribute('role','group');box.setAttribute('aria-label','Connector permission request');
   const args=a.args||{},status=a.status||'pending',pending=status==='pending',config=a.tool==='connector_configure',preference=config&&args.request==='source_preference';
-  const title=node('div','task-card-title');title.append(node('span','connector-eyebrow',preference?'Connector preference':'Connector approval'),node('span','task-badge '+(status==='approved'?'done':''),status==='approved'?'Approved':status==='denied'?'Denied':status==='expired'?'Expired':status==='cancelled'?'Cancelled':'Needs your okay'));box.append(title);
+  box.classList.toggle('connector-request-pending',pending);
+  const title=node('div','task-card-title connector-artifact-header');title.append(node('span','connector-eyebrow',preference?'Connector preference':'Connector approval'),node('span','task-badge '+(status==='approved'?'done':''),status==='approved'?'Approved':status==='denied'?'Denied':status==='expired'?'Expired':status==='cancelled'?'Cancelled':'Needs your okay'));box.append(title);
   const bot=state.bots.find(b=>b.id===run.bot_id)?.name||'This bot';
   let choices=[];
   if(preference){
@@ -8415,10 +8536,10 @@ function connectorApprovalCard(a,run) {
     const action=friendly[leaf]||leaf.replace(/([a-z0-9])([A-Z])/g,'$1 $2').replaceAll('_',' ').replace(/\s+/g,' ').trim();
     box.append(node('p','task-description',action.charAt(0).toUpperCase()+action.slice(1)),node('p','muted small',args.forced?`${source} or this connector requires your approval for this specific action.`:`Allow this action once, or always allow ${bot} to use the entire ${connection?.replace(/^claude.ai /,'')||'selected'} connection, including changes.`));
     if(!claude)box.append(node('p','muted small',`Account: ${args.account_name||args.account_id||'Connected account'}`));
-    choices=args.forced?[['Allow once',true,''],['Deny',false,'']]:[['Always allow',true,'always_allow'],['Allow once',true,''],['Deny',false,'']];
+    choices=args.forced?[['Allow',true,''],['Deny',false,'']]:[['Always allow',true,'always_allow'],['Allow',true,''],['Deny',false,'']];
     const details=node('details','task-details');details.append(node('summary','','Action details'),node('pre','',JSON.stringify(claude?args.input:args.arguments,null,2)));box.append(details);
   }
-  if(pending){const actions=node('div','task-card-actions');for(const [label,approved,choice] of choices)actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved,choice});await refresh(true);},approved?'primary small-button':'outline-button'));box.append(actions);}
+  if(pending){const actions=node('div','task-card-actions connector-card-actions');for(const [label,approved,choice] of choices)actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved,choice});await refresh(true);},approved?'primary small-button connector-request-allow':'outline-button'));box.append(actions);}
   return decisionReceipt(box,{key:'approval:'+a.id,title:box.querySelector('.task-description')?.textContent||'Connector approval',outcome:status==='approved'?'Allowed':status==='denied'?'Declined':status==='cancelled'?'Cancelled':'Expired',terminal:!pending});
 }
 const expandedBotConnectors=new Set();
@@ -8922,6 +9043,7 @@ installMobileNavigation({
  route:()=>({key:currentConversationId()+'|'+screenBotId(),target:$('app').hidden||document.querySelector('.artifact-studio')||!$('details-panel').hidden?'none':!$('computer-panel').hidden?(document.documentElement.dataset.iosComputer==='overlay'||$('computer-panel').classList.contains('expanded')?'bot-chat':'none'):document.documentElement.dataset.iosLayout==='compact'&&!$('app').classList.contains('sidebar-open')&&state.bot?'chat-list':'none'}),
  back:target=>{saveDraft();captureChatAnchor();if(target==='bot-chat'){leaveControlPane();state.desktopNavigationHidden=true;state.desktopNavigationBot=screenBotId();state.desktopNavigationExpanded=$('computer-panel').classList.contains('expanded');$('computer-panel').hidden=true;$('computer-panel').inert=true;renderControlNotice(true);}else $('app').classList.add('sidebar-open');},
  resized:()=>{
+   computerPasteRevision++;
    // Keep the pre-resize message anchor; measuring after reflow loses its offset.
    // End a held pointer at its last validated position before refitting. Do not
    // send a new press or replay the interrupted click after the geometry changes.

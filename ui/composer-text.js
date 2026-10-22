@@ -27,6 +27,50 @@ export function composerText(root) {
   return read(root).replaceAll('\u00a0',' ');
 }
 
+// Paint links without inserting anchors into the editable DOM. Native editing,
+// IME, undo, spellcheck and the exact outgoing text keep their existing behavior.
+export function createComposerLinks(editor) {
+  if(!globalThis.Highlight||!globalThis.CSS?.highlights)return;
+  const highlight=new Highlight();
+  CSS.highlights.set('kindred-composer-link',highlight);
+  let frame=0,composing=false;
+  function refresh() {
+    frame=0;if(composing)return;
+    highlight.clear();
+    const nodes=[];let text='';
+    function read(node) {
+      if(node.nodeType===Node.TEXT_NODE){nodes.push({node,start:text.length,end:text.length+node.length});text+=node.data;return;}
+      if(node.nodeType!==Node.ELEMENT_NODE)return;
+      if(node.matches('[data-mention],[contenteditable="false"]')){text+='\n';return;}
+      const block=/^(BR|DIV|P|LI|UL|OL)$/.test(node.tagName);
+      if(block)text+='\n';
+      for(const child of node.childNodes)read(child);
+      if(block)text+='\n';
+    }
+    for(const child of editor.childNodes)read(child);
+    const pattern=/(^|[\s([{'"<])((?:https?:\/\/|www\.)[^\s<>"'`]+)/gi;
+    for(const match of text.matchAll(pattern)) {
+      let url=match[2].replace(/[.,!?;:]+$/,'');
+      // Keep balanced URL parentheses, but not surrounding prose/Markdown.
+      while(/[)\]}]$/.test(url)){
+        const close=url.at(-1),open={')':'(',']':'[','}':'{'}[close];
+        if(url.split(close).length<=url.split(open).length)break;
+        url=url.slice(0,-1).replace(/[.,!?;:]+$/,'');
+      }
+      try{if(!new URL(/^www\./i.test(url)?'https://'+url:url).hostname)continue;}catch{continue;}
+      const start=match.index+match[1].length,end=start+url.length;
+      const first=nodes.find(n=>n.end>start),last=nodes.find(n=>n.end>=end);
+      if(!first||!last)continue;
+      const range=document.createRange();range.setStart(first.node,start-first.start);range.setEnd(last.node,end-last.start);highlight.add(range);
+    }
+  }
+  const schedule=()=>{if(!frame&&!composing)frame=requestAnimationFrame(refresh);};
+  new MutationObserver(schedule).observe(editor,{childList:true,characterData:true,subtree:true});
+  editor.addEventListener('compositionstart',()=>{composing=true;highlight.clear();});
+  editor.addEventListener('compositionend',()=>{composing=false;schedule();});
+  schedule();
+}
+
 export function createComposerLists(editor,restoreMention=()=>{}) {
   let savedRange,lastAutoPrefix=null,suppressAutoPrefix=null;
   // This editor serializes plain text and lists, not browser rich-text styles.

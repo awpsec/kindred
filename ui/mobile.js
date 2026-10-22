@@ -1,6 +1,7 @@
 // Mobile bridges expose scoped sessions, account navigation and bounded exports
 // through a user-selected save destination, never arbitrary paths or execution.
 import './mobile-messages.js';
+import {mobileRegions} from './mobile-regions.js';
 export function mobileSession(token, profileId = '') {
   if (!window.__KINDRED_MOBILE) return;
   if(profileId)window.__KINDRED_MOBILE_PROFILE=profileId;
@@ -100,7 +101,7 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
   };
   function geometry(force=false){
     // Keyboard-only visual viewport changes do not alter the layout size class.
-    const style=getComputedStyle(shell),w=(shell.clientWidth||innerWidth)-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0),h=document.documentElement.clientHeight||innerHeight,scale=parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1,duo=window.__KINDRED_IOS_LAYOUT?.isDuo===true,inner=duo&&window.__KINDRED_IOS_LAYOUT?.isDuoInner===true,computerOpen=visible(document.querySelector('#computer-panel')),minChat=(duo?(computerOpen?20:24):32)*15*scale,computerWidth=duo?(inner?panes.computer:280):Math.max(360,w*.42),size=[w,h,scale,computerOpen,duo,inner,panes.sidebar,panes.computer,panes.hidden].join('|');
+    const style=getComputedStyle(shell),w=(shell.clientWidth||innerWidth)-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0),h=document.documentElement.clientHeight||innerHeight,scale=parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1,pose=mobileRegions(window.__KINDRED_NATIVE_GEOMETRY,document.documentElement.clientWidth||innerWidth,h),duo=pose.inner,inner=pose.inner,computerOpen=visible(document.querySelector('#computer-panel')),minChat=(duo?(computerOpen?20:24):32)*15*scale,computerWidth=duo?(inner?panes.computer:280):Math.max(360,w*.42),size=[w,h,scale,computerOpen,duo,inner,panes.sidebar,panes.computer,panes.hidden].join('|');
     if(size===lastSize&&force!==true)return;
     lastSize=size;clear();
     const native=window.__KINDRED_NATIVE_GEOMETRY,shape=native?native.windowWidth+'x'+native.windowHeight:'',typing=document.activeElement?.matches('input,textarea,[contenteditable=true]');
@@ -108,27 +109,42 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
     // when the native window is unchanged and an editor still has focus.
     const keyboardHost=typing&&shape&&shape===windowShape&&layoutWidth===w&&layoutHeight>h;
     if(!keyboardHost){layoutHeight=h;layoutWidth=w;}windowShape=shape;
-    const regions=duo?native?.reservedRegions||[]:[];
+    const regions=pose.regions;
+    html.dataset.iosFold=pose.vertical?'vertical':pose.horizontal?'horizontal':'none';
+    html.dataset.iosInner=String(inner);
+    html.dataset.iosReserved=String(regions.length>0);
+    for(const [name,value] of Object.entries(pose.safe))html.style.setProperty('--ios-safe-'+name,value+'px');
+    html.style.setProperty('--ios-fold-top',(pose.horizontal?.y||0)+'px');
+    html.style.setProperty('--ios-fold-bottom',((pose.horizontal?.y||0)+(pose.horizontal?.height||0))+'px');
     if(paneDrag&&(!inner||regions.some(r=>r.kind==='division')||shape!==paneDrag.shape)){paneDrag.cancel();return;}
     let sidebarWidth=duo?(inner?Math.min(panes.sidebar,Math.max(160,w-minChat)):210):300,paneWidth=inner?Math.min(computerWidth,Math.max(240,w-minChat)):computerWidth,gap=0;
+    // Region frames and control rectangles use viewport coordinates. Only pane
+    // widths use the shell's padded content origin; padding is not a scale.
     const contentLeft=shell.getBoundingClientRect().left+(parseFloat(style.paddingLeft)||0);
-    const division=duo?native?.reservedRegions?.filter(r=>r.kind==='division'&&r.height>r.width).map(r=>({...r,x:r.x-contentLeft})).find(r=>r.x>0&&r.x+r.width<w):null;
+    const division=pose.vertical?{...pose.vertical,x:pose.vertical.x-contentLeft}:null;
     let side=computerOpen&&layoutHeight>=480&&w-paneWidth>=minChat;
     let list=layoutHeight>=480&&w-sidebarWidth-(side?paneWidth:0)>=minChat&&!(inner&&panes.hidden);
     if(division){
       gap=division.width;paneWidth=w-division.x-gap;
       side=computerOpen&&division.x>=minChat&&paneWidth>=280;
-      list=!computerOpen&&division.x>=210&&paneWidth>=minChat&&!(inner&&panes.hidden);
-      sidebarWidth=division.x;
-      if(!side&&!list)gap=0;
+      // The chat list remains a narrow sidebar. A fold does not give it half
+      // the display; scrolling conversation content keeps the remaining space.
+      sidebarWidth=Math.min(sidebarWidth,division.x);
+      list=!computerOpen&&division.x>=160&&layoutHeight>=480&&w-sidebarWidth>=minChat&&!(inner&&panes.hidden);
+      if(!side)gap=0;
+      html.dataset.iosFoldSingle='false';
     }
+    if(!division)html.dataset.iosFoldSingle='false';
+    if(pose.horizontal||pose.edge){side=false;list=false;}
+    if(pose.edge)html.dataset.iosFoldSingle='true';
     html.style.setProperty('--ios-sidebar-width',sidebarWidth+'px');
     html.style.setProperty('--ios-computer-width',paneWidth+'px');
     html.style.setProperty('--ios-division-gap',gap+'px');
-    const regular=list||(inner&&panes.hidden&&layoutHeight>=480&&w-(side?paneWidth:0)>=minChat);
+    const regular=list||(!pose.horizontal&&!pose.edge&&inner&&panes.hidden&&layoutHeight>=480&&w-(side?paneWidth:0)>=minChat);
     html.dataset.iosLayout=regular?'regular':'compact';html.dataset.iosSidebarHidden=String(regular&&!list);html.dataset.iosShort=String(layoutHeight<480);html.dataset.iosComputer=side?'side':'overlay';
     if(window.__KINDRED_NATIVE_GEOMETRY)html.dataset.nativeSafeArea='host';
     if(html.dataset.iosLayout==='regular')shell.classList.remove('sidebar-open');
+    avoidCameraControls(pose);placePopovers(pose);
     shell.dataset.mobileResizing='true';inputAvailabilityChanged?.();cancelAnimationFrame(settleFrame);resized?.();
     let previous='';
     const validate=()=>{
@@ -138,12 +154,40 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
     };
     settleFrame=requestAnimationFrame(validate);publish();
   }
+  document.querySelector('#mobile-menu')?.addEventListener('click',()=>{
+    if(html.dataset.iosSidebarHidden==='true'){panes.hidden=false;savePanes();geometry(true);}
+  });
+  function avoidCameraControls(pose){
+    for(const node of document.querySelectorAll('.conversation-header,.composer-area,.computer-panel .panel-header')){
+      const rect=node.getBoundingClientRect();let left=rect.left,right=rect.right;
+      for(const r of pose.regions.filter(r=>r.kind==='occlusion'||(r.kind==='division'&&r.height>r.width))){
+        if(r.y>=rect.bottom||r.y+r.height<=rect.top||r.x>=right||r.x+r.width<=left)continue;
+        if(r.x-left>right-r.x-r.width)right=Math.max(left,r.x);else left=Math.min(right,r.x+r.width);
+      }
+      node.style.setProperty('--ios-camera-left',(left-rect.left)+'px');
+      node.style.setProperty('--ios-camera-right',(rect.right-right)+'px');
+    }
+  }
+  const popupStyles=new WeakMap();
+  function placePopovers(pose=mobileRegions(window.__KINDRED_NATIVE_GEOMETRY,innerWidth,innerHeight)){
+    for(const node of document.querySelectorAll('.composer-menu,.mention-options,.command-options,.chat-context-menu,.message-action-menu,.screen-picker-menu')){
+      if(!visible(node))continue;
+      if(!pose.regions.length){const old=popupStyles.get(node);if(old!==undefined){node.setAttribute('style',old);popupStyles.delete(node);}continue;}
+      if(!popupStyles.has(node))popupStyles.set(node,node.getAttribute('style')||'');
+      const safe=pose.safe,rect=node.getBoundingClientRect(),width=Math.min(rect.width,safe.width-16),height=Math.min(rect.height,safe.height-16);
+      Object.assign(node.style,{position:'fixed',inset:'auto',bottom:'auto',right:'auto',minWidth:'0',maxWidth:Math.max(0,safe.width-16)+'px',maxHeight:Math.max(0,safe.height-16)+'px',overflowY:'auto',
+        left:Math.max(safe.x+8,Math.min(rect.left,safe.x+safe.width-width-8))+'px',
+        top:Math.max(safe.y+8,Math.min(rect.top,safe.y+safe.height-height-8))+'px'});
+    }
+  }
+  let popupFrame=0;
+  new MutationObserver(()=>{cancelAnimationFrame(popupFrame);popupFrame=requestAnimationFrame(()=>placePopovers());}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','open']});
   window.__KINDRED_DUO_PANES={toggleList(){
-    if(!window.__KINDRED_IOS_LAYOUT?.isDuoInner||blocked(true))return;
+    if(html.dataset.iosInner!=='true'||blocked(true))return;
     panes.hidden=html.dataset.iosSidebarHidden!=='true';savePanes();geometry(true);
   }};
   // Inner-display separators use native available bounds rather than desktop
-  // breakpoints/rail widths. A full hide always has a native restore button.
+  // breakpoints/rail widths. The existing chat-list button restores a hidden list.
   for(const [kind,parent] of [['sidebar',shell.querySelector('.sidebar')],['computer',document.querySelector('#computer-panel')]]){
     if(!parent)continue;
     const handle=document.createElement('div');handle.className='ios-duo-resizer';handle.dataset.pane=kind;handle.tabIndex=0;
@@ -156,7 +200,7 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
       handle.setAttribute('aria-valuemin',kind==='sidebar'?'0':String(min));handle.setAttribute('aria-valuemax',String(Math.round(max)));
       return {min,max,width};
     };
-    const allowed=()=>window.__KINDRED_IOS_LAYOUT?.isDuoInner===true&&!(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions||[]).some(r=>r.kind==='division')&&!blocked(true)&&!document.querySelector('#computer-panel')?.classList.contains('expanded');
+    const allowed=()=>html.dataset.iosInner==='true'&&html.dataset.iosFold==='none'&&!blocked(true)&&!document.querySelector('#computer-panel')?.classList.contains('expanded');
     const apply=(raw,l)=>{panes[kind]=Math.max(l.min,Math.min(l.max,raw));if(kind==='sidebar')panes.hidden=raw<80;geometry(true);handle.setAttribute('aria-valuenow',String(Math.round(panes.hidden&&kind==='sidebar'?0:panes[kind])));};
     handle.addEventListener('pointerdown',event=>{
       if(event.button!==0||!event.isPrimary||paneDrag||!allowed())return;

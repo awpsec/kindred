@@ -60,6 +60,29 @@ const {server,token}=require('./fixtures/desktop.cjs');
     assert.equal(model.items[0].children.length,16);assert.equal(reactions.length,0);
     assert((await page.evaluate(()=>window.menuRequests)).some(item=>item.action==='message-target'&&item.rect.length===4));
     assert.equal(await page.locator('body>.message-action-menu').count(),0,'describing the native menu leaves no themed duplicate');
+    await page.evaluate(() => {
+      const style = document.createElement('style'); style.id = 'preview-clip-fixture';
+      style.textContent = `.conversation-history{position:fixed!important;inset:0!important;width:402px!important;height:780px!important}.conversation-header{position:fixed!important;inset:0 0 auto!important;height:90px!important}#composer-area{position:fixed!important;inset:650px 0 auto!important;height:130px!important}#content [data-message="1"] .message-bubble{position:fixed!important;left:40px!important;top:-60px!important;width:220px!important;max-width:none!important;height:1200px!important;box-sizing:border-box!important}.jump-latest{position:fixed!important;left:100px!important;top:600px!important;width:180px!important;height:44px!important}`;
+      document.head.append(style);
+      const latest = document.querySelector('.jump-latest'); if (latest) { latest.dataset.previewWasHidden = String(latest.hidden); latest.hidden = false; }
+    });
+    await bubble.dispatchEvent('pointerdown',{button:0,pointerType:'touch'});
+    const clipped = await page.evaluate(() => window.menuRequests.filter(item=>item.action==='message-target').at(-1));
+    const previewBounds = await page.evaluate(() => ({
+      bubble:document.querySelector('[data-message="1"] .message-bubble').getBoundingClientRect().toJSON(),
+      header:document.querySelector('.conversation-header').getBoundingClientRect().toJSON(),
+      composer:document.querySelector('#composer-area').getBoundingClientRect().toJSON(),
+      latest:document.querySelector('.jump-latest').getBoundingClientRect().toJSON()
+    }));
+    assert.equal(clipped.rect[0],previewBounds.bubble.left,'preview follows bubble width rather than the whole row');
+    assert.equal(clipped.rect[2],previewBounds.bubble.width);
+    assert.equal(clipped.rect[1],previewBounds.header.bottom,'offscreen message clips below floating header');
+    assert.equal(clipped.rect[1]+clipped.rect[3],Math.min(previewBounds.latest.top,previewBounds.composer.top),'preview excludes the latest pill and composer');
+    await page.evaluate(() => {
+      document.querySelector('#preview-clip-fixture').remove();
+      const latest=document.querySelector('.jump-latest');if(latest){latest.hidden=latest.dataset.previewWasHidden==='true';delete latest.dataset.previewWasHidden;}
+    });
+
     const oldCopy=model.items[2].id;await describe();
     await page.evaluate(id=>window.__kindredMobileMessages.perform(id),oldCopy);
     assert.equal(await page.evaluate(()=>window.copied),undefined,'expired actions are rejected');

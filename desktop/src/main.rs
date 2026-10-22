@@ -208,7 +208,20 @@ fn main() {
         .manage(linux_update::Worker::default())
         .manage(dictation::Worker::default())
         .manage(window_state::Store::default())
-        .on_window_event(|window,event| {if window.label()=="main" && matches!(event,tauri::WindowEvent::Destroyed){dictation::close(window.app_handle());}})
+        .on_window_event(|window,event| {
+            if window.label()!="main" { return; }
+            match event {
+                tauri::WindowEvent::Destroyed => dictation::close(window.app_handle()),
+                tauri::WindowEvent::Focused(true) => {
+                    // WKWebView may throttle its timers while minimized or on
+                    // another Space. Wake chat synchronization from native focus.
+                    if let Some(view)=window.app_handle().get_webview_window("main") {
+                        let _=view.eval("window.dispatchEvent(new Event('kindred-desktop-resume'))");
+                    }
+                }
+                _ => {}
+            }
+        })
         .manage(local_access::Bridge::default())
         .invoke_handler(tauri::generate_handler![
             chat_files::save_chat_file,chat_files::reveal_chat_file,
