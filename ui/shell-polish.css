@@ -105,3 +105,35 @@ html:not([data-mobile]) .group-conversation .conversation-header #bot-details{ma
 html:not([data-mobile]) .conversation-header .chat-window-drag{display:none;}
 html:not([data-mobile]) .conversation .messages{padding-top:65px;scroll-padding-top:65px;}
 }
+
+/* Artifacts shares the conversation shell's neutral surfaces and controls. */
+.artifact-studio{background:var(--bg);}
+.artifact-studio-library{background:var(--bg);}
+.artifact-studio.sidebar-pinned .artifact-studio-library{box-shadow:none;}
+.artifact-studio-library:has(>.sidebar-bottom) .artifact-studio-library-brand{display:none;}
+.artifact-studio-library-heading{padding:0 4px;}
+.artifact-studio-library-heading h1{font-size:14px;color:var(--fg);font-weight:600;}
+.artifact-studio-library-heading .artifact-add,.artifact-library-pin,.artifact-library-reveal{width:34px;height:34px;border-radius:50%;background:var(--surface);border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;}
+.artifact-studio-library-heading .artifact-add:hover,.artifact-library-pin:hover,.artifact-library-reveal:hover{background:var(--hover);}
+.artifact-studio-library-search{min-height:36px;border:1px solid var(--line);border-radius:18px;padding:8px 13px;background:var(--surface);font:inherit;font-size:12px;}
+.artifact-studio .artifact-studio-library-item{border-radius:10px;min-height:52px;padding:8px 10px;gap:9px;}
+.artifact-studio-library-title{font-size:13px;}
+.artifact-studio .artifact-folder-heading{padding:8px 10px 5px;font-size:11px;font-weight:500;}
+.artifact-library-filters{gap:6px;}
+.artifact-library-filters select{border-radius:16px;}
+.artifact-library-filters select:hover{background-color:var(--hover);}
+.artifact-workbench-header{background:var(--bg);}
+.artifact-workbench-actions button{border-radius:18px;}
+.artifact-workbench-actions button:hover{background:var(--hover);color:var(--fg);}
+.artifact-workbench-actions button[aria-pressed=true]{background:var(--selected);}
+.artifact-studio-empty{max-width:570px;padding:24px;}
+.artifact-studio-empty>.artifact-kind-icon{width:32px;height:32px;opacity:.8;}
+.artifact-studio-empty h2{font-size:24px;letter-spacing:-.4px;font-weight:600;margin:20px 0 10px;}
+.artifact-studio-empty p{font-size:14px;line-height:1.6;max-width:390px;margin-bottom:24px;}
+.artifact-starter-grid{gap:8px;}
+.artifact-starter-grid button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:12px;border-radius:14px;font-size:13px;transition:background-color .15s;}
+.artifact-starter-grid button:hover{background:var(--hover);}
+.artifact-starter-grid .artifact-kind-icon{width:16px;height:16px;}
+@media(max-width:760px){.artifact-starter-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.artifact-studio-empty{padding:16px;}}
+@media(prefers-reduced-motion:reduce){.artifact-starter-grid button{transition:none;}}
+html[data-motion=off] .artifact-starter-grid button{transition:none;}

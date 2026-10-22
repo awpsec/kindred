@@ -7057,12 +7057,11 @@ $("new-menu").append(
 function mountArtifactNavigation(sidebar,leave){
  const footer=document.querySelector('#sidebar .sidebar-bottom')||document.querySelector('.sidebar-bottom');
  const placeholder=document.createComment('Sidebar navigation');footer.before(placeholder);
- const entry=$('artifacts-button'),originalClick=entry.onclick,originalContents=[...entry.childNodes];
- closeIdentityMenu();entry.hidden=false;entry.replaceChildren(icon('chat'),node('span','','Chats'));entry.onclick=leave;
+ closeIdentityMenu();artifactChatNavigation=leave;
  sidebar.append(footer);const removeResizer=mountLibraryResizer(sidebar);
- return ()=>{closeIdentityMenu();removeResizer();entry.replaceChildren(...originalContents);entry.hidden=true;entry.onclick=originalClick;placeholder.replaceWith(footer);};
+ return ()=>{closeIdentityMenu();removeResizer();if(artifactChatNavigation===leave)artifactChatNavigation=null;placeholder.replaceWith(footer);};
 }
-let artifactWorkspace=null,artifactWorkspaceToken=null,artifactChatReturn=null;
+let artifactWorkspace=null,artifactWorkspaceToken=null,artifactChatReturn=null,artifactChatNavigation=null;
 function restoreArtifactChat(){const saved=artifactChatReturn;artifactChatReturn=null;if(!saved||saved.chat!==currentConversationId())return;requestAnimationFrame(()=>{const content=$('content');content.scrollTop=saved.scroll;content.querySelector('[data-workspace-artifact="'+CSS.escape(saved.id)+'"] .workspace-artifact-link')?.focus({preventScroll:true});});}
 function syncArtifactRoute(){
  const legacy=new URLSearchParams(location.hash.slice(1)).get('artifact'),match=location.pathname.match(/^\/artifacts(?:\/([^/]+))?\/?$/),requested=!!match||!!legacy;
@@ -7181,7 +7180,7 @@ function toggleIdentityMenu() {
       "settings",
     ),
   );
-  menu.prepend(button("Artifacts",()=>{closeIdentityMenu();return openArtifactWorkspace();},"identity-menu-item","folder"),button("Marketplace",()=>{closeIdentityMenu();return openMarketplace();},"identity-menu-item","marketplace"));
+  menu.prepend(button("Chats",()=>{closeIdentityMenu();return artifactChatNavigation?artifactChatNavigation():$("prompt").focus();},"identity-menu-item","chat"),button("Artifacts",()=>{closeIdentityMenu();return openArtifactWorkspace();},"identity-menu-item","folder"),button("Marketplace",()=>{closeIdentityMenu();return openMarketplace();},"identity-menu-item","marketplace"));
   menu.addEventListener('keydown',event=>{
     if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key)||event.target.closest('.usage-flyout'))return;
     event.preventDefault();const items=[...menu.querySelectorAll(':scope > button,:scope > .usage-branch > button')].filter(b=>!b.hidden&&!b.disabled),current=items.indexOf(document.activeElement);
