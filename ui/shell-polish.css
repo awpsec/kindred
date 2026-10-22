@@ -137,3 +137,12 @@ html:not([data-mobile]) .conversation .messages{padding-top:65px;scroll-padding-
 @media(max-width:760px){.artifact-starter-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.artifact-studio-empty{padding:16px;}}
 @media(prefers-reduced-motion:reduce){.artifact-starter-grid button{transition:none;}}
 html[data-motion=off] .artifact-starter-grid button{transition:none;}
+
+/* Native pane exits retain their final bounds; tab changes never slide or
+   reserve desktop flex space. Shared CSS also covers installed iOS adapters. */
+html[data-kindred-ios] #app>:is(.computer-panel,.details-panel).ios-pane-closing[hidden] {
+ display:flex!important;position:fixed!important;inset:auto!important;margin:0!important;flex:none!important;
+ left:var(--ios-pane-exit-left)!important;top:var(--ios-pane-exit-top)!important;
+ width:var(--ios-pane-exit-width)!important;height:var(--ios-pane-exit-height)!important;
+ min-width:0!important;max-width:none!important;pointer-events:none;
+}

@@ -7559,15 +7559,51 @@ new MutationObserver(settleMotion).observe(document.documentElement,{attributes:
 // Animate the space beside the conversation along with the actual pane. The
 // header and composer stay in normal layout; neither is scaled or snap-positioned.
 let paneLayoutMotion=null;
+const nativePaneMotion=new Map();
 const rightPanes=()=>[$('details-panel'),$('computer-panel')];
 function paneLayoutSnapshot(){
   const shell=$('app'),chat=shell.querySelector('.conversation'),sidebar=shell.querySelector('.sidebar');
   return {shell:shell.getBoundingClientRect(),sidebar:sidebar.getBoundingClientRect(),chat:chat.getBoundingClientRect(),panels:rightPanes().map(panel=>({panel,visible:!panel.hidden,rect:panel.getBoundingClientRect()})),screen:$('desktop').getBoundingClientRect()};
 }
 function refitComputer(){if(state.rfb)state.rfb.scaleViewport=true;}
-function finishComputerTransition(){paneLayoutMotion?.finish();refitComputer();}
+function finishComputerTransition(){paneLayoutMotion?.finish();for(const motion of [...nativePaneMotion.values()])motion.finish();refitComputer();}
 window.addEventListener('resize',finishComputerTransition);
+// Native iOS owns pane geometry (including the Duo list and hinge insets).
+// Desktop width reservations and fixed-position slides fight that layout and
+// the installed adapter's compatibility animation. Keep geometry in normal
+// layout; consecutive tab show/hide mutations settle before the next paint.
+function transitionNativePaneLayout(change){
+  paneLayoutMotion?.finish();
+  const before=new Map(rightPanes().map(panel=>[panel,{visible:!panel.hidden&&!panel.inert,rect:panel.getBoundingClientRect(),opacity:Number(getComputedStyle(panel).opacity),moving:nativePaneMotion.has(panel)}]));
+  change();layoutPanes();
+  for(const panel of rightPanes()){
+    const visible=!panel.hidden&&!panel.inert,prior=before.get(panel);
+    if(visible===prior.visible){
+      if(!visible&&rightPanes().some(other=>other!==panel&&!other.hidden&&!other.inert))nativePaneMotion.get(panel)?.finish();
+      continue;
+    }
+    nativePaneMotion.get(panel)?.finish();
+    const clear=()=>{
+      panel.classList.remove('ios-pane-closing');
+      for(const key of ['left','top','width','height'])panel.style.removeProperty('--ios-pane-exit-'+key);
+      if(panel.hidden&&panel.dataset.clearPaneOnClose){$('details-content').replaceChildren();delete panel.dataset.clearPaneOnClose;}
+    };
+    // A tab replacement removes its outgoing pane immediately. A true close
+    // can fade at its last native bounds, without reserving any layout space.
+    const replacing=!visible&&rightPanes().some(other=>other!==panel&&!other.hidden&&!other.inert);
+    if(!motionAllowed()||$('app').hidden||replacing){clear();continue;}
+    if(!visible){
+      for(const key of ['left','top','width','height'])panel.style.setProperty('--ios-pane-exit-'+key,prior.rect[key]+'px');
+      panel.classList.add('ios-pane-closing');
+    }
+    const animation=panel.animate([{opacity:prior.moving?prior.opacity:visible?0:1},{opacity:visible?1:0}],{duration:200,easing:'ease-out',fill:'both'});
+    const motion=trackMotion(animation,200,()=>{if(nativePaneMotion.get(panel)===motion){nativePaneMotion.delete(panel);clear();}});
+    nativePaneMotion.set(panel,motion);
+  }
+  refitComputer();
+}
 function transitionPaneLayout(change){
+  if(window.__KINDRED_MOBILE_PLATFORM==='ios')return transitionNativePaneLayout(change);
   const before=paneLayoutSnapshot();
   paneLayoutMotion?.cancel();
   change();layoutPanes();
