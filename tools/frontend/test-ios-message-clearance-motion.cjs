@@ -95,6 +95,38 @@ const near=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
    const stable=await page.evaluate(async()=>{const frames=[];for(let i=0;i<12;i++){await new Promise(requestAnimationFrame);frames.push(messageSample());}return frames;});
    stable.forEach(f=>near(f.right,stable[0].right,'the bubble cannot oscillate after release'));
    near(stable[0].right,start.right,'a user bubble fully below the dock fills the trailing space');
+   // Near the follow threshold, wrapped-height changes can generate their own
+   // scroll events. One reading gesture must settle instead of fluttering.
+   const bottomScroll=await page.evaluate(async()=>{
+    setDock(300);const area=document.querySelector('#content'),proof=[];
+    for(const gap of [0,76,79,81,84,120]){
+     area.dispatchEvent(new WheelEvent('wheel',{deltaY:1}));area.scrollTop=area.scrollHeight-area.clientHeight-gap;area.dispatchEvent(new Event('scroll'));
+     const frames=[];
+     for(let i=0;i<48;i++){await new Promise(requestAnimationFrame);frames.push([...area.children].filter(n=>n.hasAttribute('data-ios-user-message')).slice(-5).map(n=>n.style.getPropertyValue('--ios-user-clearance')).join('|'));}
+     proof.push({gap,changes:frames.filter((value,i)=>i&&value!==frames[i-1]).length,tail:new Set(frames.slice(-10)).size});
+    }return proof;
+   });
+   bottomScroll.forEach(proof=>assert.equal(proof.tail,1,'manual bottom scrolling settles without repeated clearance reversals: '+JSON.stringify(proof)));
+   await page.evaluate(()=>{const area=document.querySelector('#content');area.dispatchEvent(new WheelEvent('wheel',{deltaY:-1}));area.scrollTop+=messageTarget.getBoundingClientRect().top-260;area.dispatchEvent(new Event('scroll'));});
+   const latest=page.locator('.jump-latest');await latest.waitFor({state:'visible'});
+   await page.setViewportSize({width:466,height:430});
+   const latestKeyboard=await page.evaluate(()=>{
+    const jump=document.querySelector('.jump-latest'),before=jump.getBoundingClientRect().right;
+    Object.assign(__KINDRED_IOS_LAYOUT,{keyboardVisible:true,composerBottomInset:0,viewportHeight:430});
+    dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));jump.getBoundingClientRect();
+    const motions=jump.getAnimations().filter(a=>a.transitionProperty==='right');motions.forEach(a=>{a.pause();a.currentTime=0;});
+    const frames=[];for(const fraction of [0,.25,.5,.999]){motions.forEach(a=>a.currentTime=Number(a.effect.getTiming().duration)*fraction);frames.push(jump.getBoundingClientRect().right);}
+    motions.forEach(a=>a.finish());return {before,frames,after:jump.getBoundingClientRect().right,motions:motions.length};
+   });
+   assert(latestKeyboard.motions>0,'keyboard avoidance slides Latest messages');
+   near(latestKeyboard.frames[0],latestKeyboard.before,'Latest begins at its painted position');
+   assert(latestKeyboard.frames.some(right=>right<latestKeyboard.before-2&&right>latestKeyboard.after+2),'Latest passes through intermediate horizontal positions');
+   near(latestKeyboard.after,latestKeyboard.before-84,'Latest clears the native keyboard-side gutter');
+   assert(latestKeyboard.after<=376,'Latest stays left of the right dock while typing');
+   await page.setViewportSize({width:466,height:780});
+   await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{keyboardVisible:false,composerBottomInset:34,viewportHeight:780});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
+   await page.waitForFunction(()=>document.querySelector('.jump-latest').getAnimations().every(a=>a.playState!=='running'));
+   near((await latest.boundingBox()).x+(await latest.boundingBox()).width,latestKeyboard.before,'Latest returns to the full trailing lane after keyboard dismissal');
    for(const reduce of ['system','app']) {
     if(reduce==='system')await page.emulateMedia({reducedMotion:'reduce'});else {await page.emulateMedia({reducedMotion:'no-preference'});await page.locator('html').evaluate(n=>n.dataset.motion='off');}
     await page.evaluate(()=>setDock(messageTarget.getBoundingClientRect().top-30));
@@ -108,7 +140,7 @@ const near=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
    await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{railSide:'left',leftInset:84,rightInset:0});Object.assign(__KINDRED_IOS_TOOLBAR,{x:0,y:170});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));dispatchEvent(new Event('kindred-ios-toolbar'));});
    await page.waitForFunction(()=>document.documentElement.dataset.iosRailSide==='left'&&parseFloat(document.querySelector('.conversation').style.getPropertyValue('--ios-message-lane-left'))>0&&parseFloat(messageTarget.style.getPropertyValue('--ios-user-clearance'))===0);
    assert(await page.locator('#content .message-group').evaluateAll(nodes=>nodes.every(n=>n.getBoundingClientRect().left>=89)),'both authors clear a leading dock by six points after rotation');
-   assert.deepEqual(errors,[]);reports.push({side,contraction,expansion,reversal,scrollReleaseStable:true,reducedMotion:true});await page.close();
+   assert.deepEqual(errors,[]);reports.push({side,contraction,expansion,reversal,bottomScroll,latestKeyboard,scrollReleaseStable:true,reducedMotion:true});await page.close();
   }
   console.log(JSON.stringify({passed:true,reports}));
  } finally {await browser.close();server.closeAllConnections();server.close();}
