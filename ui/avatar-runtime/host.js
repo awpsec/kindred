@@ -33,18 +33,26 @@ export function mountArtwork(box,profile,size=44){
  const canvas=document.createElement('span');canvas.className='avatar-canvas';Object.assign(canvas.style,{position:'absolute',left:'50%',top:'50%',width:(fillScale(artworkFill)*100)+'%',height:(fillScale(artworkFill)*100)+'%',transform:'translate(-50%,-50%)',pointerEvents:'none'});box.append(canvas);
  const id='kindred-art-'+(++nextId),seed=hash(p.bot_id||p.id||p.seed||JSON.stringify([a.body,p.name||'']));
  const engine=createMotionEngine({body:resolveBody(a.body)}),controller=createStateController(engine,state,{seed,isCompact:size<48});
- let renderPaint,renderAppearance,idleTime=0;
+ let renderPaint,renderAppearance,idleTime=0,orbitScale=1;
  // Faces follow activity. Ignore saved picker expressions from older clients.
  // A seek/rest can hold a morph at t=0; release it through the authored face API.
  // Compact named icons carry identity; full work indicators retain authored morphs.
  function syncMorph(){engine.setMorph(size<48?null:animationStates[controller.state]?.morph||null,{isInstant:isStill()});}
  function hold(release=false){const face=animationStates[controller.state]?.face||null;engine.holdFace(face);if(release)engine.setExpression(face||'neutral');}
- function draw(){const ink=paint(a,document.documentElement.dataset.theme==='dark');if(ink!==renderPaint){renderPaint=ink;renderAppearance=createAppearance(ink);}commitSvgTree(canvas,renderSvgTree(engine.frame(),renderAppearance,size*fillScale(artworkFill),id,{displaySize:size,extent:'100%'}));dirty=false;}
+ // Retain the scalar separately: the engine can replace its outgoing kind
+ // during a rapid reversal. Following that weight directly would jump in size.
+ function orbitTarget(snapshot){const morph=snapshot.morph;const weight=morph&&size>=48?Math.max(0,Math.min(1,morph.amount*((morph.kind==='orbit'?morph.swap:0)+(morph.outgoing==='orbit'?1-morph.swap:0)))):0;return 1+.75*weight;}
+ function draw(snapshot=engine.frame()){
+  const ink=paint(a,document.documentElement.dataset.theme==='dark');if(ink!==renderPaint){renderPaint=ink;renderAppearance=createAppearance(ink);}
+  const transform=`translate(-50%,-50%) scale(${orbitScale.toFixed(4)})`;
+  if(canvas.style.transform!==transform)canvas.style.transform=transform;
+  commitSvgTree(canvas,renderSvgTree(snapshot,renderAppearance,size*fillScale(artworkFill),id,{displaySize:size,extent:'100%'}));dirty=false;
+ }
  function isStill(){return reducedMotion()||p.animated===false;}
- function staticPose(){engine.pause();engine.seek(0);hold(true);for(let j=0;j<60;j++)engine.advance(.1);settled=true;draw();}
+ function staticPose(){engine.pause();engine.seek(0);hold(true);for(let j=0;j<60;j++)engine.advance(.1);const snapshot=engine.frame();orbitScale=orbitTarget(snapshot);settled=true;draw(snapshot);}
  const i={box,visible:false,
   active(){return connected&&!dead&&box.isConnected&&i.visible&&!document.hidden&&!isStill()&&!settled;},
-  step(dt){const before=controller.state;controller.advance(dt);if(before!==controller.state){idleTime=0;syncMorph();hold();}if(controller.state==='idle'){idleTime+=dt;if(idleTime>=1.4)controller.setResting(true);}else idleTime=0;const playing=engine.isPlaying;engine.advance(dt);if(playing&&!engine.isPlaying)hold(true);draw();settled=engine.isSettled;},
+  step(dt){const before=controller.state;controller.advance(dt);if(before!==controller.state){idleTime=0;syncMorph();hold();}if(controller.state==='idle'){idleTime+=dt;if(idleTime>=1.4)controller.setResting(true);}else idleTime=0;const playing=engine.isPlaying;engine.advance(dt);if(playing&&!engine.isPlaying)hold(true);const snapshot=engine.frame(),target=orbitTarget(snapshot);orbitScale+=(target-orbitScale)*(1-Math.exp(-dt/.1));if(Math.abs(orbitScale-target)<.0001)orbitScale=target;draw(snapshot);settled=engine.isSettled&&orbitScale===target;},
   refresh(){if(dead||!connected)return;if(paint(a,document.documentElement.dataset.theme==='dark')!==renderPaint)dirty=true;const next=isStill();if(next!==still){still=next;if(still){hold();staticPose();}else {controller.setResting(true);controller.setResting(false);hold();settled=false;}}
    if(!document.hidden&&i.visible&&dirty){if(still)staticPose();else draw();}if(![...instances].some(v=>v.active()))cancel();else wake();},
   detach(){if(!connected)return;connected=false;instances.delete(i);observer?.unobserve(box);disconnectGlobals();},
@@ -54,7 +62,7 @@ export function mountArtwork(box,profile,size=44){
  Object.assign(box.style,{width:size+'px',height:size+'px'});
  const api={
   connect:i.attach,
-  update(next,nextSize=size){if(dead)return;const nextA=appearance(next),changed=JSON.stringify(nextA)!==JSON.stringify(a);p=next;if(changed){const old=a;a=nextA;if(a.body!==old.body)engine.setBody(resolveBody(a.body),{isInstant:isStill()});hold();dirty=true;settled=false;}if(size!==nextSize){size=nextSize;controller.setCompact(size<48);syncMorph();settled=false;box.style.width=size+'px';box.style.height=size+'px';dirty=true;}i.attach();i.refresh();},
+  update(next,nextSize=size){if(dead)return;const nextA=appearance(next),changed=JSON.stringify(nextA)!==JSON.stringify(a);p=next;if(changed){const old=a;a=nextA;if(a.body!==old.body)engine.setBody(resolveBody(a.body),{isInstant:isStill()});hold();dirty=true;settled=false;}if(size!==nextSize){size=nextSize;if(size<48)orbitScale=1;controller.setCompact(size<48);syncMorph();settled=false;box.style.width=size+'px';box.style.height=size+'px';dirty=true;}i.attach();i.refresh();},
   setState(next,eventKey=''){if(dead||(next===state&&!eventKey)||!animationStates[next])return;if(next===state&&eventKey)controller.setState('idle');state=next;idleTime=0;controller.setResting(false);controller.setState(next);syncMorph();hold();dirty=true;settled=false;box.dataset.avatarState=next;i.attach();i.refresh();},
   poke(kind,opts){if(dead||isStill()||document.hidden||!i.visible)return;engine.poke(kind,opts);settled=false;wake();},
   destroy(){if(dead)return;dead=true;i.detach();delete box._avatarHost;canvas.remove();},
