@@ -144,5 +144,35 @@ to disable that transaction; UIKit's accessibility setting is also checked.
 including hit exclusion in the curved cutout for normal, selected and unread
 states, row reordering and native Reduce Motion forwarding. The identity suite
 passes, the native target builds, and a WebKit alert-card capture was inspected.
-The new native dock motion still needs a hands-on check: the Mac remained locked
-during this follow-up's validation.
+The subsequent unlocked native check recorded both collapse and expansion on
+the actual inner display. Frame review shows the glass container resizing and
+items fading/reflowing through intermediate positions in both directions.
+
+## Search and creation sheets
+
+The bundled iOS adapter now positions Search, New Bot, local New Chat and server
+New Chat inside the current usable region. Open-display sheets are centered at
+useful widths instead of retaining desktop dialogs against the left edge. A
+real book/tabletop division still confines a sheet to one region. Cover-display
+Search keeps the full lower lane; its heading, groups and individual results
+avoid measured dock/status/camera rectangles only while alongside them. Scroll,
+query replacement and native toolbar changes update that projection. Shared
+Search's temporary opening scale is removed from collision measurements.
+
+Creation forms keep their draft and participant selection through resizing.
+Headers remain reachable while scrolling, primary creation actions stay visible,
+and a single provider fills its form column. The bot avatar is centered. The Edit
+Bot Details disclosure uses an aligned inline chevron, clearing the shared
+absolute marker position and mask while retaining native disclosure semantics.
+
+`test-ios-sheets.cjs` passes left/right dock clearance before/after scrolling,
+lower-row width recovery, retained search query, bot/chat drafts and participants,
+active book/tabletop regions, keyboard-height changes, creation/close action
+visibility, both local and server chat forms, and disclosure toggling/marker
+position. Existing Duo, iOS layout and bot-center (current and historical
+installed adapter) suites pass. Xcode 27.1 beta builds successfully. Native Duo
+checks cover cover/open Search, New Bot through folding with its draft intact,
+New Chat, and Details; the local redesign sample server remains selected.
+
+Changes are confined to the installed iOS presentation adapter and regression
+coverage. No shared desktop assets, production server or signing data changed.

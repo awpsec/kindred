@@ -470,3 +470,48 @@ html[data-kindred-ios][data-ios-bot-center] .computer-panel>.desktop { max-heigh
 /* Preserve a useful screen at accessibility text sizes; scrolling wins over
    collapsing the computer to a sliver when its controls need more room. */
 html[data-kindred-ios][data-ios-bot-center] .computer-panel:not(.ios-keyboard-active)>.desktop { min-height:min(120px,30dvh); }
+
+/* Search and creation use one native sheet geometry on either Duo display.
+   The shared forms and their controls remain intact across pose/keyboard changes. */
+html[data-kindred-ios] dialog[data-ios-sheet][open] {
+ box-sizing:border-box; position:fixed; inset:var(--ios-sheet-y) auto auto var(--ios-sheet-x)!important;
+ margin:0!important; width:var(--ios-sheet-width)!important; max-width:var(--ios-sheet-width)!important;
+ max-height:var(--ios-sheet-height)!important; padding:0; border-radius:24px; overflow:auto; overscroll-behavior:contain;
+ animation:ios-action-sheet-in 220ms ease-out;
+}
+html[data-kindred-ios] dialog.navigation-search[data-ios-sheet][open] { display:flex; flex-direction:column; height:var(--ios-sheet-height); overflow:hidden; animation:none; }
+html[data-kindred-ios] .navigation-search-results { flex:1; scrollbar-width:none; padding:8px; }
+html[data-kindred-ios] .navigation-search-heading { box-sizing:border-box; padding:8px 14px; min-height:64px; }
+html[data-kindred-ios] dialog[data-ios-sheet] :is(.navigation-search-heading,.navigation-search-results>*) {
+ box-sizing:border-box;
+ margin-left:var(--ios-search-left,0px); margin-right:var(--ios-search-right,0px);
+ width:calc(100% - var(--ios-search-left,0px) - var(--ios-search-right,0px));
+ transition:margin 200ms ease-out,width 200ms ease-out;
+}
+html[data-kindred-ios] .navigation-search-result { min-height:56px; border-radius:14px; padding:10px 12px; }
+html[data-kindred-ios] .navigation-search-tag { flex-shrink:1; }
+html[data-kindred-ios] dialog[data-ios-sheet]:is(.bot-dialog,.chat-dialog,.server-chat-dialog) { background:var(--panel); }
+html[data-kindred-ios] dialog[data-ios-sheet] .dialog-header {
+ position:sticky; top:0; z-index:3; min-height:64px; padding:10px 20px; margin:0;
+ background:var(--panel); border-bottom:1px solid var(--line); gap:12px;
+}
+html[data-kindred-ios] dialog[data-ios-sheet] .dialog-header h2 { margin:0; font-size:16px; }
+html[data-kindred-ios] dialog[data-ios-sheet] .dialog-header>button { display:flex; align-items:center; justify-content:center; flex:none; width:44px; height:44px; padding:12px; border-radius:50%; }
+html[data-kindred-ios] dialog[data-ios-sheet]:is(.chat-dialog,.server-chat-dialog)>:not(.dialog-header) { margin:0; padding:20px; }
+html[data-kindred-ios] dialog[data-ios-sheet].bot-dialog form { padding:20px; }
+html[data-kindred-ios] dialog[data-ios-sheet].bot-dialog .dialog-header { margin:-20px -20px 18px; }
+html[data-kindred-ios] dialog[data-ios-sheet].bot-dialog #new-avatar-button { display:flex; align-items:center; justify-content:center; width:100%; height:96px; margin:0 auto 20px; }
+html[data-kindred-ios] dialog[data-ios-sheet].bot-dialog .two-col:has(>label:only-child) { grid-template-columns:minmax(0,1fr); }
+html[data-kindred-ios] dialog[data-ios-sheet] :is(input:not([type=checkbox],[type=radio]),textarea,select) { box-sizing:border-box; min-width:0; max-width:100%; font-size:max(16px,1em); }
+html[data-kindred-ios] dialog[data-ios-sheet] :is(.member-option,.participant-option) { min-height:48px; }
+html[data-kindred-ios] dialog[data-ios-sheet] :is(#bot-form>.primary.wide,.chat-dialog>form>.primary.wide,.server-chat-form>.dialog-actions) { position:sticky; bottom:0; z-index:2; box-shadow:0 -10px 0 var(--panel),0 10px 0 var(--panel); }
+html[data-kindred-ios] dialog[data-ios-sheet] .server-chat-form>.dialog-actions { background:var(--panel); }
+html[data-kindred-ios] .bot-center-preferences>summary { display:flex; align-items:center; gap:10px; min-height:44px; padding:8px 0; list-style:none; }
+html[data-kindred-ios] .bot-center-preferences>summary::-webkit-details-marker { display:none; }
+html[data-kindred-ios] .bot-center-preferences>summary::before { content:''; position:static; inset:auto; margin:0; flex:none; width:7px; height:7px; background:none; mask:none; -webkit-mask:none; border:solid currentColor; border-width:1.5px 1.5px 0 0; transform:rotate(45deg); transition:transform 180ms ease-out; }
+html[data-kindred-ios] .bot-center-preferences[open]>summary::before { transform:rotate(135deg); }
+@keyframes ios-action-sheet-in { from { opacity:0; translate:0 10px; } to { opacity:1; translate:0 0; } }
+html[data-kindred-ios][data-motion=off] dialog[data-ios-sheet],html[data-kindred-ios][data-motion=off] dialog[data-ios-sheet] *,html[data-kindred-ios][data-motion=off] .bot-center-preferences>summary::before { animation:none; transition:none; }
+@media(prefers-reduced-motion:reduce) {
+ html[data-kindred-ios] dialog[data-ios-sheet],html[data-kindred-ios] dialog[data-ios-sheet] *,html[data-kindred-ios] .bot-center-preferences>summary::before { animation:none; transition:none; }
+}

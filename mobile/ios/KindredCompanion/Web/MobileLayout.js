@@ -1258,7 +1258,63 @@
     const text = Math.max(0,Math.round(value*100)/100)+'px';
     if (node && node.style.getPropertyValue(name) !== text) node.style.setProperty(name,text);
   };
+  // Shared dialogs retain their forms, selection and close handlers. Only
+  // their presentation belongs to the installed app's current safe rectangle.
+  const sheetSelector = 'dialog.navigation-search,dialog.bot-dialog,dialog.chat-dialog,dialog.server-chat-dialog';
+  function updateNativeSheets() {
+    const layout = window.__KINDRED_IOS_LAYOUT || {}, style = getComputedStyle(html);
+    const read = name => parseFloat(style.getPropertyValue(name)) || 0;
+    const height = nativeHeight || window.visualViewport?.height || innerHeight;
+    const reserved = html.dataset.iosReserved === 'true' || html.dataset.iosNativeReserved === 'true';
+    const divided = (window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).some(r => r.kind === 'division' && r.active !== false && r.width > 0 && r.height > 0 && r.x < innerWidth && r.x+r.width > 0 && r.y < height && r.y+r.height > 0);
+    // A camera/status corner is handled by side insets (or individual search
+    // rows), rather than cutting the whole sheet down below that corner.
+    const safe = reserved && divided ? {x:read('--ios-safe-x'),y:read('--ios-safe-y'),width:read('--ios-safe-width'),height:read('--ios-safe-height')} : {x:0,y:0,width:innerWidth,height};
+    if (!(safe.width > 0 && safe.height > 0)) return;
+    const toolbar = window.__KINDRED_IOS_TOOLBAR;
+    const zones = nativeDuo ? [toolbar,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).filter(r => r.kind === 'occlusion' && r.active !== false)]
+      .filter(r => r && ['x','y','width','height'].every(key => Number.isFinite(r[key])) && r.width > 0 && r.height > 0) : [];
+    for (const dialog of document.querySelectorAll(sheetSelector)) {
+      if (!dialog.open) continue;
+      const search = dialog.classList.contains('navigation-search');
+      // Wide sheets sit in the usable center. On the cover, Search keeps the
+      // full lower lane and projects each row around the measured native dock.
+      const flow = search && nativeDuo && layout.isDuoInner !== true;
+      const region = safe;
+      const top = Math.max(region.y,Number(layout.topInset)||0), bottom = Math.min(height,region.y+region.height)-(Number(layout.bottomInset)||0);
+      const left = Math.max(region.x,flow ? 0 : Number(layout.leftInset)||0);
+      const right = Math.min(region.x+region.width,innerWidth-(flow ? 0 : Number(layout.rightInset)||0));
+      const gap = Math.min(12,Math.max(0,(bottom-top)/8));
+      const width = Math.max(0,Math.min(search ? 680 : 600,right-left-2*gap));
+      const sheetHeight = Math.max(0,Math.min(search ? 680 : 760,bottom-top-2*gap));
+      const x = left+(right-left-width)/2, y = top+gap;
+      setContentInset(dialog,'--ios-sheet-x',x);
+      setContentInset(dialog,'--ios-sheet-y',y);
+      setContentInset(dialog,'--ios-sheet-width',width);
+      setContentInset(dialog,'--ios-sheet-height',sheetHeight);
+      dialog.toggleAttribute('data-ios-sheet',true);
+      const frame = dialog.getBoundingClientRect(), scale = frame.width/(dialog.offsetWidth || frame.width) || 1;
+      // Start from the stable parent interval, never the already-inset row.
+      // Search's shared enter/exit scale is visual; don't bake that temporary
+      // scale or translation into native point-space collision measurements.
+      for (const node of dialog.querySelectorAll('.navigation-search-heading,.navigation-search-results>*')) {
+        const rect = node.getBoundingClientRect(), parent = node.parentElement.getBoundingClientRect();
+        const parentStyle = getComputedStyle(node.parentElement);
+        const base = {left:x+(parent.left-frame.left)/scale+(parseFloat(parentStyle.paddingLeft)||0),right:x+(parent.right-frame.left)/scale-(parseFloat(parentStyle.paddingRight)||0)};
+        const rowTop = y+(rect.top-frame.top)/scale, rowBottom = y+(rect.bottom-frame.top)/scale;
+        let leading = 0, trailing = 0;
+        for (const zone of flow ? zones : []) {
+          if (rowTop >= zone.y+zone.height+12 || rowBottom <= zone.y-12 || zone.x >= base.right || zone.x+zone.width <= base.left) continue;
+          if (zone.x+zone.width/2 > (base.left+base.right)/2) trailing = Math.max(trailing,base.right-zone.x+12);
+          else leading = Math.max(leading,zone.x+zone.width+12-base.left);
+        }
+        setContentInset(node,'--ios-search-left',leading);
+        setContentInset(node,'--ios-search-right',trailing);
+      }
+    }
+  }
   function updateNativeContentClearance() {
+    updateNativeSheets();
     const value = window.__KINDRED_IOS_LAYOUT || {}, side = html.dataset.iosRailSide;
     const edgeLeft = nativeDuo && side === 'left' ? Math.min(innerWidth,Math.max(0,Number(value.leftInset)||0)) : 0;
     const edgeRight = nativeDuo && side === 'right' ? Math.min(innerWidth,Math.max(0,Number(value.rightInset)||0)) : 0;
@@ -1312,7 +1368,9 @@
   const scheduleContentClearance = () => {
     if (!contentClearanceFrame) contentClearanceFrame = requestAnimationFrame(() => {contentClearanceFrame=0;updateNativeContentClearance();});
   };
-  document.addEventListener('scroll',event => {if(event.target === document.querySelector('#bots') || event.target === sidebar || event.target === document.querySelector('#content')) scheduleContentClearance();},true);
+  document.addEventListener('scroll',event => {if(event.target === document.querySelector('#bots') || event.target === sidebar || event.target === document.querySelector('#content') || event.target.matches?.('.navigation-search-results')) scheduleContentClearance();},true);
+  observeUI(scheduleContentClearance).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
+  window.addEventListener('resize',scheduleContentClearance);
   observeUI(scheduleContentClearance).observe(sidebar,{subtree:true,childList:true,attributes:true,attributeFilter:['class','hidden']});
   window.addEventListener('kindred-ios-toolbar',scheduleContentClearance);
   observeUI(scheduleContentClearance).observe(document.querySelector('#content'),{childList:true,subtree:true});
