@@ -3,7 +3,7 @@ import KindredCore
 import Speech
 import UIKit
 
-/// One foreground utterance. Apple receives only on-device recognition requests;
+/// One foreground dictation session. Apple receives only on-device recognition requests;
 /// unsupported languages never silently switch to network transcription.
 @MainActor
 final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
@@ -19,6 +19,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
     private var deadlineTask: Task<Void, Never>?
     private var finalizationTask: Task<Void, Never>?
     private var lastText = ""
+    private var transcript = DictationTranscript()
     private(set) var phase = "idle"
     var emit: Emit?
     var availabilityChanged: (() -> Void)?
@@ -101,6 +102,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
         selectLocale(locale)
         let operation = fence.begin(documentID: documentID, operationID: operationID, chatID: chatID)
         lastText = ""
+        transcript = DictationTranscript()
         guard onDeviceAvailable else { fail("on-device-unavailable", operation); return }
         guard recognizerAvailable else { fail("recognizer-unavailable", operation); return }
         phase = "authorizing"; send("authorizing", operation)
@@ -188,10 +190,16 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
             // Never log error descriptions: an underlying service can include
             // transcript data. The web receives only stable error categories.
             let text = result?.bestTranscription.formattedString
+            let segments = result?.bestTranscription.segments.map {
+                DictationTranscript.Segment(range: $0.substringRange, start: $0.timestamp, duration: $0.duration)
+            } ?? []
+            let speechStart = result?.speechRecognitionMetadata?.speechStartTimestamp
+            let speechDuration = result?.speechRecognitionMetadata?.speechDuration
             let final = result?.isFinal == true
             let failed = error != nil
             Task { @MainActor [weak self] in
-                self?.acceptRecognition(text: text, final: final, failed: failed, operation: operation)
+                self?.acceptRecognition(text: text, final: final, failed: failed, operation: operation,
+                                        segments: segments, speechStart: speechStart, speechDuration: speechDuration)
             }
         }
         guard fence.accepts(operation) else { return }
@@ -208,13 +216,19 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
     }
 
     // Both real Apple callbacks and injectable lifecycle tests enter this fence.
-    func acceptRecognition(text: String?, final: Bool, failed: Bool, operation: DictationOperation) {
+    func acceptRecognition(text: String?, final: Bool, failed: Bool, operation: DictationOperation,
+                           segments: [DictationTranscript.Segment] = [],
+                           speechStart: TimeInterval? = nil, speechDuration: TimeInterval? = nil) {
         guard fence.accepts(operation) else { return }
         if let text {
             guard text.utf8.count <= 16_384 else { fail("transcript-limit", operation); return }
-            lastText = text
-            send(final ? "final" : "partial", operation, text: text)
-            if final { send("stopped", operation, text: text); complete(operation); return }
+            var next = transcript
+            let accumulated = next.update(text, segments: segments, speechStart: speechStart, speechDuration: speechDuration)
+            guard accumulated.utf8.count <= 16_384 else { fail("transcript-limit", operation); return }
+            transcript = next
+            lastText = accumulated
+            send(final ? "final" : "partial", operation, text: accumulated)
+            if final { send("stopped", operation, text: accumulated); complete(operation); return }
         }
         if failed { fail("recognition-failed", operation) }
     }

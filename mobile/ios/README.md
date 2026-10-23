@@ -125,6 +125,32 @@ simulator signing does not require a developer team, but an unsigned build
 Removal tests cover both accounts that never opened a web page and accounts
 with an existing persistent web data store.
 
+Dictation pause/resume regressions live in `DictationTranscriptTests` (portable
+Swift) and `NativeDictationTests` (app-hosted lifecycle). To replay the portable
+normalizer's output through the actual shared composer, set
+`KINDRED_TEST_DICTATION_REPLAY=/absolute/path/replay.json` when running `swift test`,
+then pass the same variable to `node tools/frontend/test-ios-dictation.cjs` from
+the repository root; repeat with `WEBKIT=1`. The replay covers insertion into an
+existing draft, three phrases with pauses, corrections, and a second mic session.
+These are synthetic recognition inputs, not a real microphone result.
+
+For native recognition proof, run
+`NativeDictationTests/testActualOnDeviceRecordedAudioProducesPartialsAndFinal`
+on a supported Apple test device with Speech permission, setting
+`KINDRED_TEST_SPEECH_AUDIO_FILE` to a nonprivate PCM recording of at most 15 seconds
+with two distinct phrases separated by 2–3 seconds of silence. Set
+`KINDRED_TEST_SPEECH_EXPECTED_PHRASES` to a JSON array of the two spoken phrases
+(omit punctuation) to require both in the final transcript, in order. When using
+`xcodebuild`, export these test-process variables with the `TEST_RUNNER_` prefix.
+Also check the actual app microphone with an existing draft, a pause and resumed
+speech, Stop, then another microphone session. Verify no words disappear or send
+automatically. The keyboard's Dictate control is a separate system input path.
+
+Audio timings determine which words a recognition result can revise. Untimed
+partials remain provisional; identical repeated words become distinguishable
+when timing arrives. Stop/error timeouts retain the last visible preview. A
+Linux Swift or browser pass does not prove Apple recognition or device behavior.
+
 ## How it works
 
 ### Private computer addresses

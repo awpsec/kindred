@@ -61,6 +61,45 @@ final class NativeDictationTests: XCTestCase {
             XCTAssertEqual(captures, 0)
         }
     }
+    func testPauseStartsNewHypothesisWithoutReplacingEarlierSpeech() async throws {
+        let service = NativeDictation(); defer { service.tearDown() }
+        service.testHooks = NativeDictation.TestHooks()
+        var events: [[String: Any]] = []; service.emit = { events.append($0) }
+        start(service); try await wait { service.phase == "recording" }
+        let op = try XCTUnwrap(service.operation)
+        service.acceptRecognition(text: "First phrase.", final: false, failed: false, operation: op,
+                                  speechStart: 0.5, speechDuration: 1)
+        service.acceptRecognition(text: "Second", final: false, failed: false, operation: op)
+        XCTAssertEqual(events.last?["text"] as? String, "First phrase. Second")
+        service.acceptRecognition(text: "Second phrase.", final: false, failed: false, operation: op,
+                                  speechStart: 4, speechDuration: 1)
+        service.acceptRecognition(text: "Second phrase!", final: true, failed: false, operation: op,
+                                  speechStart: 4, speechDuration: 1)
+        XCTAssertEqual(events.last?["text"] as? String, "First phrase. Second phrase!")
+        XCTAssertNil(service.operation)
+        let count = events.count
+        service.acceptRecognition(text: "Late", final: true, failed: false, operation: op)
+        XCTAssertEqual(events.count, count)
+        start(service); try await wait { service.phase == "recording" }
+        let fresh = try XCTUnwrap(service.operation)
+        service.acceptRecognition(text: "Fresh session.", final: true, failed: false, operation: fresh)
+        XCTAssertEqual(events.last?["text"] as? String, "Fresh session.")
+    }
+    func testAccumulatedTranscriptLimitKeepsLastValidDraft() async throws {
+        let service = NativeDictation(); defer { service.tearDown() }
+        service.testHooks = NativeDictation.TestHooks()
+        var events: [[String: Any]] = []; service.emit = { events.append($0) }
+        start(service); try await wait { service.phase == "recording" }
+        let op = try XCTUnwrap(service.operation)
+        let phrase = String(repeating: "é", count: 5_000)
+        service.acceptRecognition(text: phrase, final: false, failed: false, operation: op,
+                                  speechStart: 0, speechDuration: 1)
+        service.acceptRecognition(text: phrase, final: false, failed: false, operation: op,
+                                  speechStart: 4, speechDuration: 1)
+        XCTAssertEqual(events.last?["errorCode"] as? String, "transcript-limit")
+        XCTAssertEqual(events.last?["text"] as? String, phrase)
+        XCTAssertNil(service.operation)
+    }
     func testCancelledPermissionCannotStartOrEnterNewChat() async throws {
         let service = NativeDictation(); defer { service.tearDown() }
         var resume: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus?, Never>?
@@ -86,12 +125,14 @@ final class NativeDictationTests: XCTestCase {
         var events: [[String: Any]] = []; service.emit = { events.append($0) }
         start(service); try await wait { service.phase == "recording" }
         let op = try XCTUnwrap(service.operation)
+        service.acceptRecognition(text: "Before the pause.", final: false, failed: false, operation: op,
+                                  speechStart: 0, speechDuration: 1)
         service.acceptRecognition(text: "words so far", final: false, failed: false, operation: op)
         service.stop(operationID: op.operationID, chatID: op.chatID)
         try await wait({ service.operation == nil }, timeout: 4)
         XCTAssertEqual(events.last?["phase"] as? String, "stopped")
         XCTAssertEqual(events.last?["errorCode"] as? String, "finalization-timeout")
-        XCTAssertEqual(events.last?["text"] as? String, "words so far")
+        XCTAssertEqual(events.last?["text"] as? String, "Before the pause. words so far")
         XCTAssertFalse(events.contains { $0["phase"] as? String == "final" })
         start(service); try await wait { service.phase == "recording" }
         let fresh = try XCTUnwrap(service.operation)
@@ -157,5 +198,16 @@ final class NativeDictationTests: XCTestCase {
         XCTAssertTrue(events.contains { $0["phase"] as? String == "final" && !($0["text"] as? String ?? "").isEmpty })
         XCTAssertEqual(events.last?["phase"] as? String, "stopped")
         XCTAssertFalse(feedFailed)
+        if let expected = ProcessInfo.processInfo.environment["KINDRED_TEST_SPEECH_EXPECTED_PHRASES"] {
+            let phrases = try JSONDecoder().decode([String].self, from: Data(expected.utf8))
+            XCTAssertGreaterThanOrEqual(phrases.count, 2, "Pause/resume fixture must contain at least two phrases")
+            let text = (events.last?["text"] as? String ?? "").lowercased()
+            var rest = text[...]
+            for phrase in phrases {
+                XCTAssertFalse(phrase.isEmpty)
+                let range = try XCTUnwrap(rest.range(of: phrase.lowercased()), "Every recorded phrase must remain in order after the pauses")
+                rest = rest[range.upperBound...]
+            }
+        }
     }
 }
