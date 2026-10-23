@@ -4957,12 +4957,23 @@ function reminderWhen(reminder){
   const zoneLabel=new Intl.DateTimeFormat([],{timeZone:zone,timeZoneName:'short'}).formatToParts(date).find(p=>p.type==='timeZoneName')?.value||zone;
   return {label:dateLabel+', '+time,zone:zone===Intl.DateTimeFormat().resolvedOptions().timeZone?'':zoneLabel,full:date.toLocaleString([],{timeZone:zone,dateStyle:'full',timeStyle:'short'})+' · '+zone};
 }
+function isProgressMember(m){
+  return ['assistant','task_progress'].includes(m.kind)&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice;
+}
 function progressGroups(messages){
   const groups=new Map();
-  for(const m of messages)if(['assistant','task_progress'].includes(m.kind)&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
-  // A persisted marker owns the activity disclosure. Neither elapsed time nor
-  // narration/tool counts establish a staged task. Historical prose stays put.
-  for(const [key,items] of groups)if(!items.some(m=>m.kind==='task_progress'))groups.delete(key);
+  for(const m of messages)if(isProgressMember(m)){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
+  for(const [key,items] of groups){
+    const persisted=items.find(m=>m.kind==='task_progress');
+    if(persisted){groups.set(key,items.filter(m=>m.sender===persisted.sender));continue;}
+    // Page boundaries may omit the original marker. The server supplies its
+    // persisted identity; project a disclosure without changing history cursors.
+    const source=items.find(m=>{const marker=m.progress.marker;return marker&&Number.isSafeInteger(marker.seq)&&marker.seq>0&&Number.isFinite(marker.created)&&typeof marker.run_id==='string'&&marker.run_id&&marker.sender===m.sender;});
+    if(!source){groups.delete(key);continue;}
+    const marker=source.progress.marker;
+    const owned=items.filter(m=>m.sender===marker.sender);groups.set(key,owned);
+    owned.unshift({seq:marker.seq,created:marker.created,sender:marker.sender,run_id:marker.run_id,kind:'task_progress',text:'',projectedProgress:true,progress:{...source.progress,run_id:marker.run_id,task_title:marker.task_title||source.progress.task_title}});
+  }
   return groups;
 }
 function taskPresentation(items,entry){
@@ -4982,6 +4993,38 @@ function taskQuestions(items,entry){
     if(!q||seen.has(q.id)||q.task_group_id!==key||(q.delivery_chat_id||q.chat_id)!==entry.id||!items.some(i=>i.sender===q.bot_id&&(i.run_id===q.run_id||i.run_id===q.continuation_run_id)))return false;
     seen.add(q.id);return true;
   });
+}
+// Review ownership requires a persisted task identity or an explicit activity anchor.
+function taskReviewGroup(message,groups,chatId,messages=[]){
+  const review=message.connector_artifact||message.approval;
+  if(!review)return null;
+  if(review.chat_id&&review.chat_id!==chatId)return null;
+  const runId=review.run_id||message.run_id,sender=review.bot_id||message.sender;
+  if(!runId||!sender)return null;
+  const key=review.task_group_id||message.progress?.group_id,anchor=review.progress_message_seq;
+  if(!key&&!anchor&&message.approval&&Number.isSafeInteger(message.seq)){
+    // Approval history has a persisted sequence. The nearest preceding task
+    // member for this exact run and bot establishes its phase boundary.
+    const prior=[...groups].flatMap(([group,items])=>items.filter(m=>m.sender===sender&&m.run_id===runId&&m.seq<=message.seq).map(m=>({group,seq:m.seq}))).sort((a,b)=>b.seq-a.seq);
+    const owner=prior[0];if(!owner)return null;
+    if(messages.some(m=>m.sender===sender&&m.run_id===runId&&m.seq>owner.seq&&m.seq<message.seq&&m.progress?.phase==='final_answer'))return null;
+    return owner.group;
+  }
+  for(const [group,items] of groups){
+    if(key?group!==key:!anchor)continue;
+    if(items.some(m=>m.sender===sender&&m.run_id===runId&&(key||m.seq===anchor)))return group;
+  }
+  return null;
+}
+function attachTaskReview(row,key,trackers){
+  const tracker=key&&trackers.get(key);if(!tracker)return row;
+  row.classList.add('task-owned-review');row.dataset.taskCommentary=key;
+  row.hidden=!tracker.querySelector('details').open;return row;
+}
+function focusTaskQuestion(id){
+  const receipt=$('content').querySelector('[data-task-question="'+CSS.escape(id)+'"]');
+  const target=receipt?.hidden?$('content').querySelector('[data-progress-group="'+CSS.escape(receipt.dataset.taskCommentary||'')+'"]>details>summary'):receipt?.querySelector(':scope>summary');
+  target?.focus({preventScroll:true});
 }
 function reopenTaskQuestion(q,entry){
   const mode=questionComposerMode();if(mode&&mode.q.id!==q.id)leaveQuestionComposer();
@@ -5034,7 +5077,7 @@ function appendProgressTimestamp(content,m,entry,run){
 }
 function setTaskCommentaryExpanded(key,expanded,animate=true){
   const rows=[...$('content').querySelectorAll('[data-task-commentary]')].filter(n=>n.dataset.taskCommentary===key);
-  for(const row of rows)setTaskCommentaryRowExpanded(row,key,expanded,animate);
+  for(const row of rows)setTaskCommentaryRowExpanded(row,key,expanded,animate&&!row.classList.contains('task-owned-review'));
 }
 function setTaskCommentaryRowExpanded(row,key,expanded,animate=true){
     // Polling an unchanged disclosure must not replay row motion.
@@ -5102,6 +5145,7 @@ function summaryProgress(items,entry,runs){
   if(finished&&!terminal){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
   // A persisted marker retains a compact completion receipt without inventing stages.
   const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
+  if(first.projectedProgress){group.dataset.message='progress:'+key;group.dataset.scrollMessages=String(items.find(m=>!m.projectedProgress).seq);}
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
   const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open&&!previous.querySelector('details').classList.contains('is-collapsing');
   group._progressCompleting=completing;group._progressEntry=entry;group._progressRunId=currentRunId;
@@ -5697,7 +5741,7 @@ function renderRequestTray(chat,entry){
   if(!tray.requestActivationBound){
     tray.requestActivationBound=true;let releaseTimer,press;
     const release=()=>{press=null;clearTimeout(releaseTimer);requestAnimationFrame(()=>$('composer').classList.remove('is-request-activating'));};
-    tray.addEventListener('pointerdown',e=>{if(e.isPrimary&&e.button===0&&$('composer').contains(document.activeElement)){press={x:e.clientX,y:e.clientY};$('composer').classList.add('is-request-activating');clearTimeout(releaseTimer);releaseTimer=setTimeout(release,1000);}});
+    tray.addEventListener('pointerdown',e=>{if(document.documentElement.hasAttribute('data-mobile')&&e.isPrimary&&e.button===0&&$('composer').contains(document.activeElement)){press={x:e.clientX,y:e.clientY};$('composer').classList.add('is-request-activating');clearTimeout(releaseTimer);releaseTimer=setTimeout(release,1000);}});
     tray.addEventListener('click',release);tray.addEventListener('pointercancel',release);
     tray.addEventListener('pointermove',e=>{if(press&&Math.hypot(e.clientX-press.x,e.clientY-press.y)>10)release();});
     // Composer clearance can scroll the chat during pointer activation. Only
@@ -5736,7 +5780,7 @@ function renderRequestTray(chat,entry){
   const title=heading?.textContent||'Review request';
   tray.classList.toggle('is-answering',isAnswering);tray.classList.toggle('is-minimized',model.minimized&&!isAnswering);
   tray.setAttribute('aria-label',isAnswering?'Answering: '+title:'Pending requests');
-  if(model.minimized&&!isAnswering&&requests.length===1&&item.q&&[...progressGroups(entry.messages||[]).values()].some(items=>taskQuestions(items,entry).some(m=>m.question.id===item.q.id))){tray.hidden=true;if(focused)$('content').querySelector('[data-task-question="'+CSS.escape(item.q.id)+'"]>summary')?.focus({preventScroll:true});return;}
+  if(model.minimized&&!isAnswering&&requests.length===1&&item.q&&[...progressGroups(entry.messages||[]).values()].some(items=>taskQuestions(items,entry).some(m=>m.question.id===item.q.id))){tray.hidden=true;if(focused)focusTaskQuestion(item.q.id);return;}
   if(model.minimized&&!isAnswering){
     const expand=button('',()=>{model.minimized=false;renderRequestTray(chat,entry);},'request-tray-expand');
     expand.setAttribute('aria-label',requests.length+' pending request'+(requests.length===1?'':'s'));
@@ -5753,7 +5797,7 @@ function renderRequestTray(chat,entry){
     previous.classList.add('request-tray-prev');previous.dataset.questionFocus='previous-request';next.dataset.questionFocus='next-request';
     previous.disabled=index===0;next.disabled=index===requests.length-1;bar.append(previous,page,next);
   }
-  const minimize=iconButton('chevron','Minimize pending requests',()=>{model.minimized=true;renderRequestTray(chat,entry);state.chatKey='';void renderChat(true,'cached');if(entry.questionReturn){$('content').querySelector('[data-task-question="'+CSS.escape(entry.questionReturn)+'"]>summary')?.focus({preventScroll:true});}});
+  const minimize=iconButton('chevron','Minimize pending requests',()=>{model.minimized=true;renderRequestTray(chat,entry);state.chatKey='';void renderChat(true,'cached');if(entry.questionReturn){focusTaskQuestion(entry.questionReturn);}});
   minimize.classList.add('request-tray-minimize');minimize.dataset.questionFocus='minimize';minimize.setAttribute('aria-expanded','true');if(!isAnswering)bar.append(minimize);
   header.append(bar);
   const details=card.querySelector('.task-details>summary');if(details)details.textContent='Details';card.querySelector('.question-dismiss')?.replaceChildren(document.createTextNode('Skip'));
@@ -6020,6 +6064,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   transcript.push(...(attachmentPlan.rows.get(data.messages.length)||[]).map(attachment=>({kind:'shared_attachment',text:'Shared file',attachment})));
   const batches=connectorBatches(transcript,boundary,runs),artifactBatches=artifactUpdateBatches(transcript),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
   const taskTrackers=new Map([...summaries].map(([key,items])=>[key,summaryProgress(items,entry,runs)]));
+  const projectedTrackers=new Map([...summaries].filter(([,items])=>items[0].projectedProgress).map(([key,items])=>[items.find(m=>!m.projectedProgress).seq,taskTrackers.get(key)]));
   for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
   for (const m of transcript) {
     if(m.kind==='shared_attachment'){
@@ -6032,6 +6077,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       }
       renderAttachments(group,[file]);area.append(group);previousSender=null;continue;
     }
+    if(projectedTrackers.has(m.seq))area.append(projectedTrackers.get(m.seq));
     if(stacked.has(m.seq)||m.kind==='continuation')continue;
     if (!m.text?.trim()&&m.kind!=='task_progress') continue;
     if(m.kind==='task_progress'&&!summaries.has(m.progress?.group_id))continue;
@@ -6043,11 +6089,11 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       area.append(divider);unreadObserver.observe(divider);
     }
     if(m.kind==='task_progress'){const items=summaries.get(m.progress.group_id);if(items&&items.find(i=>i.kind==='task_progress').seq===m.seq){const tracker=taskTrackers.get(m.progress.group_id);if(tracker)area.append(tracker);}previousSender=null;continue;}
-    if(taskQuestionSeqs.has(m.seq)){const owner=runs.find(r=>r.id===m.question.run_id)||state.allRuns.find(r=>r.id===m.question.run_id)||state.details.get(m.question.run_id)?.run;area.append(taskQuestionReceipt(m,entry,m.question.task_group_id,owner?.progress_started||owner?.created||0));previousSender=null;continue;}
+    if(taskQuestionSeqs.has(m.seq)){const owner=runs.find(r=>r.id===m.question.run_id)||state.allRuns.find(r=>r.id===m.question.run_id)||state.details.get(m.question.run_id)?.run;area.append(attachTaskReview(taskQuestionReceipt(m,entry,m.question.task_group_id,owner?.progress_started||owner?.created||0),m.question.task_group_id,taskTrackers));previousSender=null;continue;}
     if(m.kind==='connection_card'&&validConnectionCard(m.text)){
       const group=node('article','message-group connection-message');group.dataset.message=String(m.seq);group.append(chatConnectionCard(m.text));area.append(group);previousSender=null;continue;
     }
-    if(m.approval){if(m.approval.status==='pending'){previousSender=null;continue;}const group=node('article','message-group approval-message');group.dataset.message=String(m.seq);const run=runs.find(r=>r.id===m.run_id)||state.allRuns.find(r=>r.id===m.run_id)||{id:m.run_id,chat_id:chat.id,bot_id:m.sender};group.append(approvalCard(m.approval,run));area.append(group);previousSender=null;continue;}
+    if(m.approval){const reviewGroup=taskReviewGroup(m,summaries,id,data.messages);if(m.approval.status==='pending'&&!reviewGroup){previousSender=null;continue;}const group=node('article','message-group approval-message');group.dataset.message=String(m.seq);const run=runs.find(r=>r.id===m.run_id)||state.allRuns.find(r=>r.id===m.run_id)||{id:m.run_id,chat_id:chat.id,bot_id:m.sender};group.append(approvalCard(m.approval,run));area.append(attachTaskReview(group,reviewGroup,taskTrackers));previousSender=null;continue;}
     if(m.visual_panel){
       const group=node('article','message-group visual-message');group.dataset.message=String(m.seq);
       group.append(visualPanel(m.visual_panel,{...workflowOptions(chat.id,m.visual_panel),onDiscuss:pick=>{const text=`Let's discuss ${pick.name} (${pick.url}) from the saved comparison “${m.visual_panel.title}” (panel ${pick.panel_key}, product ${pick.product_id}).`; $('prompt').value=text;resizeComposer();$('prompt').dispatchEvent(new Event('input',{bubbles:true}));$('prompt').focus();}}));
@@ -6069,8 +6115,8 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       area.append(modelChangeNotice(m));previousSender=null;sequenceAvatar=null;continue;
     }
     if(m.connector_artifact){
-      const batch=batches.get(m.seq);if(batch)for(const item of batch)stacked.add(item.seq);
-      area.append(batch?connectorStack(batch,entry):connectorMessage(m,id));previousSender=null;continue;
+      const reviewGroup=taskReviewGroup(m,summaries,id,data.messages),candidate=batches.get(m.seq),batch=candidate?.every(item=>taskReviewGroup(item,summaries,id,data.messages)===reviewGroup)?candidate:null;if(batch)for(const item of batch)stacked.add(item.seq);
+      area.append(attachTaskReview(batch?connectorStack(batch,entry):connectorMessage(m,id),reviewGroup,taskTrackers));previousSender=null;continue;
     }
     if (m.planning) {
       const group=node('article','message-group planning-message');group.dataset.message=String(m.seq);
@@ -6160,7 +6206,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       row.append(bubble);
     } else row.append(markdown(m.text));
     const bubble=row.lastElementChild;
-    if(!isUser&&m.kind==='assistant'&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false){group.classList.add('progress-commentary');if(summaries.has(m.progress.group_id)){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker)group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
+    if(!isUser&&m.kind==='assistant'&&isProgressMember(m)){group.classList.add('progress-commentary');if(summaries.get(m.progress.group_id)?.includes(m)){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker)group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
     if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));
@@ -6300,7 +6346,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   for(const approval of state.approvals.filter(a=>(a.status||'pending')==='pending')){
     const run=state.allRuns.find(r=>r.id===approval.run_id);if(!run||run.status!=='awaiting_approval')continue;
     const source=state.chats.find(c=>c.id===run.chat_id),target=source&&!source.bot_only&&!source.archived?source.id:'dm-'+run.bot_id;
-    if(target===id&&!simpleApproval(approval)&&!area.querySelector('[data-approval="'+CSS.escape(approval.id)+'"]')){const card=approvalCard({...approval,status:approval.status||'pending'},run);card.dataset.approval=approval.id;area.append(card);}
+    if(target===id&&!simpleApproval(approval)&&!area.querySelector('[data-approval="'+CSS.escape(approval.id)+'"]')){const card=approvalCard({...approval,status:approval.status||'pending'},run);card.dataset.approval=approval.id;area.append(attachTaskReview(card,taskReviewGroup({approval,run_id:run.id,sender:run.bot_id},summaries,id,data.messages),taskTrackers));}
   }
   // Human handoffs belong where they were requested, not beneath the live
   // worker or the final answer. Keep one stable card as its status changes.
@@ -6328,6 +6374,12 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       ||[...area.children].find(n=>n.dataset.run===task.run_id&&!n.dataset.message);
     const group=node('article','message-group human-handoff-message');
     group.dataset.message='human-task-'+task.id;group.append(card);
+    // Only a task already underway when this request was persisted owns the
+    // handoff. A later task from the same bot must not absorb an earlier request.
+    const preceding=data.messages.filter(m=>m.run_id===task.run_id&&m.sender===task.bot_id&&(event&&Number.isInteger(m.source_event_seq)?m.source_event_seq<=event.seq:m.created<task.created)).sort((a,b)=>b.seq-a.seq);
+    const phase=preceding.find(m=>isProgressMember(m)||m.kind==='result'||m.progress?.phase==='final_answer');
+    const reviewGroup=phase&&isProgressMember(phase)&&summaries.get(phase.progress.group_id)?.includes(phase)?phase.progress.group_id:null;
+    attachTaskReview(group,reviewGroup,taskTrackers);
     area.insertBefore(group,anchor||null);
   }
   reconcileConversation(liveArea,area,mode==='sync'&&!entry.historyChanged);entry.historyChanged=false;
@@ -8698,7 +8750,7 @@ function instructionApprovalCard(a,run){
   const target=a.args.bot_name||state.bots.find(b=>b.id===a.args.bot_id)?.name||'teammate';
   card.append(node('h3','','Update '+target+'’s instructions'),node('p','muted small',a.status==='pending'?'Your one-time approval is required, including with Full access. Applies to future tasks.':a.status==='approved'?'Approved for this change. Updated instructions apply to future tasks.':'This instruction change was not approved.'));
   const changes=compactChanges(a.args.expected_instructions||'',a.args.instructions||'');animateWorkflowDetails(changes);card.append(changes);
-  if(a.status==='pending'){const actions=node('div','row-actions');for(const[label,approved]of[['Allow',true],['Decline',false]])actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved});await refresh(true);},approved?'primary small-button':'outline-button'));card.append(actions);}else {
+  if(a.status==='pending'){const actions=node('div','row-actions');for(const[label,approved]of[['Allow',true],['Decline',false]])actions.append(button(label,async()=>{await submitApprovalDecision(a.id,{approved});},approved?'primary small-button':'outline-button'));card.append(actions);}else {
     const receipt=node('p','instruction-decision '+(a.status==='approved'?'approved':'muted'));
     if(a.status==='approved')receipt.append(icon('check',16));
     receipt.append(node('span','',a.status==='approved'?'Allowed for this change':a.status==='denied'?'Declined':a.status));
@@ -8721,9 +8773,17 @@ function chatEditApprovalCard(a,run){
   for(const[label,ids]of[['Add members',added],['Remove members',removed]])if(ids.length){const section=node('div','chat-edit-field');section.append(node('strong','',label),node('p','',ids.map(id=>names.get(id)||id).join(', ')));card.append(section);}
   if(added.length)card.append(node('p','muted small','Added members can read the existing shared conversation.'));
   if(a.status==='pending'){
-    const actions=node('div','row-actions');for(const[label,approved]of[['Allow changes',true],['Decline',false]])actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved});await refresh(true);},approved?'primary small-button':'outline-button'));card.append(actions);
+    const actions=node('div','row-actions');for(const[label,approved]of[['Allow changes',true],['Decline',false]])actions.append(button(label,async()=>{await submitApprovalDecision(a.id,{approved});},approved?'primary small-button':'outline-button'));card.append(actions);
   }
   return decisionReceipt(card,{key:'approval:'+a.id,title:'Update '+(a.args.chat_name||'chat'),outcome:a.status==='approved'?'Allowed':a.status==='denied'?'Declined':a.status==='cancelled'?'Cancelled':'Expired',terminal:a.status!=='pending'});
+}
+const pendingApprovalDecisions=new Map();
+function submitApprovalDecision(id,decision){
+  if(pendingApprovalDecisions.has(id))return pendingApprovalDecisions.get(id);
+  const operation=(async()=>{await api('/approvals/'+id,'POST',decision);await refresh(true);})();
+  pendingApprovalDecisions.set(id,operation);
+  operation.finally(()=>pendingApprovalDecisions.delete(id)).catch(()=>{});
+  return operation;
 }
 function approvalCard(a,run) {
   // The pending-only approval feed omits status; conversation receipts include it.
@@ -8770,7 +8830,7 @@ function approvalCard(a,run) {
   }
   box.append(node('p','muted small',browserWhere+caption));
   const details=node('details','task-details');details.append(node('summary','','Show the details'),node('pre','',JSON.stringify(detailsArgs,null,2)));box.append(details);
-  if(pending){const actions=node('div','task-card-actions');for(const [label,approved]of [['Allow once',true],['Decline',false]])actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved});await refresh(true);},approved?'primary small-button':'outline-button'));box.append(actions);}
+  if(pending){const actions=node('div','task-card-actions');for(const [label,approved]of [['Allow once',true],['Decline',false]])actions.append(button(label,async()=>{await submitApprovalDecision(a.id,{approved});},approved?'primary small-button':'outline-button'));box.append(actions);}
   return decisionReceipt(box,{key:'approval:'+a.id,title:action,outcome:status==='approved'?'Approved':status==='denied'?'Denied':status==='cancelled'?'Cancelled':'Expired',terminal:!pending,compact:true});
 }
 function connectorBrand(connection='',tool='') {
@@ -8835,7 +8895,7 @@ function connectorApprovalCard(a,run) {
     choices=args.forced?[['Allow',true,''],['Deny',false,'']]:[['Always allow',true,'always_allow'],['Allow',true,''],['Deny',false,'']];
     const details=node('details','task-details');details.append(node('summary','','Action details'),node('pre','',JSON.stringify(claude?args.input:args.arguments,null,2)));box.append(details);
   }
-  if(pending){const actions=node('div','task-card-actions connector-card-actions');for(const [label,approved,choice] of choices)actions.append(button(label,async()=>{await api('/approvals/'+a.id,'POST',{approved,choice});await refresh(true);},approved?'primary small-button connector-request-allow':'outline-button'));box.append(actions);}
+  if(pending){const actions=node('div','task-card-actions connector-card-actions');for(const [label,approved,choice] of choices)actions.append(button(label,async()=>{await submitApprovalDecision(a.id,{approved,choice});},approved?'primary small-button connector-request-allow':'outline-button'));box.append(actions);}
   return decisionReceipt(box,{key:'approval:'+a.id,title:box.querySelector('.task-description')?.textContent||'Connector approval',outcome:status==='approved'?'Allowed':status==='denied'?'Declined':status==='cancelled'?'Cancelled':'Expired',terminal:!pending});
 }
 const expandedBotConnectors=new Set();

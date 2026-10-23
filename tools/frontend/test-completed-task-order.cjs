@@ -17,13 +17,13 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  {seq:4,sender:'piper',kind:'result',text:run.output,run_id:run.id,source_event_seq:5,created:now-13}];
  const otherRun={...run,id:'other-run',chat_id:'general',status:'awaiting_user'};
  const otherTask={...task,id:'other-step',run_id:otherRun.id,status:'pending'};
- let reads=0;
+ let reads=0,includeActionEvent=true;
  await page.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
  await page.route('**/api/**',async route=>{
  const req=route.request(),u=new URL(req.url()),n=u.pathname,send=json=>route.fulfill({json});
  if(n==='/api/chats')return send([{id:'dm-piper',name:'Piper',members:['piper']},{id:'general',name:'General',members:['piper']}]);
  if(n==='/api/runs')return send([run,otherRun]);
- if(n==='/api/runs/human-run')return send({run,events:[{seq:3,kind:'user_action',body:task,created:task.created}],approvals:[]});
+ if(n==='/api/runs/human-run')return send({run,events:includeActionEvent?[{seq:3,kind:'user_action',body:task,created:task.created}]:[],approvals:[]});
  if(n==='/api/user-tasks'){reads++;return send([task,otherTask]);}
  if(n==='/api/activity')return send({});
  if(n==='/api/chats/dm-piper'){
@@ -34,7 +34,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  if(process.env.KINDRED_BASELINE_APP)await page.route('**/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(process.env.KINDRED_BASELINE_APP,'utf8')}));
  const snapshots=[];
  if(!process.env.KINDRED_GROUP_ANCHOR_ONLY){
- await page.goto('http://127.0.0.1:'+server.address().port);
+ await page.goto('http://127.0.0.1:'+server.address().port,{waitUntil:'domcontentloaded'});
  await page.locator('#content [data-message="4"]').waitFor();
  async function check(label){
  const ids=await page.locator('#content > [data-message]').evaluateAll(nodes=>nodes.map(n=>n.dataset.message));snapshots.push({label,ids});
@@ -49,10 +49,10 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  await page.locator('#content [data-message="'+seq+'"]').waitFor();await check('arrival-'+seq);
  const prior=reads;await page.waitForFunction(()=>true);for(let j=0;reads<prior+2&&j<100;j++)await page.waitForTimeout(100);assert(reads>=prior+2);await check('poll-'+seq);
  }
- await page.reload();await page.locator('#content [data-message="7"]').waitFor();await check('reload');
+ await page.reload({waitUntil:'domcontentloaded'});await page.locator('#content [data-message="7"]').waitFor();await check('reload');
  await page.screenshot({path:path.join(out,engine+'-completed-order.png')});
  assert.equal(await page.locator('#content [data-message="human-task-other-step"]').count(),0,'Another chat’s full request stays out of this conversation history');
- messages[2].text='<finish_quietly/>';await page.reload();await page.locator('#content [data-message="7"]').waitFor();await check('hidden-quiet-history');
+ messages[2].text='<finish_quietly/>';await page.reload({waitUntil:'domcontentloaded'});await page.locator('#content [data-message="7"]').waitFor();await check('hidden-quiet-history');
  // Status changes keep the same chronological anchor, including active requests.
  run.status='awaiting_user';task.status='pending';
  await page.locator('#content [data-user-task="human-step"]').getByRole('button',{name:'Take over',exact:true}).waitFor();await check('pending');
@@ -73,7 +73,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    {seq:9,sender:'piper',kind:'result',text:run.output,run_id:run.id,source_event_seq:8,created:now-300});
   const markerSeq=placement==='spanning'?1.5:4.5;messages.push({...progress(markerSeq,placement==='spanning'?now-590:now-451,placement==='spanning'?1:4),kind:'task_progress',text:'',progress:{...progress(markerSeq,now-590,1).progress,work_qualified:true,presentation:{mode:'staged',promoted:true,stages:['Inspect accounts','Verify records'],current_stage:1}}});messages.sort((a,b)=>a.seq-b.seq);
   const label=placement+'-'+hidden;
-  await page.setViewportSize({width:hidden==='quiet'?390:1100,height:850});await page.goto('http://127.0.0.1:'+server.address().port);
+  await page.setViewportSize({width:hidden==='quiet'?390:1100,height:850});await page.goto('http://127.0.0.1:'+server.address().port,{waitUntil:'domcontentloaded'});
   await page.locator('#content > [data-message="9"]').waitFor();await page.locator('.summary-progress').waitFor();
   async function groupedCheck(stage){
    const ids=await page.locator('#content > [data-message]').evaluateAll(ns=>ns.map(n=>n.dataset.message));snapshots.push({label:label+'-'+stage,ids});
@@ -84,9 +84,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    for(const m of messages.filter(m=>m.seq>9))assert(receipt<ids.indexOf(String(m.seq)),'Later arrivals follow original handoff');
   }
   await groupedCheck('loaded');
+  const handoff=page.locator('#content > [data-message="human-task-human-step"]');
+  assert.equal(await handoff.isVisible(),placement!=='spanning','Only handoffs from this task follow its collapsed disclosure');
   const progressCount=await page.locator('.progress-update-time-toggle').count();assert.equal(progressCount,placement==='spanning'?5:3,'Inline elapsed controls preserved outside tracker');
   await page.screenshot({path:path.join(out,engine+'-'+label+'-loaded.png')});
-  assert.equal(await page.locator('.summary-progress .progress-commentary').count(),0,'Tracker never swallows commentary');await page.locator('.summary-progress-heading').click();await page.waitForTimeout(450);
+  assert.equal(await page.locator('.summary-progress .progress-commentary').count(),0,'Tracker never swallows commentary');await page.locator('.summary-progress-heading').click();await page.waitForTimeout(450);assert(await handoff.isVisible(),'Expanding the task keeps its handoff readable');
   const contentBox=await page.locator('#content').boundingBox();
   await page.mouse.move(contentBox.x+contentBox.width/2,contentBox.y+contentBox.height/2);await page.mouse.wheel(0,-300);
   await page.waitForTimeout(150);await page.locator('#content').evaluate(n=>n.scrollTop=40);await page.waitForTimeout(100);
@@ -98,12 +100,21 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const afterState=await page.evaluate(()=>({top:document.querySelector('#content').scrollTop,rows:[...document.querySelector('#content').children].map(n=>({id:n.dataset.message,y:n.getBoundingClientRect().y,h:n.getBoundingClientRect().height}))}));fs.writeFileSync(path.join(out,engine+'-'+label+'-reading.json'),JSON.stringify({beforeState,afterState},null,2));
   const after=await anchor.boundingBox();assert(Math.abs(after.y-before.y)<1,'Grouped reader anchor retained through later arrivals '+JSON.stringify({label,before,after}));
   const prior=reads;for(let j=0;reads<prior+2&&j<100;j++)await page.waitForTimeout(100);assert(reads>=prior+2);await groupedCheck('poll');
-  await page.reload();await page.locator('#content > [data-message="11"]').waitFor();await groupedCheck('reload');
-  run.status='awaiting_user';task.status='pending';await page.locator('#content [data-user-task="human-step"]').getByRole('button',{name:'Take over',exact:true}).waitFor();await groupedCheck('pending');
+  await page.reload({waitUntil:'domcontentloaded'});await page.locator('#content > [data-message="11"]').waitFor();await groupedCheck('reload');
+  run.status='awaiting_user';task.status='pending';if(placement==='spanning'){await page.locator('.summary-progress-heading').click();}await page.locator('#content [data-user-task="human-step"]').getByRole('button',{name:'Take over',exact:true}).waitFor();await groupedCheck('pending');
   task.status='resumed';run.status='completed';await page.locator('#content [data-message="human-task-human-step"] .decision-receipt-summary').waitFor();await groupedCheck('completed');
   assert.equal(await page.locator('#content [data-message="human-task-other-step"]').count(),0,'Cross-chat request stays out');
  }
 
+ // Second-resolution timestamps cannot establish which event came first.
+ // Without action event details, a marker from the same second is not an owner.
+ includeActionEvent=false;task.created=now;task.status='resumed';run.status='completed';
+ messages.splice(0,messages.length,{seq:1,sender:'user',kind:'message',text:run.prompt,created:now-2},
+  {seq:2,sender:'piper',kind:'task_progress',run_id:run.id,created:now,text:'',progress:{mode:'summaries',phase:'commentary',work_qualified:true,run_id:run.id,group_id:'ambiguous-second'}},
+  {seq:3,sender:'piper',kind:'result',run_id:run.id,created:now+1,text:run.output});
+ await page.reload({waitUntil:'domcontentloaded'});await page.locator('[data-progress-group="ambiguous-second"]').waitFor();
+ const ambiguous=page.locator('[data-message="human-task-human-step"]');await ambiguous.waitFor();
+ assert.equal(await ambiguous.getAttribute('data-task-commentary'),null,'Ambiguous same-second handoff stays outside the later group');
  assert.deepEqual(errors,[]);
  fs.writeFileSync(path.join(out,engine+'-results.json'),JSON.stringify({engine,snapshots,errors},null,2));console.log(JSON.stringify({engine,passed:true,snapshots:snapshots.length}));
  }finally{await browser.close();server.closeAllConnections();server.close();}
