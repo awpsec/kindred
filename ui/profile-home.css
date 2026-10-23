@@ -125,3 +125,41 @@ html[data-home-loading] main{visibility:hidden}
 .account-server-group{margin:0 0 20px}.account-server-group>h3{font-size:12px;font-weight:500;color:var(--muted);margin:0 0 8px;overflow-wrap:anywhere}#known-server{width:100%;margin-bottom:12px}
 
 #known-server{min-height:42px;padding:10px 36px 10px 12px;border:1px solid var(--line);border-radius:10px;background-color:var(--panel);color:var(--fg);font:inherit;font-size:13px;transition:border-color .15s}#known-server:hover{border-color:var(--muted)}#known-server:focus-visible{outline:2px solid var(--muted);outline-offset:2px}
+
+/* The bundled account view shares the settings palette, including its native child view. */
+html:is([data-account-section=accounts],[data-embedded]){background:#111;--dialog-bg:#111;--panel:#202020;--hover:#292929;--fg:#ededed;--muted:#a2a2a2;--line:#303030;}
+html:is([data-account-section=accounts],[data-embedded])[data-theme=light]{background:#fafafa;--dialog-bg:#fafafa;--panel:#efefef;--hover:#e7e7e7;--fg:#222;--muted:#707070;--line:#ddd;}
+html[data-account-section=accounts] main,html[data-embedded] main{padding:12px 24px 24px;}
+html[data-account-section=accounts] .dialog-chrome{padding:20px 24px 12px;border:0;min-height:64px;font-size:calc(17px * var(--text-scale, 1));}
+html[data-account-section=accounts] .dialog-chrome button{border-radius:50%;background:var(--hover);}
+html[data-account-section=accounts] .intro{font-size:calc(13px * var(--text-scale, 1));line-height:1.6;margin:0 0 24px;}
+html[data-account-section=accounts] #saved{padding:0;border:0;}
+html[data-account-section=accounts] #saved>h2{display:none;}
+html[data-account-section=accounts] .account-server-group{padding:0;border:0;margin:0 0 24px;}
+html[data-account-section=accounts] .account-server-group>h3{font-size:calc(12px * var(--text-scale, 1));margin:0 0 10px;padding:0 2px;}
+html[data-account-section=accounts] .saved-profile{background:var(--panel);border-radius:14px;margin:6px 0;}
+html[data-account-section=accounts] .saved-profile>.select{min-height:68px;padding:12px;border-radius:14px;}
+html[data-account-section=accounts] .profile-initial{width:36px;height:36px;font-size:calc(12px * var(--text-scale, 1));}
+html[data-account-section=accounts] .saved-profile-copy{display:flex;flex-wrap:wrap;gap:2px 6px;align-items:baseline;}
+html[data-account-section=accounts] .saved-profile .name{flex-basis:100%;font-size:calc(14px * var(--text-scale, 1));font-weight:550;}
+html[data-account-section=accounts] .saved-profile :is(.server,.session-state){font-size:calc(12px * var(--text-scale, 1));line-height:1.5;margin:0;}
+html[data-account-section=accounts] .session-state::before{content:'·';margin-right:6px;}
+html[data-account-section=accounts] .forget{width:36px;height:36px;margin-right:8px;border-radius:50%;}
+html[data-account-section=accounts] .count{background:var(--button);color:var(--button-fg);}
+html[data-account-section=accounts] #server-choice{padding:0;border:0;}
+html[data-account-section=accounts] .add-account{border:0;border-radius:12px;background:var(--hover);padding:11px 14px;min-height:44px;}
+html[data-account-section=accounts] #server-form{padding-top:16px;}
+html[data-account-section=accounts] label{font-size:calc(12px * var(--text-scale, 1));}
+html[data-account-section=accounts] :is(#address,#known-server){border:0;border-radius:12px;background-color:var(--panel);font-size:calc(13px * var(--text-scale, 1));min-height:42px;padding-block:11px;}
+html[data-account-section=accounts] button{border-color:transparent;}
+html[data-account-section=accounts] button:focus-visible,html[data-account-section=accounts] input:focus-visible{outline:2px solid var(--muted);outline-offset:2px;}
+html[data-account-section=accounts] .address-row>.primary{border-radius:12px;padding-inline:18px;}
+html[data-account-section=accounts] .hint{font-size:calc(12px * var(--text-scale, 1));}
+html[data-account-section=accounts] .confirm-dialog{border:1px solid var(--line);border-radius:20px;background:var(--dialog-bg);padding:24px;}
+html[data-account-section=accounts] .confirm-dialog h2{font-size:calc(17px * var(--text-scale, 1));font-weight:600;}
+html[data-account-section=accounts] .confirm-dialog button{border:0;border-radius:10px;background:var(--panel);}
+html[data-account-section=accounts] .confirm-dialog button:hover{background:var(--hover);}
+html[data-account-section=accounts] .dialog-actions .danger{color:#e49c9c;}
+html[data-account-section=accounts][data-theme=light] .dialog-actions .danger{color:#b23939;}
+html[data-account-section=accounts] .confirm-dialog details{border:0;}
+@media(max-width:450px){html[data-account-section=accounts] main,html[data-embedded] main{padding-inline:20px;}.saved-profile-copy .session-state{overflow-wrap:anywhere;}}

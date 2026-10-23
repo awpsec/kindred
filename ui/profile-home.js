@@ -4,7 +4,7 @@ import {savedAccounts} from './profiles.js';
 const invoke=(command,args={})=>window.__TAURI__.core.invoke(command,args),$=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search),embedded=params.get('embedded')==='1';
 let requestedTheme=params.get('theme'),platform=null;
-function accountContext(detail={}){if(detail.section==='setup')delete document.documentElement.dataset.accountSection;if(['light','dark'].includes(detail.theme)){requestedTheme=detail.theme;document.documentElement.dataset.theme=detail.theme;}if(['accounts','standalone','transfer'].includes(detail.section)){document.documentElement.dataset.accountSection=detail.section;const label=detail.section==='standalone'?'Local server':detail.section==='transfer'?'Move workspace':'Accounts';const chrome=document.querySelector('.dialog-chrome span');if(chrome)chrome.textContent=label;document.querySelector('main>h1').textContent=label;}}
+function accountContext(detail={}){if(detail.section==='setup')delete document.documentElement.dataset.accountSection;if(['light','dark'].includes(detail.theme)){requestedTheme=detail.theme;document.documentElement.dataset.theme=detail.theme;}if(['accounts','standalone','transfer'].includes(detail.section)){document.documentElement.dataset.accountSection=detail.section;const label=detail.section==='standalone'?'Local server':detail.section==='transfer'?'Move workspace':'Saved accounts';const chrome=document.querySelector('.dialog-chrome span');if(chrome)chrome.textContent=label;document.querySelector('main>h1').textContent=label;}}
 accountContext({theme:requestedTheme,section:params.get('section')});
 window.addEventListener('kindred-account-context',e=>accountContext(e.detail));
 

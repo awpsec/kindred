@@ -205,3 +205,20 @@ html[data-accent]:not([data-accent=monochrome]) #send{--button:var(--message-acc
   outline:2px solid var(--muted);
   outline-offset:2px;
 }
+
+/* Saved accounts is one compact panel, using the same surfaces as preferences. */
+#account-manager-dialog[open]{width:540px;height:600px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 48px);border-radius:20px;}
+#account-manager-dialog .settings-main>header{padding:20px 24px 12px;border:0;background:var(--bg);}
+#account-manager-dialog .settings-main>header h2{margin:0;font-size:calc(17px * var(--text-scale, 1));font-weight:600;}
+#account-manager-dialog .settings-main>header .icon-button{width:32px;height:32px;border:0;border-radius:50%;background:var(--hover);}
+#account-manager-dialog .account-manager-content{margin:0 0 20px;}
+#account-manager-dialog .account-manager-fallback{margin:0;padding:8px 24px 24px;}
+#account-manager-dialog .account-manager-fallback>p{font-size:calc(13px * var(--text-scale, 1));line-height:1.6;}
+#account-manager-dialog .account-choice{width:100%;grid-template-columns:36px minmax(0,1fr);margin:6px 0;border:0;border-radius:14px;background:var(--surface);padding:12px;min-height:64px;}
+#account-manager-dialog .account-choice:hover{background:var(--hover);}
+#account-manager-dialog .account-copy{min-width:0;display:flex;flex-direction:column;gap:3px;}
+#account-manager-dialog .account-copy strong{font-size:calc(14px * var(--text-scale, 1));font-weight:550;}
+#account-manager-dialog .account-copy .muted{font-size:calc(12px * var(--text-scale, 1));overflow-wrap:anywhere;}
+#account-manager-dialog .profile-avatar{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--hover);font-size:calc(12px * var(--text-scale, 1));}
+#account-manager-dialog .account-manager-add{width:100%;min-height:42px;margin:16px 0;border:0;border-radius:12px;background:var(--hover);text-align:left;padding:10px 14px;}
+#account-manager-dialog .account-manager-add::before{content:'+';margin-right:10px;font-size:calc(18px * var(--text-scale, 1));vertical-align:-1px;}
