@@ -211,7 +211,7 @@ struct RootView: View {
                         Button("New chat", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.newConversation) }
                     } label: { Label("New conversation", systemImage: "plus") }
                 }
-                if session.presentation.route == "artifacts" {
+                if session.presentation.route == "artifacts" || session.presentation.artifactLibraryVisible {
                     Button {
                         session.performDuoAction(.search)
                     } label: { Label("Search artifacts", systemImage: "magnifyingglass") }

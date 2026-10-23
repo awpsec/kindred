@@ -187,9 +187,9 @@ html[data-kindred-ios] :is(.dictation-settings,.version-actions,[data-client-upd
 /* The iOS artifact library and document are separate full-width pages. */
 html[data-kindred-ios] #app .artifact-studio { inset:0; padding:0; grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); }
 html[data-kindred-ios] #app .artifact-studio-library { position:absolute; inset:0; width:100%; max-width:100%; height:100%; max-height:none; display:flex; flex-direction:column; padding:0 0 calc(12px + var(--ios-safe-bottom)); gap:0; background:var(--bg); border:0; box-shadow:none; transform:none; transition:none; }
-html[data-kindred-ios] .artifact-studio :is(.artifact-library-brand-row,.artifact-library-pin,.artifact-library-reveal,.artifact-library-backdrop,.pane-resizer,.sidebar-bottom) { display:none !important; }
-html[data-kindred-ios] .artifact-studio[data-ios-artifact-view=list]>.artifact-workbench,
-html[data-kindred-ios] #app .artifact-studio[data-ios-artifact-view=document]>.artifact-studio-library { display:none; }
+html[data-kindred-ios] .artifact-studio :is(.artifact-library-brand-row,.artifact-library-pin,.artifact-library-reveal,.artifact-library-backdrop,.artifact-viewer-back,.pane-resizer,.sidebar-bottom) { display:none !important; }
+html[data-kindred-ios] .artifact-studio:not([data-ios-artifact-layout=split]):not([data-ios-artifact-layout=stacked])[data-ios-artifact-view=list]>.artifact-workbench,
+html[data-kindred-ios] #app .artifact-studio:not([data-ios-artifact-layout=split]):not([data-ios-artifact-layout=stacked])[data-ios-artifact-view=document]>.artifact-studio-library { display:none; }
 html[data-kindred-ios] .ios-artifact-navigation { position:relative; display:flex; align-items:center; flex:none; gap:8px; height:calc(72px + var(--ios-safe-top)); padding:calc(12px + var(--ios-safe-top)) 16px 12px; }
 html[data-kindred-ios] .ios-artifact-navigation>button:nth-child(2) { margin-left:auto; }
 html[data-kindred-ios] .artifact-studio .ios-artifact-button { display:inline-flex; flex:none; align-items:center; justify-content:center; width:44px; height:44px; min-width:44px; min-height:44px; border-radius:50%; padding:11px; color:var(--fg); }
@@ -255,6 +255,28 @@ html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area { max-wid
 html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden]) #desktop { flex:0 1 var(--ios-tabletop-top); max-height:calc(100% - 56px); min-height:0; }
 html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden])>.ios-computer-controls { flex:1; min-height:56px; padding-top:var(--ios-tabletop-gap,0px); box-sizing:border-box; overflow:auto; }
 html[data-kindred-ios][data-ios-duo=true] .ios-artifact-navigation { height:0; min-height:0; padding:0; overflow:hidden; }
+/* Duo panes occupy measured safe rectangles, including the native rail and
+   active fold. Native Back/Search/Add remain the only navigation controls. */
+html[data-kindred-ios][data-ios-duo=true] #app .artifact-studio { display:block; }
+html[data-kindred-ios][data-ios-duo=true] #app .artifact-studio :is(.artifact-studio-library,.artifact-workbench) { position:absolute; inset:var(--ios-artifact-y,0px) auto auto var(--ios-artifact-x,0px); width:var(--ios-artifact-width,100%); height:var(--ios-artifact-height,100%); max-width:none; max-height:none; min-width:0; min-height:0; box-sizing:border-box; padding-bottom:12px; overflow:hidden; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-workbench-header [aria-label="Back to artifacts"] { display:none; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio-library-heading { padding:20px 20px 12px; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio-library-heading h1 { font-size:calc(20px * var(--text-scale,1)); }
+html[data-kindred-ios] .artifact-studio .artifact-library-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr)); min-width:0; padding:0 16px 10px; gap:8px; }
+html[data-kindred-ios] .artifact-library-filters select { width:100%; min-width:0; min-height:44px; max-width:100%; border:0; border-radius:12px; background:var(--surface); padding:8px; font-size:calc(14px * var(--text-scale,1)); }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio .artifact-studio-library-item { min-height:64px; gap:10px; padding:12px; border-radius:14px; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio-library-title { font-size:calc(14px * var(--text-scale,1)); line-height:1.45; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio-library-item>.artifact-kind-icon { width:24px; height:24px; flex:none; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio-library-item time { font-size:11px; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-workbench-header { min-height:76px; padding:16px; gap:8px; align-items:center; }
+html[data-kindred-ios] .artifact-workbench-title { flex:1 1 120px; min-width:0; }
+html[data-kindred-ios] .artifact-title-input { min-width:0; max-width:100%; font-size:calc(16px * var(--text-scale,1)); }
+html[data-kindred-ios] .artifact-workbench-actions { flex-wrap:wrap; gap:4px; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio:is([data-ios-artifact-layout=split],[data-ios-artifact-layout=stacked])>.artifact-studio-library { background:var(--surface); border-radius:18px; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio .artifact-studio-library-search { border:0; border-radius:14px; }
+html[data-kindred-ios] .artifact-studio-empty { min-width:0; max-width:100%; margin:auto; padding:20px; }
+html[data-kindred-ios] .artifact-studio-empty h2 { font-size:clamp(18px,3vw,24px); }
+html[data-kindred-ios] .artifact-starter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; }
 html[data-kindred-ios][data-ios-duo=true][data-ios-duo-pose=tabletop] .computer-panel:not([hidden])>.ios-computer-controls { display:flex; flex-direction:column; }
 
 /* Native toolbar settings and inner-display pane affordances. */
