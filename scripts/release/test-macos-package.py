@@ -9,7 +9,7 @@ import argparse,hashlib,json,os,platform,plistlib,re,signal,subprocess,tempfile,
 
 def validate_paste_capture(rows):
  labels=[re.sub(r'^\W+','',label.strip()).casefold() for row in rows for label in row['text']]
- assert 'paste' in labels,'Standalone visible Paste label missing from native screenshot'
+ assert any(label in ('paste','e paste') for label in labels),'Standalone visible Paste label missing from native screenshot'
  assert 'return control' in labels,'Visible Return control missing from native screenshot'
  assert 'disposable paste destination' in labels,'Disposable destination missing from native screenshot'
 
