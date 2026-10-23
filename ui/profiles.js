@@ -288,7 +288,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const data=await api('admin');
     if(pages['Networking']){
       if(localNetwork)accessController=mountPhoneAccess(pages['Networking'],{nativeInvoke,workingBots,dialog:d,onPair:()=>{d.close();return connectMobile();}});
-      else if(meta?.docker_network)accessController=await mountDockerNetwork(pages['Networking'],{api,dialog:d});
+      else if(meta?.docker_network)accessController=await mountDockerNetwork(pages['Networking'],{api,dialog:d,onPair:address=>{d.close();return connectMobile(address);}});
       else pages['Networking'].append(el('p','muted','Manage networking from Kindred on the computer running this server.'));
     }
 
@@ -454,7 +454,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       if(meta.legacy_claim)container.append(button('Connect an existing device',()=>location.assign('/?legacy=1')));
     }
   }
-  async function connectMobile() {
+  async function connectMobile(preferredAddress='') {
     await refresh();
     let localAccess=null;if(isLocalStandalone())try{localAccess=await nativeInvoke('standalone_network',{});}catch{}
     const d=dialog('Connect mobile app');d.classList.add('mobile-pairing-dialog');
@@ -464,7 +464,7 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     const account=el('div','mobile-pairing-account');account.append(el('strong','',projection?.username||'Your account'),el('span','muted',projection?.profiles?.find(p=>p.active)?.name||''));body.append(account);
     const phoneAddress=value=>{try{const u=new URL(value);if(u.username||u.password||u.search||u.hash||u.pathname!=='/')return false;if(u.protocol==='https:')return !['localhost','127.0.0.1','[::1]'].includes(u.hostname);if(!meta?.mobile_pairing_private_http||u.protocol!=='http:')return false;const h=u.hostname.replace(/^\[|\]$/g,'');if(h.includes(':'))return /^fd[0-9a-f]{2}:/i.test(h);const n=h.split('.').map(Number);return n.length===4&&(n[0]===10||n[0]===192&&n[1]===168||n[0]===172&&n[1]>=16&&n[1]<=31||n[0]===100&&n[1]>=64&&n[1]<=127);}catch{return false;}};
     const options=[];if(localAccess?.ready_to_pair||localAccess?.tailnet_address_ready)options.push(localAccess.tailnet.address);for(const row of localAccess?.connection_addresses||[])if(row.state==='listening'&&row.phone_capable&&phoneAddress(row.address)&&!options.includes(row.address))options.push(row.address);
-    const address=label('Server address','url',options[0]||(location.protocol==='https:'?location.origin:getServerAddress()));address.input.placeholder='https://kindred.example.com';address.input.autocomplete='off';address.input.spellcheck=false;
+    const address=label('Server address','url',(typeof preferredAddress==='string'&&phoneAddress(preferredAddress)?preferredAddress:'')||options[0]||(location.protocol==='https:'?location.origin:getServerAddress()));address.input.placeholder='https://kindred.example.com';address.input.autocomplete='off';address.input.spellcheck=false;
     if(options.length){const picker=el('select');picker.setAttribute('aria-label','Phone connection address');for(const value of options){const option=el('option','',value+(value.startsWith('http:')?' · Not encrypted · updated phone app':' · Recommended'));option.value=value;picker.append(option);}picker.onchange=()=>{address.input.value=picker.value;address.input.dispatchEvent(new Event('input'));};body.append(picker);}
 
     const qr=el('div','mobile-pairing-qr'),status=el('p','mobile-pairing-status');status.setAttribute('role','status');

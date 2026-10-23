@@ -4,6 +4,7 @@ mod chat_files;
 mod composer_input;
 mod client_release;
 mod connection;
+mod connection_error;
 mod desktop;
 mod dictation;
 mod dictation_runtime;
