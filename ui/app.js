@@ -5037,6 +5037,8 @@ function setTaskCommentaryExpanded(key,expanded,animate=true){
   for(const row of rows)setTaskCommentaryRowExpanded(row,key,expanded,animate);
 }
 function setTaskCommentaryRowExpanded(row,key,expanded,animate=true){
+    // Polling an unchanged disclosure must not replay row motion.
+    if(!row.finishTaskCommentary&&row.hidden===!expanded)return;
     const height=row.hidden?0:row.getBoundingClientRect().height,fromOpacity=row.hidden?0:getComputedStyle(row).opacity,fromMargin=row.hidden?'0px':getComputedStyle(row).marginBlock;
     row.finishTaskCommentary?.();
     row.hidden=false;
@@ -5069,7 +5071,7 @@ function scheduleProgressCompletion(group,requested){
     if(!group.isConnected||group._progressEntry!==entry||group.dataset.progressGroup!==key||group._progressRunId!==runId||group.dataset.progressFinished!=='true'||entry.progressOpen.has(key)||!details?.open||details.classList.contains('is-collapsing'))return;
     const summary=details.querySelector('summary');
     if(body.contains(document.activeElement))summary.focus({preventScroll:true});
-    if(group.classList.contains('task-staged'))setTaskCommentaryExpanded(key,false);
+    setTaskCommentaryExpanded(key,false);
     summary.onclick({preventDefault(){}});
   };
   pending.frame=requestAnimationFrame(finish);
@@ -5098,7 +5100,7 @@ function summaryProgress(items,entry,runs){
     while(entry.taskTerminalRuns.size>CHAT_WINDOW_SIZE)entry.taskTerminalRuns.delete(entry.taskTerminalRuns.keys().next().value);
   }
   if(finished&&!terminal){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
-  if(finished&&!staged)return null;
+  // A persisted marker retains a compact completion receipt without inventing stages.
   const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
   const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open&&!previous.querySelector('details').classList.contains('is-collapsing');
@@ -5111,7 +5113,7 @@ function summaryProgress(items,entry,runs){
   const phase={preparing:'Preparing the next action',thinking:'Thinking through the next step',writing:'Writing a response',waiting:'Waiting for the model'}[activity?.phase];
   const current=activity?.current?.label||activity?.current_label;
   const taskName=(first.progress.task_title||rootRun?.task_title||'').trim();
-  const label=staged?(taskName||'Task progress'):(status||current||phase||taskName||'Activity');
+  const label=staged?(taskName||'Task progress'):finished?(taskName?taskName+' · '+status:status):(status||current||phase||taskName||'Activity');
   const task=node('span','summary-progress-task'),text=node('span','summary-progress-name',label);if(staged&&!finished&&run?.status==='running'){text.classList.add('is-working');text.style.animationDelay=`-${((Date.now()/1000-(run.progress_started||run.created||0))%6+6)%6}s`;}task.title=label;task.append(text);title.append(task);
   const started=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
   const ended=terminal?.ended||phaseFinal?.created||(finished?(endedEvent?.created||activity?.last_at||items.at(-1).created):run?Math.floor(Date.now()/1000):(activity?.last_at||items.at(-1).created));
@@ -5123,7 +5125,7 @@ function summaryProgress(items,entry,runs){
   if(activity){receipt.append(node('div','muted small','Recorded activity · '+(Number(activity.completed)||0)+' completed call'+(activity.completed===1?'':'s')+(activity.failed?' · '+activity.failed+' failed':'')));for(const item of activity.recent||[]){const row=node('div','summary-progress-update',item.label+(item.count>1?' × '+item.count:'')+(item.failed?' · Failed':''));if(started&&item.created>=started)row.append(node('span','progress-update-time',' '+elapsedTime(item.created-started)));receipt.append(row);}}
   else receipt.append(node('div','muted small','No recorded actions yet.'));
   body.append(receipt);details.append(title,body);group.append(details);animateChatDisclosure(details,body);
-  title.addEventListener('click',()=>{cancelProgressCompletion(group);const opening=!details.open||details.classList.contains('is-collapsing');if(opening){entry.progressOpen.add(key);entry.progressClosed.delete(key);}else{entry.progressOpen.delete(key);entry.progressClosed.add(key);}if(staged)setTaskCommentaryExpanded(key,opening);},{capture:true});
+  title.addEventListener('click',()=>{cancelProgressCompletion(group);const opening=!details.open||details.classList.contains('is-collapsing');if(opening){entry.progressOpen.add(key);entry.progressClosed.delete(key);}else{entry.progressOpen.delete(key);entry.progressClosed.add(key);}setTaskCommentaryExpanded(key,opening);},{capture:true});
   for(const event of ['pointerdown','keydown'])group.addEventListener(event,()=>cancelProgressCompletion(group),{capture:true});
   scheduleProgressCompletion(group,completing);
   return group;
@@ -6158,7 +6160,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       row.append(bubble);
     } else row.append(markdown(m.text));
     const bubble=row.lastElementChild;
-    if(!isUser&&m.kind==='assistant'&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false){group.classList.add('progress-commentary');if(summaries.has(m.progress.group_id)){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker?.classList.contains('task-staged'))group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
+    if(!isUser&&m.kind==='assistant'&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false){group.classList.add('progress-commentary');if(summaries.has(m.progress.group_id)){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker)group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
     if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));
@@ -6244,18 +6246,29 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       animateChatDisclosure(details,body);group.append(details);area.append(group);
     }
   }
+  const waitsByRequester=new Map();
   if(!entry.hasAfter)for(const wait of entry.pendingWaits||[]){
-    const helper=state.bots.find(b=>b.id===wait.bot_id),requester=state.bots.find(b=>b.id===wait.requester_bot_id);
-    if(!helper)continue;
+    if(!state.bots.some(b=>b.id===wait.bot_id))continue;
+    const key=wait.requester_bot_id||'',waits=waitsByRequester.get(key)||[];
+    waits.push(wait);waitsByRequester.set(key,waits);
+  }
+  for(const [requesterId,waits] of waitsByRequester){
+    const requester=state.bots.find(b=>b.id===requesterId);
+    const helpers=[...new Set(waits.map(w=>w.bot_id))].map(id=>state.bots.find(b=>b.id===id));
     const group=node('article','message-group collaboration-wait'),line=node('div','collaboration-wait-row');
-    group.dataset.waitRun=wait.run_id;group.dataset.message='collaboration-wait-'+wait.parent_run_id+'-'+wait.run_id;
-    const label=(requester?.name||'A teammate')+' is waiting on '+helper.name;
+    group.dataset.message='collaboration-wait-'+requesterId;
+    const label=(requester?.name||'A teammate')+' is waiting on '+helpers.map(b=>b.name).join(', ');
     line.title=label;
-    if(requester){const avatar=buddy(requester,24);avatar.setAttribute('aria-hidden','true');line.append(avatar);}
-    const text=node('span','collaboration-wait-label');text.append(node('strong','',requester?.name||'A teammate'),document.createTextNode(' is waiting on '),node('strong','',helper.name));line.append(text);
-    const helperAvatar=buddy(helper,24);helperAvatar.setAttribute('aria-hidden','true');line.append(helperAvatar);
-    if(wait.chat_id!==id){const open=iconButton('arrow','Open chat with '+helper.name,async()=>{const target=state.chats.find(c=>c.id===wait.chat_id);if(target)await chooseChat(target);});open.classList.add('collaboration-open');line.append(open);}
-    const stop=iconButton('close','Stop task for '+(requester?.name||'requester'),async()=>{await api('/runs/'+wait.parent_run_id+'/cancel','POST',{});await refresh();});stop.classList.add('collaboration-stop');line.append(stop);
+    const text=node('span','collaboration-wait-label');text.append(node('strong','',requester?.name||'A teammate'),document.createTextNode(' is waiting on '));
+    helpers.forEach((helper,index)=>{
+      if(index)text.append(document.createTextNode(', '));
+      text.append(node('strong','',helper.name));
+    });line.append(text);
+    for(const helper of helpers){
+      const wait=waits.find(w=>w.bot_id===helper.id&&w.chat_id!==id&&state.chats.some(c=>c.id===w.chat_id));
+      if(wait){const open=iconButton('arrow','Open chat with '+helper.name,async()=>{const target=state.chats.find(c=>c.id===wait.chat_id);if(target)await chooseChat(target);});open.classList.add('collaboration-open');line.append(open);}
+    }
+    const stop=iconButton('close','Stop tasks for '+(requester?.name||'requester'),async()=>{const results=await Promise.allSettled([...new Set(waits.map(w=>w.parent_run_id))].map(parent=>api('/runs/'+parent+'/cancel','POST',{})));await refresh();const failed=results.find(result=>result.status==='rejected');if(failed)notice(failed.reason?.message||String(failed.reason));});stop.classList.add('collaboration-stop');line.append(stop);
     group.append(line);area.append(group);
   }
   // Delegated work executes in its own collaboration chat, but the helper's
