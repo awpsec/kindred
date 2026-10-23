@@ -15,8 +15,11 @@ export function settingsHeaderArt(){
  const art=document.createElement('span');art.className='settings-header-art';art.setAttribute('aria-hidden','true');
  for(const [body,palette,left,top,size,angle] of composition){
   const p=newAvatarProfile();p.avatar={...p.avatar,body,palette};p.animated=false;
-  const slot=character(p,size);
-  Object.assign(slot.style,{position:'absolute',left:left+'%',top:top+'px',transform:`rotate(${angle}deg)`});
+  // Decorative artwork must not reconnect to the live avatar scheduler when
+  // settings tabs refresh theme attributes. Keep its initial SVG pose only.
+  const live=character(p,size),slot=live.cloneNode(true);
+  live._artwork.destroy();
+  Object.assign(slot.style,{position:'absolute',left:(left*3.5)+'px',top:top+'px',transform:`rotate(${angle}deg)`});
   art.append(slot);
  }
  return art;
