@@ -30,6 +30,17 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  let op=await start();assert(op.operationID);await emit(op,1,'recording');await emit(op,2,'partial','hello');assert.equal(await draft(),'Before hello after');
  await emit(op,2,'partial','duplicate');await emit({...op,documentID:'foreign'},3,'partial','foreign');await emit({...op,operationID:'foreign'},4,'final','foreign');assert.equal(await draft(),'Before hello after');
  await emit(op,3,'final','hello world');await emit(op,4,'stopped','hello world');await idle();assert.equal(await draft(),'Before hello world after');assert.equal(await p.locator('.dictation-transcript').count(),0);assert.equal(sent.length,0);
+ // Pause/resume replay from the tested Swift normalizer, within existing draft text.
+ if(process.env.KINDRED_TEST_DICTATION_REPLAY){
+  const replay=JSON.parse(fs.readFileSync(process.env.KINDRED_TEST_DICTATION_REPLAY,'utf8'));
+  await set('Before after');await p.evaluate(()=>{const e=document.querySelector('#prompt'),r=document.createRange();r.setStart(e.firstChild,6);r.collapse(true);getSelection().removeAllRanges();getSelection().addRange(r);});
+  op=await start();await emit(op,1,'recording');let sequence=2;
+  for(const event of replay){await emit(op,sequence++,event.phase,event.text);assert.equal(await draft(),'Before '+event.text+' after');}
+  await idle();assert.equal(await draft(),'Before First phrase. Second phrase! Third phrase. after');
+  // A second explicit microphone session appends at the current caret.
+  await set(await draft());op=await start();await emit(op,1,'recording');await emit(op,2,'partial','One more');await emit(op,3,'final','One more phrase.');await idle();
+  assert.equal(await draft(),'Before First phrase. Second phrase! Third phrase. after One more phrase.');assert.equal(sent.length,0);
+ }
  // Cancellation and errors preserve visible words; a late final cannot alter them.
  await set('Prefix');op=await start();await emit(op,1,'recording');await emit(op,2,'partial','kept');await p.getByRole('button',{name:'Cancel dictation',exact:true}).click();await idle();await emit(op,3,'final','late');assert.equal(await draft(),'Prefix');
  op=await start();await emit(op,1,'recording');await emit(op,2,'partial','also kept');await emit(op,3,'error','also kept',{errorCode:'microphone-denied'});await idle();assert.match(await draft(),/also kept$/);assert.equal(sent.length,0);
@@ -54,7 +65,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  await set('');await p.locator('#prompt').evaluate(e=>e.blur());op=await start();await emit(op,1,'recording');await emit(op,2,'final','No keyboard');assert.equal(await p.locator('#prompt').evaluate(e=>document.activeElement===e),false);
  await set('');await p.locator('#prompt').focus();op=await start();await emit(op,1,'recording');await emit(op,2,'final','With keyboard');assert.equal(await p.locator('#prompt').evaluate(e=>document.activeElement===e),true);
  // Status never asks for permissions; settings omit the desktop engine/microphone selectors.
- await p.getByRole('button',{name:'Toggle sidebar',exact:true}).click();await p.locator('#settings-button').click();assert.equal(await p.locator('.dictation-model-row').isVisible(),false);assert.equal(await p.locator('.microphone-setting').count(),0);await p.locator('#settings-close').click();await p.locator('#bots').getByRole('button',{name:'Piper',exact:true}).click();
+ await p.getByRole('button',{name:'Toggle sidebar',exact:true}).click();await p.locator('#identity-button').click();await p.locator('#identity-menu').getByRole('menuitem',{name:'Settings',exact:true}).click();assert.equal(await p.locator('.dictation-model-row').isVisible(),false);assert.equal(await p.locator('.microphone-setting').count(),0);await p.locator('#settings-close').click();await p.locator('#bots').getByRole('button',{name:'Piper',exact:true}).click();
  // Real theme/keyboard-size/text-scale layout: 44 target, 36 painted circle,20 icon.
  for(const theme of ['light','dark'])for(const populated of [false,true])for(const height of [844,550])for(const width of [320,390]){
   await p.setViewportSize({width,height});await set(populated?'Draft':'');await p.evaluate(theme=>{document.documentElement.dataset.theme=theme;document.documentElement.style.setProperty('--text-scale','1.5');document.documentElement.dataset.motion='off';},theme);
@@ -74,6 +85,6 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  await p.clock.install();await set('Deadline');op=await start();await p.clock.fastForward(30001);await idle();await emit(op,1,'recording');assert.equal(await draft(),'Deadline');
  op=await start();await emit(op,1,'recording');await emit(op,2,'partial','kept');await p.clock.fastForward(60001);assert.equal(await p.evaluate(id=>commands.filter(c=>c.action==='stop'&&c.operationID===id).length,op.operationID),1);await p.clock.fastForward(10001);await idle();assert.equal(await draft(),'Deadline kept');await emit(op,3,'final','late');assert.equal(await draft(),'Deadline kept');
  assert(await p.evaluate(()=>commands.every(c=>(c.operationID===undefined||c.operationID.length>0)&&(c.chatID===undefined||c.chatID.length>0))));
- assert.deepEqual(errors,[]);assert.equal(sent.length,0);console.log(JSON.stringify({pass:true,scenarios:19,layouts:16,errors,sent:sent.length,commands:await p.evaluate(()=>commands.map(({action})=>action))}));
+ assert.deepEqual(errors,[]);assert.equal(sent.length,0);console.log(JSON.stringify({pass:true,scenarios:process.env.KINDRED_TEST_DICTATION_REPLAY?21:19,layouts:16,errors,sent:sent.length,commands:await p.evaluate(()=>commands.map(({action})=>action))}));
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
