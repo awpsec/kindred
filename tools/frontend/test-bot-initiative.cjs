@@ -15,7 +15,7 @@ const assert=require('node:assert/strict');
   await p.route('**/api/bots/piper',route=>{
    assert.equal(route.request().method(),'PUT');bot=route.request().postDataJSON();writes.push(structuredClone(bot));return route.fulfill({json:bot});
   });
-  const open=async()=>{await p.goto('http://127.0.0.1:'+server.address().port);await p.waitForFunction(()=>document.querySelector('#heading').textContent==='Piper');await p.locator('#bot-details').click();await p.locator('#bot-settings').click();};
+  const open=async()=>{await p.goto('http://127.0.0.1:'+server.address().port);await p.waitForFunction(()=>document.querySelector('#heading').textContent==='Piper');await p.locator('#bot-details').click();await p.locator('#details-panel .bot-center-actions').getByRole('button',{name:'Bot settings',exact:true}).click();};
   const waitWrite=async(count,accepted=()=>true)=>{for(let i=0;i<100&&(writes.length<count||!accepted());i++)await p.waitForTimeout(50);assert(writes.length>=count&&accepted(),'Expected autosave');await p.locator('.bot-edit-form .preference-status').filter({hasText:'Saved'}).waitFor();};
   await open();
   const toggle=p.getByRole('switch',{name:'Take initiative',exact:true}),guidance=p.getByLabel('What should this bot keep an eye on?',{exact:true});

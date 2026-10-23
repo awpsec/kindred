@@ -27,47 +27,101 @@ export function composerText(root) {
   return read(root).replaceAll('\u00a0',' ');
 }
 
-// Paint links without inserting anchors into the editable DOM. Native editing,
-// IME, undo, spellcheck and the exact outgoing text keep their existing behavior.
-export function createComposerLinks(editor) {
-  if(!globalThis.Highlight||!globalThis.CSS?.highlights)return;
-  const highlight=new Highlight();
-  CSS.highlights.set('kindred-composer-link',highlight);
-  let frame=0,composing=false;
-  function refresh() {
-    frame=0;if(composing)return;
-    highlight.clear();
+// Inline URL icons are native autoformat transactions, like automatic lists.
+// Native Undo first removes formatting; text editing and Redo stay browser-owned.
+export function createComposerLinks(editor,{createIcon}={}) {
+  const highlight=globalThis.Highlight&&globalThis.CSS?.highlights?new Highlight():null;
+  if(highlight)CSS.highlights.set('kindred-composer-link',highlight);
+  const sites=Object.assign(Object.create(null),{'github.com':'github','www.github.com':'github','mail.google.com':'gmail','drive.google.com':'googledrive','calendar.google.com':'googlecalendar','notion.so':'notion','www.notion.so':'notion','notion.com':'notion','www.notion.com':'notion','trello.com':'trello','www.trello.com':'trello'});
+  const images=new Map(),suppressed=new Set(),blocks=new Set(['DIV','P','LI','UL','OL']);
+  let frame=0,timer=0,composing=false,formatting=false;
+  function iconImage(site){
+    if(images.has(site))return images.get(site);
+    const logo=site!=='web'?createIcon?.(site):null,svg=logo?.matches('svg')?logo:logo?.querySelector('svg');
+    const source=svg?new XMLSerializer().serializeToString(svg):'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="1.6"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z"/></svg>';
+    const value='url("data:image/svg+xml,'+encodeURIComponent(source)+'")';images.set(site,value);return value;
+  }
+  const atomic=n=>n.nodeType===Node.ELEMENT_NODE&&(n.tagName==='BR'||n.matches('[data-mention],[contenteditable="false"]'));
+  const weight=n=>n.nodeType===Node.TEXT_NODE?n.length:atomic(n)?1:[...n.childNodes].reduce((sum,c)=>sum+weight(c),0)+(blocks.has(n.tagName)?2:0);
+  function bookmark(){
+    const s=getSelection();if(!s?.rangeCount||!editor.contains(s.anchorNode)||!editor.contains(s.focusNode))return null;
+    function point(node,offset){
+      const chip=(node.nodeType===Node.TEXT_NODE?node.parentElement:node).closest?.('[contenteditable="false"]');
+      if(chip&&editor.contains(chip)){const after=offset>0;node=chip.parentNode;offset=[...node.childNodes].indexOf(chip)+(after?1:0);}
+      let value=node.nodeType===Node.TEXT_NODE?offset:[...node.childNodes].slice(0,offset).reduce((sum,c)=>sum+weight(c),0)+(node!==editor&&blocks.has(node.tagName)?1:0);
+      while(node!==editor){const parent=node.parentNode;for(const sibling of parent.childNodes){if(sibling===node)break;value+=weight(sibling);}if(parent!==editor&&blocks.has(parent.tagName))value++;node=parent;}return value;
+    }
+    return [point(s.anchorNode,s.anchorOffset),point(s.focusNode,s.focusOffset)];
+  }
+  function restore(saved){
+    if(!saved)return;
+    function locate(node,offset){
+      if(node.nodeType===Node.TEXT_NODE)return [node,Math.min(offset,node.length)];
+      if(atomic(node)){const parent=node.parentNode;return [parent,[...parent.childNodes].indexOf(node)+(offset?1:0)];}
+      if(node!==editor&&blocks.has(node.tagName)){if(offset===0)return [node,0];offset--;}
+      for(const child of node.childNodes){const size=weight(child);if(offset<=size)return locate(child,offset);offset-=size;}
+      return [node,node.childNodes.length];
+    }
+    getSelection().setBaseAndExtent(...locate(editor,saved[0]),...locate(editor,saved[1]));
+  }
+  function scan(){
     const nodes=[];let text='';
-    function read(node) {
+    function read(node){
       if(node.nodeType===Node.TEXT_NODE){nodes.push({node,start:text.length,end:text.length+node.length});text+=node.data;return;}
       if(node.nodeType!==Node.ELEMENT_NODE)return;
       if(node.matches('[data-mention],[contenteditable="false"]')){text+='\n';return;}
-      const block=/^(BR|DIV|P|LI|UL|OL)$/.test(node.tagName);
-      if(block)text+='\n';
-      for(const child of node.childNodes)read(child);
-      if(block)text+='\n';
+      const block=node.tagName==='BR'||blocks.has(node.tagName);if(block)text+='\n';
+      for(const child of node.childNodes)read(child);if(block)text+='\n';
     }
     for(const child of editor.childNodes)read(child);
-    const pattern=/(^|[\s([{'"<])((?:https?:\/\/|www\.)[^\s<>"'`]+)/gi;
-    for(const match of text.matchAll(pattern)) {
+    const matches=[],pattern=/(^|[\s([{'"<])((?:https?:\/\/|www\.)[^\s<>"'`]+)/gi;
+    for(const match of text.matchAll(pattern)){
       let url=match[2].replace(/[.,!?;:]+$/,'');
-      // Keep balanced URL parentheses, but not surrounding prose/Markdown.
-      while(/[)\]}]$/.test(url)){
-        const close=url.at(-1),open={')':'(',']':'[','}':'{'}[close];
-        if(url.split(close).length<=url.split(open).length)break;
-        url=url.slice(0,-1).replace(/[.,!?;:]+$/,'');
-      }
-      try{if(!new URL(/^www\./i.test(url)?'https://'+url:url).hostname)continue;}catch{continue;}
-      const start=match.index+match[1].length,end=start+url.length;
-      const first=nodes.find(n=>n.end>start),last=nodes.find(n=>n.end>=end);
-      if(!first||!last)continue;
-      const range=document.createRange();range.setStart(first.node,start-first.start);range.setEnd(last.node,end-last.start);highlight.add(range);
+      while(/[)\]}]$/.test(url)){const close=url.at(-1),open={')':'(',']':'[','}':'{'}[close];if(url.split(close).length<=url.split(open).length)break;url=url.slice(0,-1).replace(/[.,!?;:]+$/,'');}
+      let parsed;try{parsed=new URL(/^www\./i.test(url)?'https://'+url:url);if(!parsed.hostname)continue;}catch{continue;}
+      const start=match.index+match[1].length,end=start+url.length,first=nodes.find(n=>n.end>start),last=nodes.find(n=>n.end>=end);if(!first||!last)continue;
+      const range=document.createRange();range.setStart(first.node,start-first.start);range.setEnd(last.node,end-last.start);
+      const ancestor=first.node.parentElement.closest('[data-composer-url]'),prefix=document.createRange();if(ancestor){prefix.selectNodeContents(ancestor);prefix.setEnd(range.startContainer,range.startOffset);}
+      matches.push({url,range,owner:ancestor&&prefix.toString()===''?ancestor:null,site:!parsed.username&&!parsed.password&&sites[parsed.hostname]||'web'});
     }
+    return matches;
   }
-  const schedule=()=>{if(!frame&&!composing)frame=requestAnimationFrame(refresh);};
+  function paint(){
+    frame=0;if(composing)return;
+    highlight?.clear();const matches=scan(),seen=new Set();
+    for(const match of matches){highlight?.add(match.range);if(match.owner){seen.add(match.owner);match.owner.dataset.site=match.site;match.owner.style.setProperty('--composer-link-icon',iconImage(match.site));}}
+    // Only attributes change outside native editing transactions. This keeps
+    // browser history references, selection, and IME text nodes intact.
+    for(const span of editor.querySelectorAll('[data-composer-url]'))if(!seen.has(span)){span.removeAttribute('data-site');span.style.removeProperty('--composer-link-icon');}
+  }
+  const schedule=()=>{if(!frame&&!composing)frame=requestAnimationFrame(paint);};
+  function autoformat(){
+    timer=0;if(composing||formatting||document.activeElement!==editor||!editor.isContentEditable||!editor.getClientRects().length)return;
+    const matches=scan().filter(m=>!m.owner&&!suppressed.has(m.url));if(!matches.length)return;
+    const saved=bookmark();if(!saved)return;
+    formatting=true;
+    try{
+      // Native editing may rebuild neighboring text nodes. Rescan after each
+      // formatting transaction instead of retaining stale ranges.
+      for(let remaining=Math.min(matches.length,32);remaining>0;remaining--){
+        const match=scan().find(m=>!m.owner&&!suppressed.has(m.url));if(!match)break;
+        const span=document.createElement('span'),prefix=document.createElement('span');span.dataset.composerUrl='';span.className='composer-url';span.dataset.site=match.site;span.style.setProperty('--composer-link-icon',iconImage(match.site));prefix.className='composer-url-prefix';prefix.textContent=match.url.slice(0,8);span.append(prefix,document.createTextNode(match.url.slice(8)));
+        const selection=getSelection();selection.removeAllRanges();selection.addRange(match.range);document.execCommand('insertHTML',false,span.outerHTML);
+      }
+      restore(saved);
+    }finally{formatting=false;schedule();}
+  }
   new MutationObserver(schedule).observe(editor,{childList:true,characterData:true,subtree:true});
-  editor.addEventListener('compositionstart',()=>{composing=true;highlight.clear();});
-  editor.addEventListener('compositionend',()=>{composing=false;schedule();});
+  editor.addEventListener('input',e=>{
+    schedule();if(formatting)return;clearTimeout(timer);
+    if(e.inputType==='historyUndo'){for(const match of scan())suppressed.add(match.url);return;}
+    if(e.inputType==='historyRedo'||composing||e.isComposing)return;
+    timer=setTimeout(autoformat,80);
+  });
+  editor.addEventListener('compositionstart',()=>{composing=true;clearTimeout(timer);highlight?.clear();});
+  editor.addEventListener('compositionend',()=>{composing=false;schedule();timer=setTimeout(autoformat,80);});
+  editor.addEventListener('kindred-composer-reset',()=>{clearTimeout(timer);suppressed.clear();schedule();timer=setTimeout(autoformat,80);});
+  editor.addEventListener('focus',()=>{clearTimeout(timer);timer=setTimeout(autoformat,80);});
   schedule();
 }
 

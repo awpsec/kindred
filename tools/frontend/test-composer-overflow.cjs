@@ -24,7 +24,8 @@ const assert=require('node:assert/strict');
     return {overflow:n.scrollHeight>n.clientHeight,weight:css.fontWeight,line:parseFloat(css.lineHeight),font:parseFloat(css.fontSize),resets:window.compactResets,caretVisible:caret.bottom<=box.bottom+2&&caret.top>=box.top-2,text:n.textContent};
    });
    assert(result.overflow);assert.equal(result.weight,'400');assert(result.line>result.font*1.4);assert.deepEqual(result.resets,[],'typing a scrolling draft must preserve its expanded layout');assert(result.caretVisible);assert(result.text.endsWith(' continued typing'));
-   await editor.fill('Short');assert.equal(await page.locator('#composer').evaluate(n=>n.classList.contains('is-multiline')),false);
+   await editor.fill('Short');assert.equal(await page.locator('#composer').evaluate(n=>n.classList.contains('is-multiline')),true,'nonempty draft keeps expanded layout');
+   await editor.fill('');assert.equal(await page.locator('#composer').evaluate(n=>n.classList.contains('is-multiline')),false);
    await editor.fill('First line\nSecond line');assert(await page.locator('#composer').evaluate(n=>n.classList.contains('is-multiline')));
   }
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine:process.env.WEBKIT?'webkit':'chromium',scrollingDraft:true,caretVisible:true,stableTypography:true,scales:[100,115,150]}));

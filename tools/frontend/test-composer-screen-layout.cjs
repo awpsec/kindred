@@ -17,7 +17,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    await page.setViewportSize({width,height:900});await page.evaluate(size=>KindredReadingSize.set(size),size);
    await page.locator('#prompt').fill('Short');await settle();
    assert(!await page.locator('#composer').evaluate(n=>n.classList.contains('is-multiline')));
-   assert(await page.locator('#composer').evaluate(n=>{const form=n.getBoundingClientRect(),editor=n.querySelector('#prompt').getBoundingClientRect(),controls=n.querySelector('#composer-actions').getBoundingClientRect();return form.height>=108&&editor.bottom<=controls.top&&editor.left<controls.right&&editor.right>n.querySelector('#send').getBoundingClientRect().left;}),'Even short drafts write above the controls at every size');
+   assert(await page.locator('#composer').evaluate(n=>{const form=n.getBoundingClientRect(),editor=n.querySelector('#prompt').getBoundingClientRect(),controls=n.querySelector('#composer-actions').getBoundingClientRect();return form.height<70&&editor.left>=controls.right&&editor.right<=n.querySelector('#composer-hint').getBoundingClientRect().left&&Math.abs(editor.y+editor.height/2-controls.y-controls.height/2)<2;}),'Short desktop drafts share one compact row with the controls');
    await page.locator('#prompt').fill(Array.from({length:60},(_,i)=>'Line '+i+' of a long draft.').join('\n'));await settle();
    const bounds=await page.evaluate(()=>{
     const rect=id=>document.querySelector(id).getBoundingClientRect().toJSON();
@@ -55,7 +55,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   },expand);
   for(const expanded of [true,false]){
    const rows=await sample(expanded);assert(rows.length>4);assert(Math.abs(rows[0].x-rows[1].x)<2,JSON.stringify(rows.slice(0,2)));
-   assert(rows.every(r=>r.transform==='none'&&r.canvasSame));
+   assert(rows.every(r=>{const m=r.transform==='none'?[1,0,0,1,0,0]:r.transform.match(/^matrix\((.*)\)$/)?.[1].split(',').map(Number);return m&&m[0]===1&&m[1]===0&&m[2]===0&&m[3]===1&&r.canvasSame;}),'Pane motion preserves canvas identity and uses translation without scaling');
    for(let i=1;i<rows.length;i++){assert(expanded?rows[i].width>=rows[i-1].width-1:rows[i].width<=rows[i-1].width+1);assert(expanded?rows[i].height>=rows[i-1].height-1:rows[i].height<=rows[i-1].height+1);}
   }
   const reversed=await page.evaluate(async()=>{

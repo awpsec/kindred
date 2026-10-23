@@ -65,6 +65,7 @@ export function installThemedSelects(root=document) {
       const parent=option.parentElement,newGroup=parent.tagName==='OPTGROUP'?parent:null;
       if(newGroup&&newGroup!==group){const title=document.createElement('div');title.className='themed-select-group';title.textContent=newGroup.label;list.append(title);}group=newGroup;
       const row=document.createElement('div');row.className='themed-select-option';row.id='kindred-select-option-'+index;row.setAttribute('role','option');row.setAttribute('aria-selected',String(option.selected));row.setAttribute('aria-disabled',String(option.disabled||newGroup?.disabled||false));
+      if(option.dataset.swatch&&CSS.supports('color',option.dataset.swatch)){const swatch=document.createElement('span');swatch.className='accent-swatch';swatch.setAttribute('aria-hidden','true');swatch.style.backgroundColor=option.dataset.swatch;row.append(swatch);}
       const name=document.createElement('span');name.textContent=option.label;row.append(name);if(option.selected){const check=document.createElement('span');check.className='select-check';check.textContent='✓';check.setAttribute('aria-hidden','true');row.append(check);}
       row.onpointermove=()=>{if(row.getAttribute('aria-disabled')!=='true')highlight(index,false);};row.onmousedown=e=>e.preventDefault();row.onclick=e=>{e.stopPropagation();choose(index);};list.append(row);rows.push(row);
     });
