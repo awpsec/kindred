@@ -28,3 +28,7 @@ progress::-moz-progress-bar{background:var(--progress-accent)}
 /* Keep the bot identity legible beside both compact activity and staged work. */
 .task-activity .summary-progress-author{flex:0 1 auto;max-width:28%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--fg)}
 .task-activity .summary-progress-task{min-width:0}
+
+/* Task-owned choices and approvals follow the activity disclosure without
+   moving live controls or animating each review card independently. */
+#content .task-owned-review{margin-inline-start:24px;max-width:calc(100% - 24px)}

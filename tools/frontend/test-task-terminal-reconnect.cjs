@@ -21,7 +21,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const replay=async(nextMessages,nextRuns)=>{messages=nextMessages;runs=nextRuns;await page.evaluate(snapshot=>window.fixtureTaskSnapshot(snapshot),{messages,runs});};
   const assertFailed=async label=>{const v=await observe(label);assert.equal(v.finished,'true');assert.equal(v.status,'Failed');assert.equal(v.timers,0);assert.equal(v.working,0);};
   await page.goto(origin);await group(root.id).waitFor();await assertFailed('known failed child');
-  assert(await page.getByText('Keep this owner choice visible.',{exact:true}).isVisible());assert(await page.locator('.connector-call').isVisible());assert.equal(await group(root.id).locator('.connector-call,.message-bubble').count(),0);
+  assert(await page.getByText('Keep this owner choice visible.',{exact:true}).isVisible());assert(await page.locator('.connector-call').isHidden(),'Owned connector receipt follows the collapsed task');assert.equal(await group(root.id).locator('.connector-call,.message-bubble').count(),0);
+  await group(root.id).locator('.summary-progress-heading').click();assert(await page.locator('.connector-call').isVisible(),'Opening the task restores its connector receipt');
+  await group(root.id).locator('.summary-progress-heading').click();await page.waitForTimeout(300);assert(await page.locator('.connector-call').isHidden());
   const all=messages.slice(),parentOnly=all.filter(m=>m.run_id!==child.id);
   await replay(parentOnly,[root]);assert.equal((await observe('older parent snapshot')).status,'Finished');
   await replay(all,[root,{...child,status:'running',error:''}]);await assertFailed('stale active child after parent');
