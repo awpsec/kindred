@@ -123,11 +123,16 @@ SETTINGS_ARGV = ['cargo','test','--release','--locked','--offline','settings_tes
 def settings_count(output, exit_code):
     assert type(exit_code) is int and exit_code == 0, 'Settings tests failed'
     assert type(output) is str and 0 < len(output.encode()) <= 64*1024
-    summaries = re.findall(r'^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out; finished in [0-9.]+s$', output, re.M)
-    assert len(summaries) == 1, 'Require one nonempty settings test result'
-    passed, failed, ignored, measured, filtered = map(int, summaries[0])
+    result_lines = re.findall(r'^test result:.*$', output, re.M)
+    summaries = [re.fullmatch(r'test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out; finished in [0-9.]+s', line) for line in result_lines]
+    assert summaries and all(summaries), 'Require valid settings test summaries'
+    counts = [tuple(map(int, row.groups())) for row in summaries]
+    nonempty = [row for row in counts if row[0] > 0]
+    assert len(nonempty) == 1 and all(failed == ignored == measured == 0 for passed,failed,ignored,measured,filtered in counts), 'Require one nonempty passing settings target; other targets must be empty'
+    passed = nonempty[0][0]
     names = re.findall(r'^test (settings_tests::[A-Za-z0-9_]+) \.\.\. ok$', output, re.M)
-    assert passed > 0 and failed == ignored == measured == 0 and len(names) == len(set(names)) == passed, 'Settings test count/name mismatch'
+    test_rows = re.findall(r'^test .+ \.\.\. .+$', output, re.M)
+    assert len(test_rows) == len(names) == len(set(names)) == passed, 'Settings test count/name mismatch'
     return passed
 def validate_settings(record, source):
     assert type(record) is dict and set(record) == {'argv','source_commit','module_sha256','fixtures_sha256','main_sha256','exit_code','elapsed_seconds','stdout','stdout_sha256','executed','passed'}
