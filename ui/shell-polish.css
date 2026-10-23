@@ -174,12 +174,12 @@ html[data-accent]:not([data-accent=monochrome]) #send{--button:var(--message-acc
   border-radius:12px;
 }
 .bot-edit-form .bot-name-field,
-.bot-edit-form .bot-role-field {font-size:0;gap:0;text-align:center;}
+.bot-edit-form .bot-role-field {font-size:0;gap:0;text-align:center;margin:8px 0;}
 .bot-edit-form .bot-name-field input {
-  display:block;width:fit-content;field-sizing:content;min-width:120px;max-width:100%;margin-inline:auto;text-align:center;font-size:24px;font-weight:600;padding:9px 14px;
+  display:block;width:fit-content;field-sizing:content;min-width:80px;max-width:100%;margin-inline:auto;text-align:center;font-size:calc(14px * var(--text-scale,1));font-weight:600;padding:7px 12px;
 }
 .bot-edit-form .bot-role-field input {
-  text-align:center;font-size:16px;color:var(--muted);background:transparent;
+  text-align:center;font-size:calc(14px * var(--text-scale,1));color:var(--muted);background:transparent;padding:7px 12px;
 }
 .bot-edit-form .bot-role-field input:hover {background:var(--hover);}
 .bot-edit-form .bot-text-button {border:0;border-radius:10px;background:transparent;}
