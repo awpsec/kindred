@@ -51,6 +51,7 @@ def main():
         driver=tar.extractfile(matches[0]).read(d['binary_size']+1)
     assert len(driver)==d['binary_size'] and g.sha(driver)==d['binary_sha256']
     write_new(work/'driver.tar.gz',archive);write_new(work/'cua-driver',driver)
+    os.chmod(work/'cua-driver',0o700,follow_symlinks=False)
     # Product compilation and packaging do not inherit the draft-download or Actions tokens.
     env={k:v for k,v in os.environ.items() if k not in {'GH_TOKEN','GITHUB_TOKEN','ACTIONS_RUNTIME_TOKEN','ACTIONS_ID_TOKEN_REQUEST_TOKEN','GH_DEBUG'}}
     env['CARGO_TARGET_DIR']=str(work/'server-target');env['CARGO_BUILD_JOBS']='1'
