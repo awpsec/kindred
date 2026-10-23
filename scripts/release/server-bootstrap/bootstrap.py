@@ -2,6 +2,7 @@ import base64,hashlib,json,os,signal,subprocess,sys,tarfile,io,time,tomllib
 from pathlib import Path
 import guards as g
 from export import export,write_new
+from source_manifest import read_source
 def git(root,*args):return subprocess.check_output(['git','-C',str(root),*args],timeout=30)
 def api(path):
     return g.load(subprocess.check_output(['gh','api','repos/'+g.REPO+'/'+path],timeout=30))
@@ -39,7 +40,7 @@ def main():
     assert g.sha(server_lock)==s['server_lock_sha256'] and g.sha(desktop_lock)==s['desktop_lock_sha256']
     assert (server/'Cargo.lock').read_bytes()==server_lock and (root/'desktop/Cargo.lock').read_bytes()==desktop_lock
     for n,v in s['source_files'].items():
-        data=git(server,'show','HEAD:'+g.source_path(n));assert len(data)==v['size'] and g.sha(data)==v['sha256']
+        data=read_source(server,s['server_source'],n);assert len(data)==v['size'] and g.sha(data)==v['sha256']
     run_id=int(os.environ['GITHUB_RUN_ID']);attempt=int(os.environ['GITHUB_RUN_ATTEMPT']);assert run_id>0 and attempt==1
     work=Path(os.environ['RUNNER_TEMP'])/('kindred-bootstrap-'+str(run_id));g.ancestors(work.parent);assert not work.exists() and not work.is_symlink();work.mkdir(mode=0o700)
     d=s['driver'];archive=asset_bytes(d['asset_id'],d['release_id'],d['name'],d['size'],d['sha256'],16*1024**2)
