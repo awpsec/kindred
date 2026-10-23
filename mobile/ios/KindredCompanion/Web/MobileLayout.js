@@ -1352,6 +1352,12 @@
     html.toggleAttribute('data-ios-message-flow',!!flow);
     const zones = flow ? [toolbar,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).filter(region => region.kind === 'occlusion' && region.active !== false)] : [];
     const history = document.querySelector('#content'), historyRect = history?.getBoundingClientRect();
+    // WebKit can report an elastic offset while a touch is settling (including
+    // a gesture begun before the cover layout arrived). Classify the resting
+    // reading position so that stretch cannot resize and reflow a bubble.
+    const scrollTop = history?.scrollTop || 0;
+    const maxScrollTop = Math.max(0,history ? history.scrollHeight-history.clientHeight : 0);
+    const elasticOffset = scrollTop - Math.max(0,Math.min(scrollTop,maxScrollTop));
     const historyStyle = history && getComputedStyle(history);
     const lane = historyRect && {left:historyRect.left+history.clientLeft+(parseFloat(historyStyle.paddingLeft)||0),right:historyRect.left+history.clientLeft+history.clientWidth-(parseFloat(historyStyle.paddingRight)||0)};
     let laneLeft = 0, laneRight = 0;
@@ -1370,7 +1376,7 @@
       const rect = group.getBoundingClientRect();
       const previous = messageClearance.get(group);
       const buffer = previous?.blocked ? 12 : 6;
-      const overlaps = user && zones.some(zone => rect.top < zone.y+zone.height+buffer && rect.bottom > zone.y-buffer);
+      const overlaps = user && zones.some(zone => rect.top+elasticOffset < zone.y+zone.height+buffer && rect.bottom+elasticOffset > zone.y-buffer);
       let blocked = !!flow && overlaps;
       const sameGeometry = previous?.geometry === messageGeometryEpoch;
       if (flow && previous && sameGeometry && blocked !== previous.blocked) {

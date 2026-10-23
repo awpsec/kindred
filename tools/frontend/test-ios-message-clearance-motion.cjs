@@ -107,6 +107,30 @@ const near=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
     }return proof;
    });
    bottomScroll.forEach(proof=>assert.equal(proof.tail,1,'manual bottom scrolling settles without repeated clearance reversals: '+JSON.stringify(proof)));
+   // The cover's nested reader owns its hard limits. Overscroll on the fixed
+   // body alone does not disable the nested WebKit rubber-band affordance.
+   assert.equal(await page.locator('#content').evaluate(n=>getComputedStyle(n).overscrollBehaviorY),'none','closed cover disables elastic reading overscroll');
+   await page.evaluate(()=>{const area=document.querySelector('#content');area.scrollTop=area.scrollHeight;});
+   await page.waitForFunction(()=>[...document.querySelectorAll('#content>*')].every(n=>n.getAnimations().every(a=>a.playState!=='running')));
+   const elasticBottom=await page.evaluate(async()=>{
+    const area=document.querySelector('#content'),last=area.querySelector('[data-message="71"]');
+    const rect=last.getBoundingClientRect.bind(last),scroll=Object.getOwnPropertyDescriptor(Element.prototype,'scrollTop');
+    setDock(rect().top-__KINDRED_IOS_TOOLBAR.height-20);
+    for(let i=0;i<24;i++)await new Promise(requestAnimationFrame);
+    const resting=last.style.getPropertyValue('--ios-user-clearance'),samples=[];let stretch=0;
+    Object.defineProperty(area,'scrollTop',{configurable:true,get:()=>scroll.get.call(area)+stretch,set:value=>scroll.set.call(area,value)});
+    last.getBoundingClientRect=()=>{const r=rect();return new DOMRect(r.x,r.y-stretch,r.width,r.height);};
+    try {
+     for(const offset of [24,64,96,48,12,0]){
+      stretch=offset;area.dispatchEvent(new Event('touchmove'));area.dispatchEvent(new Event('scroll'));
+      for(let i=0;i<3;i++)await new Promise(requestAnimationFrame);
+      samples.push({offset,clearance:last.style.getPropertyValue('--ios-user-clearance')});
+     }
+    } finally {delete area.scrollTop;delete last.getBoundingClientRect;}
+    return {resting,samples};
+   });
+   assert.equal(parseFloat(elasticBottom.resting),0,'the final user message starts below the dock');
+   elasticBottom.samples.forEach(sample=>assert.equal(sample.clearance,elasticBottom.resting,'elastic movement cannot reclassify the resting bubble: '+JSON.stringify(sample)));
    await page.evaluate(()=>{const area=document.querySelector('#content');area.dispatchEvent(new WheelEvent('wheel',{deltaY:-1}));area.scrollTop+=messageTarget.getBoundingClientRect().top-260;area.dispatchEvent(new Event('scroll'));});
    const latest=page.locator('.jump-latest');await latest.waitFor({state:'visible'});
    await page.setViewportSize({width:466,height:430});
@@ -140,7 +164,7 @@ const near=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
    await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{railSide:'left',leftInset:84,rightInset:0});Object.assign(__KINDRED_IOS_TOOLBAR,{x:0,y:170});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));dispatchEvent(new Event('kindred-ios-toolbar'));});
    await page.waitForFunction(()=>document.documentElement.dataset.iosRailSide==='left'&&parseFloat(document.querySelector('.conversation').style.getPropertyValue('--ios-message-lane-left'))>0&&parseFloat(messageTarget.style.getPropertyValue('--ios-user-clearance'))===0);
    assert(await page.locator('#content .message-group').evaluateAll(nodes=>nodes.every(n=>n.getBoundingClientRect().left>=89)),'both authors clear a leading dock by six points after rotation');
-   assert.deepEqual(errors,[]);reports.push({side,contraction,expansion,reversal,bottomScroll,latestKeyboard,scrollReleaseStable:true,reducedMotion:true});await page.close();
+   assert.deepEqual(errors,[]);reports.push({side,contraction,expansion,reversal,bottomScroll,elasticBottom,latestKeyboard,scrollReleaseStable:true,reducedMotion:true});await page.close();
   }
   console.log(JSON.stringify({passed:true,reports}));
  } finally {await browser.close();server.closeAllConnections();server.close();}

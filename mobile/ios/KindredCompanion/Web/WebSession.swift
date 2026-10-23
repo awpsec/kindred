@@ -157,6 +157,9 @@ final class WebSession: NSObject {
         // The page handles hardware padding and WebKit's visible viewport.
         // Letting the scroll view add safe-area insets would count them twice.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        // Only the page's nested reading/editor surfaces scroll. A second
+        // elastic viewport would move the page beneath the fixed native rail.
+        webView.scrollView.bounces = false
         webView.scrollView.keyboardDismissMode = .interactive
         #if DEBUG
         webView.isInspectable = true
