@@ -1,6 +1,6 @@
 # Connection access
 
-From the desktop app running the managed standalone server, open **Server administration → Connection access**. Choose **Only this computer**, **My devices with Tailscale**, or **Advanced: choose networks**. Advanced can keep Tailscale HTTPS and add selected network addresses. Nothing changes until Save and the single summary confirmation. Discard changes leaves the applied settings intact.
+From the desktop app running the managed standalone server, open **Server administration → Networking**. Choose **Only this computer**, **My devices with Tailscale**, or **Advanced: choose networks**. Advanced can keep Tailscale HTTPS and add selected network addresses. Nothing changes until Save and the single summary confirmation. Discard changes leaves the applied settings intact.
 
 Save can restart the local server to apply listener or origin changes. The confirmation lists exact addresses and the number of working bots before that interruption. Every HTTP selection requires the explicit unencrypted-access confirmation. Returning to Only this computer removes Kindred's confirmed Tailscale root share, external listeners and saved origins. Other Tailscale routes stay unchanged. Check **Currently** after success or a partial failure; it shows inspected applied listeners and sharing, separately from unsaved choices. Per-address Listening additionally checks the local socket. These checks do not prove reachability through another device's firewall or routing.
 
@@ -15,3 +15,17 @@ Changing access requires the updated desktop bridge and matching local server. O
 The managed native plan stores exact `origins` and `confirmed_http_origins` with the selected listeners and desired `tailnet_https` state. The Compose override replaces ports explicitly, emits `KINDRED_ALLOWED_ORIGINS` and `KINDRED_CONFIRMED_HTTP_ORIGINS`, and labels the actual container with both lists. The server validates consent as canonical exact HTTP origins contained in its selected origin list. Public HTTP is not accepted merely because it appears in the allowlist. Removing consent and its origin revokes that browser origin without resetting accounts or local sessions.
 
 After applying, native code compares actual inspected bindings and labels, then checks the policy digest returned by the running server's `/identity/meta`. A saved plan or matching label alone is not sufficient. Failed or mismatched readback remains pending/error; writes are not automatically retried. Tailscale changes use only the confirmed root handler (`serve --bg --https=443 --set-path=/`), preserving sibling routes and refusing unknown/conflicting sharing states. No Funnel, router forwarding, wildcard origins or broad browser security exceptions are added.
+
+## Hosted server administration
+
+Hosted Networking includes local, private Tailscale HTTPS, public HTTPS and advanced
+setup paths. The server's listener settings and Docker port publishing remain
+separate from the advertised URL. The page explains the required host steps and
+checks a draft address before saving, without modifying Tailscale or Docker itself.
+See [the hosted Tailscale setup](HOSTING.md#private-team-server-with-tailscale-https).
+
+A successful check is from the server's network, not the colleague's device. Saving
+or editing the address invalidates the displayed check. Phone pairing from this
+page requires checking the saved HTTPS address; existing pairing options elsewhere
+remain available. Native connection errors distinguish an HTTPS/plain-HTTP mismatch
+from certificate validation, name resolution, refused connections and timeouts.

@@ -14,6 +14,50 @@ otherwise TCG software emulation. On a Linux VPS, nested virtualization availabi
 is controlled by the hosting provider. Enable `/dev/kvm` with `compose.kvm.yaml`
 and set `KINDRED_KVM_GID` to `stat -c %g /dev/kvm`.
 
+## Private team server with Tailscale HTTPS
+
+Open **Server admin → Networking → Set up access → My devices with Tailscale**.
+Hosted and Standalone offer access guidance, a shareable address and phone pairing.
+Standalone can apply its managed local setup; on a hosted server, run host setup
+steps on that server. Changing **Primary server URL** only changes the address
+Kindred advertises and allows. It does **not** install a certificate, enable TLS,
+open a firewall or change Docker port publishing.
+
+1. Sign into Tailscale on the server and each client device. Create your Kindred
+   administrator account through localhost or an SSH tunnel first.
+2. Keep the backend local: in Linux host-network mode choose the host-only listener.
+   For bridge Compose use `KINDRED_BIND=127.0.0.1` in your existing `.env`, then
+   recreate that project's server if the binding changed. Preserve its volumes.
+3. Run `tailscale serve status` on the host. If another service owns the HTTPS root
+   on port 443, preserve it and use another HTTPS port. For a free port 443:
+
+   ```sh
+   sudo tailscale serve --bg --https=443 --set-path=/ http://127.0.0.1:9444
+   ```
+
+   Replace the backend port if your bridge Compose mapping uses a different host
+   port. Follow Tailscale's HTTPS prompt when requested. Do not start the Caddy
+   profile on a port already used by Serve or another proxy.
+4. Copy the **HTTPS URL printed by Serve** into **Primary server URL**. With default
+   HTTPS port 443 it looks like `https://your-server.your-tailnet.ts.net`, without
+   `:9444`. Only include a port when the HTTPS service actually uses that port.
+5. Choose **Check address**, then **Save and restart**. After reconnecting, check
+   the saved address again. Open it on the colleague's device, confirm the expected
+   workspace, and enter that same URL in **Kindred → Add account**. For an iPhone,
+   the Networking page's **Connect mobile app** uses the checked saved address.
+
+The check requests Kindred sign-in metadata from the server, with certificate
+validation and without credentials or redirects. Success confirms that a Kindred
+endpoint answered from that server; it does not prove which workspace is behind
+it or that another device can reach it. The page shows your current connection
+separately. A URL that has only been saved is never described as verified.
+
+An HTTPS handshake sent to a plain HTTP port is a protocol mismatch, not evidence
+that the client needs a CA installed. Use the HTTPS proxy's address and port.
+Tailscale Serve can use a chosen HTTPS port; the restricted list 443/8443/10000
+belongs to public Funnel. See the official [Serve command reference](https://tailscale.com/docs/reference/tailscale-cli/serve)
+and [Funnel reference](https://tailscale.com/docs/reference/tailscale-cli/funnel).
+
 ## Team server with HTTPS
 
 Point a domain at the server and allow inbound ports 80 and 443. Copy `.env.example`

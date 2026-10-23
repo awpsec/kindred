@@ -222,3 +222,37 @@ html[data-accent]:not([data-accent=monochrome]) #send{--button:var(--message-acc
 #account-manager-dialog .profile-avatar{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--hover);font-size:calc(12px * var(--text-scale, 1));}
 #account-manager-dialog .account-manager-add{width:100%;min-height:42px;margin:16px 0;border:0;border-radius:12px;background:var(--hover);text-align:left;padding:10px 14px;}
 #account-manager-dialog .account-manager-add::before{content:'+';margin-right:10px;font-size:calc(18px * var(--text-scale, 1));vertical-align:-1px;}
+
+/* Hosted networking uses the same compact, filled controls as bot settings. */
+.server-admin-dialog .hosted-network {gap:20px;}
+.server-admin-dialog .hosted-network>fieldset {display:flex;flex-direction:column;gap:22px;min-width:0;}
+.hosted-network h3,.access-phone h3 {font-size:inherit;margin:0;font-weight:600;}
+.hosted-network .network-current {display:grid;gap:6px;padding:14px 16px;background:var(--surface);border-radius:14px;}
+.hosted-network code {overflow-wrap:anywhere;white-space:pre-wrap;font-size:calc(12px * var(--text-scale,1));}
+.hosted-network summary {font-weight:600;cursor:pointer;}
+.hosted-network details>p {margin-top:12px;}
+.hosted-network .network-setup-choices {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;margin:18px 0;}
+.hosted-network .network-setup-guide {display:grid;gap:12px;padding:16px;background:var(--surface);border-radius:14px;}
+.hosted-network .network-address {display:grid;gap:12px;}
+.hosted-network .network-field {display:grid;gap:8px;margin:0;color:var(--muted);}
+.hosted-network .network-field>input,.hosted-network .network-field>select,.hosted-network .network-field>textarea {width:100%;min-width:0;border:0;box-shadow:none;border-radius:10px;padding:10px 12px;background:var(--surface);color:var(--fg);font:inherit;margin:0;}
+.hosted-network .network-setup-guide input {background:var(--bg);max-width:130px;}
+.hosted-network .network-field>input:focus-visible,.hosted-network .network-field>select:focus-visible,.hosted-network .network-field>textarea:focus-visible {outline:2px solid var(--fg);outline-offset:2px;}
+.hosted-network .network-field:has([hidden]) {display:none;}
+.hosted-network .network-field[hidden] {display:none;}
+.hosted-network .network-command {display:flex;gap:12px;align-items:center;justify-content:space-between;min-width:0;}
+.hosted-network .network-command code {min-width:0;}
+.hosted-network .network-command button {flex-shrink:0;}
+.hosted-network button.outline-button,.server-admin-page>.access-phone button {border:0;background:var(--surface);border-radius:10px;padding:9px 12px;font:inherit;}
+.hosted-network .network-setup-guide button {justify-self:start;background:var(--bg);}
+.hosted-network .network-advanced>.network-field {margin-top:16px;}
+.hosted-network .network-check-status {font-size:calc(12px * var(--text-scale,1));color:var(--muted);}
+.hosted-network .network-url-hint {padding:12px 14px;border-radius:10px;background:var(--surface);}
+.hosted-network .network-url-hint:empty {display:none;}
+.server-admin-page>.access-phone {display:grid;gap:12px;margin-top:28px;font-size:calc(13px * var(--text-scale,1));}
+.server-admin-page>.access-phone p {margin:0;line-height:1.55;}
+.server-admin-page>.access-phone button {justify-self:start;}
+@media(max-width:700px) {
+  .hosted-network .network-setup-choices {grid-template-columns:1fr;}
+  .hosted-network .network-command {align-items:start;flex-direction:column;}
+}

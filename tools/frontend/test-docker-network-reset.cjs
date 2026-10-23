@@ -25,6 +25,7 @@ const source=fs.readFileSync(path.resolve(__dirname,'../../ui/docker-network.js'
         };
         window.network=await(await import('/docker-network.js')).mountDockerNetwork(document.querySelector('#host'),{api,dialog:document.querySelector('dialog'),reload:()=>{reloads++;}});
       },scenario);
+      await page.getByText('Advanced network settings',{exact:true}).click();
       const access=page.getByLabel('Connection access'),url=page.getByLabel('Primary server URL'),tailnet=page.getByLabel('This host’s Tailscale IP address');
       if(scenario==='save-normalized') {
         await url.fill('https://NORMALIZED.example/');await page.getByRole('button',{name:'Save and restart',exact:true}).click();
@@ -39,11 +40,11 @@ const source=fs.readFileSync(path.resolve(__dirname,'../../ui/docker-network.js'
       if(scenario==='reset-restart') {
         await page.waitForFunction(()=>reloads===1);assert.equal(await page.evaluate(()=>writes[0].reset),true);assert.equal(await page.getByRole('button',{name:'Save and restart',exact:true}).isDisabled(),true);
       } else if(scenario==='conflict') {
-        await page.getByRole('status').filter({hasText:'Reload them before saving again.'}).waitFor();assert.equal(await url.inputValue(),'https://unsaved.example');assert.equal(await page.evaluate(()=>network.canLeave()),false);assert.equal(await page.locator('fieldset').isEnabled(),true);
+        await page.getByRole('status').filter({hasText:'Reload them before saving again.'}).waitFor();assert.equal(await url.inputValue(),'https://unsaved.example');assert.equal(await page.evaluate(()=>network.canLeave()),false);assert.equal(await page.locator('form>fieldset').isEnabled(),true);
       } else if(scenario==='close') {
         await page.waitForFunction(()=>!!window.releaseSave);await page.evaluate(()=>{document.querySelector('dialog').close();releaseSave();});await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>reloads+polls),0);
       } else {
-        await page.getByRole('status').filter({hasText:'Networking settings are up to date.'}).waitFor();
+        await page.getByRole('status').filter({hasText:'Settings saved. Use Check address to confirm access; saving does not enable HTTPS.'}).waitFor();
         const expected=await page.evaluate(()=>defaults);
         if(scenario==='bridge-reset')assert.equal(await access.count(),0);
         else {
@@ -52,7 +53,7 @@ const source=fs.readFileSync(path.resolve(__dirname,'../../ui/docker-network.js'
         }
         assert.equal(await url.inputValue(),expected.public_url);assert.equal(await page.getByLabel('Additional allowed URLs · one per line').inputValue(),'');
         const confirms=await page.evaluate(()=>confirms);assert.equal(await page.evaluate(()=>network.canLeave()),true);assert.equal(await page.evaluate(()=>confirms),confirms);
-        assert.equal(await page.evaluate(()=>writes.length),1);assert.equal(await page.locator('fieldset').isEnabled(),true);
+        assert.equal(await page.evaluate(()=>writes.length),1);assert.equal(await page.locator('form>fieldset').isEnabled(),true);
         // A fresh explicit Save must use the reconciled values, not the old draft.
         await page.getByRole('button',{name:'Save and restart',exact:true}).click();await page.waitForFunction(()=>writes.length===2);
         assert.deepEqual(await page.evaluate(()=>writes[1].settings),expected);assert.equal(await page.evaluate(()=>writes[1].reset),false);

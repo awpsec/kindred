@@ -630,9 +630,7 @@ pub async fn connect_profile_server(
         .get(url.join("/health").map_err(error)?)
         .send()
         .await
-        .map_err(|_| {
-            "Could not reach this server. Check its address and HTTPS certificate.".to_owned()
-        })?;
+        .map_err(|cause| crate::connection_error::explain(std::error::Error::source(&cause), cause.is_timeout(), url.scheme() == "https").to_owned())?;
     if !response.status().is_success()
         || response.json::<Value>().await.map_err(error)?["status"] != "ok"
     {
@@ -719,7 +717,7 @@ pub async fn switch_native_profile(
             .json(&json!({"profile_id":profile}))
             .send()
             .await
-            .map_err(|_| "This profile's server is unavailable".to_owned())?;
+            .map_err(|cause| crate::connection_error::explain(std::error::Error::source(&cause), cause.is_timeout(), url.scheme() == "https").to_owned())?;
         if response.status().is_success() {
             token = response.json::<Value>().await.map_err(error)?["token"]
                 .as_str()
