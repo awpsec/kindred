@@ -296,6 +296,55 @@
     };
   }
   const artifactDocumentRoute = () => /^\/artifacts\/[^/]+\/?$/.test(location.pathname) || new URLSearchParams(location.hash.slice(1)).has('artifact');
+  // Artifact panes use the same measured native geometry as chat. Keep the
+  // preview mounted: a fold changes frames, never the selected document.
+  const artifactFrames = () => {
+    const layout = window.__KINDRED_IOS_LAYOUT || {}, geometry = window.__KINDRED_NATIVE_GEOMETRY || {};
+    const width = innerWidth, height = Math.min(innerHeight, nativeHeight || innerHeight);
+    const finite = value => Number.isFinite(value) ? Math.max(0,value) : 0;
+    const left = Math.min(width,finite(layout.leftInset)), right = Math.min(width-left,finite(layout.rightInset));
+    const top = Math.min(height,finite(layout.topInset)), bottom = Math.min(height-top,finite(layout.bottomInset));
+    const frame = {x:left,y:top,width:width-left-right,height:height-top-bottom};
+    const sx = width/(geometry.width || width), sy = height/(geometry.height || height);
+    const regions = (Array.isArray(geometry.reservedRegions) ? geometry.reservedRegions : [])
+      .filter(r => r.active !== false && ['division','occlusion'].includes(r.kind) && ['x','y','width','height'].every(k=>Number.isFinite(r[k])) && r.width>0 && r.height>0)
+      .map(r => ({kind:r.kind,x:Math.max(0,r.x*sx),y:Math.max(0,r.y*sy),width:Math.min(width,(r.x+r.width)*sx)-Math.max(0,r.x*sx),height:Math.min(height,(r.y+r.height)*sy)-Math.max(0,r.y*sy)}))
+      .filter(r => r.width>0 && r.height>0);
+    const toolbar = window.__KINDRED_IOS_TOOLBAR;
+    if (toolbar && ['x','y','width','height'].every(k=>Number.isFinite(toolbar[k])) && toolbar.width>0 && toolbar.height>0) regions.push({...toolbar,kind:'occlusion'});
+    const intersect = (a,b) => a.x<b.x+b.width && a.x+a.width>b.x && a.y<b.y+b.height && a.y+a.height>b.y;
+    const avoid = (box, exclusions) => {
+      for (const r of exclusions) {
+        if (!intersect(box,r)) continue;
+        const choices = [{...box,width:r.x-box.x},{...box,x:r.x+r.width,width:box.x+box.width-r.x-r.width},
+          {...box,height:r.y-box.y},{...box,y:r.y+r.height,height:box.y+box.height-r.y-r.height}].filter(c=>c.width>0&&c.height>0);
+        if (choices.length) box=choices.sort((a,b)=>b.width*b.height-a.width*a.height)[0];
+        else box={...box,width:0,height:0};
+      }
+      return box;
+    };
+    const vertical = regions.find(r=>r.kind==='division'&&r.height>r.width&&r.x>frame.x&&r.x+r.width<frame.x+frame.width);
+    const horizontal = regions.find(r=>r.kind==='division'&&r.width>r.height&&r.y>frame.y&&r.y+r.height<frame.y+frame.height);
+    const scale = Math.max(1,parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1);
+    const minLibrary=220*scale, minDocument=320*scale, divider=vertical||horizontal, exclusions=regions.filter(r=>r!==divider);
+    let library, documentFrame, mode='single';
+    if (layout.isDuoInner === true && vertical) {
+      library=avoid({...frame,width:vertical.x-frame.x},exclusions);
+      documentFrame=avoid({...frame,x:vertical.x+vertical.width,width:frame.x+frame.width-vertical.x-vertical.width},exclusions);
+      if(library.width>=minLibrary&&documentFrame.width>=minDocument) mode='split';
+    } else if (layout.isDuoInner === true && horizontal) {
+      documentFrame=avoid({...frame,height:horizontal.y-frame.y},exclusions);
+      library=avoid({...frame,y:horizontal.y+horizontal.height,height:frame.y+frame.height-horizontal.y-horizontal.height},exclusions);
+      if(documentFrame.height>=200*scale&&library.height>=200*scale&&frame.width>=minDocument) mode='stacked';
+    } else if (layout.isDuoInner === true && frame.width>=720*scale) {
+      const listWidth=Math.min(280*scale,Math.max(minLibrary,frame.width*.32));
+      library=avoid({...frame,width:listWidth},exclusions);
+      documentFrame=avoid({...frame,x:frame.x+listWidth,width:frame.width-listWidth},exclusions);
+      if(library.width>=minLibrary&&documentFrame.width>=minDocument) mode='split';
+    }
+    if(mode==='single') library=documentFrame=avoid(frame,regions);
+    return {mode,library,document:documentFrame};
+  };
   const artifactButton = (label, path) => {
     const button = document.createElement('button');
     button.type = 'button'; button.className = 'icon-button ios-artifact-button';
@@ -331,10 +380,29 @@
     if (addMenu) nav.append(addMenu);
     library.prepend(nav);
     const back = artifactButton('Back to artifacts', '<path d="m14 5-7 7 7 7"/>');
-    const page = {ignoredRoute:null, show:null, dispose:null};
+    const page = {ignoredRoute:null, show:null, dispose:null, layout:null};
     const show = documentView => {
       root.dataset.iosArtifactView = documentView ? 'document' : 'list';
-      library.inert = documentView; workbench.inert = !documentView;
+      page.layout();
+    };
+    page.layout = () => {
+      const frames = nativeDuo ? artifactFrames() : {mode:'single'};
+      if(root.dataset.iosArtifactLayout!==frames.mode) root.dataset.iosArtifactLayout=frames.mode;
+      for(const [name,pane] of [['library',library],['document',workbench]]) {
+        for(const key of ['x','y','width','height']) {
+          const property='--ios-artifact-'+key, value=frames[name]?.[key];
+          if(value===undefined) pane.style.removeProperty(property);
+          else if(pane.style.getPropertyValue(property)!==value+'px') pane.style.setProperty(property,value+'px');
+        }
+      }
+      const documentView=root.dataset.iosArtifactView==='document', split=frames.mode!=='single';
+      const hiddenPane=split?null:documentView?library:workbench;
+      const moveFocus=hiddenPane?.contains(document.activeElement);
+      library.inert=!split&&documentView; workbench.inert=!split&&!documentView;
+      if(moveFocus) {
+        const target=documentView?workbench:library;
+        target.tabIndex=-1; target.focus({preventScroll:true});
+      }
     };
     back.onclick = () => {
       page.ignoredRoute = location.pathname;
@@ -363,6 +431,7 @@
   const syncArtifacts = () => {
     for (const [root, page] of artifactPages) {
       if (!root.isConnected) { page.dispose(); artifactPages.delete(root); }
+      else page.layout();
     }
     shell.querySelectorAll('.artifact-studio').forEach(mountArtifacts);
   };
@@ -373,6 +442,8 @@
   window.addEventListener(artifactRouteEvent, syncArtifactPage);
   window.addEventListener('popstate', syncArtifactPage);
   window.addEventListener('hashchange', syncArtifactPage);
+  for(const event of ['kindred-ios-layout','kindred-native-geometry','kindred-ios-toolbar','resize']) window.addEventListener(event,()=>{for(const page of artifactPages.values())page.layout();});
+  observeUI(()=>{for(const page of artifactPages.values())page.layout();}).observe(html,{attributes:true,attributeFilter:['style']});
   syncArtifacts();
   if (menu) {
     menu.innerHTML = icon('<path d="m14 5-7 7 7 7"/>');
@@ -1795,6 +1866,7 @@
       botAvatarShape:/^[a-z0-9-]{1,32}$/.test(shape) ? shape : 'round',
       botAvatarColor:/^#[0-9a-f]{6}$/i.test(color) ? color : '#2475ff',
       botDetailsAvailable:['bot-chat','computer'].includes(route) && !!document.querySelector('#bot-details') && !document.querySelector('#bot-details').disabled,
+      artifactLibraryVisible:['artifacts','artifact'].includes(route) && document.querySelector('.artifact-studio-library')?.inert === false,
       listVisible:listAvailable && !nativeSidebarHidden,
       listToggleAvailable:listAvailable,
       computerExpandAvailable:!botCenter() && route === 'computer' && html.dataset.iosDuoInner === 'true' && !!document.querySelector('#computer-expand') && !document.querySelector('#computer-expand').disabled,
@@ -1845,15 +1917,16 @@
       const selectors = {computer:'#show-computer',botDetails:'#bot-details',botSettings:'#bot-settings',settings:'#settings-button',artifacts:'#artifacts-button',marketplace:'#marketplace-button',search:'#ios-search',newChat:'#new-bot'};
       if (action === 'botDetails' && !['bot-chat','computer'].includes(route)) return;
       if (action === 'botSettings' && (route !== 'details' || document.querySelector('#bot-settings')?.hidden)) return;
-      if (action === 'search' && route === 'artifacts') document.querySelector('.ios-artifact-navigation [aria-label="Search artifacts"]')?.click();
-      else if (action === 'newChat' && route === 'artifacts') openToolbarMenu(document.querySelector('.artifact-add'),document.querySelector('.artifact-studio-library'),'.artifact-add-menu');
+      const artifactLibraryVisible=['artifacts','artifact'].includes(route) && document.querySelector('.artifact-studio-library')?.inert === false;
+      if (action === 'search' && artifactLibraryVisible) document.querySelector('.ios-artifact-navigation [aria-label="Search artifacts"]')?.click();
+      else if (action === 'newChat' && artifactLibraryVisible) openToolbarMenu(document.querySelector('.artifact-add'),document.querySelector('.artifact-studio-library'),'.artifact-add-menu');
       else if (action === 'newChat' && ['chat-list','bot-chat','computer'].includes(route)) openToolbarMenu(document.querySelector('#new-bot'),sidebar,'#new-menu');
       else if (action === 'newChat') return;
       else if (Object.hasOwn(selectors,action)) document.querySelector(selectors[action])?.click();
     }
     publishDuoNavigation();
   }};
-  observeUI(publishDuoNavigation).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','class','data-ios-artifact-view','data-shape','data-avatar-body','data-avatar-color']});
+  observeUI(publishDuoNavigation).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','inert','class','data-ios-artifact-view','data-ios-artifact-layout','data-shape','data-avatar-body','data-avatar-color']});
   observeUI(publishDuoNavigation).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
   observeUI(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo','data-ios-duo-inner','data-ios-sidebar-hidden','data-ios-native-sidebar','data-ios-native-sidebar-hidden','data-motion']});
   matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',publishDuoNavigation);

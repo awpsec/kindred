@@ -49,6 +49,12 @@ restriction while typing on a remote computer remain in place.
   headers with circular glass controls. Original dismissal and cleanup handlers
   remain intact. Touching Paste or Return control keeps keyboard geometry stable
   until release and activates once, including WKWebView's prevented-click path.
+- Artifacts uses a library beside the preview on the open display, or a preview
+  above the library across a tabletop division. Each pane clears the measured
+  native toolbar, safe insets and active reserved regions. The cover and larger
+  text sizes use separate library/document pages. Folding keeps the selected
+  artifact and its live preview mounted; focus moves out of a pane when it hides.
+  Native Search and New Artifact remain available while the library is visible.
 
 These choices follow Apple's
 [resizability guidance](https://developer.apple.com/videos/play/tech-talks/111461/),
@@ -108,6 +114,7 @@ From the repository root, using an installed Playwright with WebKit:
 
 ```sh
 node tools/frontend/test-ios-duo.cjs
+node tools/frontend/test-ios-duo-artifacts.cjs
 node tools/frontend/test-ios-layout.cjs
 node tools/frontend/test-ios-edge-compat.cjs
 WEBKIT=1 node tools/frontend/test-mobile-navigation.cjs
@@ -133,6 +140,19 @@ and use its printed local origin. Fixture sign-in is `duo-test` / `fixture-only`
 Private HTTP requires the app's explicit confirmation. Probe/effect evidence is
 available at `/fixture/state`; probes distinguish document reloads from resizing.
 Stop the fixture when testing is finished.
+
+## Artifacts follow-up — October 23, 2026
+
+The Artifacts browser fixture covers inner/outer displays, either rail side,
+book/tabletop and simultaneous divisions, occlusions, keyboard-sized viewports,
+larger text, native action routing, focus transfer, list scroll retention and
+an interactive preview that survives folding without reloading. It also loads a
+real PDF preview and checks ordinary phone navigation. Use `CHROMIUM=1` for the
+second browser engine. These checks simulate the native geometry messages;
+they do not establish native toolbar rendering or physical Duo acceptance.
+
+The updated iOS bundle still requires a native build and the Artifacts checks
+below on a genuine Duo destination before its release is considered verified.
 
 ## Remaining interactive acceptance
 

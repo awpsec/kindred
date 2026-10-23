@@ -33,6 +33,7 @@ final class WebPresentationState {
     var route = "chat-list"
     var chatTitle = ""
     var listVisible = false
+    var artifactLibraryVisible = false
 }
 
 @MainActor
@@ -538,6 +539,7 @@ final class WebSession: NSObject {
                     presentation.route = route
                     presentation.chatTitle = title
                     presentation.listVisible = listVisible
+                    presentation.artifactLibraryVisible = body["artifactLibraryVisible"] as? Bool == true && ["artifacts", "artifact"].contains(route)
                     presentation.botSettingsAvailable = body["botSettingsAvailable"] as? Bool == true
                     presentation.botDetailsAvailable = body["botDetailsAvailable"] as? Bool == true
                     if let shape = body["botAvatarShape"] as? String,
