@@ -7011,11 +7011,12 @@ Object.defineProperty($("prompt"), "value", {
   },
   set(v) {
     this.replaceChildren(document.createTextNode(v));
+    this.dispatchEvent(new Event("kindred-composer-reset"));
     resizeComposer();
     commandsUI?.refresh();
   },
 });
-createComposerLinks($("prompt"));
+createComposerLinks($("prompt"),{createIcon:key=>connectorLogo({key,name:key})});
 composerLists=createComposerLists($("prompt"),chip=>{
   // Native list formatting can omit the decorative SVG; retain the live chip.
   if(!chip.querySelector('.character')){const bot=state.bots.find(b=>b.id===chip.dataset.mention);if(bot)chip.replaceChildren(...mentionBadge(bot).childNodes);}

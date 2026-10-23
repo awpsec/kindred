@@ -6266,3 +6266,8 @@ html:not([data-mobile]) #prompt {grid-column:2;grid-row:4;min-height:22px;paddin
 html:not([data-mobile]) #prompt[data-empty="true"]::before {display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 html:not([data-mobile]) #composer:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) {grid-template-rows:auto auto minmax(40px,auto) 32px;min-height:98px;padding:10px 12px;border-radius:24px;}
 html:not([data-mobile]) #composer:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) #prompt {grid-column:1/-1;grid-row:3;min-height:40px;padding:2px 4px;margin-bottom:9px;align-self:stretch;}
+
+/* Inline link icons reserve space next to the URL within native text flow. */
+#prompt .composer-url[data-site]>.composer-url-prefix{white-space:nowrap}
+#prompt .composer-url[data-site]>.composer-url-prefix::before{content:"";display:inline-block;width:13px;height:13px;margin-right:4px;vertical-align:-1px;background-image:var(--composer-link-icon);background-repeat:no-repeat;background-position:center;background-size:contain;user-select:none;pointer-events:none;}
+#prompt .composer-url:is([data-site="github"],[data-site="notion"],[data-site="web"])>.composer-url-prefix::before{background-image:none;background-color:currentColor;mask-image:var(--composer-link-icon);mask-repeat:no-repeat;mask-position:center;mask-size:contain;}
