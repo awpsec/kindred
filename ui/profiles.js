@@ -176,24 +176,23 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     $('profile-menu')?.remove();
     if(window.__KINDRED_DESKTOP?.platform==='linux'){await nativeInvoke('open_profile_home',{theme:document.documentElement.dataset.theme||'dark'});return;}
     if($('account-manager-dialog'))return;
-    const d=el('dialog','settings-dialog'),nav=el('aside','settings-nav'),tabs=el('nav'),main=el('section','settings-main'),head=el('header'),title=el('h2','','Accounts'),content=el('div','account-manager-content');
+    const d=el('dialog','settings-dialog'),main=el('section','settings-main'),head=el('header'),title=el('h2','','Saved accounts'),content=el('div','account-manager-content');
     d.id='account-manager-dialog';d.setAttribute('aria-label','Manage accounts');
     const close=button('×',()=>d.close(),'icon-button');close.setAttribute('aria-label','Close manage accounts');
-    head.append(title,close);nav.append(el('h2','','Manage accounts'),tabs);main.append(head,content);d.append(nav,main);document.body.append(d);
-    let closed=false,opening=true,frame=0,section='accounts';
+    head.append(title,close);main.append(head,content);d.append(main);document.body.append(d);
+    let closed=false,opening=true,frame=0;const section='accounts';
     const bounds=()=>{const r=content.getBoundingClientRect(),scale=devicePixelRatio||1;return{x:r.x*scale,y:r.y*scale,width:r.width*scale,height:r.height*scale};};
     const position=()=>nativeInvoke('position_profile_home',{bounds:bounds(),section});
     const resize=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{if(!closed&&!opening)void position().catch(e=>notice(String(e),true));});};
     const embedded=window.__KINDRED_EMBEDDED_ACCOUNTS===true;
-    for(const name of ['Accounts']){const b=button(name,async()=>{section=name.toLowerCase();title.textContent=name;for(const tab of tabs.children){tab.classList.toggle('active',tab===b);tab.setAttribute('aria-current',String(tab===b));}if(!opening)await position();},'');b.classList.toggle('active',name==='Accounts');b.setAttribute('aria-current',String(name==='Accounts'));tabs.append(b);}
     const observer=new ResizeObserver(resize);
     d.addEventListener('close',async()=>{closed=true;cancelAnimationFrame(frame);observer.disconnect();window.removeEventListener('resize',resize);if(embedded)await nativeInvoke('position_profile_home',{bounds:null}).catch(()=>{});d.remove();$('switch-profiles')?.focus();},{once:true});
     d.showModal();close.focus();
     if(!embedded){
       content.classList.add('account-manager-fallback');
       content.append(el('p','muted','Choose a saved account or add another account.'));
-      for(const entry of savedAccounts(nativeProfiles,nativeLast)){const row=button('',async()=>{await beforeSwitch(projection?.active,null);await nativeInvoke('switch_native_profile',{key:entry.key});},'account-choice'),copy=el('span','account-copy');copy.append(el('strong','',entry.name),el('span','muted',entry.server));row.append(copy);content.append(row);}
-      content.append(button('Add account',()=>{d.close();return addAccount();},'outline-button'));
+      for(const entry of savedAccounts(nativeProfiles,nativeLast)){const row=button('',async()=>{await beforeSwitch(projection?.active,null);await nativeInvoke('switch_native_profile',{key:entry.key});},'account-choice'),copy=el('span','account-copy'),name=entry.username||entry.name,initial=el('span','profile-avatar',name.split(/\s+/).slice(0,2).map(word=>word[0]).join('').toUpperCase());initial.setAttribute('aria-hidden','true');copy.append(el('strong','',name),el('span','muted',entry.server));row.append(initial,copy);content.append(row);}
+      content.append(button('Add account',()=>{d.close();return addAccount();},'account-manager-add'));
       if(window.__KINDRED_PROFILE_HOST){content.append(el('p','muted','Update the desktop app to manage saved connections and standalone setup here.'));const update=el('a','subtle-button','Check for updates');update.href='kindred-update://check';content.append(update);}
       return;
     }
