@@ -489,7 +489,9 @@ function settingRow(title,control,detail=''){
   if(!control.getAttribute('aria-label'))control.setAttribute('aria-label',title);row.append(copy,control);return row;
 }
 function settingSwitch(label,value){const valueField=switchField(label,value);valueField.label.classList.add('setting-row');return valueField;}
+const accentColors=[['monochrome','Monochrome','#777777'],['blue','Blue','#176bd1'],['green','Green','#16764b'],['orange','Orange','#a94d0c'],['purple','Purple','#7646c8'],['pink','Pink','#b33475']];
 function applyGeneral() {
+  document.documentElement.dataset.accent=accentColors.some(([id])=>id===state.general.accent_color)?state.general.accent_color:'monochrome';
   const theme = state.general.theme;
   document.documentElement.dataset.theme =
     theme === "system"
@@ -1778,6 +1780,8 @@ function renderBotSettings() {
       maxLength: 2000,
     }),
     models = modelControls(b.provider, b.model, b.reasoning_effort || "");
+  name.label.classList.add("bot-name-field");
+  label.label.classList.add("bot-role-field");
   const provider = select(
       providerOptions(b.provider),
       b.provider,
@@ -2438,7 +2442,13 @@ async function settingsGeneral(revision) {
   const appearance=settingsPane('Appearance'),theme=select([['system','Follow System'],['dark','Dark'],['light','Light']],state.general.theme||'system');
   const motion=settingSwitch('Reduce motion',state.general.reduced_motion),activity=settingSwitch('Show activity in chats',state.general.show_activity===true);
   const separateBots=settingSwitch('Separate bot conversations',state.general.separate_bot_chats!==false);
-  appearance.body.append(settingRow('Theme',theme),motion.label);
+  const accent=select(accentColors.map(([id,label])=>[id,label]),state.general.accent_color||'monochrome');
+  accent.setAttribute('aria-label','Accent color');
+  for(const option of accent.options)option.dataset.swatch=accentColors.find(([id])=>id===option.value)[2];
+  const accentSwatch=node('span','accent-swatch');accentSwatch.setAttribute('aria-hidden','true');
+  const accentControl=node('span','accent-control');accentControl.append(accentSwatch,accent);
+  const paintAccent=()=>accentSwatch.style.backgroundColor=accentColors.find(([id])=>id===accent.value)?.[2]||'#777777';paintAccent();accent.addEventListener('change',paintAccent);
+  appearance.body.append(settingRow('Theme',theme),settingRow('Accent color',accentControl),motion.label);
   const interfaceFont=window.KindredInterfaceFont;
   if(interfaceFont&&!interfaceFont.systemManaged){
     const font=select([['inter','Inter'],['dm-sans','DM Sans'],['manrope','Manrope']],interfaceFont.get());
@@ -2499,24 +2509,24 @@ async function settingsGeneral(revision) {
   const speechPane=dictation.querySelector('.settings-pane');speechPane.insertBefore(dictationUI.microphoneControl(),speechPane.querySelector('.dictation-model-row'));
   system.root.hidden=!system.body.children.length;
   form.append(identity.root,appearance.root,conversations.root,dictation,system.root,bots.root,versions.root);
-  const serverControls=[...progress.inputs,name.input,prefs.input,theme,motion.input,activity.input,separateBots.input,delivery,timezone,approval.input,notifications];
+  const serverControls=[...progress.inputs,name.input,prefs.input,theme,accent,motion.input,activity.input,separateBots.input,delivery,timezone,approval.input,notifications];
   serverControls.forEach(control=>control.disabled=true);
   root.append(form);renderVersions();
-  for(const input of [theme,motion.input])input.addEventListener('change',()=>{state.general={...state.general,theme:theme.value,reduced_motion:motion.input.checked};applyGeneral();});
+  for(const input of [theme,accent,motion.input])input.addEventListener('change',()=>{state.general={...state.general,theme:theme.value,accent_color:accent.value,reduced_motion:motion.input.checked};applyGeneral();});
   const loaded=await response;if(!current()||!form.isConnected)return;
   if(loaded.error){
     message.textContent='Account settings could not refresh. '+loaded.error.message;
     loading.append(button('Retry settings',()=>openSettings('general'),'outline-button','refresh'));
   }else{
     state.general=loaded.value;account.querySelector('.user-avatar').textContent=personInitials(state.general.name);
-    name.input.value=state.general.name||'';prefs.input.value=state.general.identity||'';theme.value=state.general.theme||'system';
+    name.input.value=state.general.name||'';prefs.input.value=state.general.identity||'';theme.value=state.general.theme||'system';accent.value=state.general.accent_color||'monochrome';paintAccent();
     motion.input.checked=state.general.reduced_motion===true;activity.input.checked=state.general.show_activity===true;separateBots.input.checked=state.general.separate_bot_chats!==false;
     const selected=state.general.timezone_mode==='fixed'?state.general.timezone:'auto';
     if(selected&&!Array.from(timezone.options).some(o=>o.value===selected))timezone.add(new Option(selected,selected));
     timezone.value=selected;delivery.value=state.general.message_delivery||'steer';progress.set(state.general.progress_updates||'summaries');approval.input.value=state.general.approval_mode||'ask';notifications.value=state.general.notifications||'all';
     serverControls.forEach(control=>control.disabled=false);loading.remove();
     void defaultModelSettings(root,current);
-  livePreferences(form,()=>({name:name.input.value,identity:prefs.input.value,theme:theme.value,reduced_motion:motion.input.checked,approval_mode:approval.input.value,notifications:notifications.value,show_activity:activity.input.checked,separate_bot_chats:separateBots.input.checked,timezone:timezone.value==='auto'?deviceTimezone():timezone.value,timezone_mode:timezone.value==='auto'?'auto':'fixed',progress_updates:progress.value(),message_delivery:delivery.value}),value=>api('/settings','PUT',value),value=>{const zoneChanged=state.general.timezone!==value.timezone;state.general=value;applyGeneral();renderSidebar();void renderChat(true,'cached');if(zoneChanged)void refresh().then(()=>renderComputerRoutines()).catch(e=>notice(e.message,true));});
+  livePreferences(form,()=>({name:name.input.value,identity:prefs.input.value,theme:theme.value,accent_color:accent.value,reduced_motion:motion.input.checked,approval_mode:approval.input.value,notifications:notifications.value,show_activity:activity.input.checked,separate_bot_chats:separateBots.input.checked,timezone:timezone.value==='auto'?deviceTimezone():timezone.value,timezone_mode:timezone.value==='auto'?'auto':'fixed',progress_updates:progress.value(),message_delivery:delivery.value}),value=>api('/settings','PUT',value),value=>{const zoneChanged=state.general.timezone!==value.timezone;state.general=value;applyGeneral();renderSidebar();void renderChat(true,'cached');if(zoneChanged)void refresh().then(()=>renderComputerRoutines()).catch(e=>notice(e.message,true));});
   }
   const accountActions=node('div','settings-account-actions');root.append(accountActions);
   accountActions.append(button('Manage archived bots and chats',()=>openSettings('archived'),'outline-button'));
