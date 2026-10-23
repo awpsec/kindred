@@ -22,7 +22,15 @@ const {server,token}=require('./fixtures/desktop.cjs');
   for(const mode of ['dark','light']){
    console.log('Capturing '+mode);await theme.selectOption(mode);await page.waitForTimeout(650);
    assert.equal(await page.locator('html').getAttribute('data-theme'),mode);
-   const filter=await page.locator('.settings-header-art').evaluate(n=>getComputedStyle(n).filter);assert.equal(filter,mode==='dark'?'grayscale(1) brightness(2)':'none');
+   const filter=await page.locator('.settings-header-art').evaluate(n=>getComputedStyle(n).filter);assert.equal(filter,mode==='dark'?'grayscale(1)':'none');
+   const artwork=page.locator('.settings-header-art');
+   const beforeArt=await artwork.evaluate(n=>({svg:n.innerHTML,x:n.getBoundingClientRect().x,width:n.getBoundingClientRect().width}));
+   await page.locator('.settings-nav').getByRole('button',{name:'Archived',exact:true}).click();
+   await page.waitForTimeout(200);
+   await page.locator('.settings-nav').getByRole('button',{name:'General',exact:true}).click();
+   await page.waitForTimeout(200);
+   assert.deepEqual(await artwork.evaluate(n=>({svg:n.innerHTML,x:n.getBoundingClientRect().x,width:n.getBoundingClientRect().width})),beforeArt,'Header artwork must remain still across tabs');
+   assert.equal(await artwork.evaluate(n=>getComputedStyle(n).opacity),mode==='dark'?'0.24':'0.65');
    await page.locator('#settings-dialog').screenshot({path:path.join(out,'general-'+mode+'.png')});
    await accent.click();await page.getByRole('listbox',{name:'Accent color'}).waitFor();
    assert.equal(await page.locator('.themed-select-option .accent-swatch').count(),6);
