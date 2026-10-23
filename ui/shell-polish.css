@@ -186,3 +186,19 @@ html[data-accent]:not([data-accent=monochrome]) #send{--button:var(--message-acc
 .bot-edit-form .bot-text-button:hover {background:var(--hover);}
 .bot-edit-form input:focus-visible,.bot-edit-form textarea:focus-visible,
 .bot-edit-form select:focus-visible {outline:2px solid var(--muted);outline-offset:2px;}
+
+/* Settings fields share the soft surfaces used by bot preferences. */
+#settings-dialog input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]):not([type=button]):not([type=submit]),
+#settings-dialog textarea,
+#settings-dialog select {
+  border-color:transparent;
+  background-color:var(--hover);
+  box-shadow:none;
+  border-radius:12px;
+}
+#settings-dialog input:focus-visible,
+#settings-dialog textarea:focus-visible,
+#settings-dialog select:focus-visible {
+  outline:2px solid var(--muted);
+  outline-offset:2px;
+}
