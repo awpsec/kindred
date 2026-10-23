@@ -4186,8 +4186,22 @@ $("composer").onsubmit = (e) => {
 };
 function resizeComposer() {
   const editor=$('prompt'),form=$('composer');
-  editor.dataset.empty=String(!composerText(editor).replace(/\u200b/g,'').trim());
+  const text=composerText(editor).replace(/\u200b/g,'');
+  editor.dataset.empty=String(!text.trim());
   editor.style.height='auto';dictationUI?.render();syncQuestionComposer();
+  // Desktop expansion is sticky for this draft; IME owns layout until commit.
+  // Native adapters retain their existing compact/expanded policy.
+  if(!document.documentElement.hasAttribute('data-mobile')){
+    const chat=state.token+':'+composerChatId();
+    if(form.dataset.layoutChat!==chat){form.dataset.layoutChat=chat;form.classList.remove('is-multiline');}
+    if(editor.dataset.composing==='true')return;
+    if(!text){form.classList.remove('is-multiline');return;}
+    if(!form.getClientRects().length||form.matches('.is-replying,.has-files,.is-dictating'))return;
+    if(form.classList.contains('is-multiline'))return;
+    const css=getComputedStyle(editor),line=parseFloat(css.lineHeight)+parseFloat(css.paddingTop)+parseFloat(css.paddingBottom);
+    form.classList.toggle('is-multiline',text.includes('\n')||editor.scrollHeight>Math.ceil(line)+1);
+    return;
+  }
   if(!form.getClientRects().length||form.matches('.is-replying,.has-files,.is-dictating')){
     form.classList.remove('is-multiline');return;
   }
@@ -4199,6 +4213,8 @@ function resizeComposer() {
   form.classList.remove('is-multiline');
   form.classList.toggle('is-multiline',editor.scrollHeight>Math.ceil(line)+1);
 }
+$('prompt').addEventListener('compositionstart',()=>{$('prompt').dataset.composing='true';});
+$('prompt').addEventListener('compositionend',()=>{delete $('prompt').dataset.composing;resizeComposer();});
 let composerWidth=0,composerFont='',composerMode='';
 function updateComposerLayout(){
   const form=$('composer'),width=form.clientWidth,font=getComputedStyle($('prompt')).fontSize,

@@ -6252,8 +6252,17 @@ html[data-ios-reserved=true] :is(.conversation-header,.composer-area,.computer-p
 .avatar-custom-color {display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0;white-space:nowrap;}
 .avatar-custom-color input[type=color] {flex:none;width:48px;height:32px;margin:0;padding:3px;cursor:pointer;}
 .avatar-popover .quick-shapes {max-height:260px;overflow:auto;}
+
 /* Compact Linux sidebar rail keeps both actions inside the original header. */
 @media(min-width:761px){
 .linux-desktop .sidebar-rail:not(.sidebar-peek)>.sidebar .sidebar-top{height:57px;min-height:57px;flex-wrap:nowrap;gap:2px;padding:8px 6px}
 .linux-desktop .sidebar-rail:not(.sidebar-peek)>.sidebar .sidebar-top>.search{flex:none;width:30px;height:33px;margin:0}
 }
+
+/* Desktop drafts begin in one row; writing expands above the same controls.
+   Keep native mobile geometry and its 44px touch targets in the adapter. */
+html:not([data-mobile]) #composer {grid-template-rows:auto auto auto 32px;min-height:50px;padding:8px 10px;border-radius:26px;align-items:center;}
+html:not([data-mobile]) #prompt {grid-column:2;grid-row:4;min-height:22px;padding:0 4px;margin:0;align-self:center;}
+html:not([data-mobile]) #prompt[data-empty="true"]::before {display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+html:not([data-mobile]) #composer:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) {grid-template-rows:auto auto minmax(40px,auto) 32px;min-height:98px;padding:10px 12px;border-radius:24px;}
+html:not([data-mobile]) #composer:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) #prompt {grid-column:1/-1;grid-row:3;min-height:40px;padding:2px 4px;margin-bottom:9px;align-self:stretch;}
