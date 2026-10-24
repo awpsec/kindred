@@ -11,7 +11,7 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
    await page.addInitScript(({token,profileID,native,css,js})=>{
     sessionStorage.setItem('kindred-token',token);Object.assign(window,{__KINDRED_MOBILE:true,__KINDRED_MOBILE_PLATFORM:'ios',__KINDRED_MOBILE_PROFILE:profileID,__KINDRED_NATIVE_SESSION_BOOTSTRAP:true,__KINDRED_NATIVE_GLASS:native});
     window.__glassMessages=[];
-    window.webkit={messageHandlers:{kindredAccounts:{postMessage:value=>{if(value.action==='glass-controls'){__glassMessages.push(value);queueMicrotask(()=>__kindredGlassControls?.setActive(value.document,[...value.controls.map(c=>c.id),...(value.composer?['composer']:[])],value.sequence));}}},kindredNavigation:{postMessage:()=>{}},kindredSession:{postMessage:()=>{}}}};
+    window.webkit={messageHandlers:{kindredAccounts:{postMessage:value=>{if(value.action==='glass-controls'){__glassMessages.push(value);queueMicrotask(()=>__kindredGlassControls?.setActive(value.document,value.controls.map(c=>c.id),value.sequence));}}},kindredNavigation:{postMessage:()=>{}},kindredSession:{postMessage:()=>{}}}};
     window.__KINDRED_IOS_LAYOUT={topInset:0,bottomInset:24,leftInset:0,rightInset:84,railSide:'right',isDuo:true,isDuoInner:true,usesNativeRail:true,isPortrait:false,viewportHeight:720};
     window.__KINDRED_NATIVE_GEOMETRY={width:1000,height:720,windowWidth:1000,windowHeight:720,reservedRegions:[]};
     addEventListener('DOMContentLoaded',()=>{const style=document.createElement('style');style.textContent=css;document.head.append(style);(0,eval)(js);},{once:true});
@@ -20,15 +20,6 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
    await page.locator('#content [data-message="71"]').waitFor({state:'attached'});
    if(!native){assert.equal(await page.evaluate(()=>__glassMessages.length),0);assert.equal(await page.locator('[data-ios-native-glass]').count(),0);await page.close();continue;}
    await page.waitForFunction(()=>document.querySelector('.bot-heading')?.hasAttribute('data-ios-native-glass'));
-   await page.waitForFunction(()=>document.documentElement.hasAttribute('data-ios-native-composer'));
-   const editor=await page.locator('#prompt').evaluate(p=>{const c=document.querySelector('#composer');return {
-    shellBackground:getComputedStyle(c).backgroundColor,blur:getComputedStyle(c).backdropFilter,
-    hidden:p.closest('[aria-hidden="true"],[data-ios-native-glass]')!==null,
-    visibility:getComputedStyle(p).visibility,pointer:getComputedStyle(p).pointerEvents,
-    material:__glassMessages.at(-1).composer};});
-   assert.equal(editor.shellBackground,'rgba(0, 0, 0, 0)');assert.equal(editor.blur,'none');
-   assert.equal(editor.hidden,false);assert.equal(editor.visibility,'visible');assert.equal(editor.pointer,'auto');
-   assert(editor.material.rect[2]>100&&editor.material.rect[3]>40&&editor.material.radius>0);
    await page.waitForFunction(()=>document.querySelector('.bot-heading').getAnimations().every(a=>a.playState!=='running'));
    const identity=await page.evaluate(()=>__glassMessages.at(-1).controls.find(c=>c.id==='identity'));
    assert.equal(identity.title,'Piper');assert.equal(identity.shape,'cloud');assert.equal(identity.color,'#2475ff');assert.equal(identity.label,'Piper details');assert(identity.rect[2]>44&&identity.rect[3]>=38,JSON.stringify(identity));
@@ -62,7 +53,6 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
    // the retained composer or the current draft.
    await page.evaluate(()=>{const prompt=document.querySelector('#prompt');prompt.textContent='Kept draft';prompt.dispatchEvent(new Event('input',{bubbles:true}));const d=document.createElement('dialog');d.id='glass-test-modal';document.body.append(d);d.showModal();});
    await page.waitForFunction(()=>__glassMessages.at(-1).controls.length===0);
-   assert.equal(await page.evaluate(()=>document.documentElement.hasAttribute('data-ios-native-composer')),false);
    await page.evaluate(()=>{document.querySelector('#glass-test-modal').close();document.querySelector('#glass-test-modal').remove();});
    await page.waitForFunction(()=>__glassMessages.at(-1).controls.some(c=>c.id==='identity'));
    assert.equal(await page.locator('#prompt').textContent(),'Kept draft');

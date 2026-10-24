@@ -462,16 +462,8 @@ final class WebSession: NSObject {
         }
     }
 
-    func updateCanvasMaterial() {
-        let color: UIColor = glassControls.composerSurface.isPrepared ? .clear : presentation.canvas
-        webView.backgroundColor = color
-        webView.underPageBackgroundColor = color
-        webView.superview?.backgroundColor = presentation.canvas
-    }
-
     func tearDown() {
         glassControls.reset()
-        glassControls.composerSurface.removeFromSuperview()
         glassControls.removeFromSuperview()
         dictationDocumentGeneration &+= 1
         dictationCommands.invalidate()
@@ -552,12 +544,10 @@ final class WebSession: NSObject {
             if let body = message.body as? [String: Any], body["action"] as? String == "glass-controls",
                let sequence = body["sequence"] as? Int, sequence > 0,
                let ids = glassControls.update(body, in: webView), let document = glassControls.document {
-                updateCanvasMaterial()
                 webView.callAsyncJavaScript("return window.__kindredGlassControls?.setActive(document, ids, sequence)",
                     arguments: ["document": document, "ids": ids, "sequence": sequence], in: nil, in: .page) { [weak self] result in
                         if case .success(let accepted) = result, accepted as? Bool == true {
                             self?.glassControls.reveal(document: document)
-                            self?.updateCanvasMaterial()
                         }
                     }
                 return
@@ -662,7 +652,9 @@ final class WebSession: NSObject {
                 presentation.canvas = color
                 presentation.isDark = body["followsSystem"] as? Bool == true ? nil : (rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722) < 128
                 webView.overrideUserInterfaceStyle = presentation.isDark.map { $0 ? .dark : .light } ?? .unspecified
-                updateCanvasMaterial()
+                webView.backgroundColor = color
+                webView.underPageBackgroundColor = color
+                webView.superview?.backgroundColor = color
                 return
             }
             if AccountsMessage(body: message.body) != nil {
@@ -808,7 +800,6 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
 extension WebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         glassControls.reset()
-        updateCanvasMaterial()
         dictation.cancel(reason: "navigation")
         dictationDocumentGeneration &+= 1
         dictationCommands.invalidate()

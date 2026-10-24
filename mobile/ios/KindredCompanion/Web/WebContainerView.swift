@@ -104,7 +104,6 @@ final class WebHostView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         session?.glassControls.frame = bounds
-        session?.glassControls.composerSurface.updateGeometry()
         updateEnvironment()
         scheduleRailSample()
     }
@@ -136,8 +135,7 @@ final class WebHostView: UIView {
         // visible public controls in the reserved edge strip directly instead.
         // Skip the entire web subtree, including its editors and form controls.
         while let view = pending.popLast() {
-            guard view !== web, view !== session.glassControls, view !== session.glassControls.composerSurface,
-                  !view.isHidden, view.alpha > 0.01 else { continue }
+            guard view !== web, view !== session.glassControls, !view.isHidden, view.alpha > 0.01 else { continue }
             pending.append(contentsOf: view.subviews)
             guard view is UIControl else { continue }
             let frame = web.convert(view.bounds, from: view)
@@ -293,20 +291,16 @@ final class WebHostView: UIView {
     func attach(_ session: WebSession) {
         if self.session !== session { self.session?.displayHandoff.cancel() }
         self.session = session
-        backgroundColor = session.presentation.canvas
         hasDivision = hasDivision || session.presentation.isDuo
         let webView = session.webView
         guard webView.superview !== self else { return }
         subviews.forEach { $0.removeFromSuperview() }
         webView.removeFromSuperview()
         webView.translatesAutoresizingMaskIntoConstraints = false
-        session.glassControls.composerSurface.removeFromSuperview()
-        addSubview(session.glassControls.composerSurface)
         addSubview(webView)
         session.glassControls.removeFromSuperview()
         addSubview(session.glassControls)
         session.glassControls.frame = bounds
-        session.updateCanvasMaterial()
         NSLayoutConstraint.activate([
             webView.leadingAnchor.constraint(equalTo: leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: trailingAnchor),

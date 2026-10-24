@@ -94,7 +94,6 @@ struct NativeGlassControl {
 
 @MainActor
 final class NativeGlassControls: UIView {
-    let composerSurface = NativeComposerSurface()
     private var buttons: [String: UIButton] = [:]
     private var contentKeys: [String: [String]] = [:]
     private var opacities: [String: CGFloat] = [:]
@@ -115,7 +114,6 @@ final class NativeGlassControls: UIView {
     }
 
     func reset() {
-        composerSurface.reset()
         document = nil
         buttons.values.forEach { $0.removeFromSuperview() }; buttons.removeAll()
         contentKeys.removeAll(); opacities.removeAll(); ready.removeAll()
@@ -123,7 +121,6 @@ final class NativeGlassControls: UIView {
 
     func reveal(document: String) {
         guard self.document == document else { return }
-        composerSurface.commit()
         ready = Set(buttons.keys)
         for (id,button) in buttons { button.alpha = opacities[id] ?? 0 }
     }
@@ -135,13 +132,7 @@ final class NativeGlassControls: UIView {
               let rows = body["controls"] as? [[String: Any]], rows.count <= 20 else { return nil }
         let controls = rows.compactMap(NativeGlassControl.init)
         guard controls.count == rows.count, Set(controls.map(\.id)).count == controls.count else { return nil }
-        let composer: NativeComposerSurface.Descriptor?
-        if let value = body["composer"] {
-            guard let row = value as? [String: Any], let parsed = NativeComposerSurface.Descriptor(row) else { return nil }
-            composer = parsed
-        } else { composer = nil }
         if self.document != document { reset(); self.document = document }
-        composerSurface.prepare(composer, in: webView)
         let ids = Set(controls.map(\.id))
         for id in Set(buttons.keys).subtracting(ids) {
             buttons.removeValue(forKey: id)?.removeFromSuperview(); contentKeys[id] = nil; opacities[id] = nil; ready.remove(id)
@@ -202,6 +193,6 @@ final class NativeGlassControls: UIView {
             button.layoutIfNeeded()
             button.titleLabel?.alpha = item.titleOpacity
         }
-        return controls.map(\.id) + (composer == nil ? [] : ["composer"])
+        return controls.map(\.id)
     }
 }
