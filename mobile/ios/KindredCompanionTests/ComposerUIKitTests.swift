@@ -12,6 +12,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     private var session: WebSession!
     private var window: UIWindow!
     private var previousWindow: UIWindow?
+    private var startedLandscape = false
     private var delegate: LocalFixtureDelegate!
     private var keyboardFrame: CGRect = .zero
     private var keyboardShows = 0
@@ -33,6 +34,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     override func setUp() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         previousWindow = scene.windows.first(where: { $0.isKeyWindow })
+        startedLandscape = scene.interfaceOrientation.isLandscape
         let origin = try XCTUnwrap(ServerOrigin(url: URL(string: "https://localhost:8765/")!))
         session = WebSession(account: Account(origin: origin, login: "composer-fixture"), token: "native-test-token-only", host: self)
         session.webView.stopLoading()
@@ -135,7 +137,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     override func tearDown() async throws {
         // A failed landscape assertion must not contaminate the next test.
         window?.endEditing(true)
-        if let scene = window?.windowScene, scene.interfaceOrientation.isLandscape {
+        if let scene = window?.windowScene, scene.interfaceOrientation.isLandscape, !startedLandscape {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { error in
                 XCTFail("Portrait cleanup failed: \(error)")
             }
@@ -183,6 +185,60 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let sentDraft = try await js("window.__composerSends[0].prompt") as? String
         XCTAssertEqual(sentDraft, draft)
         try await checkSendSurfaceMatrix()
+    }
+
+    /// Production send/poll rendering in WKWebView; only disposable responses
+    /// and the passive animation recorder are substituted.
+    func testMessageMotionRefreshAndFocusedDraftPreservation() async throws {
+        let expected = UIAccessibility.isReduceMotionEnabled ? 0 : 2
+        _ = try await js("window.__expectedMotionArrivals=\(expected);true")
+        _ = try await js("fetch('/api/chats/dm-piper').then(r=>r.json()).then(v=>window.__motionMessages=v.messages);true")
+        try await waitFor("motion fixture messages") { try await self.boolean("Array.isArray(window.__motionMessages)") }
+        _ = try await js("""
+        window.__motionArrivals=[];
+        const animate=Element.prototype.animate;
+        Element.prototype.animate=function(frames,options){
+          if(this.classList.contains('reply-arriving'))window.__motionArrivals.push({seq:this.dataset.message,frames,options});
+          return animate.call(this,frames,options);
+        };
+        const baseFetch=window.fetch.bind(window);
+        window.__motionNext=100;
+        window.__motionAppend=(sender,text)=>window.__motionMessages.push({seq:window.__motionNext++,sender,kind:'message',text,created:Math.floor(Date.now()/1000)});
+        window.fetch=(input,options={})=>{
+          const url=new URL(typeof input==='string'?input:input.url,location.href);
+          const json=value=>Promise.resolve(new Response(JSON.stringify(value),{status:200,headers:{'Content-Type':'application/json'}}));
+          if(url.origin===location.origin&&url.pathname==='/api/chats/dm-piper/messages'&&options.method==='POST'){
+            window.__motionAppend('user',JSON.parse(options.body).prompt);return json({runs:[]});
+          }
+          if(url.origin===location.origin&&url.pathname==='/api/chats/dm-piper')return json({chat:{id:'dm-piper',name:'Piper',members:['piper']},messages:window.__motionMessages,page:{has_before:false,has_after:false}});
+          return baseFetch(input,options);
+        };
+        const p=document.querySelector('#prompt');p.textContent='Native motion send';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.focus({preventScroll:true});true
+        """)
+        try await waitFor("foreground focused composer") { try await self.boolean("document.hasFocus() && !document.hidden && document.activeElement===document.querySelector('#prompt')") }
+        _ = try await js("document.querySelector('#composer').requestSubmit();true")
+        try await waitFor("user entrance and accepted send") { try await self.boolean("!!document.querySelector('[data-message=\"100\"]') && document.querySelector('#prompt').textContent==='' ") }
+        _ = try await js("const p=document.querySelector('#prompt');p.textContent='Unsent native draft';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.focus({preventScroll:true});window.__motionEditor=p;window.__motionAppend('piper','Native received reply');window.dispatchEvent(new Event('online'));true")
+        try await waitFor("bot entrance", timeout: 20) { try await self.boolean("!!document.querySelector('[data-message=\"101\"]')") }
+        _ = try await js("window.__motionRow=document.querySelector('[data-message=\"101\"]');window.dispatchEvent(new Event('online'));true")
+        try await Task.sleep(nanoseconds: 3_000_000_000)
+        let refreshOK = try await boolean("window.__motionArrivals.length===window.__expectedMotionArrivals && window.__motionRow===document.querySelector('[data-message=\"101\"]') && document.activeElement===window.__motionEditor && window.__motionEditor===document.querySelector('#prompt') && window.__motionEditor.textContent==='Unsent native draft'")
+        XCTAssertTrue(refreshOK)
+        let entrancesOK = try await boolean("window.__motionArrivals.every(a=>a.options.duration===240&&a.options.easing==='cubic-bezier(.23,1,.32,1)'&&JSON.stringify(a.frames)===JSON.stringify([{transform:'translateY(12px)'},{transform:'translateY(0)'}]))")
+        XCTAssertTrue(entrancesOK)
+        _ = try await js("window.__motionMessages.unshift({seq:0,sender:'piper',kind:'message',text:'Older native history',created:1});window.dispatchEvent(new Event('online'));true")
+        try await waitFor("history backfill") { try await self.boolean("!!document.querySelector('[data-message=\"0\"]')") }
+        _ = try await js("document.documentElement.dataset.motion='off';window.__motionAppend('piper','Reduced motion native reply');window.dispatchEvent(new Event('online'));true")
+        try await waitFor("Reduced Motion reply") { try await self.boolean("!!document.querySelector('[data-message=\"102\"]')") }
+        let preserved = try await boolean("window.__motionArrivals.length===window.__expectedMotionArrivals && document.activeElement===window.__motionEditor && window.__motionEditor.textContent==='Unsent native draft'")
+        XCTAssertTrue(preserved)
+        let report: [String: Any] = ["nativeHost": true, "scene": window.bounds.debugDescription,
+            "systemReducedMotion": UIAccessibility.isReduceMotionEnabled, "keyboardShows": keyboardShows,
+            "keyboardVisible": keyboardVisible, "uiManifest": try await js("window.__sendSurfaceFixture") ?? [:],
+            "arrivals": try await js("window.__motionArrivals") ?? [], "draftAndFocusRetained": preserved,
+            "refreshAndHistoryDidNotReplay": refreshOK, "appReducedMotionSuppressed": preserved]
+        let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+        let attachment=XCTAttachment(data:data,uniformTypeIdentifier:"public.json");attachment.name="native-message-motion";attachment.lifetime = .keepAlways;add(attachment)
     }
 
     func testOrientationSafeAreaAndTextSizePreserveDraft() async throws {
