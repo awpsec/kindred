@@ -83,13 +83,15 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
    await page.evaluate(()=>__kindredGlassControls.perform('chats',__glassMessages.at(-1).document));
    await page.waitForFunction(()=>__glassMessages.at(-1).controls.some(c=>c.id==='search'));
    const ids=await page.evaluate(()=>__glassMessages.at(-1).controls.map(c=>c.id));for(const id of ['accounts','search','new'])assert(ids.includes(id),id+' has native sidebar glass');
+   assert.equal(await page.evaluate(()=>__glassMessages.at(-1).controls.find(c=>c.id==='accounts').symbol),'ellipsis');
    await page.evaluate(()=>document.querySelector('#artifacts-button').click());
-   await page.waitForFunction(()=>__glassMessages.at(-1).controls.some(c=>c.id==='artifact-chats'));
+   await page.waitForFunction(()=>__glassMessages.at(-1).controls.some(c=>c.id==='artifact-more'));
    const artifactIDs=await page.evaluate(()=>__glassMessages.at(-1).controls.map(c=>c.id));
-   for(const id of ['artifact-chats','artifact-search','artifact-new'])assert(artifactIDs.includes(id),id+' keeps its native glass');
+   for(const id of ['artifact-more','artifact-search','artifact-new'])assert(artifactIDs.includes(id),id+' keeps its native glass');
    assert(!artifactIDs.some(id=>chatControls.includes(id)));
    await page.locator('[data-artifact-id="duo-document"]').click();await page.waitForURL('**/artifacts/duo-document');
    await page.waitForFunction(()=>__glassMessages.at(-1).controls.some(c=>c.id==='artifact-back'));
+   const documentControls=await page.evaluate(()=>__glassMessages.at(-1).controls);assert(documentControls.some(c=>c.id==='artifact-document-more'&&c.symbol==='ellipsis'));assert.equal(documentControls.find(c=>c.id==='artifact-back').symbol,'line.3.horizontal');
    assert.equal(await page.evaluate(()=>__glassMessages.at(-1).controls.some(c=>c.id==='identity')),false);
    assert.deepEqual(errors,[]);await page.close();
   }
