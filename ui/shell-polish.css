@@ -40,6 +40,7 @@ html[data-motion=off] #bot-details,html[data-motion=off] #bot-details::after{tra
 .pane-resizer {background:transparent;}
 .bot-center-preferences {margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:12px;}
 .bot-center-preferences > summary {cursor:pointer;font-size:13px;color:var(--muted);padding:8px 0;}
+details.bot-center-preferences > summary::before {top:calc(50% - 7px);}
 .bot-center-preferences[open] > summary {margin-bottom:10px;}
 .linux-desktop .sidebar-top {justify-content:flex-end;gap:8px;padding:10px 14px;}
 .linux-desktop .sidebar-top #new-bot,.linux-desktop .sidebar-top #search-trigger {width:34px;height:34px;flex:0 0 34px;}
