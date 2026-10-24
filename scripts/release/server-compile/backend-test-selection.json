@@ -1,0 +1,45 @@
+{
+  "at": "2026-10-24T15:35:43.460452+00:00",
+  "source": "f2aac07f5a95646171a4af03af7193322deb50df",
+  "kind": "FINITE_FINAL_GIT_TEST_SELECTION_FOR_EXISTING_FIRST_LINUX45_NOT_EXECUTION",
+  "selectors": [
+    "conversation_updates::tests::router_normal_send_steers_despite_legacy_queue_setting",
+    "conversation_updates::tests::selected_send_mode_only_steers_new_eligible_messages_at_tool_boundary",
+    "conversation_updates::tests::steering_is_explicit_authenticated_scoped_and_keeps_missed_messages_queued",
+    "conversation_updates::tests::router_settings_queue_restore_and_request_receipts_are_authenticated_and_durable",
+    "conversation_updates::tests::composer_restore_claim_is_atomic_idempotent_and_keeps_attachments",
+    "conversation_updates::tests::followup_transport_failure_must_not_consume_user_send",
+    "conversation_updates::tests::followups_reach_the_same_active_task_once_without_replay",
+    "conversation_updates::tests::followup_fifo_late_final_and_awaiting_user_keep_exact_owner"
+  ],
+  "expected_each": {
+    "executed": 1,
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0
+  },
+  "cargo_argv_each": [
+    "cargo",
+    "test",
+    "--release",
+    "--locked",
+    "--offline",
+    "--bin",
+    "kindred",
+    "<exact selector>",
+    "--",
+    "--exact",
+    "--test-threads=1"
+  ],
+  "dependency_boundary": "Current server binary crate: main.rs module conversation_updates.rs cfg(test)::tests, synthetic tests::app/bot, in-memory DB and localhost ephemeral Axum/reqwest; existing followup/local_access_status test paths. No production/profile/provider credentials or real bot calls selected. These are actual-crate tests, not a compile-free standalone harness.",
+  "source_hashes": {
+    "src/main.rs": "f5d49a8c113938eee9b4135d45f6ff20f2a7815d4cd4f0304481857e59d70860",
+    "src/conversation_updates.rs": "015c8ad99af18b185bc9fd00cb3b4d64e0e38d75979d4f56c8f72c7ed04af4e3",
+    "src/web.rs": "7b4ca70b15595eb1eaa0ce8c835d7f664cf09460fb012960f936ce533f727752",
+    "src/tests.rs": "b47c3d7fefc7199774106e478e456dc2303313637a3ac3cf853da63ea175758a",
+    "Cargo.toml": "ce4b8d473e615f8e1a2027a0a316b3d805e09c1bfff44ac559e23c832e65211e",
+    "Cargo.lock": "556093eb541aa8d888db49317ad68558d70388dd97c9a626ef2941ad6973319d"
+  },
+  "requirements": "Builder concrete final PIN recipe must bind current Git; shared current compile/test-binary deadline, bounded selected test phase/process-group cleanup, jobs1 and same whole FIRSTLinux45 cap. Typed terminal0 and actual nonzero exact selector stdout required. No local execution, old executable/27-test carry substitution, extra paid job or automatic retry.",
+  "execution": false
+}
