@@ -377,6 +377,10 @@
     const find = artifactButton('Search artifacts', '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>');
     find.setAttribute('aria-expanded', 'false');
     find.onclick = () => {
+      if(root.dataset.iosArtifactCompact==='true'){
+        artifactSidebarWidth=Math.max(210,artifactSidebarWidth);saveArtifactSidebar();page.layout();
+        window.dispatchEvent(new Event('kindred-native-geometry'));
+      }
       const searching = library.classList.toggle('ios-artifact-searching');
       find.setAttribute('aria-expanded', String(searching));
       if (searching) input.focus();
@@ -393,6 +397,40 @@
     const documentMore=artifactButton('More options', '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>');
     documentMore.classList.add('ios-artifact-more');documentMore.setAttribute('aria-haspopup','menu');
     documentMore.onclick=()=>openLibraryMenu(documentMore);
+    // Keep the renderer's zoom/fit closures and output alive, but put their
+    // mobile entry point in the header instead of reserving a preview row.
+    let headerZoom=null;
+    const clearHeaderZoom=()=>{
+      if(!headerZoom)return;
+      headerZoom.observer.disconnect();headerZoom.holder.remove();delete headerZoom.body.dataset.iosHeaderZoom;headerZoom=null;
+    };
+    const placeHeaderZoom=()=>{
+      if(headerZoom&&(!workbench.contains(headerZoom.body)||headerZoom.menu.parentElement!==headerZoom.body))clearHeaderZoom();
+      const source=workbench.querySelector('.document-body>.document-zoom:not(.ios-document-zoom-menu)');
+      if(source){
+        clearHeaderZoom();
+        const body=source.parentElement,holder=document.createElement('div'),trigger=document.createElement('button'),value=source.querySelector('.document-zoom-value');
+        holder.className='ios-document-zoom';trigger.type='button';trigger.className='ios-artifact-button ios-document-zoom-trigger';
+        trigger.setAttribute('aria-haspopup','menu');trigger.setAttribute('aria-expanded','false');
+        source.classList.add('ios-document-zoom-menu');source.setAttribute('popover','auto');source.setAttribute('role','menu');
+        const sync=()=>{
+          const level=value?.textContent.trim()||'Zoom';
+          if(trigger.textContent!==level)trigger.textContent=level;
+          trigger.setAttribute('aria-label','Document zoom, '+level);trigger.title='Document zoom';
+          source.setAttribute('aria-label','Document zoom — '+level);
+        };
+        const observer=observeUI(sync);observer.observe(value||source,{subtree:true,childList:true,characterData:true});
+        trigger.onclick=()=>{
+          lastMenuSource=trigger;source.togglePopover();
+          const rect=trigger.getBoundingClientRect();source.style.left=Math.max(8,Math.min(rect.left,innerWidth-228))+'px';source.style.top=(rect.bottom+6)+'px';
+        };
+        source.addEventListener('toggle',event=>trigger.setAttribute('aria-expanded',String(event.newState==='open')));
+        holder.append(trigger);body.dataset.iosHeaderZoom='true';
+        headerZoom={holder,menu:source,body,observer};sync();
+      }
+      if(headerZoom&&headerZoom.holder.parentElement!==toolbar)toolbar.insertBefore(headerZoom.holder,toolbar.querySelector('.artifact-workbench-actions')||(documentMore.parentElement===toolbar?documentMore:null));
+    };
+    const zoomObserver=observeUI(placeHeaderZoom);zoomObserver.observe(workbench,{subtree:true,childList:true});
     const handle=document.createElement('div');handle.className='ios-duo-resizer';handle.dataset.pane='artifacts';handle.tabIndex=0;
     handle.setAttribute('role','separator');handle.setAttribute('aria-orientation','vertical');handle.setAttribute('aria-label','Resize artifact list');root.append(handle);
     const page = {ignoredRoute:null, show:null, dispose:null, layout:null, toggle:null, drag:null};
@@ -474,6 +512,7 @@
     const placeBack = () => {
       if (back.parentElement !== toolbar) toolbar.prepend(back);
       if (documentMore.parentElement !== toolbar) toolbar.append(documentMore);
+      placeHeaderZoom();
     };
     const toolbarObserver = observeUI(placeBack);
     toolbarObserver.observe(toolbar, {childList:true}); placeBack();
@@ -488,7 +527,7 @@
       show(true);
     }, true);
     page.show = show; page.dispose = () => {
-      page.drag?.cancel();toolbarObserver.disconnect();modalObserver.disconnect();
+      page.drag?.cancel();toolbarObserver.disconnect();modalObserver.disconnect();zoomObserver.disconnect();clearHeaderZoom();
       for(const event of ['kindred-ios-layout','kindred-native-geometry','resize','pagehide'])window.removeEventListener(event,checkDrag);
       document.removeEventListener('visibilitychange',checkDrag);
     };
@@ -2101,6 +2140,8 @@
       ['artifact-back','.ios-artifact-button[aria-label="Back to artifacts"]','line.3.horizontal'],
       ['artifact-more','.ios-artifact-navigation .ios-artifact-more','ellipsis'],
       ['artifact-document-more','.artifact-workbench-header .ios-artifact-more','ellipsis'],
+      ['artifact-zoom','.artifact-workbench-header .ios-document-zoom-trigger',''],
+      ['artifact-refresh','.artifact-workbench-actions [aria-label="Refresh document"]','arrow.clockwise'],
       ['artifact-search','.ios-artifact-navigation [aria-label="Search artifacts"]','magnifyingglass'],
       ['artifact-new','.ios-artifact-navigation .artifact-add','plus'],
     ];
@@ -2139,7 +2180,7 @@
         if (!(ghost ? ghost.isConnected && ghost.getClientRects().length : visible(node))) continue;
         const alpha = opacity(node); if (alpha < .005) continue;
         const rect = node.getBoundingClientRect(), style = getComputedStyle(node), identity = id === 'identity';
-        const title = identity ? (source.querySelector('strong')?.textContent || '').trim().slice(0,160) : id === 'latest' ? node.textContent.trim().slice(0,160) : '';
+        const title = identity ? (source.querySelector('strong')?.textContent || '').trim().slice(0,160) : ['latest','artifact-zoom'].includes(id) ? node.textContent.trim().slice(0,160) : '';
         const label = identity ? title+' details' : (node.getAttribute('aria-label') || node.title || node.textContent.trim() || id).slice(0,200);
         const avatar = source?.querySelector('.character'), shape = avatar?.dataset.avatarBody || avatar?.dataset.shape;
         const color = avatar?.dataset.avatarColor || (avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '');
