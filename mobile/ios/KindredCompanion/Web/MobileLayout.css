@@ -360,6 +360,9 @@ html[data-kindred-ios][data-ios-native-computer=true] .computer-panel>.ios-duo-r
 html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area { left:0; right:0; width:100%; max-width:none; margin-inline:0; box-sizing:border-box; padding-left:max(10px,var(--ios-native-control-left,0px),var(--ios-composer-keyboard-left,0px)); padding-right:max(10px,var(--ios-native-control-right,0px),var(--ios-composer-keyboard-right,0px)); padding-bottom:calc(8px + var(--ios-composer-safe-bottom,var(--ios-safe-bottom))); }
 html[data-kindred-ios][data-ios-duo=true] .conversation-header { padding-left:max(12px,var(--ios-native-control-left,0px)); padding-right:max(12px,var(--ios-native-control-right,0px)); }
 html[data-kindred-ios][data-ios-duo=true] .bot-heading { left:calc(50% + (var(--ios-native-control-left,0px) - var(--ios-native-control-right,0px)) / 2); max-width:calc(100% - 24px - var(--ios-native-control-left,0px) - var(--ios-native-control-right,0px)); }
+/* The desktop ID rule otherwise makes the tag relative to the padded header,
+   applying the fold's leaf offset twice before native glass measures it. */
+html[data-kindred-ios] .conversation-header #bot-details { position:absolute; }
 
 /* The native vertical rail owns navigation on both Duo displays. Its localized
    occlusions are projected above; a full-height shell strip wastes space below
