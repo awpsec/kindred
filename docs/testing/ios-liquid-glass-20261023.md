@@ -23,7 +23,11 @@ The transparent host passes all other touches to WebKit. Small pills retain
 44-point minimum touch targets. Native glass follows finite web morphs frame by
 frame, including the temporary inert identity bridge, without introducing a
 second position animation. The avatar stays 30 points while the name clips and
-fades. Native chrome is excluded from the right-toolbar measurement so it cannot
+fades. The native label uses the retained tag's measured text slot and avatar
+center, keeping short names readable inside the existing compact pill. Chat
+chrome is scoped to the current route, so retained chat controls cannot float
+above the Artifacts library or document viewer; artifact navigation keeps its
+own glass controls. Native chrome is excluded from the right-toolbar measurement so it cannot
 create its own clearance feedback loop. Dialogs hide these controls; dismissal
 restores them. The session retains the host across display changes and handles
 measurements arriving before the host receives its real bounds.
@@ -39,7 +43,8 @@ Checks:
   retained actions, stale actions/acks, intermediate identity morph frames,
   dialog coverage, retained draft and ordinary-iPhone sidebar buttons.
 - `NativeGlassControlsTests`: bounded bridge data, retained control identity and
-  action routing, transparent hit testing, reset and pre-attachment geometry.
+  action routing, compact-name fit and fixed artwork during morphing, transparent
+  hit testing, reset and pre-attachment geometry.
 - Existing `test-ios-duo-motion.cjs` and `test-ios-duo.cjs` regression suites.
 - Native Duo inspection confirms the glass nametag, its Details action, rotation
   into the portrait toolbar, closing the phone and returning to the open chat.

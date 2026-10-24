@@ -23,6 +23,8 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
    await page.waitForFunction(()=>document.querySelector('.bot-heading').getAnimations().every(a=>a.playState!=='running'));
    const identity=await page.evaluate(()=>__glassMessages.at(-1).controls.find(c=>c.id==='identity'));
    assert.equal(identity.title,'Piper');assert.equal(identity.shape,'cloud');assert.equal(identity.color,'#2475ff');assert.equal(identity.label,'Piper details');assert(identity.rect[2]>44&&identity.rect[3]>=38,JSON.stringify(identity));
+   const slots=await page.locator('.bot-heading').evaluate(node=>{const r=node.getBoundingClientRect(),t=node.querySelector('strong').getBoundingClientRect(),a=node.querySelector('.character').parentElement.getBoundingClientRect(),round=n=>Math.round(n*100)/100;return {titleRect:[t.x-r.x,t.y-r.y,t.width,t.height].map(round),avatarCenter:[a.x+a.width/2-r.x,a.y+a.height/2-r.y].map(round)};});
+   assert.deepEqual(identity.titleRect,slots.titleRect,'native text receives the actual compact title slot');assert.deepEqual(identity.avatarCenter,slots.avatarCenter);
    assert.equal(await page.locator('.bot-heading').evaluate(n=>getComputedStyle(n).visibility),'visible','the retained nametag keeps its layout/morph geometry');
    assert.equal(await page.locator('#composer[data-ios-native-glass],.message-bubble[data-ios-native-glass],.bot-link[data-ios-native-glass]').count(),0,'editing and content are not lifted into glass chrome');
    assert.equal(await page.evaluate(()=>__glassMessages.at(-1).controls.some(c=>['accounts','search','new'].includes(c.id))),false,'Duo does not duplicate its native sidebar toolbar');
@@ -50,6 +52,19 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
    await page.evaluate(()=>{document.querySelector('#glass-test-modal').close();document.querySelector('#glass-test-modal').remove();});
    await page.waitForFunction(()=>__glassMessages.at(-1).controls.some(c=>c.id==='identity'));
    assert.equal(await page.locator('#prompt').textContent(),'Kept draft');
+   // Retained chat chrome is still in the DOM while Artifacts owns the screen.
+   // It must not be lifted above either the library or the document viewer.
+   const chatControls=['identity','latest','chats','computer','bot-settings'];
+   await page.evaluate(()=>__kindredDuoActions.perform('artifacts'));
+   await page.locator('[data-artifact-id="duo-document"]').waitFor({state:'visible'});
+   await page.waitForFunction(ids=>!__glassMessages.at(-1).controls.some(c=>ids.includes(c.id)),chatControls);
+   await page.locator('[data-artifact-id="duo-document"]').click();
+   await page.waitForURL('**/artifacts/duo-document');
+   await page.waitForFunction(ids=>!__glassMessages.at(-1).controls.some(c=>ids.includes(c.id)),chatControls);
+   await page.evaluate(()=>__kindredDuoActions.perform('back'));await page.waitForURL('**/artifacts');
+   await page.evaluate(()=>__kindredDuoActions.perform('back'));
+   await page.waitForFunction(()=>__glassMessages.at(-1).controls.some(c=>c.id==='identity'));
+   assert.equal(await page.locator('#prompt').textContent(),'Kept draft');
    // The same bridge supplies the visible sidebar controls on an ordinary
    // iPhone, where the Duo's native right rail is absent.
    await page.setViewportSize({width:430,height:780});
@@ -58,6 +73,14 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
    await page.evaluate(()=>__kindredGlassControls.perform('chats',__glassMessages.at(-1).document));
    await page.waitForFunction(()=>__glassMessages.at(-1).controls.some(c=>c.id==='search'));
    const ids=await page.evaluate(()=>__glassMessages.at(-1).controls.map(c=>c.id));for(const id of ['accounts','search','new'])assert(ids.includes(id),id+' has native sidebar glass');
+   await page.evaluate(()=>document.querySelector('#artifacts-button').click());
+   await page.waitForFunction(()=>__glassMessages.at(-1).controls.some(c=>c.id==='artifact-chats'));
+   const artifactIDs=await page.evaluate(()=>__glassMessages.at(-1).controls.map(c=>c.id));
+   for(const id of ['artifact-chats','artifact-search','artifact-new'])assert(artifactIDs.includes(id),id+' keeps its native glass');
+   assert(!artifactIDs.some(id=>chatControls.includes(id)));
+   await page.locator('[data-artifact-id="duo-document"]').click();await page.waitForURL('**/artifacts/duo-document');
+   await page.waitForFunction(()=>__glassMessages.at(-1).controls.some(c=>c.id==='artifact-back'));
+   assert.equal(await page.evaluate(()=>__glassMessages.at(-1).controls.some(c=>c.id==='identity')),false);
    assert.deepEqual(errors,[]);await page.close();
   }
   console.log(JSON.stringify({passed:true,nativeNametag:true,sidebarButtons:true,retainedActions:true,modalClearance:true,legacyFallback:true}));
