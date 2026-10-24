@@ -103,6 +103,7 @@ final class WebHostView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        session?.glassControls.frame = bounds
         updateEnvironment()
         scheduleRailSample()
     }
@@ -134,7 +135,7 @@ final class WebHostView: UIView {
         // visible public controls in the reserved edge strip directly instead.
         // Skip the entire web subtree, including its editors and form controls.
         while let view = pending.popLast() {
-            guard view !== web, !view.isHidden, view.alpha > 0.01 else { continue }
+            guard view !== web, view !== session.glassControls, !view.isHidden, view.alpha > 0.01 else { continue }
             pending.append(contentsOf: view.subviews)
             guard view is UIControl else { continue }
             let frame = web.convert(view.bounds, from: view)
@@ -297,6 +298,9 @@ final class WebHostView: UIView {
         webView.removeFromSuperview()
         webView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(webView)
+        session.glassControls.removeFromSuperview()
+        addSubview(session.glassControls)
+        session.glassControls.frame = bounds
         NSLayoutConstraint.activate([
             webView.leadingAnchor.constraint(equalTo: leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: trailingAnchor),

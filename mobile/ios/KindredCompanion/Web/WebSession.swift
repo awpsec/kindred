@@ -77,6 +77,7 @@ final class WebSession: NSObject {
     let webView: WKWebView
     let presentation = WebPresentationState()
     let displayHandoff = DisplayHandoff()
+    let glassControls = NativeGlassControls()
     private var conversationTarget: ConversationMenuTarget?
     private var contextMenuPreview: UITargetedPreview?
     private weak var nativeMenuAlert: UIAlertController?
@@ -126,6 +127,12 @@ final class WebSession: NSObject {
         configuration.applicationNameForUserAgent = "KindredMobile/" + version
         webView = KindredWebView(frame: .zero, configuration: configuration)
         super.init()
+        glassControls.activate = { [weak self] id, document in
+            guard let self, !self.nativeNavigationBlocked, self.origin.matches(self.webView.url),
+                  self.glassControls.document == document else { return }
+            self.webView.callAsyncJavaScript("window.__kindredGlassControls?.perform(id, document)",
+                arguments: ["id": id, "document": document], in: nil, in: .page) { _ in }
+        }
         // Match a saved explicit appearance before the first web frame arrives.
         if let saved = CachedWebAppearance.load(accountID: account.id), !saved.followsSystem {
             presentation.canvas = saved.color
@@ -231,11 +238,14 @@ final class WebSession: NSObject {
         let revision = Bundle.main.object(forInfoDictionaryKey: "KindredSourceRevision") as? String ?? ""
         let versionLabel = "iOS " + version + " (" + build + ")" + (revision.isEmpty ? "" : " · " + String(revision.prefix(8)))
         let hasPushSigning = APNsEnvironment(configurationValue: Bundle.main.object(forInfoDictionaryKey: "KindredAPNsEnvironment") as? String) != nil
+        let hasNativeGlass: Bool
+        if #available(iOS 26.0, *) { hasNativeGlass = true } else { hasNativeGlass = false }
         let source = WebBootstrap.documentStartScript(origin: origin, token: token, profileID: profileID) + """
         ;(() => {
           if (window.top !== window.self || location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
           window.__KINDRED_IOS_APP_VERSION = \(WebBootstrap.javaScriptString(versionLabel));
           window.__KINDRED_IOS_PUSH_AVAILABLE = \(hasPushSigning ? "true" : "false");
+          window.__KINDRED_NATIVE_GLASS = \(hasNativeGlass ? "true" : "false");
           const appearance = \(WebBootstrap.javaScriptString(presentation.isDark.map { $0 ? "dark" : "light" } ?? "system"));
           if (appearance !== 'system') document.documentElement.dataset.theme = appearance;
         })();
@@ -452,6 +462,8 @@ final class WebSession: NSObject {
     }
 
     func tearDown() {
+        glassControls.reset()
+        glassControls.removeFromSuperview()
         dictationDocumentGeneration &+= 1
         dictationCommands.invalidate()
         dictation.tearDown()
@@ -528,6 +540,17 @@ final class WebSession: NSObject {
         case WebSession.navigationHandler:
             edgeBack?.setNavigation(WebNavigation(body: message.body))
         case WebSession.accountsHandler:
+            if let body = message.body as? [String: Any], body["action"] as? String == "glass-controls",
+               let sequence = body["sequence"] as? Int, sequence > 0,
+               let ids = glassControls.update(body, in: webView), let document = glassControls.document {
+                webView.callAsyncJavaScript("return window.__kindredGlassControls?.setActive(document, ids, sequence)",
+                    arguments: ["document": document, "ids": ids, "sequence": sequence], in: nil, in: .page) { [weak self] result in
+                        if case .success(let accepted) = result, accepted as? Bool == true {
+                            self?.glassControls.reveal(document: document)
+                        }
+                    }
+                return
+            }
             if let body = message.body as? [String: Any], body["action"] as? String == "duo-navigation",
                let route = body["route"] as? String,
                ["chat-list", "bot-chat", "computer", "details", "artifacts", "artifact", "marketplace"].contains(route),
@@ -774,6 +797,7 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
 
 extension WebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        glassControls.reset()
         dictation.cancel(reason: "navigation")
         dictationDocumentGeneration &+= 1
         dictationCommands.invalidate()
