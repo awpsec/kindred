@@ -125,7 +125,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // Bind the fixture's exact shared candidate, not a stale connected UI.
         _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
         try await waitFor("exact Send candidate UI manifest") {
-            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='f9c9a9a4b677ca63d96f845a1a5492a9378fbad90e286bc3b9b8311ed28e6e7b' && window.__sendSurfaceFixture?.['app.js']==='17909a4c569a6031237e2dbb2bc5c97bed8aee79dfebf5f61711fa88dde4279f' && window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c'")
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='d9b458a506356f065d4b8d8a52a9ac0d6e02b2c5b5950caff2b88a3949e6aef0' && window.__sendSurfaceFixture?.['app.js']==='92bf4c39298ab99878dc8b31ea6344ee7e04a5908ad5bf07c6a8ffcff44a1085' && window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c'")
         }
         try await waitFor("injected native capability reconciles through bridge") {
             try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && window.__KINDRED_IOS_DICTATION?.recognizerAvailable===true")
