@@ -168,6 +168,9 @@ html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-head
   box-shadow:inset 0 1px 0 #fff3,inset 0 -1px 0 #0001,0 3px 14px #0001;
 }
 html[data-kindred-ios] .conversation-header :is(.bot-heading,.header-actions,.icon-button) { pointer-events:auto; }
+/* The shared theme's ID selector makes this button relative. Retain the
+   native centered/rail geometry instead of offsetting a relative flex item. */
+html[data-kindred-ios] .conversation-header #bot-details { position:absolute; }
 /* iOS 26+ draws these retained hit targets with native Liquid Glass. Keep
    their DOM geometry for existing layout/morphs; hide only the duplicate ink. */
 html[data-kindred-ios] [data-ios-native-glass] {
