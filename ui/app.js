@@ -837,7 +837,7 @@ function updateWorkLabel(label) {
   label.title=stale?'The server has not confirmed new activity. The timer is paused at the last received status.':a.run_created_at?'Task elapsed: '+elapsedTime(now-a.run_created_at):'';
 }
 const chatMotionReduced=()=>document.hidden||!document.hasFocus()||document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches;
-const WORK_DEPARTURE_MS=1970, REPLY_ARRIVAL_MS=280;
+const WORK_DEPARTURE_MS=1970, REPLY_ARRIVAL_MS=240;
 function prepareChatPresentation(entry,runs,messages,mode) {
   entry.finishing??=new Map();entry.replyArrivals??=new Map();
   const sameView=state.renderedChatId===entry.id,now=Date.now();
@@ -871,17 +871,25 @@ function prepareChatPresentation(entry,runs,messages,mode) {
   if(!animate)for(const [id,finish] of entry.finishing){clearTimeout(finish.timer);entry.finishing.delete(id);avatarCache.delete('work-'+id);}
   entry.workingRuns=new Map(workers.map(r=>[r.id,r]));
   if(animate && mode==='sync' && entry.renderedIds)for(const m of messages)
-    if(!entry.renderedIds.has(m.seq) && m.created>=entry.latestRenderedTime && (['assistant','result'].includes(m.kind)||(m.kind==='message'&&m.sender!=='user'&&m.sender!=='system'&&m.mine!==true)))entry.replyArrivals.set(m.seq,now);
+    if(!entry.renderedIds.has(m.seq) && m.created>=entry.latestRenderedTime && ordinaryMessageArrival(m))entry.replyArrivals.set(m.seq,now);
   for(const [seq,at] of entry.replyArrivals)if(now-at>=REPLY_ARRIVAL_MS || !animate)entry.replyArrivals.delete(seq);
   entry.renderedIds=new Set(messages.map(m=>m.seq));entry.latestRenderedTime=Math.max(0,...messages.map(m=>m.created));
   return workers;
+}
+// Only ordinary conversation bubbles enter. Long-job progress, reviews and
+// cards retain their own presentation and never replay as a new chat message.
+function ordinaryMessageArrival(message) {
+  return ['message','assistant','result'].includes(message.kind)
+    && message.sender!=='system' && !isProgressMember(message)
+    && !message.approval && !message.question && !message.status_notice;
 }
 function revealReply(group,at) {
   if(at==null || chatMotionReduced())return;
   const elapsed=Date.now()-at;if(elapsed>=REPLY_ARRIVAL_MS)return;
   group.classList.add('reply-arriving');
-  // Fade the mounted message without changing its height or the reading anchor.
-  const effect=group.animate([{opacity:0},{opacity:1}],{duration:REPLY_ARRIVAL_MS,easing:'ease-out',fill:'both'});
+  // Grok's ordinary message entrance: a short rise, with no fade or scale.
+  // Transform leaves layout height and the reading anchor unchanged.
+  const effect=group.animate([{transform:'translateY(12px)'},{transform:'translateY(0)'}],{duration:REPLY_ARRIVAL_MS,easing:'cubic-bezier(.23,1,.32,1)',fill:'both'});
   effect.currentTime=elapsed;
   trackMotion(effect,REPLY_ARRIVAL_MS-elapsed,()=>group.classList.remove('reply-arriving'));
 }
@@ -6429,7 +6437,13 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   reconcileConversation(liveArea,area,mode==='sync'&&!entry.historyChanged);entry.historyChanged=false;
   const artifactTurns=data.messages.filter(m=>m.sender==='user'||m.mine===true||(chat.shared&&chat.participants?.some(p=>p.id===m.sender&&p.kind==='person'))).map(m=>String(m.seq));
   for(const card of liveArea.querySelectorAll('[data-workspace-artifact]'))card.advanceArtifactTurns?.(artifactTurns);
-  for(const seq of entry.replyArrivals.keys()){const group=[...liveArea.children].find(n=>n.dataset.message===String(seq));if(group){revealReply(group,entry.replyArrivals.get(seq));entry.replyArrivals.delete(seq);}}
+  for(const [seq,at] of entry.replyArrivals){
+    const group=[...liveArea.children].find(n=>n.dataset.message===String(seq));
+    // Run state can turn a result into a status card even without status_notice.
+    // Check the final rendered shape too; only ordinary visible bubbles enter.
+    if(group?.matches('.message-group:not(.progress-commentary):not([hidden])')&&group.querySelector(':scope > .message-row > .message-bubble'))revealReply(group,at);
+    entry.replyArrivals.delete(seq);
+  }
   releaseScreenshotUrls(true);
   for(const divider of liveArea.querySelectorAll('.unread-divider'))unreadObserver.observe(divider);
   for(const finish of entry.finishing.values())if(!taskOwners.get(JSON.stringify([finish.run.id,finish.run.bot_id])))finishingWork(entry,finish);
