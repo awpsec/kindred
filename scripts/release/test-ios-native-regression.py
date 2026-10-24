@@ -21,7 +21,7 @@ METHODS = (
     'testPauseStartsNewHypothesisWithoutReplacingEarlierSpeech',
     'testAccumulatedTranscriptLimitKeepsLastValidDraft',
 )
-DEVELOPER = '/Applications/Xcode_27.1_Release_Candidate.app/Contents/Developer'
+DEVELOPER = '/Applications/Xcode_27.1.app/Contents/Developer'
 RESOURCE_PATHS = (
     'mobile/ios/KindredCompanion/Web/MobileLayout.js',
     'mobile/ios/KindredCompanion/Web/MobileLayout.css',
@@ -183,7 +183,7 @@ class Attempt:
             'script': digest(Path(__file__).resolve()),
             'image_os': os.environ.get('ImageOS'), 'image_version': os.environ.get('ImageVersion'),
             'unsigned_simulator_only': True, 'microphone_free_hooks_only': True})
-        assert Path(DEVELOPER).is_dir(), 'capability:documented-Xcode27.1RC-directory-absent'
+        assert Path(DEVELOPER).is_dir(), 'capability:documented-Xcode27.1-directory-absent'
         self.run('host', ['sw_vers'])
         version = self.run('xcode', ['xcodebuild', '-version'])
         assert re.search(r'Xcode 27\.1\b', version) and '27A9275' in version, 'capability:Xcode-identity-drift'
