@@ -16,7 +16,7 @@ const assert=require('node:assert/strict');
    const gripBox=await grip.boundingBox(),headerBox=await page.locator('.conversation-header').boundingBox();
    assert(gripBox.height>=headerBox.height-2&&gripBox.width>=47,'Full-height grip remains available with long names');
    await page.evaluate(()=>nativeCalls.length=0);
-   for(const offset of [4,gripBox.height/2,gripBox.height-4])await page.mouse.click(gripBox.x+gripBox.width/2,gripBox.y+offset);
+   for(const offset of [4,gripBox.height/2,gripBox.height-4])await page.mouse.click(gripBox.x+4,gripBox.y+offset);
    assert.deepEqual(await page.evaluate(()=>nativeCalls),['drag','drag','drag'],platform+' drag works across the blank header height');
   }
   await page.evaluate(()=>{nativeCalls.length=0;for(const target of document.querySelectorAll('.conversation-header button'))target.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,detail:1}));});

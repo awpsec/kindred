@@ -106,16 +106,20 @@ html:not([data-mobile]) .conversation-header{position:absolute;inset:0 0 auto;he
 html:not([data-mobile]) .conversation-header #bot-details{position:absolute;left:50%;top:8px;transform:translateX(-50%);max-width:calc(100% - 32px);margin:0;pointer-events:auto;}
 html:not([data-mobile]) .conversation:not(.group-conversation) .header-actions{display:none;}
 html:not([data-mobile]) .group-conversation .header-actions{position:absolute;right:16px;top:8px;pointer-events:auto;}
-html:not([data-mobile]) .conversation-header #bot-details:is(:hover,:focus-visible){transform:translateX(calc(-50% + 10px));max-width:calc(100% - 12px);}
+/* Keep hover width and centering in the same layout pass; a separate transform
+   transition can run ahead of padding in WebKit and tug the leading edge. */
+html:not([data-mobile]) .conversation-header #bot-details:is(:hover,:focus-visible){left:calc(50% + 10px);max-width:calc(100% - 12px);}
 html:not([data-mobile]) .group-conversation .conversation-header #bot-details{max-width:calc(100% - 180px);}
 html:not([data-mobile]) .group-conversation .conversation-header #bot-details:is(:hover,:focus-visible){max-width:calc(100% - 160px);}
 /* Leave room for the right pane without changing the native iOS header. */
-html:not([data-mobile]):not([data-kindred-ios]) .conversation-header #bot-details{transition:left .18s ease-out,transform .18s ease-out,padding-right .13s ease-out;}
+html:not([data-mobile]):not([data-kindred-ios]) .conversation-header #bot-details{transition:left .13s ease-out,transform .13s ease-out,padding-right .13s ease-out,max-width .13s ease-out;}
 html:not([data-mobile]):not([data-kindred-ios]) .shell:has(>:is(#details-panel,#computer-panel):not([hidden])) .conversation-header{z-index:2;}
 html:not([data-mobile]):not([data-kindred-ios]) .shell:has(>:is(#details-panel,#computer-panel):not([hidden])) .conversation-header #bot-details{left:16px;transform:translateX(0);}
 html[data-motion=off]:not([data-mobile]):not([data-kindred-ios]) .conversation-header #bot-details{transition:none;}
 @media(prefers-reduced-motion:reduce){html:not([data-mobile]):not([data-kindred-ios]) .conversation-header #bot-details{transition:none;}}
-html:not([data-mobile]) .conversation-header .chat-window-drag{display:none;}
+/* The floating nametag sits above a full-width native drag surface. Browser
+   and mobile headers keep their existing hit testing. */
+html:not([data-mobile]) .conversation-header .chat-window-drag{display:block;position:absolute;inset:0;z-index:-1;pointer-events:auto;user-select:none;}
 html:not([data-mobile]) .conversation .messages{padding-top:65px;scroll-padding-top:65px;}
 }
 

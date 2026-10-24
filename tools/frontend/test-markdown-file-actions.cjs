@@ -18,7 +18,7 @@ function pdf(){const stream='BT /F1 24 Tf 70 710 Td (Markdown change PDF regress
   await page.route(origin+'/api/deliverables/*',r=>{const name=decodeURIComponent(new URL(r.request().url()).pathname.split('/').pop());return files[name]?r.fulfill({body:files[name],contentType:'application/octet-stream'}):r.fulfill({status:404,json:{error:'No page conversion in fixture'}});});
   await page.goto(origin);const card=name=>page.getByRole('region',{name:'File: '+name,exact:true}),md=card('skill.md');await md.waitFor();
   assert.equal(await md.getAttribute('data-kind'),'source');await page.screenshot({path:path.join(out,'markdown-file-card.png')});await md.getByRole('button',{name:'Open',exact:true}).click();
-  await page.waitForFunction(()=>document.querySelector('[aria-label="File: skill.md"] .download-announcement').textContent.startsWith('Opened'));
+  await page.waitForFunction(()=>document.querySelector('[aria-label="File: skill.md"] .download-announcement').textContent.startsWith('Sent'));
   assert.deepEqual(calls.filter(c=>['save_chat_file','open_chat_file'].includes(c.command)),[{command:'save_chat_file',args:{id:'skill.md'}},{command:'open_chat_file',args:{receipt:'receipt-skill.md'}}]);
   await md.getByRole('button',{name:'Open',exact:true}).click();await page.waitForTimeout(120);assert.equal(calls.filter(c=>c.command==='save_chat_file').length,1);assert.equal(calls.filter(c=>c.command==='open_chat_file').length,2);
   failOpen=true;await md.getByRole('button',{name:'Open',exact:true}).click();await page.getByText(/Could not open skill.md/).waitFor();assert.equal(await md.getByRole('button',{name:'Open',exact:true}).isEnabled(),true);failOpen=false;

@@ -9088,7 +9088,7 @@ document.addEventListener('click',event=>{
   if(!window.__KINDRED_EXTERNAL_LINKS||event.defaultPrevented||event.button!==0)return;
   const link=event.target.closest?.('a[href]');if(!link||link.hasAttribute('download'))return;
   let url;try{url=new URL(link.href);}catch{return;}
-  if(!['https:','http:'].includes(url.protocol)||(url.origin===location.origin&&link.target!=='_blank'))return;
+  if(!['https:','http:'].includes(url.protocol)||(url.origin===location.origin&&link.target!=='_blank'&&!(artifactLink&&(event.ctrlKey||event.metaKey))))return;
   // WKWebView may route a normal external click through its navigation policy
   // instead of its popup callback. Explicit IPC keeps sign-in outside the app.
   event.preventDefault();void perform(()=>nativeInvoke('open_external_url',{url:url.href}));

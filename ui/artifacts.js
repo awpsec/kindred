@@ -159,7 +159,7 @@ export function fileCard(attachment,{getBlob,getPagePreview,nativeSave,nativeRev
  const createDownloadButton=({iconOnly=false}={})=>{for(const b of downloadControls)if(!b.isConnected)downloadControls.delete(b);const b=element('button','artifact-action file-download'+(iconOnly?' document-icon-button':''));b.type='button';b.onclick=()=>void save();downloadControls.add(b);paintDownload(b);return b;};
  const openSaved=async()=>{
   if(opening||phase==='saving')return;opening=true;paintOpen();
-  try{if(!saved)await save(true);if(saved){await nativeOpen(saved);announcement.textContent='Opened '+name+' in your default app.';}}
+  try{if(!saved)await save(true);if(saved){await nativeOpen(saved);announcement.textContent='Sent '+name+' to your default app.';}}
   catch(error){notice('Could not open '+name+'. '+String(error.message||error),true);}
   finally{opening=false;paintOpen();}
  };
