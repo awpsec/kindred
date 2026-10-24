@@ -127,11 +127,15 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // Bind the fixture's exact shared candidate, not a stale connected UI.
         _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
         try await waitFor("exact Send candidate UI manifest") {
-            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='3620ed9f602f8ea8d585a4cd1b51f7cf852c86e130d2c0d1bb19d0d86a0d64fc' && window.__sendSurfaceFixture?.['app.js']==='b0397bd980985ae81b8874373fe508fd78b3bd96da66ec3149de594c27a797b2' && window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c'")
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='3620ed9f602f8ea8d585a4cd1b51f7cf852c86e130d2c0d1bb19d0d86a0d64fc' && window.__sendSurfaceFixture?.['app.js']==='6fea97380a50b52ab4c4d5a6836c81898ef3940b38020054436cb4550bd6a788' && window.__sendSurfaceFixture?.['dictation.js']==='a76b4a64ef45384053f8ade870045b9791e163ffeb63a57111e2c0198879983c'")
         }
         try await waitFor("injected native capability reconciles through bridge") {
             try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && window.__KINDRED_IOS_DICTATION?.recognizerAvailable===true")
         }
+        if #available(iOS 26.0,*) {
+            try await waitFor("native foreground acknowledged") { self.session.glassControls.composer.model != nil && !self.session.glassControls.composer.isHidden }
+        }
+
     }
 
     override func tearDown() async throws {
@@ -158,10 +162,66 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         window = nil
     }
 
-    func testComposerBackdropFollowsScrollingContent() async throws {
+    func testNativeComposerPrimaryGlyphPaintsInBothThemes() async throws {
+        guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
         for theme in ["dark","light"] {
             try await setFixtureAppearance(theme)
-            let contained=try await boolean("(()=>{const c=document.querySelector('#composer').getBoundingClientRect(),a=document.querySelector('#content').getBoundingClientRect();return a.bottom>=c.bottom && getComputedStyle(document.querySelector('#composer')).backdropFilter.includes('blur') && getComputedStyle(document.querySelector('#composer-area'),'::before').content==='none' && !document.documentElement.hasAttribute('data-ios-native-composer')})()")
+            try await waitFor("native primary glyph model") { self.session.glassControls.composer.model?.dark == (theme=="dark") && !self.session.glassControls.composer.isHidden }
+            let composer=session.glassControls.composer,item=try XCTUnwrap(composer.model?.items.first(where:{$0.primary}))
+            let button=try XCTUnwrap(composer.material.contentView.subviews.compactMap {$0 as? UIButton}.first(where:{$0.accessibilityIdentifier=="kindred-native-composer-"+item.id}))
+            window.layoutIfNeeded();button.layoutIfNeeded()
+            let image=UIGraphicsImageRenderer(bounds:window.bounds).image {_ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true)}
+            let center=button.convert(CGPoint(x:button.bounds.midX,y:button.bounds.midY),to:window)
+            var ink=0
+            for x in stride(from:-10,through:10,by:2) { for y in stride(from:-10,through:10,by:2) {
+                let pixel=try Self.imagePixel(image,point:CGPoint(x:center.x+CGFloat(x),y:center.y+CGFloat(y)))
+                if theme=="dark" ? pixel.prefix(3).allSatisfy({$0<100}) : pixel.prefix(3).allSatisfy({$0>155}) { ink+=1 }
+            }}
+            let a=XCTAttachment(image:image);a.name="native-primary-glyph-"+theme;a.lifetime = .keepAlways;add(a)
+            let info:[String:Any]=["theme":theme,"inkSamples":ink,"symbol":item.symbol,"imageFrame":button.imageView?.frame.debugDescription ?? "nil","imageAlpha":button.imageView?.alpha ?? -1,"tint":button.imageView?.tintColor.resolvedColor(with:button.traitCollection).description ?? "nil","style":button.traitCollection.userInterfaceStyle.rawValue]
+            let data=XCTAttachment(data:try JSONSerialization.data(withJSONObject:info,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");data.name="native-primary-glyph-geometry";data.lifetime = .keepAlways;add(data)
+            XCTAssertGreaterThan(ink,5,"Native primary control must paint a contrasting symbol inside its circle")
+        }
+    }
+
+    func testNativeComposerTypingKeyboardAndSend() async throws {
+        guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
+        try await waitFor("genuine native composer") { self.session.glassControls.composer.model != nil && !self.session.glassControls.composer.isHidden }
+        let composer=session.glassControls.composer
+        XCTAssertTrue(composer.material.effect is UIGlassEffect)
+        XCTAssertTrue(composer.editor.superview === composer.material.contentView)
+        XCTAssertFalse(session.webView.backgroundColor == .clear)
+        composer.editor.becomeFirstResponder()
+        try await waitFor("native editor first responder") { composer.editor.isFirstResponder }
+        try await waitFor("real native keyboard notification") { self.keyboardShows>0 && self.keyboardFrame.height>100 }
+        composer.editor.insertText("Native 🦋 draft with a second line that will wrap when the phone narrows.")
+        try await waitFor("native draft reaches retained delivery model") { try await self.boolean("document.querySelector('#prompt').value==='Native 🦋 draft with a second line that will wrap when the phone narrows.'") }
+        let retainedEditor=composer.editor
+        let bottom=composer.material.frame.maxY
+        composer.editor.insertText(" More words to grow the native text view without moving its bottom edge.")
+        try await waitFor("growing native foreground settles") { abs(composer.material.frame.maxY-bottom)<1 }
+        XCTAssertTrue(composer.editor === retainedEditor)
+        XCTAssertTrue(composer.editor.isFirstResponder)
+        _ = try await js("document.querySelector('[data-message=\"1\"] [data-message-action=\"reply\"]').click();true")
+        try await waitFor("native reply cancellation control") { try await self.boolean("!!document.querySelector('#composer-reply:not([hidden])')") }
+        let draft=composer.editor.text!
+        composer.emit("send")
+        try await waitFor("one native send through original handler") { try await self.boolean("window.__composerSends.length===1 && document.querySelector('#prompt').value==='' ") }
+        let sent=try await js("window.__composerSends[0].prompt") as? String
+        XCTAssertEqual(sent,draft)
+        XCTAssertTrue(composer.editor.isFirstResponder)
+        XCTAssertGreaterThan(composer.indicatorSurfaces,0,"native reading scroll view found for standard indicator inset")
+        let report:[String:Any]=["nativeGlass":true,"nativeEditor":true,"keyboardShows":keyboardShows,"nativeIndicatorSurfaces":composer.indicatorSurfaces,"draftPreserved":true,"singleSend":true]
+        let evidence=XCTAttachment(data:try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted]),uniformTypeIdentifier:"public.json");evidence.name="native-composer-input";evidence.lifetime = .keepAlways;add(evidence)
+    }
+
+    func testComposerBackdropFollowsScrollingContent() async throws {
+        guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
+        for theme in ["dark","light"] {
+            try await setFixtureAppearance(theme)
+            try await waitFor("native material acknowledged") { self.session.glassControls.composer.model != nil && !self.session.glassControls.composer.isHidden }
+            XCTAssertTrue(session.glassControls.composer.material.effect is UIGlassEffect)
+            let contained=try await boolean("(()=>{const c=document.querySelector('#composer').getBoundingClientRect(),a=document.querySelector('#content').getBoundingClientRect();return a.bottom>=c.bottom && getComputedStyle(document.querySelector('#composer')).backdropFilter==='none' && getComputedStyle(document.querySelector('#composer-area'),'::before').content==='none' && document.querySelector('#composer').hasAttribute('data-ios-native-composer')})()")
             XCTAssertTrue(contained,"the reading viewport continues beneath the composer without a footer layer")
             _ = try await js("""
             window.__backdropProbe?.remove();
@@ -187,8 +247,8 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             XCTAssertGreaterThan(pixels[0][0]-pixels[0][1],20,"red conversation content shows through the input")
             XCTAssertGreaterThan(pixels[1][1]-pixels[1][0],20,"scrolling green content changes the material")
             XCTAssertGreaterThan(Self.colourDistance(pixels[0],pixels[1]),50,"the composer must not sample a static canvas")
-            let indicator=try await boolean("(()=>{const i=document.querySelector('.ios-reading-indicator').getBoundingClientRect(),c=document.querySelector('#composer-area').getBoundingClientRect();return i.height>=24 && i.bottom<=c.top})()")
-            XCTAssertTrue(indicator,"the reading indicator remains above the floating input")
+            let nativeIndicator=try await boolean("!document.querySelector('.ios-reading-indicator') && getComputedStyle(document.querySelector('#content')).scrollbarWidth!=='none'")
+            XCTAssertTrue(nativeIndicator,"retain the standard scroll indicator, with no fake thumb")
             _ = try await js("window.__backdropProbe.remove();true")
         }
     }
@@ -250,14 +310,16 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         };
         const p=document.querySelector('#prompt');p.textContent='Native motion send';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.focus({preventScroll:true});true
         """)
-        try await waitFor("foreground focused composer") { try await self.boolean("document.hasFocus() && !document.hidden && document.activeElement===document.querySelector('#prompt')") }
+        try await waitFor("foreground focused composer") { try await self.boolean("!document.hidden && (document.activeElement===document.querySelector('#prompt') || window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true)") }
         _ = try await js("document.querySelector('#composer').requestSubmit();true")
         try await waitFor("user entrance and accepted send") { try await self.boolean("!!document.querySelector('[data-message=\"100\"]') && document.querySelector('#prompt').textContent==='' ") }
         _ = try await js("const p=document.querySelector('#prompt');p.textContent='Unsent native draft';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.focus({preventScroll:true});window.__motionEditor=p;window.__motionAppend('piper','Native received reply');window.dispatchEvent(new Event('online'));true")
         try await waitFor("bot entrance", timeout: 20) { try await self.boolean("!!document.querySelector('[data-message=\"101\"]')") }
         _ = try await js("window.__motionRow=document.querySelector('[data-message=\"101\"]');window.dispatchEvent(new Event('online'));true")
         try await Task.sleep(nanoseconds: 3_000_000_000)
-        let refreshOK = try await boolean("window.__motionArrivals.length===window.__expectedMotionArrivals && window.__motionRow===document.querySelector('[data-message=\"101\"]') && document.activeElement===window.__motionEditor && window.__motionEditor===document.querySelector('#prompt') && window.__motionEditor.textContent==='Unsent native draft'")
+        let motionState = try await js("({arrivals:window.__motionArrivals.length,expected:window.__expectedMotionArrivals,sameRow:window.__motionRow===document.querySelector('[data-message=\"101\"]'),nativeFocused:window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true,domFocused:document.activeElement===window.__motionEditor,sameEditor:window.__motionEditor===document.querySelector('#prompt'),text:window.__motionEditor.textContent})")
+        let motionEvidence = XCTAttachment(data:try JSONSerialization.data(withJSONObject:["state":motionState ?? [:],"nativeFirstResponder":session.glassControls.composer.editor.isFirstResponder],options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");motionEvidence.name="motion-refresh-state";motionEvidence.lifetime = .keepAlways;add(motionEvidence)
+        let refreshOK = try await boolean("window.__motionArrivals.length===window.__expectedMotionArrivals && window.__motionRow===document.querySelector('[data-message=\"101\"]') && (document.activeElement===window.__motionEditor || window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true) && window.__motionEditor===document.querySelector('#prompt') && window.__motionEditor.textContent==='Unsent native draft'")
         XCTAssertTrue(refreshOK)
         let entrancesOK = try await boolean("window.__motionArrivals.every(a=>a.options.duration===240&&a.options.easing==='cubic-bezier(.23,1,.32,1)'&&JSON.stringify(a.frames)===JSON.stringify([{transform:'translateY(12px)'},{transform:'translateY(0)'}]))")
         XCTAssertTrue(entrancesOK)
@@ -265,7 +327,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         try await waitFor("history backfill") { try await self.boolean("!!document.querySelector('[data-message=\"0\"]')") }
         _ = try await js("document.documentElement.dataset.motion='off';window.__motionAppend('piper','Reduced motion native reply');window.dispatchEvent(new Event('online'));true")
         try await waitFor("Reduced Motion reply") { try await self.boolean("!!document.querySelector('[data-message=\"102\"]')") }
-        let preserved = try await boolean("window.__motionArrivals.length===window.__expectedMotionArrivals && document.activeElement===window.__motionEditor && window.__motionEditor.textContent==='Unsent native draft'")
+        let preserved = try await boolean("window.__motionArrivals.length===window.__expectedMotionArrivals && (document.activeElement===window.__motionEditor || window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true) && window.__motionEditor.textContent==='Unsent native draft'")
         XCTAssertTrue(preserved)
         let report: [String: Any] = ["nativeHost": true, "scene": window.bounds.debugDescription,
             "systemReducedMotion": UIAccessibility.isReduceMotionEnabled, "keyboardShows": keyboardShows,
@@ -522,7 +584,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             (()=>{const rect=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
               const p=document.querySelector('#prompt'),shell=document.querySelector('#app'),v=visualViewport;
               return {draftMatches:p?.textContent==='Keyboard ownership fixture draft',sendCount:window.__composerSends.length,
-                uiMatches:window.__sendSurfaceFixture?.['style.css']==='3620ed9f602f8ea8d585a4cd1b51f7cf852c86e130d2c0d1bb19d0d86a0d64fc'&&window.__sendSurfaceFixture?.['app.js']==='b0397bd980985ae81b8874373fe508fd78b3bd96da66ec3149de594c27a797b2'&&window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c',
+                uiMatches:window.__sendSurfaceFixture?.['style.css']==='3620ed9f602f8ea8d585a4cd1b51f7cf852c86e130d2c0d1bb19d0d86a0d64fc'&&window.__sendSurfaceFixture?.['app.js']==='6fea97380a50b52ab4c4d5a6836c81898ef3940b38020054436cb4550bd6a788'&&window.__sendSurfaceFixture?.['dictation.js']==='a76b4a64ef45384053f8ade870045b9791e163ffeb63a57111e2c0198879983c',
                 uiManifest:window.__sendSurfaceFixture,viewport:{width:innerWidth,height:innerHeight},
                 client:{width:document.documentElement.clientWidth,height:document.documentElement.clientHeight},
                 visual:v?{width:v.width,height:v.height,offsetTop:v.offsetTop,offsetLeft:v.offsetLeft,scale:v.scale}:null,
@@ -547,7 +609,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             }
             // Pair the queued script with UIKit focus immediately, before the
             // asynchronous DOM focus runs. Actual touch is a separate check.
-            if source.contains(".focus(") { session.webView.becomeFirstResponder() }
+            if source.contains(".focus("), session.glassControls.composer.isHidden { session.webView.becomeFirstResponder() }
         }
     }
     private func boolean(_ source: String) async throws -> Bool { try await js(source) as? Bool == true }
@@ -586,7 +648,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             (()=>{const p=document.querySelector('#prompt');let sessionPresent=null,storageReadable=true;
               try {sessionPresent=!!sessionStorage.getItem('kindred-token')} catch {storageReadable=false}
               return {
-              visibility:document.visibilityState,documentFocused:document.hasFocus(),
+              visibility:document.visibilityState,documentFocused:document.hasFocus(),nativeComposerFocused:window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true,nativeComposerActive:p?.parentElement.hasAttribute('data-ios-native-composer'),
               focusTrace:window.__composerFocusTrace??[],firstPromptFocus:window.__composerFirstPromptFocus??null,
               windowScroll:{x:scrollX,y:scrollY,top:document.scrollingElement?.scrollTop??0,left:document.scrollingElement?.scrollLeft??0,
                 height:document.scrollingElement?.scrollHeight??0,clientHeight:document.documentElement.clientHeight},
@@ -655,7 +717,8 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
              "frame": rect(view.frame), "frameInFixtureWindow": rect(view.convert(view.bounds, to: window)),
              "hidden": view.isHidden, "alpha": Double(view.alpha)]
         }
-        return ["ancestors": ancestors, "fixtureWindowKey": window.isKeyWindow,
+        let composer=session.glassControls.composer
+        return ["nativeComposer":["firstResponder":composer.editor.isFirstResponder,"canFocus":composer.editor.canBecomeFirstResponder,"editable":composer.editor.isEditable,"hidden":composer.isHidden,"hasModel":composer.model != nil,"inFixtureWindow":composer.window === window,"focusRequests":composer.focusRequests,"focusAccepted":composer.focusAccepted],"ancestors": ancestors, "fixtureWindowKey": window.isKeyWindow,
             "fixtureWindowHidden": window.isHidden,
             "sceneActivation": window.windowScene?.activationState.rawValue ?? -1,
             "applicationState": UIApplication.shared.applicationState.rawValue,
@@ -692,7 +755,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                     probe.finish(["page": value ?? NSNull()])
                 }
             }
-            if source.contains(".focus(") { session.webView.becomeFirstResponder() }
+            if source.contains(".focus("), session.glassControls.composer.isHidden { session.webView.becomeFirstResponder() }
         }
     }
 
@@ -709,7 +772,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         const primarySurface={selector:send.id==='send'?'#send':'.dictation-button',controlKind:send.id==='send'?'send':'microphone',capability:window.__KINDRED_IOS_DICTATION};
         const target=rect(send),edgeHits=[[20,0],[-20,0],[0,20],[0,-20]].map(([dx,dy])=>{const h=document.elementFromPoint(target.x+target.width/2+dx,target.y+target.height/2+dy);return h===send||send.contains(h)});
         return {focusTrace:window.__composerFocusTrace??[],firstPromptFocus:window.__composerFirstPromptFocus??null,windowScroll:{x:scrollX,y:scrollY,top:document.scrollingElement?.scrollTop??0,left:document.scrollingElement?.scrollLeft??0,height:document.scrollingElement?.scrollHeight??0},dictationState:{draftPresent:!!p.textContent.trim(),transientSpan:!!p.querySelector('.dictation-transcript'),dictating:c.classList.contains('is-dictating'),lastEvent:window.__composerDictationEvents.at(-1)??null,sendCount:window.__composerSends.length,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches},primarySurface:{...primarySurface,edgeHits,target,arrow:rect(arrow),paint:{width:parseFloat(surface.width),height:parseFloat(surface.height),left:parseFloat(surface.left),top:parseFloat(surface.top),rgba},opacity:parseFloat(style.opacity),appearance:style.appearance,theme:document.documentElement.dataset.theme,hidden:send.hidden,disabled:send.disabled,fixture:window.__sendSurfaceFixture},layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
-        controls:[...c.querySelectorAll('#composer-actions,#send,.dictation-button,.dictation-cancel')].filter(b=>b.getClientRects().length).map(b=>{const r=rect(b),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {...r,hit:h===b||b.contains(h)}})}})()
+        controls:[...c.querySelectorAll('#composer-actions,#send,.dictation-button,.dictation-cancel')].filter(b=>b.getClientRects().length).map(b=>{const r=rect(b),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {...r,enabled:!b.disabled,hit:h===b||b.contains(h)}})}})()
         """
         var measured: [String: Any]?
         var previousStamp: String?
@@ -731,7 +794,15 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             if self.layoutEvidence["firstNativeAttachment"] == nil { self.layoutEvidence["firstNativeAttachment"] = self.layoutEvidence["latestNativeAttachment"] }
             self.layoutEvidence["latest"] = sample
             if self.layoutEvidence["first"] == nil { self.layoutEvidence["first"] = sample }
-            let stable = stamp != nil && stamp == previousStamp
+            let nativeComposer=self.session.glassControls.composer
+            let sourceControls=sample["controls"] as? [[String:Any]] ?? []
+            let nativeReady = nativeComposer.isHidden || sourceControls.allSatisfy { row in
+                let r=CGRect(x:(row["x"] as? Double) ?? 0,y:(row["y"] as? Double) ?? 0,width:(row["width"] as? Double) ?? 0,height:(row["height"] as? Double) ?? 0)
+                return nativeComposer.model?.items.contains { item in
+                    item.kind=="button" && abs(item.frame.minX-r.minX)<1 && abs(item.frame.minY-r.minY)<1 && abs(item.frame.width-r.width)<1 && abs(item.frame.height-r.height)<1
+                } == true
+            }
+            let stable = stamp != nil && stamp == previousStamp && nativeReady
             previousStamp = stamp
             if stable { measured = sample }
             return stable
@@ -764,7 +835,10 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         for b in controls {
             XCTAssertGreaterThanOrEqual((b["width"] as? Double) ?? 0, 44)
             XCTAssertGreaterThanOrEqual((b["height"] as? Double) ?? 0, 44)
-            XCTAssertEqual(b["hit"] as? Bool, true)
+            if !session.glassControls.composer.isHidden,session.glassControls.composer.model != nil {
+                let rect=CGRect(x:(b["x"] as? Double) ?? 0,y:(b["y"] as? Double) ?? 0,width:(b["width"] as? Double) ?? 0,height:(b["height"] as? Double) ?? 0)
+                _ = try nativeButton(rect:rect,enabled:b["enabled"] as? Bool != false)
+            } else { XCTAssertEqual(b["hit"] as? Bool,true) }
             XCTAssertGreaterThanOrEqual((b["x"] as? Double) ?? -1, c["x"] ?? 0)
             XCTAssertLessThanOrEqual((b["right"] as? Double) ?? .infinity, c["right"] ?? 0)
             XCTAssertLessThanOrEqual((b["bottom"] as? Double) ?? .infinity, c["bottom"] ?? 0)
@@ -844,6 +918,32 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         XCTAssertEqual(sends, 1, "Paint matrix must not submit another message")
     }
 
+    private func nativeButton(rect:CGRect,enabled:Bool=true) throws -> UIButton {
+        if !enabled {
+            let button=try XCTUnwrap(session.glassControls.composer.material.contentView.subviews.compactMap {$0 as? UIButton}.first { view in
+                let f=session.webView.convert(view.bounds,from:view)
+                return abs(f.minX-rect.minX)<1 && abs(f.minY-rect.minY)<1 && abs(f.width-rect.width)<1 && abs(f.height-rect.height)<1
+            },"disabled action retains its native control and geometry")
+            XCTAssertFalse(button.isEnabled,"Dictation disables sending while recording")
+            return button
+        }
+        let point=session.webView.convert(CGPoint(x:rect.midX,y:rect.midY),to:window)
+        var hit=window.hitTest(point,with:nil)
+        while let candidate=hit,!(candidate is UIButton) { hit=candidate.superview }
+        if !(hit is UIButton) {
+            func describe(_ view:UIView)->[String:Any] { ["type":String(describing:type(of:view)),"id":view.accessibilityIdentifier ?? "","frame":session.webView.convert(view.bounds,from:view).debugDescription,"hidden":view.isHidden,"alpha":view.alpha,"interaction":view.isUserInteractionEnabled,"enabled":(view as? UIControl)?.isEnabled ?? true] }
+            let composer=session.glassControls.composer
+            let evidence:[String:Any]=["phase":layoutEvidence["phase"] ?? "","point":point.debugDescription,"rect":rect.debugDescription,"hit":window.hitTest(point,with:nil).map(describe) ?? [:],"composer":describe(composer),"material":describe(composer.material),"children":composer.material.contentView.subviews.map(describe)]
+            let data=try JSONSerialization.data(withJSONObject:evidence,options:[.prettyPrinted,.sortedKeys]);let a=XCTAttachment(data:data,uniformTypeIdentifier:"public.json");a.name="native-button-hit-failure";a.lifetime = .keepAlways;add(a)
+        }
+        let button=try XCTUnwrap(hit as? UIButton,"native foreground owns the actual UIKit touch")
+        XCTAssertTrue(button.accessibilityIdentifier?.hasPrefix("kindred-native-composer-")==true)
+        let frame=session.webView.convert(button.bounds,from:button)
+        XCTAssertEqual(frame.minX,rect.minX,accuracy:1);XCTAssertEqual(frame.minY,rect.minY,accuracy:1)
+        XCTAssertEqual(frame.width,rect.width,accuracy:1);XCTAssertEqual(frame.height,rect.height,accuracy:1)
+        return button
+    }
+
     private func checkPaintedSend(_ metrics: [String: Any], image: UIImage, theme: String, label: String) throws {
         let send = try XCTUnwrap(metrics["primarySurface"] as? [String: Any])
         let empty = label.contains("-empty-")
@@ -856,6 +956,23 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         XCTAssertEqual(send["theme"] as? String, theme)
         XCTAssertEqual(send["hidden"] as? Bool, false)
         XCTAssertEqual(send["appearance"] as? String, "none")
+        if session.glassControls.composer.model != nil,!session.glassControls.composer.isHidden {
+            let t=try XCTUnwrap(send["target"] as? [String:Double])
+            let rect=CGRect(x:t["x"]!,y:t["y"]!,width:t["width"]!,height:t["height"]!)
+            let button=try nativeButton(rect:rect)
+            XCTAssertNotNil(button.configuration?.image)
+            XCTAssertEqual(button.configuration?.background.backgroundInsets,NSDirectionalEdgeInsets(top:4,leading:4,bottom:4,trailing:4))
+            let nativeColor=try XCTUnwrap(button.configuration?.baseBackgroundColor).resolvedColor(with:button.traitCollection)
+            var r:CGFloat=0,g:CGFloat=0,b:CGFloat=0,a:CGFloat=0;nativeColor.getRed(&r,green:&g,blue:&b,alpha:&a)
+            let expected=[Double(r*255),Double(g*255),Double(b*255)]
+            for (dx,dy) in [(1.0,0.0),(-1.0,0.0),(0.0,1.0),(0.0,-1.0)] {
+                XCTAssertTrue(button.point(inside:CGPoint(x:22+dx*20,y:22+dy*20),with:nil))
+                let point=session.webView.convert(CGPoint(x:rect.midX+dx*17,y:rect.midY+dy*17),to:window)
+                let actual=try Self.imagePixel(image,point:point)
+                XCTAssertLessThanOrEqual(Self.colourDistance(actual,expected),12,"native primary circle is painted with its semantic color")
+            }
+            return
+        }
         let edgeHits = try XCTUnwrap(send["edgeHits"] as? [Bool])
         XCTAssertEqual(edgeHits.count, 4)
         XCTAssertTrue(edgeHits.allSatisfy { $0 }, "Outer target must hit the primary control beyond the painted circle")

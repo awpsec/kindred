@@ -1,9 +1,19 @@
 # Kindred for iOS (companion app)
 
 A native SwiftUI shell around the Kindred server's own web UI. Conversations,
-settings and everything else are the shared web UI loaded in a `WKWebView`; the
-native layer handles accounts, credentials, navigation safety, downloads and
-notifications. iOS 17 or later, iPhone and iPad.
+settings and message content use the shared server UI in a `WKWebView`. On iOS
+26 and later, floating navigation and the composer use native Liquid Glass.
+The native layer also handles accounts, credentials, navigation safety,
+downloads and notifications. iOS 17 or later, iPhone and iPad.
+
+The composer places a UIKit editor, actions and attachment/reply foreground in
+`UIGlassEffect`'s content view, above the retained conversation. Only the capsule
+has a material; there is no opaque footer or full-width background behind it.
+`NativeComposer.js` keeps delivery, drafts, mentions and dictation with the shared
+page through a document/context/revision-checked bridge. Older systems retain
+the page editor. UIKit's standard reading indicator is inset above the capsule;
+no DOM scrollbar is drawn. System glass and accessibility preferences remain in
+charge of the material.
 
 > **Mac verification (2026-10-03):** the app builds with Xcode 27.2 beta 2.
 > The core suite passes all 39 tests; all 25 native sign-in, Keychain, appearance and
