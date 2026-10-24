@@ -14,7 +14,7 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-ios-progress-layout'
   try {
     const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};
     const run={id:'ios-long-job',bot_id:'piper',chat_id:chat.id,status:'running',created:now-480,progress_started:now-240,prompt:'Review the project and verify the mobile result.',task_title:'Verify mobile layout',output:'',error:''};
-    const progress={mode:'summaries',phase:'commentary',run_id:run.id,group_id:'ios-long-job',task_title:run.task_title};
+    const progress={mode:'summaries',phase:'commentary',run_id:run.id,group_id:'ios-long-job',task_title:run.task_title,activity:{completed:1,recent:[{label:'Inspect source',created:now-30}]}};
     const messages=[
       {seq:1,sender:'user',kind:'message',text:run.prompt,created:now-245},
       {seq:2,sender:'piper',kind:'task_progress',text:'',run_id:run.id,created:now-240,progress:{...progress,presentation:{mode:'staged',stages:['Inspect layout','Verify behavior'],current_stage:1,promoted:true}}},
@@ -82,6 +82,8 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-ios-progress-layout'
           assert(metric.margin<=8,'progress rows use a small reading gap');
         }
         const current=metrics.filter(m=>!m.legacy);
+        const aligned=await page.evaluate(()=>{const a=document.querySelector('.summary-progress-activity'),x=a.getBoundingClientRect().x+parseFloat(getComputedStyle(a).paddingInlineStart);return [...document.querySelectorAll('.task-commentary .message-text-content')].every(p=>Math.abs(p.getBoundingClientRect().x-x)<1);});
+        assert(aligned,'native commentary aligns with its expanded activity body');
         for(let i=1;i<current.length;i++)assert(current[i].textTop-Math.max(current[i-1].textBottom,current[i-1].stamp.y+current[i-1].stamp.height)<=20,`consecutive narration updates cannot have a large empty gap: ${JSON.stringify({width,scale,theme,previous:current[i-1],next:current[i]})}`);
         const toggle=page.locator('.task-commentary .progress-update-time-toggle').first(),row=page.locator('.task-commentary').first();
         await toggle.scrollIntoViewIfNeeded();

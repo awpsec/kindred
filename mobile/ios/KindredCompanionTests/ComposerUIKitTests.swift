@@ -262,6 +262,57 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let attachment=XCTAttachment(data:data,uniformTypeIdentifier:"public.json");attachment.name="native-message-motion";attachment.lifetime = .keepAlways;add(attachment)
     }
 
+    func testNametagWithinNativeViewport() async throws {
+        try await Task.sleep(nanoseconds: 500_000_000)
+        let metrics=try await js("(()=>{const n=document.querySelector('#bot-details'),h=n.parentElement,r=x=>{const b=x.getBoundingClientRect(),s=getComputedStyle(x);return {x:b.x,y:b.y,width:b.width,height:b.height,position:s.position,left:s.left,right:s.right,transform:s.transform,translate:s.translate,marginLeft:s.marginLeft,inline:x.getAttribute('style')}};return {html:{...document.documentElement.dataset},viewport:innerWidth,tag:r(n),header:r(h),parent:r(h.parentElement)}})()") as? [String:Any] ?? [:]
+        let a=XCTAttachment(data:try JSONSerialization.data(withJSONObject:metrics,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");a.name="native-nametag-geometry";a.lifetime = .keepAlways;add(a)
+        let tag=metrics["tag"] as? [String:Any] ?? [:],width=metrics["viewport"] as? Double ?? 0
+        let x=tag["x"] as? Double ?? -1,w=tag["width"] as? Double ?? 0
+        XCTAssertGreaterThanOrEqual(x,0);XCTAssertLessThanOrEqual(x+w,width)
+    }
+
+    func testCombinedCandidateTaskNestingAndMarkdownSource() async throws {
+        _ = try await js("""
+        const now=Math.floor(Date.now()/1000),id='native-long-job';
+        const run={id,bot_id:'piper',chat_id:'dm-piper',status:'running',created:now-480,progress_started:now-240,prompt:'Check native combined polish',task_title:'Native long job',output:'',error:''};
+        const progress={mode:'summaries',phase:'commentary',run_id:id,group_id:id,task_title:run.task_title,activity:{completed:2,recent:[{label:'Inspect saved source',created:now-30}]}};
+        window.__candidateSource=['# Résumé 🦋','日本語 source','<script>window.sourceExecuted=true</script>','Long source '.repeat(90),''].join(String.fromCharCode(10));
+        const messages=[{seq:1,sender:'user',kind:'message',text:run.prompt,created:now-245},
+          {seq:2,sender:'piper',kind:'task_progress',text:'',run_id:id,created:now-240,progress:{...progress,presentation:{mode:'staged',stages:['Inspect layout','Verify behavior'],current_stage:1,promoted:true}}},
+          {seq:3,sender:'piper',kind:'assistant',text:'I am checking the task layout on this native display.',run_id:id,created:now-230,progress},
+          {seq:4,sender:'piper',kind:'assistant',text:'The retained reading position and draft are being checked.',run_id:id,created:now-200,progress},
+          {seq:5,sender:'piper',kind:'result',run_id:'run-screenshot',text:'Source file for native preview.',created:now,attachments:[{id:'native-skill',kind:'file',name:'skill.md',size:1200}]}];
+        const original=window.fetch.bind(window),json=v=>Promise.resolve(new Response(JSON.stringify(v),{status:200,headers:{'Content-Type':'application/json'}}));
+        window.fetch=(input,options={})=>{const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;
+          if(path==='/api/chats/dm-piper')return json({chat:{id:'dm-piper',name:'Piper',members:['piper']},messages,page:{has_before:false,has_after:false}});
+          if(path==='/api/runs')return json([run]);if(path==='/api/runs/'+id)return json({run,events:[],attachments:[],approvals:[]});
+          if(path==='/api/activity')return json({});
+          if(path==='/api/deliverables/native-skill')return Promise.resolve(new Response(window.__candidateSource,{status:200,headers:{'Content-Type':'text/markdown;charset=utf-8'}}));
+          return original(input,options);};
+        const p=document.querySelector('#prompt');window.__candidateEditor=p;p.textContent='Combined candidate draft';p.dispatchEvent(new InputEvent('input',{bubbles:true}));window.dispatchEvent(new Event('online'));true
+        """)
+        try await waitFor("native long-job header and source attachment", timeout:20) {
+            try await self.boolean("!!document.querySelector('[data-progress-group=\"native-long-job\"]') && !!document.querySelector('[aria-label=\"File: skill.md\"]')")
+        }
+        _ = try await js("const d=document.querySelector('[data-progress-group=\"native-long-job\"] details');if(!d.open)d.querySelector('summary').click();true")
+        try await waitFor("expanded native task commentary") { try await self.boolean("!!document.querySelector('.progress-commentary')?.getClientRects().length") }
+        let nesting=try await boolean("[...document.querySelectorAll('.progress-commentary')].every(n=>{const h=document.querySelector('[data-progress-group=\"native-long-job\"]'),p=n.querySelector('.message-text-content'),a=h.querySelector('.summary-progress-activity');return h.compareDocumentPosition(n)&Node.DOCUMENT_POSITION_FOLLOWING && p.getBoundingClientRect().top>=h.querySelector('summary').getBoundingClientRect().bottom && Math.abs(p.getBoundingClientRect().x-a.getBoundingClientRect().x-parseFloat(getComputedStyle(a).paddingInlineStart))<1 && p.getBoundingClientRect().right<=innerWidth})")
+        XCTAssertTrue(nesting)
+        _ = try await js("[...document.querySelectorAll('[aria-label=\"File: skill.md\"] button')].find(b=>b.textContent==='Preview').click();true")
+        try await waitFor("native Markdown source dialog") { try await self.boolean("!!document.querySelector('.document-dialog[open] .document-source-code')") }
+        try await waitFor("settled native source modal") { try await self.boolean("(()=>{const n=document.querySelector('.document-dialog[open]'),s=n&&getComputedStyle(n);return !!n && Number(s.opacity)===1 && s.transform==='none' && !n.getAnimations().some(a=>a.playState==='running')})()") }
+        let sourceOK=try await boolean("document.querySelector('.document-source-code').textContent===window.__candidateSource && document.querySelector('.document-source-gutter').textContent===[1,2,3,4,5].join(String.fromCharCode(10)) && !document.querySelector('.document-source script,.document-source img,.document-source a') && !window.sourceExecuted && document.documentElement.scrollWidth<=innerWidth && document.querySelector('.document-source').scrollWidth>document.querySelector('.document-source').clientWidth")
+        XCTAssertTrue(sourceOK)
+        let screenshot=XCTAttachment(image:UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) });screenshot.name="native-markdown-source";screenshot.lifetime = .keepAlways;add(screenshot)
+        _ = try await js("document.querySelector('.document-dialog[open]').close();true")
+        let preserved=try await boolean("window.__candidateEditor===document.querySelector('#prompt') && window.__candidateEditor.textContent==='Combined candidate draft'")
+        XCTAssertTrue(preserved)
+        let centered=try await boolean("(()=>{const n=document.querySelector('#bot-details'),r=n.getBoundingClientRect();return getComputedStyle(n).position==='absolute' && r.left>=0 && r.right<=innerWidth})()")
+        XCTAssertTrue(centered)
+        let report:[String:Any]=["nativeHost":true,"uiManifest":try await js("window.__sendSurfaceFixture") ?? [:],"scene":window.bounds.debugDescription,"taskNesting":nesting,"markdownSource":sourceOK,"draftRetained":preserved,"nametagWithinViewport":centered]
+        let attachment=XCTAttachment(data:try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");attachment.name="native-combined-polish";attachment.lifetime = .keepAlways;add(attachment)
+    }
+
     func testOrientationSafeAreaAndTextSizePreserveDraft() async throws {
         _ = try await js("const p=document.querySelector('#prompt');p.textContent='Rotation draft';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
         let scene = try XCTUnwrap(window.windowScene)
