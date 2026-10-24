@@ -1970,6 +1970,95 @@
   observeUI(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo','data-ios-duo-inner','data-ios-sidebar-hidden','data-ios-native-sidebar','data-ios-native-sidebar-hidden','data-motion']});
   matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',publishDuoNavigation);
   publishDuoNavigation();
+  // Floating navigation gets the system's interactive glass on iOS 26+.
+  // The page keeps the real layout and server-owned action closures. Older
+  // hosts keep the existing WebKit treatment, including all text editors.
+  if (window.__KINDRED_NATIVE_GLASS === true) {
+    const glassDocument = crypto.randomUUID(), current = new Map(), replaced = new Map();
+    const specs = [
+      ['identity','.conversation-header .bot-heading',''],
+      ['latest','.conversation>.composer-area>.jump-latest','chevron.down'],
+      ['accounts','#ios-accounts','person.crop.circle'],
+      ['search','#ios-search','magnifyingglass'],
+      ['new','.sidebar-top #new-bot','plus'],
+      ['library','#ios-library-more','ellipsis'],
+      ['chats','#mobile-menu','chevron.backward'],
+      ['computer','#show-computer','desktopcomputer'],
+      ['bot-settings','#bot-settings','gearshape'],
+      ['artifact-back','.ios-artifact-button[aria-label="Back to artifacts"]','chevron.backward'],
+      ['artifact-chats','.ios-artifact-navigation [aria-label="Back to chats"]','bubble.left.and.bubble.right'],
+      ['artifact-search','.ios-artifact-navigation [aria-label="Search artifacts"]','magnifyingglass'],
+      ['artifact-new','.ios-artifact-navigation .artifact-add','plus'],
+    ];
+    let glassFrame = 0, glassLast = '', glassSerial = 0, stopped = false;
+    const restore = node => {
+      const state = replaced.get(node); if (!state) return;
+      node.removeAttribute('data-ios-native-glass');
+      for (const [name,value] of Object.entries(state)) value === null ? node.removeAttribute(name) : node.setAttribute(name,value);
+      replaced.delete(node);
+    };
+    const visible = node => {
+      if (!node?.isConnected || node.closest('[hidden],[inert]') || node.disabled || node.getAttribute('aria-disabled') === 'true') return false;
+      if (!node.getClientRects().length || getComputedStyle(node).visibility !== 'visible') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.left < innerWidth && rect.bottom > 0 && rect.top < (nativeHeight || innerHeight);
+    };
+    const opacity = node => {let value=1;for(let n=node;n&&n!==html;n=n.parentElement)value*=Number(getComputedStyle(n).opacity);return value;};
+    const scan = () => {
+      glassFrame = 0; current.clear(); const controls = [];
+      const covered = document.hidden || !!document.querySelector('dialog[open]');
+      if (!covered) for (const [id,selector,symbol] of specs) {
+        const source = document.querySelector(selector), ghost = id === 'identity' && document.querySelector('.ios-identity-handoff');
+        if (!source) continue;
+        // Composite group artwork stays with its retained web renderer.
+        if (id === 'identity' && (source.querySelector('.participant-stack') || source.querySelectorAll('.character').length !== 1)) continue;
+        const node = ghost || source;
+        if (!(ghost ? ghost.isConnected && ghost.getClientRects().length : visible(node))) continue;
+        // A pane can cover the chat without removing it from the document.
+        if (['identity','latest','chats','computer','bot-settings'].includes(id) && (computer?.hidden === false || document.querySelector('#details-panel')?.hidden === false) && !node.closest('.computer-panel,.details-panel')) continue;
+        const alpha = opacity(node); if (alpha < .005) continue;
+        const rect = node.getBoundingClientRect(), style = getComputedStyle(node), identity = id === 'identity';
+        const title = identity ? (source.querySelector('strong')?.textContent || '').trim().slice(0,160) : id === 'latest' ? node.textContent.trim().slice(0,160) : '';
+        const label = identity ? title+' details' : (node.getAttribute('aria-label') || node.title || node.textContent.trim() || id).slice(0,200);
+        const avatar = source?.querySelector('.character'), shape = avatar?.dataset.avatarBody || avatar?.dataset.shape;
+        const color = avatar?.dataset.avatarColor || (avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '');
+        current.set(id,{source,node,interactive:!ghost});
+        controls.push({id,title,label,symbol,shape,color,rect:[rect.x,rect.y,rect.width,rect.height].map(n=>Math.round(n*100)/100),
+          fontSize:parseFloat(identity ? getComputedStyle(source.querySelector('strong') || source).fontSize : style.fontSize),
+          imageInset:parseFloat(style.paddingLeft)||0,imageGap:parseFloat(style.columnGap)||0,
+          opacity:alpha,titleOpacity:ghost ? Number(getComputedStyle(ghost.lastElementChild).opacity) : 1,interactive:!ghost});
+      }
+      const payload = JSON.stringify({action:'glass-controls',document:glassDocument,controls});
+      if (payload !== glassLast) {glassLast=payload;window.webkit?.messageHandlers?.kindredAccounts?.postMessage({...JSON.parse(payload),sequence:++glassSerial});}
+      if (!stopped && document.getAnimations().some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))) schedule();
+    };
+    const schedule = () => {if(!stopped&&!glassFrame)glassFrame=requestAnimationFrame(scan);};
+    window.__kindredGlassControls = {
+      setActive(document,ids,sequence) {
+        if (document !== glassDocument || sequence !== glassSerial || !Array.isArray(ids)) return false;
+        const nodes = new Set(ids.map(id=>current.get(id)?.node).filter(Boolean));
+        for (const node of replaced.keys()) if(!nodes.has(node))restore(node);
+        for (const node of nodes) {
+          if (!replaced.has(node)) replaced.set(node,{'aria-hidden':node.getAttribute('aria-hidden'),tabindex:node.getAttribute('tabindex')});
+          node.setAttribute('data-ios-native-glass','');node.setAttribute('aria-hidden','true');node.setAttribute('tabindex','-1');
+        }
+        return true;
+      },
+      perform(id,document) {
+        if (document !== glassDocument || window.document.querySelector('dialog[open]')) return;
+        const control=current.get(id);if(!control?.interactive||!visible(control.source))return;
+        control.source.click();schedule();
+      },
+    };
+    observeUI(schedule).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style','hidden','disabled','open','aria-label','aria-disabled','data-shape','data-avatar-body','data-avatar-color']});
+    observeUI(schedule).observe(html,{attributes:true,attributeFilter:['style','class','data-theme','data-motion']});
+    const resize = new ResizeObserver(schedule);
+    for(const node of [shell,sidebar,conversation,composerArea,header])if(node)resize.observe(node);
+    for(const name of ['resize','kindred-ios-layout','kindred-native-geometry','kindred-ios-toolbar','pageshow'])window.addEventListener(name,()=>{stopped=false;schedule();});
+    document.addEventListener('scroll',schedule,true);
+    window.addEventListener('pagehide',()=>{stopped=true;cancelAnimationFrame(glassFrame);glassFrame=0;current.clear();for(const node of replaced.keys())restore(node);glassLast='';window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'glass-controls',document:glassDocument,sequence:++glassSerial,controls:[]});});
+    schedule();
+  }
   // Hand navigation to the page before slow fonts/images finish loading.
   window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'interface-ready'});
 })();

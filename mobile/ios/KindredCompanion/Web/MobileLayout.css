@@ -168,6 +168,14 @@ html[data-kindred-ios] :is(#composer,.conversation-header .icon-button,.bot-head
   box-shadow:inset 0 1px 0 #fff3,inset 0 -1px 0 #0001,0 3px 14px #0001;
 }
 html[data-kindred-ios] .conversation-header :is(.bot-heading,.header-actions,.icon-button) { pointer-events:auto; }
+/* iOS 26+ draws these retained hit targets with native Liquid Glass. Keep
+   their DOM geometry for existing layout/morphs; hide only the duplicate ink. */
+html[data-kindred-ios] [data-ios-native-glass] {
+ background:transparent!important; border-color:transparent!important;
+ box-shadow:none!important; -webkit-backdrop-filter:none!important; backdrop-filter:none!important;
+ color:transparent!important; text-shadow:none!important; pointer-events:none!important;
+}
+html[data-kindred-ios] [data-ios-native-glass]>* { visibility:hidden!important; }
 
 html[data-kindred-ios] .conversation-header::before,
 html[data-kindred-ios] .conversation>.composer-area::before {
