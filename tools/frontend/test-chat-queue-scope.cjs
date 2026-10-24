@@ -17,12 +17,12 @@ const assert=require('node:assert/strict');
   async function reload(){await p.goto('about:blank');await p.goto(origin);await p.locator('#composer').waitFor();}
   runs=[run('active','dm-piper','running',1),run('waiting','team-test','queued',2)];
   await reload();assert.equal(await p.locator('#queue-status').isVisible(),false,'Other chats must not add a DM queue count');
-  await p.getByText('#project-room',{exact:true}).first().click();await p.waitForFunction(()=>document.querySelector('#queue-status').textContent.includes('1 message queued'));assert.equal(await p.locator('#queue-status').isVisible(),true,'Originating group shows its waiting request');
+  await p.getByText('#project-room',{exact:true}).first().click();assert.equal(await p.locator('#queue-status').isVisible(),false,'Normal messaging has no queued strip in this conversation');
   runs=[run('active','team-test','running',1),run('waiting','dm-piper','queued',2)];
-  await p.evaluate(()=>localStorage.clear());await reload();await p.getByRole('button',{name:'Piper',exact:true}).click();await p.waitForFunction(()=>document.querySelector('#queue-status').textContent.includes('1 message queued'));assert.equal(await p.locator('#queue-status').isVisible(),true,'DM request waits even when the bot is busy elsewhere');
+  await p.evaluate(()=>localStorage.clear());await reload();await p.getByRole('button',{name:'Piper',exact:true}).click();assert.equal(await p.locator('#queue-status').isVisible(),false,'Normal messaging has no queued strip in this conversation');
   runs=[run('starting','dm-piper','queued',1)];await reload();assert.equal(await p.locator('#queue-status').isVisible(),false,'Initial dispatch is not waiting behind another task');
   runs=[run('active','dm-piper','running',1),run('handoff','bot-handoff','queued',2)];await reload();assert.equal(await p.locator('#queue-status').isVisible(),false);
-  await p.getByText('Bot conversations',{exact:true}).click();await p.getByRole('button',{name:'#bot-handoff',exact:true}).click();await p.waitForFunction(()=>document.querySelector('#queue-status').textContent.includes('1 message queued'));assert.equal(await p.locator('#queue-status').isVisible(),true,'Bot-to-bot queue belongs in the bot conversation');
+  await p.getByText('Bot conversations',{exact:true}).click();await p.getByRole('button',{name:'#bot-handoff',exact:true}).click();assert.equal(await p.locator('#queue-status').isVisible(),false,'Normal messaging has no queued strip in this conversation');
   assert.deepEqual(errors,[]);console.log('Chat queue scope passed');
  }finally{await browser.close();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;server.close();});

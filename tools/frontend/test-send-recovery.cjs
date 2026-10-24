@@ -3,7 +3,7 @@ const {server,token}=require('./fixtures/desktop.cjs');
 const assert=require('node:assert/strict');
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
- const browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true,channel:'msedge'});
+ const browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true});
  try{
   const context=await browser.newContext(),p=await context.newPage(),errors=[],attempts=[],receipts=new Map();p.on('pageerror',e=>errors.push(e.message));p.setDefaultTimeout(12000);
   const messages=[{seq:1,sender:'piper',kind:'message',text:'Send me your note.',created:1,reactions:[]}];let dropped=false,upload=0;

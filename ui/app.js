@@ -51,7 +51,6 @@ const CHAT_PAGE_SIZE=50, CHAT_WINDOW_SIZE=150, CHAT_CACHE_SIZE=6;
 const chatHistory=new Map();
 let chatOpening=null;
 const stoppingTasks=new Set();
-const pushingQueues=new Set();
 const $ = (id) => document.getElementById(id);
 const state = {
   token:
@@ -1286,23 +1285,13 @@ function renderHeader() {
   $("show-computer").hidden=!!state.chat?.shared&&!chatScreenBots().length;
   $("composer-actions").hidden=false;
   const pause = pausedScreens().find(p=>p.bot_id===b?.id);
-  const queueChatId = state.chat?.id || (b ? `dm-${b.id}` : '');
-  const queued = queueChatId ? [...new Set(state.allRuns.filter(r=>r.chat_id===queueChatId).map(r=>r.bot_id))].reduce((count,id)=>count+queuedWork(id,queueChatId).waiting,0) : 0;
-  $('queue-status').hidden = !queued && !pause;
+  // Busy messages use ordinary Send. Keep manual control distinct: returning
+  // control is still required before the bot can safely continue its computer.
+  $('queue-status').hidden = !pause;
   $('queue-status').dataset.controlBotId = pause?.bot_id || '';
-  const helping=helperWork(b?.id),queueReason=helping?.name&&(helping.run.status==='running'||helping.waiting||helping.run.delegation.resuming)?` · ${b.name} is working for ${helping.name} and will reply after that.`:'';
-  $('queue-status').replaceChildren(node('span','',queued ? `${queued} message${queued===1?'':'s'} queued${pause?' · waiting for control to be returned':queueReason}` : 'Computer paused for manual control'));
-  const queueActions=node('span','queue-actions');
-  if(pause)queueActions.append(button('Return control',()=>returnScreenControl(pause),'subtle-button small-button'));
-  const pushRuns=state.allRuns.filter(r=>r.chat_id===queueChatId&&r.status==='queued'&&r.push_target_run_id).map(r=>r.id);
-  if(queued&&pushRuns.length){
-    const busy=pushingQueues.has(state.token+':'+queueChatId);
-    const push=button(busy?'Pushing…':'Push',()=>pushQueuedMessages(queueChatId,pushRuns),'subtle-button small-button queue-push');
-    push.disabled=busy;push.title='Steer the current task with queued messages. Any pending approval for that task is cancelled.';
-    push.setAttribute('aria-label','Push queued messages now');queueActions.append(push);
-  }
-  if(queueActions.children.length)$('queue-status').append(queueActions);
-  $('queue-status').title = pause ? 'Return control to let this bot continue. Dismissing the notice does not resume work.' : 'Ordinary follow-ups join the current task after its next action. Slash commands and scheduled work keep their place in the queue.';
+  $('queue-status').replaceChildren();
+  if(pause)$('queue-status').append(node('span','','Computer paused for manual control'),button('Return control',()=>returnScreenControl(pause),'subtle-button small-button'));
+  $('queue-status').title = pause ? 'Return control to let this bot continue. Dismissing the notice does not resume work.' : '';
   renderControlNotice();
   if (state.chat) {
     $("prompt").setAttribute("data-placeholder", "Message " + state.chat.name);
@@ -1329,20 +1318,6 @@ function renderHeader() {
   $("composer-caption").textContent = "";
   renderVersions();
   renderUpdateNotice();
-}
-async function pushQueuedMessages(chatId,runIds){
-  const token=state.token,key=token+':'+chatId;
-  if(pushingQueues.has(key)||currentConversationId()!==chatId)return;
-  pushingQueues.add(key);renderHeader();
-  try{
-    const result=await api('/chats/'+encodeURIComponent(chatId)+'/push','POST',{run_ids:runIds});
-    if(state.token!==token)return;
-    notice(result.requested_count?'Push requested. Your message will reach the bot at its next safe pause.':'The task changed. Messages that were not pushed keep their place in the queue.');
-    await refresh(true);
-  }finally{
-    pushingQueues.delete(key);
-    if(state.token===token)renderHeader();
-  }
 }
 function installedClientVersion(){return typeof window.__KINDRED_DESKTOP_VERSION==='string'?window.__KINDRED_DESKTOP_VERSION:null;}
 function renderVersions(){
@@ -2465,9 +2440,8 @@ async function settingsGeneral(revision) {
     const fontRow=settingRow('Interface font',font);fontRow.dataset.devicePreference='true';appearance.body.append(fontRow);
   }
 
-  const conversations=settingsPane('Conversations'),delivery=select([['steer','Steer'],['queue','Queue']],state.general.message_delivery||'steer');
-  delivery.setAttribute('aria-label','While a bot is working');
-  conversations.body.append(settingRow('While a bot is working',delivery),activity.label,separateBots.label);
+  const conversations=settingsPane('Conversations');
+  conversations.body.append(activity.label,separateBots.label);
   const textSize=window.KindredReadingSize.systemManaged
     ? node('p','muted','Text size follows your iPhone setting (Settings › Display & Brightness › Text Size).')
     : select([['100','100%'],['115','115%'],['125','125%'],['150','150%']],String(window.KindredReadingSize.get()));
@@ -2532,10 +2506,10 @@ async function settingsGeneral(revision) {
     motion.input.checked=state.general.reduced_motion===true;activity.input.checked=state.general.show_activity===true;separateBots.input.checked=state.general.separate_bot_chats!==false;
     const selected=state.general.timezone_mode==='fixed'?state.general.timezone:'auto';
     if(selected&&!Array.from(timezone.options).some(o=>o.value===selected))timezone.add(new Option(selected,selected));
-    timezone.value=selected;delivery.value=state.general.message_delivery||'steer';progress.set(state.general.progress_updates||'summaries');approval.input.value=state.general.approval_mode||'ask';notifications.value=state.general.notifications||'all';
+    timezone.value=selected;progress.set(state.general.progress_updates||'summaries');approval.input.value=state.general.approval_mode||'ask';notifications.value=state.general.notifications||'all';
     serverControls.forEach(control=>control.disabled=false);loading.remove();
     void defaultModelSettings(root,current);
-  livePreferences(form,()=>({name:name.input.value,identity:prefs.input.value,theme:theme.value,accent_color:accent.value,reduced_motion:motion.input.checked,approval_mode:approval.input.value,notifications:notifications.value,show_activity:activity.input.checked,separate_bot_chats:separateBots.input.checked,timezone:timezone.value==='auto'?deviceTimezone():timezone.value,timezone_mode:timezone.value==='auto'?'auto':'fixed',progress_updates:progress.value(),message_delivery:delivery.value}),value=>api('/settings','PUT',value),value=>{const zoneChanged=state.general.timezone!==value.timezone;state.general=value;applyGeneral();renderSidebar();void renderChat(true,'cached');if(zoneChanged)void refresh().then(()=>renderComputerRoutines()).catch(e=>notice(e.message,true));});
+  livePreferences(form,()=>({name:name.input.value,identity:prefs.input.value,theme:theme.value,accent_color:accent.value,reduced_motion:motion.input.checked,approval_mode:approval.input.value,notifications:notifications.value,show_activity:activity.input.checked,separate_bot_chats:separateBots.input.checked,timezone:timezone.value==='auto'?deviceTimezone():timezone.value,timezone_mode:timezone.value==='auto'?'auto':'fixed',progress_updates:progress.value()}),value=>api('/settings','PUT',value),value=>{const zoneChanged=state.general.timezone!==value.timezone;state.general=value;applyGeneral();renderSidebar();void renderChat(true,'cached');if(zoneChanged)void refresh().then(()=>renderComputerRoutines()).catch(e=>notice(e.message,true));});
   }
   const accountActions=node('div','settings-account-actions');root.append(accountActions);
   accountActions.append(button('Manage archived bots and chats',()=>openSettings('archived'),'outline-button'));
@@ -4168,8 +4142,12 @@ $("composer").onsubmit = (e) => {
       state.chat || state.chats.find((c) => c.id === `dm-${state.bot.id}`);
     followChatLatest();
     if (chat) {
-      const payload={prompt,delivery_mode:state.draftModes.get(selectedChatId)||state.general.message_delivery||'steer',mentions:state.chat?[...new Set([...mentions,...(state.draftRecipients.get(selectedChatId)||[])])]:[],files:files.map(f=>f.id),reply_to:submittedReply?.seq??null};
-      const signature=JSON.stringify(payload),old=state.pendingSends.get(selectedChatId);
+      const payload={prompt,delivery_mode:'steer',mentions:state.chat?[...new Set([...mentions,...(state.draftRecipients.get(selectedChatId)||[])])]:[],files:files.map(f=>f.id),reply_to:submittedReply?.seq??null};
+      const old=state.pendingSends.get(selectedChatId);
+      // An ambiguous pre-upgrade send must retry its original payload/key, even
+      // if that old request explicitly queued. New drafts always send normally.
+      try{const prior=JSON.parse(old?.signature||'null');if(prior&&['queue','steer'].includes(prior.delivery_mode)&&JSON.stringify({...prior,delivery_mode:'steer'})===JSON.stringify(payload))payload.delivery_mode=prior.delivery_mode;}catch{}
+      const signature=JSON.stringify(payload);
       const send=old?.signature===signature?old:{signature,request_id:crypto.randomUUID()};
       state.pendingSends.set(selectedChatId,send);persistConversation();
       await api("/chats/"+chat.id+"/messages","POST",{...payload,request_id:send.request_id});

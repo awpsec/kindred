@@ -4,7 +4,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test-results');fs.mkdirSync(artifacts,{recursive:true});
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
- const engine=process.env.WEBKIT?'webkit':'edge',browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true,channel:'msedge'});
+ const engine=process.env.WEBKIT?'webkit':'chromium',browser=await(process.env.WEBKIT?webkit:chromium).launch(process.env.WEBKIT?{headless:true}:{headless:true});
  try{
   const context=await browser.newContext({viewport:{width:1250,height:850}}),p=await context.newPage();p.setDefaultTimeout(12000);const errors=[];p.on('pageerror',e=>errors.push(e.message));
   const chat={id:'dm-piper',name:'Piper',members:['piper'],archived:false};let runs=[],messages=[],sends=0,paused=false;
@@ -25,11 +25,11 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   assert(await p.locator('.work-label').isHidden(),'Normal scheduler startup has no status flash');assert(await p.locator('#queue-status').isHidden(),'The first message is not a backlog');assert(!await p.getByText('Waiting my turn',{exact:true}).count());
   await p.locator('.work-line .character').evaluate(b=>window.firstSendAvatar=b);await p.screenshot({path:path.join(artifacts,engine+'-quiet-send.png')});
   runs[0].status='running';await p.getByText('Thinking it through',{exact:true}).waitFor();assert(await p.locator('#queue-status').isHidden());assert.equal(await p.locator('.work-line .character').evaluate(b=>b===window.firstSendAvatar),true,'Starting work retains the bot already on screen');
-  await p.locator('#prompt').fill('Also check tomorrow');await p.locator('#prompt').press('Enter');await p.getByText('1 message queued',{exact:true}).waitFor();assert.equal(sends,2);assert.equal(await p.locator('.work-line').count(),1);
-  runs[0].status='queued';runs[0].created=Math.floor(Date.now()/1000);await p.reload();await p.locator('.work-line').waitFor();assert.equal(await p.locator('#queue-status').textContent(),'1 message queued','Only the second message is behind the starting task');
+  await p.locator('#prompt').fill('Also check tomorrow');await p.locator('#prompt').press('Enter');await p.waitForFunction(()=>document.querySelector('#prompt').value==='');assert(await p.locator('#queue-status').isHidden());assert.equal(sends,2);assert.equal(await p.locator('.work-line').count(),1);
+  runs[0].status='queued';runs[0].created=Math.floor(Date.now()/1000);await p.reload();await p.locator('.work-line').waitFor();assert(await p.locator('#queue-status').isHidden(),'Internal delivery queue does not add composer chrome');
   runs=runs.slice(0,1);runs[0].created=Math.floor(Date.now()/1000)-20;await p.reload();await p.getByText('Waiting to start',{exact:true}).waitFor();assert(await p.locator('#queue-status').isHidden(),'A delayed start gets an explanation without a misleading queue count');
-  paused=true;await p.reload();await p.getByText('Waiting for control',{exact:true}).waitFor();await p.locator('#queue-status').getByRole('button',{name:'Return control'}).waitFor();assert.match(await p.locator('#queue-status').textContent(),/1 message queued/);
+  paused=true;await p.reload();await p.getByText('Waiting for control',{exact:true}).waitFor();await p.locator('#queue-status').getByRole('button',{name:'Return control'}).waitFor();assert.match(await p.locator('#queue-status').textContent(),/manual control/);
   await p.evaluate(()=>document.documentElement.dataset.theme='light');await p.setViewportSize({width:390,height:850});await p.screenshot({path:path.join(artifacts,engine+'-held-send-mobile.png')});assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({passed:true,engine,realSendQuiet:true,avatarPreserved:true,actualBacklogVisible:true,startingTaskExcludedFromCount:true,delayedStartExplained:true,manualControlPreserved:true}));await context.close();
+  console.log(JSON.stringify({passed:true,engine,realSendQuiet:true,avatarPreserved:true,busySendWithoutQueueChrome:true,delayedStartExplained:true,manualControlPreserved:true}));await context.close();
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exit(1);});
