@@ -391,7 +391,7 @@ html[data-kindred-ios][data-ios-duo-inner=true][data-ios-toolbar-identity=true] 
 /* Progress is a compact reading sequence, including on older servers that
    rendered narration inside the expanded tracker. An inline 44pt time target
    must not add a 44pt blank line to every narration paragraph. */
-html[data-kindred-ios] #content .message-group.task-commentary { margin-block:8px; padding-inline-start:12px; }
+html[data-kindred-ios] #content .message-group.task-commentary { margin-block:8px; padding-inline-start:calc(var(--task-header-inset,0px) + var(--task-body-indent,12px)); padding-inline-end:var(--task-header-inset,0px); }
 html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .message-row,
 html[data-kindred-ios] #content .summary-progress-update.message-row { display:block; min-height:0; height:auto; margin:0; }
 html[data-kindred-ios] #content .summary-progress-update { min-height:0; height:auto; padding-block:5px; }
