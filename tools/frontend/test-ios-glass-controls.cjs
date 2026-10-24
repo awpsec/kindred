@@ -46,8 +46,7 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
    await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{railSide:'right'});__KINDRED_IOS_TOOLBAR=null;dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));dispatchEvent(new Event('kindred-ios-toolbar'));});
    await page.waitForFunction(()=>!document.documentElement.hasAttribute('data-ios-identity-handoff')&&__glassMessages.at(-1).controls.some(c=>c.id==='identity'&&c.interactive));
    await page.evaluate(()=>{__KINDRED_NATIVE_GEOMETRY.reservedRegions=[{active:true,kind:'division',x:480,y:0,width:40,height:720},{active:true,kind:'occlusion',x:916,y:0,width:84,height:120}];dispatchEvent(new Event('kindred-native-geometry'));});
-   await page.waitForFunction(()=>{const n=document.querySelector('.bot-heading'),r=n.getBoundingClientRect();return getComputedStyle(n).position==='absolute'&&r.left>=520&&r.right<=916&&!n.getAnimations().some(a=>a.playState==='running');});
-   const bookIdentity=await page.evaluate(()=>__glassMessages.at(-1).controls.find(c=>c.id==='identity'));
+   const bookIdentity=await(await page.waitForFunction(()=>{const n=document.querySelector('.bot-heading'),r=n.getBoundingClientRect(),c=__glassMessages.at(-1).controls.find(c=>c.id==='identity'&&c.interactive);return getComputedStyle(n).position==='absolute'&&r.left>=520&&r.right<=916&&!document.getAnimations().some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))&&c?.opacity===1&&Math.abs(c.rect[0]-r.x)<.02&&Math.abs(c.rect[2]-r.width)<.02?c:null;})).jsonValue();
    assert(bookIdentity.rect[0]>=520&&bookIdentity.rect[0]+bookIdentity.rect[2]<=916,'glass identity stays on one leaf and clear of the status rail');
    await page.evaluate(()=>{__KINDRED_NATIVE_GEOMETRY.reservedRegions=[];dispatchEvent(new Event('kindred-native-geometry'));});
    // A sheet covers native chrome too; dismissal restores it without replacing

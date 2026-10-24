@@ -27,7 +27,9 @@ fades. The native label uses the retained tag's measured text slot and avatar
 center, keeping short names readable inside the existing compact pill. Chat
 chrome is scoped to the current route, so retained chat controls cannot float
 above the Artifacts library or document viewer; artifact navigation keeps its
-own glass controls. Native chrome is excluded from the right-toolbar measurement so it cannot
+own glass controls. An iOS-specific positioning rule keeps desktop relative
+positioning from applying the book leaf offset twice. Native chrome is excluded
+from the right-toolbar measurement so it cannot
 create its own clearance feedback loop. Dialogs hide these controls; dismissal
 restores them. The session retains the host across display changes and handles
 measurements arriving before the host receives its real bounds.
