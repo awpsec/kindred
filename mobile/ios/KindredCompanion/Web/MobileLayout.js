@@ -344,7 +344,7 @@
       documentFrame=avoid({...frame,height:horizontal.y-frame.y},exclusions);
       library=avoid({...frame,y:horizontal.y+horizontal.height,height:frame.y+frame.height-horizontal.y-horizontal.height},exclusions);
       if(documentFrame.height>=200*scale&&library.height>=200*scale&&frame.width>=minDocument) mode='stacked';
-    } else if (layout.isDuoInner === true && frame.width>=720*scale) {
+    } else if (layout.isDuoInner === true && frame.width>=minLibrary+minDocument) {
       maximum=Math.floor(Math.max(76,Math.min(width/4,frame.width-minDocument)));
       const listWidth=hidden?0:Math.max(76,Math.min(artifactSidebarWidth,maximum));
       library=avoid({...frame,width:listWidth},exclusions);
