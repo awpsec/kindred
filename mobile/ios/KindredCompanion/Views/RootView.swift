@@ -154,6 +154,7 @@ struct RootView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         if #available(iOS 27.1, *), usesDuoNavigation, let session = activeSession {
+            let artifacts = ["artifacts", "artifact"].contains(session.presentation.route)
             if #available(iOS 27.1, *), session.presentation.toolbarIdentity,
                session.presentation.route == "bot-chat", session.presentation.botDetailsAvailable {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -166,11 +167,11 @@ struct RootView: View {
                 .axisBehavior(session.presentation.isDuoInner ? .automatic : .verticalPreferred)
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if session.presentation.route != "chat-list" && !(session.presentation.route == "bot-chat" && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {
+                if !["chat-list", "artifacts"].contains(session.presentation.route) && !(["bot-chat", "artifact"].contains(session.presentation.route) && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {
                     Button {
                         session.performDuoAction(.back)
-                    } label: { Label(session.presentation.route == "bot-chat" ? "Chat list" : "Back",
-                                   systemImage: session.presentation.route == "bot-chat" ? "line.3.horizontal" : "chevron.backward") }
+                    } label: { Label(artifacts ? "Artifact list" : session.presentation.route == "bot-chat" ? "Chat list" : "Back",
+                                   systemImage: ["bot-chat", "artifact"].contains(session.presentation.route) ? "line.3.horizontal" : "chevron.backward") }
                 }
                 if session.presentation.route == "details" && session.presentation.botSettingsAvailable {
                     Button {
@@ -188,21 +189,27 @@ struct RootView: View {
                 if session.presentation.listToggleAvailable {
                     Button {
                         session.performDuoAction(.chats)
-                    } label: { Label(session.presentation.listVisible ? "Hide chat list" : "Show chat list", systemImage: "sidebar.left") }
+                    } label: { Label(artifacts ? (session.presentation.listVisible ? "Hide artifact list" : "Show artifact list") : (session.presentation.listVisible ? "Hide chat list" : "Show chat list"), systemImage: "sidebar.left") }
                 }
                 if session.presentation.route == "bot-chat" || (session.presentation.route == "computer" && !session.presentation.hasBotCenter) {
                     Button {
                         session.performDuoAction(.computer)
                     } label: { Label(session.presentation.route == "computer" ? "Close computer" : "Bot computer", systemImage: "desktopcomputer") }
                 }
-                if session.presentation.route == "chat-list" || session.presentation.listVisible {
+                if artifacts || session.presentation.route == "chat-list" || session.presentation.listVisible {
                     Menu {
                         Button("Settings", systemImage: "gearshape") { session.performDuoAction(.settings) }
-                        Button("Artifacts", systemImage: "folder") { session.performDuoAction(.artifacts) }
+                        if artifacts {
+                            Button("Chats", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.chatHome) }
+                        } else {
+                            Button("Artifacts", systemImage: "folder") { session.performDuoAction(.artifacts) }
+                        }
                         Button("Marketplace", systemImage: "square.grid.2x2") { session.performDuoAction(.marketplace) }
                         Divider()
                         Button("Manage accounts", systemImage: "person.crop.circle") { model.sheet = .accounts }
-                    } label: { Label("Profile and settings", systemImage: "person.crop.circle") }
+                    } label: { Label("More options", systemImage: "ellipsis") }
+                }
+                if !artifacts && (session.presentation.route == "chat-list" || session.presentation.listVisible) {
                     Button {
                         session.performDuoAction(.search)
                     } label: { Label("Search chats", systemImage: "magnifyingglass") }

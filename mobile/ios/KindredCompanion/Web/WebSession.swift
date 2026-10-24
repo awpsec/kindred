@@ -183,7 +183,7 @@ final class WebSession: NSObject {
     }
 
     enum DuoAction: String {
-        case back, computer, botSettings, chats, settings, artifacts, marketplace, search, newChat, newBot, newConversation, expandComputer, botDetails
+        case back, computer, botSettings, chats, chatHome, settings, artifacts, marketplace, search, newChat, newBot, newConversation, expandComputer, botDetails
     }
 
     func performDuoAction(_ action: DuoAction) {

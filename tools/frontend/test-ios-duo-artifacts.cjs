@@ -50,12 +50,31 @@ function pdf(count){
  await p.screenshot({path:path.join(out,'inner-document.png')});fs.writeFileSync(path.join(out,'controls.json'),JSON.stringify(await p.locator('.artifact-library-filters select').evaluateAll(ns=>ns.map(n=>({html:n.outerHTML,value:n.value,color:getComputedStyle(n).color,display:getComputedStyle(n).display,rect:n.getBoundingClientRect().toJSON()}))),null,2));
  if(baseline){fs.writeFileSync(path.join(out,'geometry.json'),JSON.stringify(await geometry(),null,2));return;}
  let g=await geometry();assert.equal(g.layout,'split');assert(g.library.visible&&g.document.visible&&!g.library.inert&&!g.document.inert);assert(g.library.x+g.library.width<=g.document.x+1);assert(g.document.x+g.document.width<=783.1,'preview clears measured right rail');
+ await relay({});
+ const resize=p.getByRole('separator',{name:'Resize artifact list'});
+ const drag=async delta=>{const r=await resize.boundingBox();await p.mouse.move(r.x+r.width/2,r.y+r.height/2);await p.mouse.down();await p.mouse.move(r.x+r.width/2+delta,r.y+r.height/2,{steps:8});await p.mouse.up();await settle();};
+ await drag(-180);g=await geometry();assert.equal(Math.round(g.library.width),76,'artifact list collapses to an icon rail');assert.equal(await p.locator('.artifact-studio').getAttribute('data-ios-artifact-compact'),'true');
+ await drag(1200);g=await geometry();assert(g.library.width<=867/4+1,'artifact list uses the chat pane width limit');
+ const savedWidth=g.library.width;await resize.focus();await resize.press('ArrowLeft');g=await geometry();assert.equal(g.library.width,Math.max(76,savedWidth-16),'keyboard resizing follows the same bounds');
+ const beforeCancel=g.library.width,r=await resize.boundingBox();await p.mouse.move(r.x+r.width/2,r.y+r.height/2);await p.mouse.down();await p.mouse.move(r.x+r.width/2-70,r.y+r.height/2);await p.keyboard.press('Escape');await p.mouse.up();await settle();assert.equal((await geometry()).library.width,beforeCancel,'cancel restores the prior width');assert.equal(await p.locator('.pane-resize-shield').count(),0);
+ await action('chats');await settle();g=await geometry();assert(g.library.inert&&g.document.width>=780,'hide artifact list expands the retained document');
+ let navigation=await p.evaluate(()=>accountRequests.filter(v=>v.action==='duo-navigation').at(-1));assert(navigation.listToggleAvailable&&!navigation.listVisible&&!navigation.artifactLibraryVisible);
+ await action('chats');await settle();assert.equal((await geometry()).library.width,beforeCancel,'show restores the user width');
+ const transition=await p.evaluate(async()=>{
+  const root=document.querySelector('.artifact-studio'),library=root.querySelector('.artifact-studio-library'),pane=root.querySelector('.artifact-workbench');
+  document.documentElement.dataset.motion='on';const before=pane.getBoundingClientRect();await __kindredDuoActions.perform('chats');await new Promise(requestAnimationFrame);
+  const effects=[...library.getAnimations(),...pane.getAnimations()].filter(a=>a.effect.getKeyframes().some(k=>k.width!==undefined||k.left!==undefined));
+  for(const effect of effects){effect.pause();effect.currentTime=140;}
+  const middle=pane.getBoundingClientRect();for(const effect of effects)effect.finish();await new Promise(r=>setTimeout(r,30));const after=pane.getBoundingClientRect();
+  return {count:effects.length,before:before.width,middle:middle.width,after:after.width};
+ });assert(transition.count>=2&&transition.middle>transition.before&&transition.middle<transition.after,'artifact sidebar and document interpolate their widths');
+ await p.evaluate(()=>document.documentElement.dataset.motion='off');await action('chats');await settle();
  const documentNode=await p.locator('.artifact-studio-preview').evaluate(n=>{n.dataset.retentionProbe='kept';return true;});assert(documentNode);
  const originalLoads=snapshot().loads;await p.getByRole('button',{name:'Show 9 more',exact:true}).click();await p.locator('.artifact-studio-library-list').evaluate(e=>e.scrollTop=100);const originalListScroll=await p.locator('.artifact-studio-library-list').evaluate(e=>e.scrollTop);assert(originalListScroll>0);
  for(const side of ['left','right']){
   await relay({side});g=await geometry();assert.equal(g.layout,'split');assert(g.library.x>=(side==='left'?84:0));assert(g.document.x+g.document.width<=867-(side==='right'?84:0)+1);assert(g.scroll<=867);assert.equal(await p.locator('.artifact-studio-library-list').evaluate(e=>e.scrollTop),originalListScroll,'moving the rail retains library scroll');
  }
- await action('search');await p.locator('.artifact-studio-library-search').focus(); await relay({width:466,height:678,inner:false});g=await geometry();assert.equal(g.layout,'single');assert(!g.library.visible&&g.document.visible);assert(await p.locator('.artifact-workbench').evaluate(e=>e===document.activeElement),'focus moves out of hidden library');assert(g.document.x+g.document.width<=382.1);await p.screenshot({path:path.join(out,'outer-document.png')});
+ await action('search');await p.locator('.artifact-studio-library-search').focus(); await relay({width:466,height:678,inner:false});g=await geometry();assert.equal(g.layout,'single');assert(!g.library.visible&&g.document.visible);assert(await p.locator('.artifact-workbench').evaluate(e=>e===document.activeElement),'focus moves out of hidden library');assert(g.document.x+g.document.width<=382.1);navigation=await p.evaluate(()=>accountRequests.filter(v=>v.action==='duo-navigation').at(-1));assert(!navigation.listToggleAvailable&&!navigation.listVisible,'closed document uses the list button instead of a pane toggle');await p.screenshot({path:path.join(out,'outer-document.png')});
  await action('back');await p.waitForURL('**/artifacts');g=await geometry();assert(g.library.visible&&!g.document.visible);
  await p.locator('[data-artifact-id="duo-document"]').click();await p.waitForURL('**/artifacts/duo-document');
  await relay({regions:[{kind:'division',active:true,x:400,y:0,width:40,height:645}]});g=await geometry();assert.equal(g.layout,'split');assert(g.library.x+g.library.width<=400);assert(g.document.x>=440);await p.screenshot({path:path.join(out,'book-document.png')});
@@ -65,6 +84,7 @@ function pdf(count){
  await relay({scale:1.5});g=await geometry();assert.equal(g.layout,'single','larger text prioritizes readable preview');assert(g.document.width>=700);
  await relay({regions:[{kind:'occlusion',active:true,x:700,y:0,width:167,height:80}]});g=await geometry();assert(g.document.y>=80||g.document.x+g.document.width<=700,'preview controls clear camera region');
  await relay({});await p.waitForFunction(()=>document.querySelector('.artifact-studio').dataset.iosArtifactLayout==='split');
+ assert.equal((await geometry()).library.width,beforeCancel,'closed and open poses retain the resized list');
  assert.equal(await p.locator('.artifact-studio-preview').getAttribute('data-retention-probe'),'kept','folding retains preview DOM');assert.equal(snapshot().loads,originalLoads,'folding does not reload the app');
  if(await p.locator('.artifact-studio-library-search').isHidden())await action('search');await p.locator('.artifact-studio-library-search').fill('missing artifact');await p.locator('[data-artifact-id="duo-document"]').waitFor({state:'hidden'});await p.locator('.artifact-studio-library-search').fill('');await p.locator('[data-artifact-id="duo-document"]').waitFor({state:'visible'});
  await action('newChat');const menu=await p.evaluate(()=>accountRequests.filter(v=>v.action==='native-menu').at(-1));assert(menu&&menu.items.some(i=>i.title==='New doc'),'native Add remains available with preview open');
@@ -78,6 +98,9 @@ function pdf(count){
  await p.locator('[data-artifact-id="duo-document"]').click();await p.locator('.document-pdf-page[data-page="1"] canvas').waitFor();
  // Ordinary iPhone uses the same single-page navigation with its HTML controls.
  await relay({width:390,height:700,inner:false,duo:false,side:'none',edge:0,top:24,bottom:20});g=await geometry();assert.equal(g.layout,'single');assert(g.document.visible&&!g.library.visible);await p.getByRole('button',{name:'Back to artifacts',exact:true}).click();await p.locator('[data-artifact-id="duo-document"]').waitFor({state:'visible'});await p.screenshot({path:path.join(out,'phone-library.png')});
+ await p.locator('.ios-artifact-navigation .ios-artifact-more').click();await p.waitForFunction(()=>accountRequests.some(v=>v.action==='native-menu'&&v.items.some(i=>i.title==='Chats')));
+ const options=await p.evaluate(()=>accountRequests.filter(v=>v.action==='native-menu').at(-1));assert(options.items.some(i=>i.title==='Settings')&&options.items.some(i=>i.title==='Manage accounts'));assert(!options.items.some(i=>i.title==='Artifacts'));
+ await p.evaluate(id=>__kindredNativeMenus.perform(id),options.items.find(i=>i.title==='Chats').id);await p.locator('.artifact-studio').waitFor({state:'detached'});
  assert.deepEqual(errors,[]);assert.equal(snapshot().events.filter(e=>['artifact-create','artifact-edit','send'].includes(e.type)).length,0);console.log(JSON.stringify({passed:true,engine:process.env.CHROMIUM?'chromium':'webkit',cases:['inner split','both rail sides','outer','book','multiple folds','tabletop','keyboard','larger text','occlusion','retained preview and app state','library scroll','focus transfer','toolbar measurement','search and add','phone'],errors}));
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

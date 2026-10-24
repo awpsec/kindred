@@ -273,6 +273,16 @@ html[data-kindred-ios][data-ios-duo=true] .ios-artifact-navigation { height:0; m
 html[data-kindred-ios][data-ios-duo=true] #app .artifact-studio { display:block; }
 html[data-kindred-ios][data-ios-duo=true] #app .artifact-studio :is(.artifact-studio-library,.artifact-workbench) { position:absolute; inset:var(--ios-artifact-y,0px) auto auto var(--ios-artifact-x,0px); width:var(--ios-artifact-width,100%); height:var(--ios-artifact-height,100%); max-width:none; max-height:none; min-width:0; min-height:0; box-sizing:border-box; padding-bottom:12px; overflow:hidden; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-workbench-header [aria-label="Back to artifacts"] { display:none; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-workbench-header>.ios-artifact-more { display:none; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio>.ios-duo-resizer:not([hidden]) { display:block; position:absolute; width:24px; z-index:35; touch-action:none; user-select:none; -webkit-user-select:none; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio[data-ios-artifact-library-hidden=true]>.artifact-studio-library { opacity:0; pointer-events:none; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio[data-ios-artifact-compact=true] .artifact-studio-library :is(.artifact-studio-library-heading,.artifact-library-filters,.artifact-studio-library-search,.artifact-studio-library-status,.artifact-folder-heading,.artifact-library-copy,.artifact-item-pin,time) { display:none; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio[data-ios-artifact-compact=true] .artifact-studio-library-list { padding:12px 8px; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio[data-ios-artifact-compact=true] .artifact-studio-library-item { justify-content:center; min-height:56px; padding:12px; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-studio[data-ios-artifact-compact=true] .artifact-folder-more { min-height:44px; font-size:11px; padding:8px 0; width:100%; }
+@media(prefers-reduced-motion:no-preference) {
+ html[data-kindred-ios][data-ios-duo=true]:not([data-motion=off]) .artifact-studio:not([data-ios-artifact-resizing=true])[data-ios-artifact-layout=split]>:is(.artifact-studio-library,.artifact-workbench) { transition:width .28s cubic-bezier(.22,1,.36,1),left .28s cubic-bezier(.22,1,.36,1),opacity .18s ease; }
+}
 html[data-kindred-ios][data-ios-duo=true] .artifact-studio-library-heading { padding:20px 20px 12px; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-studio-library-heading h1 { font-size:calc(20px * var(--text-scale,1)); }
 html[data-kindred-ios] .artifact-studio .artifact-library-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr)); min-width:0; padding:0 16px 10px; gap:8px; }
