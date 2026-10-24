@@ -614,3 +614,16 @@ html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .color-option { j
 html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .outline-button { width:100%; min-height:44px; }
 html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .outline-button[aria-pressed=true] { background:var(--hover); border-color:var(--soft); }
 html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] button:focus-visible { outline:2px solid var(--fg); outline-offset:-2px; }
+
+/* Native material sits beneath WebKit, so editor ink/caret and existing
+   buttons remain sharp. One surface, without a second web blur beneath it. */
+html[data-kindred-ios][data-ios-native-composer],
+html[data-kindred-ios][data-ios-native-composer] :is(body,#app,.conversation) {
+  background:transparent!important;
+}
+html[data-kindred-ios][data-ios-native-composer] #composer {
+  background:transparent!important; border-color:transparent!important;
+  box-shadow:none!important; -webkit-backdrop-filter:none!important; backdrop-filter:none!important;
+}
+html[data-kindred-ios][data-ios-composer-glass] #composer { transition-property:border-radius!important; }
+html[data-kindred-ios][data-ios-native-composer] .conversation>.composer-area::before { content:none; }

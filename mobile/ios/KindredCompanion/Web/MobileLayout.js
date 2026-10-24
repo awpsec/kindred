@@ -1974,6 +1974,7 @@
   // The page keeps the real layout and server-owned action closures. Older
   // hosts keep the existing WebKit treatment, including all text editors.
   if (window.__KINDRED_NATIVE_GLASS === true) {
+    html.setAttribute('data-ios-composer-glass','');
     const glassDocument = crypto.randomUUID(), current = new Map(), replaced = new Map();
     const specs = [
       ['identity','.conversation-header .bot-heading',''],
@@ -2048,7 +2049,17 @@
           imageInset:parseFloat(style.paddingLeft)||0,imageGap:parseFloat(style.columnGap)||0,
           opacity:alpha,titleOpacity:ghost ? Number(getComputedStyle(ghost.lastElementChild).opacity) : 1,interactive:!ghost});
       }
-      const payload = JSON.stringify({action:'glass-controls',document:glassDocument,controls});
+      // Only the shell is native. The retained DOM editor stays visible,
+      // accessible and interactive above its background material.
+      let composer;
+      const input = document.querySelector('#composer');
+      if (!covered && duoRoute() === 'bot-chat' && visible(input)) {
+        const r=input.getBoundingClientRect(), style=getComputedStyle(input), round=n=>Math.round(n*100)/100;
+        composer={rect:[r.x,r.y,r.width,r.height].map(round),radius:Math.min(64,parseFloat(style.borderTopLeftRadius)||0),
+          opacity:opacity(input),dark:html.dataset.theme!=='light'};
+        current.set('composer',{source:input,node:input});
+      }
+      const payload = JSON.stringify({action:'glass-controls',document:glassDocument,controls,...(composer?{composer}:{})});
       if (payload !== glassLast) {glassLast=payload;window.webkit?.messageHandlers?.kindredAccounts?.postMessage({...JSON.parse(payload),sequence:++glassSerial});}
       if (!stopped && document.getAnimations().some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))) schedule();
     };
@@ -2056,7 +2067,8 @@
     window.__kindredGlassControls = {
       setActive(document,ids,sequence) {
         if (document !== glassDocument || sequence !== glassSerial || !Array.isArray(ids)) return false;
-        const nodes = new Set(ids.map(id=>current.get(id)?.node).filter(Boolean));
+        html.toggleAttribute('data-ios-native-composer',ids.includes('composer')&&current.has('composer'));
+        const nodes = new Set(ids.filter(id=>id!=='composer').map(id=>current.get(id)?.node).filter(Boolean));
         for (const node of replaced.keys()) if(!nodes.has(node))restore(node);
         for (const node of nodes) {
           if (!replaced.has(node)) replaced.set(node,{'aria-hidden':node.getAttribute('aria-hidden'),tabindex:node.getAttribute('tabindex')});
@@ -2076,7 +2088,7 @@
     for(const node of [shell,sidebar,conversation,composerArea,header])if(node)resize.observe(node);
     for(const name of ['resize','kindred-ios-layout','kindred-native-geometry','kindred-ios-toolbar','pageshow'])window.addEventListener(name,()=>{stopped=false;schedule();});
     document.addEventListener('scroll',schedule,true);
-    window.addEventListener('pagehide',()=>{stopped=true;cancelAnimationFrame(glassFrame);glassFrame=0;current.clear();for(const node of replaced.keys())restore(node);glassLast='';window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'glass-controls',document:glassDocument,sequence:++glassSerial,controls:[]});});
+    window.addEventListener('pagehide',()=>{html.removeAttribute('data-ios-native-composer');stopped=true;cancelAnimationFrame(glassFrame);glassFrame=0;current.clear();for(const node of replaced.keys())restore(node);glassLast='';window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'glass-controls',document:glassDocument,sequence:++glassSerial,controls:[]});});
     schedule();
   }
   // Hand navigation to the page before slow fonts/images finish loading.

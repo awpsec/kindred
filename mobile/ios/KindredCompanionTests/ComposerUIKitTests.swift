@@ -158,6 +158,27 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         window = nil
     }
 
+    func testNativeComposerMaterialTracksMultilineDraft() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Liquid Glass requires iOS 26") }
+        try await waitFor("native composer material acknowledgment") {
+            try await self.boolean("document.documentElement.hasAttribute('data-ios-native-composer')")
+        }
+        let surface=session.glassControls.composerSurface
+        XCTAssertTrue(surface.isPrepared)
+        XCTAssertEqual(session.webView.backgroundColor,.clear)
+        XCTAssertFalse(surface.isUserInteractionEnabled)
+        _ = try await js("window.__glassEditor=document.querySelector('#prompt');const p=window.__glassEditor;p.textContent='Glass draft\\nSecond line\\nThird line';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
+        try await checkComposer(label:"native-glass-multiline")
+        try await waitFor("native material follows the measured multiline shell") {
+            let values=try await self.js("(()=>{const r=document.querySelector('#composer').getBoundingClientRect();return [r.x,r.y,r.width,r.height]})()") as? [Double]
+            guard let values, values.count==4 else { return false }
+            let target=self.session.webView.convert(CGRect(x:values[0],y:values[1],width:values[2],height:values[3]),to:surface.superview)
+            return abs(target.minX-surface.frame.minX)<1 && abs(target.minY-surface.frame.minY)<1 && abs(target.width-surface.frame.width)<1 && abs(target.height-surface.frame.height)<1
+        }
+        let accessible=try await boolean("window.__glassEditor===document.querySelector('#prompt') && !window.__glassEditor.closest('[aria-hidden=\"true\"],[data-ios-native-glass]') && getComputedStyle(window.__glassEditor).visibility==='visible'")
+        XCTAssertTrue(accessible)
+    }
+
     func testKeyboardOpenClosePreservesDraftAndToolbarAboveKeyboard() async throws {
         try await checkComposer(label: "idle-centered")
         let draft = "Native draft\nSecond line\nThird line"
