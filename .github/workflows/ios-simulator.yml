@@ -1,19 +1,17 @@
-name: iOS simulator validation (manual only)
+name: iOS native regression (manual bounded child)
 on:
   workflow_dispatch:
     inputs:
       source_commit:
-        description: 'Exact reviewed desktop/iOS source commit.'
+        description: Exact accepted final desktop/iOS product commit
         required: true
         type: string
-      validation_scope:
-        description: 'Full existing hosted suite or scoped real UIKit composer keyboard/safe-area validation.'
+      pin_sha256:
+        description: Final external release PIN SHA256 bound by selected Builder intent
         required: true
-        default: full
-        type: choice
-        options: [full, composer, release-ui, keyboard-ownership]
+        type: string
       approve_runner_usage:
-        description: 'Approve this one unsigned simulator job, maximum 20 minutes; no automatic retry.'
+        description: Select ONE microphone-free unsigned simulator attempt, maximum20minutes
         required: true
         default: false
         type: boolean
@@ -25,54 +23,38 @@ concurrency:
 jobs:
   simulator:
     if: ${{ inputs.approve_runner_usage }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ inputs.source_commit }}
+          ref: ${{ github.sha }}
+          path: tool
           persist-credentials: false
-      - name: Verify exact source and record Xcode identity
-        shell: bash
-        env:
-          EXPECTED_SOURCE: ${{ inputs.source_commit }}
-        run: |
-          mkdir -p ios-validation
-          python3 - <<'PY'
-          import json,os,re,subprocess
-          from pathlib import Path
-          expected=os.environ['EXPECTED_SOURCE']
-          assert re.fullmatch(r'[0-9a-f]{40}',expected)
-          actual=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
-          assert actual==expected
-          result={'source_commit':actual,'unsigned_simulator_only':True,'xcode':subprocess.check_output(['xcodebuild','-version'],text=True),'developer_directory':subprocess.check_output(['xcode-select','-p'],text=True).strip(),'sdk_identity':subprocess.check_output(['xcodebuild','-showsdks'],text=True)}
-          Path('ios-validation/environment.json').write_text(json.dumps(result,indent=2)+'\n')
-          sdk=subprocess.check_output(['xcrun','--sdk','iphonesimulator','--show-sdk-version'],text=True).strip()
-          assert tuple(map(int,sdk.split('.')[:2])) >= (27,1), 'Select Xcode 27.1+ before building the reserved-region bridge; no automatic retry.'
-          PY
-      - name: Generate the existing iOS project
-        shell: bash
-        run: |
-          command -v xcodegen || brew install xcodegen
-          xcodegen --version > ios-validation/xcodegen-version.txt
-          cd mobile/ios
-          xcodegen generate
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        if: ${{ inputs.validation_scope == 'composer' || inputs.validation_scope == 'release-ui' || inputs.validation_scope == 'keyboard-ownership' }}
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          node-version: '22'
-      - name: Run real UIKit app-hosted simulator tests once
-        shell: bash
+          ref: ${{ inputs.source_commit }}
+          path: product
+          persist-credentials: false
+      - name: Run exact native capability guard and focused units once
+        timeout-minutes: 17
         env:
           EXPECTED_SOURCE: ${{ inputs.source_commit }}
-          VALIDATION_SCOPE: ${{ inputs.validation_scope }}
-        run: |
-          python3 scripts/release/test-ios-simulator.py --scope "$VALIDATION_SCOPE"
-      - name: Preserve exact results including failures
+          EXTERNAL_PIN_SHA256: ${{ inputs.pin_sha256 }}
+          EXPECTED_TOOL: ${{ github.sha }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: python3 tool/scripts/release/test-ios-native-regression.py --product product --tool tool --output native-validation
+      - name: Preserve native receipts and unsigned simulator bundle including failures
         if: ${{ always() }}
+        timeout-minutes: 2
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ios-simulator-validation-${{ inputs.source_commit }}
-          path: ios-validation/
-          if-no-files-found: warn
+          name: ios-native-regression-${{ inputs.source_commit }}
+          path: |
+            native-validation/*.json
+            native-validation/*.stdout
+            native-validation/*.stderr
+            native-validation/*.xcresult
+            native-validation/*.zip
+          if-no-files-found: error
           retention-days: 14

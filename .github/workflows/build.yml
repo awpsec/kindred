@@ -37,7 +37,17 @@ on:
         required: true
         default: all
         type: choice
-        options: [all, windows, macos]
+        options: [all, windows, macos, linux]
+      server_bootstrap:
+        description: 'Build exact server first inside the selected Linux job; no extra runner job.'
+        required: false
+        default: false
+        type: boolean
+      bootstrap_spec:
+        description: 'Bound private spec asset descriptor JSON; defaults UNBOUND and cannot execute.'
+        required: false
+        default: 'UNBOUND'
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -47,17 +57,17 @@ jobs:
   packages:
     permissions:
       contents: write
-    if: ${{ inputs.approve_runner_usage }}
+    if: ${{ inputs.approve_runner_usage && (!inputs.server_bootstrap || inputs.platforms == 'linux') }}
     strategy:
       fail-fast: false
       max-parallel: 3
       matrix:
-        include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"}]' || inputs.platforms == 'macos' && '[{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]' || '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"},{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"},{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]') }}
+        include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"}]' || inputs.platforms == 'macos' && '[{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]' || inputs.platforms == 'linux' && '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]' || '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"},{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"},{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ matrix.os == 'macos-26' && 15 || matrix.os == 'windows-2025' && 20 || 45 }}
     env:
       KINDRED_PACKAGE_SOURCE_ROOT: ${{ github.workspace }}
-      CARGO_BUILD_JOBS: 2
+      CARGO_BUILD_JOBS: ${{ matrix.os == 'ubuntu-22.04' && 1 || 2 }}
       RELEASE_VERSION: ${{ inputs.version }}
       NO_STRIP: "true"
     steps:
@@ -66,6 +76,7 @@ jobs:
           ref: ${{ inputs.source_commit || github.sha }}
           persist-credentials: false
       - name: Download verified standalone bundle
+        if: ${{ !inputs.server_bootstrap }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,6 +108,14 @@ jobs:
           path: .release-tools
           persist-credentials: false
           sparse-checkout: scripts/release
+      - name: Check out exact server source for selected Linux bootstrap
+        if: ${{ inputs.server_bootstrap }}
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: awpsec/kindred-server
+          ref: ${{ inputs.server_source_commit }}
+          path: .server-bootstrap-source
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
@@ -108,7 +127,7 @@ jobs:
           node-version: '24.14.0'
       - name: Reuse selected Mac Paste browser cache
         if: runner.os == 'macOS' && inputs.mac_paste_smoke
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ runner.temp }}/kindred-paste-browsers
           key: kindred-paste-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.release-tools/scripts/release/mac-paste-smoke/package-lock.json') }}
@@ -170,7 +189,18 @@ jobs:
           print('macOS SDK:', '.'.join(map(str, current)))
           PYSDK
       - name: Reuse native compiler dependencies
+        if: runner.os != 'macOS'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/target
+          key: kindred-native-v1-${{ matrix.target }}-${{ hashFiles('desktop/Cargo.lock', 'desktop/build.rs', 'desktop/dictation/**') }}
+          restore-keys: kindred-native-v1-${{ matrix.target }}-
+      - name: Restore Mac native compiler dependencies without post-save
+        if: runner.os == 'macOS'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ~/.cargo/registry
@@ -186,6 +216,29 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential python3 git libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils libfuse2 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio xvfb dbus-x11 xdotool
+      - name: Build exact pinned server bootstrap
+        if: ${{ inputs.server_bootstrap }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BOOTSTRAP_SELECTED: ${{ inputs.server_bootstrap }}
+          SELECTED_PLATFORMS: ${{ inputs.platforms }}
+          BOOTSTRAP_SPEC_JSON: ${{ inputs.bootstrap_spec }}
+          TOOL_SOURCE: ${{ github.sha }}
+          APP_SOURCE: ${{ inputs.source_commit }}
+          SERVER_SOURCE: ${{ inputs.server_source_commit }}
+          UNUSED_BUNDLE_SHA: ${{ inputs.bundle_sha256 }}
+          UNUSED_BUNDLE_RELEASE: ${{ inputs.bundle_release }}
+        run: python3 .release-tools/scripts/release/server-bootstrap/bootstrap.py
+      - name: Publish exact server bootstrap custody
+        if: ${{ inputs.server_bootstrap }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: server-bootstrap-${{ inputs.version }}-${{ github.run_id }}
+          path: server-bootstrap-export/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
       - name: Install pinned packaging CLI
         run: npm install --global @tauri-apps/cli@2.11.4
       - name: macOS dictation build dependencies
@@ -234,6 +287,60 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/kindred-paste-browsers
           KINDRED_TEST_MAC_PASTE_SELECTED: ${{ inputs.mac_paste_smoke && '1' || '0' }}
         run: python .release-tools/scripts/release/test-macos-package.py --directory package-artifacts --source . --version "$RELEASE_VERSION" --source-commit "$(git rev-parse HEAD)" --target ${{ matrix.target }} --output mac-validation
+      - name: Export exact generated Linux UI assets for independent binary range review
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python3 - <<'PYCODEGEN'
+          import hashlib, json, os, shutil, subprocess, stat, re
+          from pathlib import Path
+          root=Path('desktop/target/x86_64-unknown-linux-gnu/release/build')
+          out=Path('linux-codegen-custody')
+          assert not out.exists() and not out.is_symlink()
+          for ancestor in [root, *root.parents]:
+              assert stat.S_ISDIR(ancestor.lstat().st_mode) and not ancestor.is_symlink()
+          root_real=root.resolve(strict=True)
+          files=[]
+          for assets in sorted(root.glob('*/out/tauri-codegen-assets')):
+              for ancestor in [assets, *assets.parents]:
+                  assert stat.S_ISDIR(ancestor.lstat().st_mode) and not ancestor.is_symlink()
+              assert assets.resolve(strict=True).is_relative_to(root_real)
+              for directory, dirs, names in os.walk(assets, followlinks=False):
+                  assert not dirs, 'Generated assets must be flat; no source/Git subtrees' 
+                  for name in sorted(names):
+                      src=Path(directory)/name
+                      assert re.fullmatch(r'[0-9a-f]{64}\.(?:css|html|js|json|md|mjs|svg|ttf|txt|wav|woff2)', name), 'Unexpected generated asset name'
+                      before=src.lstat()
+                      assert stat.S_ISREG(before.st_mode) and not before.st_mode & 0o111 and before.st_nlink==1
+                      assert before.st_size<=64*1024*1024 and src.resolve(strict=True).is_relative_to(root_real)
+                      rel=src.relative_to(root)
+                      fd=os.open(src, os.O_RDONLY|os.O_NOFOLLOW)
+                      with os.fdopen(fd,'rb') as stream:
+                          opened=os.fstat(stream.fileno())
+                          assert (opened.st_dev,opened.st_ino,opened.st_size)==(before.st_dev,before.st_ino,before.st_size)
+                          data=stream.read(64*1024*1024+1)
+                      assert len(data)==before.st_size and not data.startswith((b'\x7fELF',b'MZ',b'\xcf\xfa\xed\xfe',b'\xfe\xed\xfa\xcf'))
+                      files.append((src,rel,len(data),hashlib.sha256(data).hexdigest()))
+          assert files and sum(x[2] for x in files)<=64*1024*1024
+          for src,rel,size,digest in files:
+              dst=out/'build'/rel
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              fd=os.open(src,os.O_RDONLY|os.O_NOFOLLOW)
+              with os.fdopen(fd,'rb') as stream:
+                  data=stream.read(64*1024*1024+1)
+              assert len(data)==size and hashlib.sha256(data).hexdigest()==digest
+              dst.write_bytes(data)
+              assert dst.stat().st_size==size and hashlib.sha256(dst.read_bytes()).hexdigest()==digest
+          (out/'manifest.json').write_text(json.dumps({'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'version':os.environ['RELEASE_VERSION'],'target':'x86_64-unknown-linux-gnu','files':{str(rel):{'size':size,'sha256':digest} for _,rel,size,digest in files}},indent=2)+'\n')
+          PYCODEGEN
+      - name: Preserve generated Linux UI custody
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux-codegen-${{ inputs.version }}-${{ matrix.target }}
+          path: linux-codegen-custody/
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload verified packages without publishing
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
