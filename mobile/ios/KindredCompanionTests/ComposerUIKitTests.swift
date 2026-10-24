@@ -127,7 +127,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // Bind the fixture's exact shared candidate, not a stale connected UI.
         _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
         try await waitFor("exact Send candidate UI manifest") {
-            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='0784d49e35d460fae7a90fbcd94196d9880175647b271a76c8cf232fe68cfba1' && window.__sendSurfaceFixture?.['app.js']==='26b18c1973712ea02d98648c3a99672370081b8b02b0d994963c2f6fa71ba751' && window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c'")
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='82a6f5ce36326fc21af07701e43f5b476344ce798eb53b933473e84cbabefea1' && window.__sendSurfaceFixture?.['app.js']==='b0397bd980985ae81b8874373fe508fd78b3bd96da66ec3149de594c27a797b2' && window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c'")
         }
         try await waitFor("injected native capability reconciles through bridge") {
             try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && window.__KINDRED_IOS_DICTATION?.recognizerAvailable===true")
@@ -436,7 +436,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             (()=>{const rect=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
               const p=document.querySelector('#prompt'),shell=document.querySelector('#app'),v=visualViewport;
               return {draftMatches:p?.textContent==='Keyboard ownership fixture draft',sendCount:window.__composerSends.length,
-                uiMatches:window.__sendSurfaceFixture?.['style.css']==='0784d49e35d460fae7a90fbcd94196d9880175647b271a76c8cf232fe68cfba1'&&window.__sendSurfaceFixture?.['app.js']==='26b18c1973712ea02d98648c3a99672370081b8b02b0d994963c2f6fa71ba751'&&window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c',
+                uiMatches:window.__sendSurfaceFixture?.['style.css']==='82a6f5ce36326fc21af07701e43f5b476344ce798eb53b933473e84cbabefea1'&&window.__sendSurfaceFixture?.['app.js']==='b0397bd980985ae81b8874373fe508fd78b3bd96da66ec3149de594c27a797b2'&&window.__sendSurfaceFixture?.['dictation.js']==='03cb410147b616d7c5b772144584ac86a6346a36e9c6487454812b98c53f241c',
                 uiManifest:window.__sendSurfaceFixture,viewport:{width:innerWidth,height:innerHeight},
                 client:{width:document.documentElement.clientWidth,height:document.documentElement.clientHeight},
                 visual:v?{width:v.width,height:v.height,offsetTop:v.offsetTop,offsetLeft:v.offsetLeft,scale:v.scale}:null,

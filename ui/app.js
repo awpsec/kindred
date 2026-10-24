@@ -375,7 +375,7 @@ function foldLongMessage(bubble, key, entry) {
     }
   }
   viewport._updateLongMessage=update;
-  viewport._observeLongMessage=()=>{const observer=new ResizeObserver(update);observer.observe(text);longMessageObservers.set(viewport,observer);update();};
+  viewport._observeLongMessage=()=>{let queued=false;const observer=new ResizeObserver(()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;update();});});observer.observe(text);longMessageObservers.set(viewport,observer);update();};
 }
 function observeLongMessages(target){
   for(const [element,observer] of longMessageObservers)if(!element.isConnected){observer.disconnect();longMessageObservers.delete(element);}
@@ -6525,15 +6525,26 @@ function preserveProgressGroup(previous,next){
   return true;
 }
 function preserveShardMessage(previous,next){
-  const before=previous.querySelector('.message-bubble'),after=next.querySelector('.message-bubble');
+  // Long-message folding owns a content wrapper inside the bubble. Preserve
+  // that wrapper and the iframe's ancestors, not only the outer bubble.
+  const before=previous.querySelector('.message-text-content')||previous.querySelector('.message-bubble'),after=next.querySelector('.message-text-content')||next.querySelector('.message-bubble');
   if(!before||!after)return false;
   const oldShards=[...before.querySelectorAll('[data-shard-signature]')],newShards=[...after.querySelectorAll('[data-shard-signature]')];
   if(!oldShards.length||oldShards.length!==newShards.length||oldShards.some((s,i)=>s.parentElement!==before||newShards[i].parentElement!==after||s.dataset.shardSignature!==newShards[i].dataset.shardSignature))return false;
-  // Preserve the iframe's parent as well as its node: reparenting reloads the document.
-  const a=previous.cloneNode(true),b=next.cloneNode(true);a.querySelector('.message-bubble').replaceChildren();b.querySelector('.message-bubble').replaceChildren();if(a.outerHTML!==b.outerHTML)return false;
+  const shell=n=>{const copy=n.cloneNode(true);copy.removeAttribute('aria-description');copy.classList.remove('message-menu-open','reply-arriving');copy.querySelector('.mobile-message-time')?.remove();(copy.querySelector('.message-text-content')||copy.querySelector('.message-bubble')).replaceChildren();copy.querySelector('.message-reactions')?.remove();for(const actions of copy.querySelectorAll('.message-actions'))actions.replaceChildren();const viewport=copy.querySelector('.message-text-viewport');if(viewport){viewport.removeAttribute('style');viewport.classList.remove('is-truncated');}const toggle=copy.querySelector('.message-expand');if(toggle)toggle.replaceWith(document.createElement('button'));return copy.outerHTML;};
+  if(shell(previous)!==shell(next))return false;
+  const focused=previous.contains(document.activeElement)?document.activeElement.dataset.messageFocus:null;
+  // Never reparent an existing frame, including when prose is added before it.
   for(const child of [...before.childNodes])if(!oldShards.includes(child))child.remove();
   let cursor=before.firstChild,index=0;
   for(const child of [...after.childNodes]){if(newShards.includes(child)){cursor=oldShards[index++].nextSibling;}else before.insertBefore(child,cursor);}
+  previous.querySelector('.message-text-viewport')?._updateLongMessage?.();
+  const oldActions=previous.querySelector('.message-actions'),newActions=next.querySelector('.message-actions');
+  if(oldActions&&newActions)oldActions.replaceChildren(...newActions.childNodes);
+  const oldReactions=previous.querySelector('.message-reactions'),newReactions=next.querySelector('.message-reactions');
+  if(oldReactions){if(newReactions)oldReactions.replaceWith(newReactions);else oldReactions.remove();}else if(newReactions)previous.querySelector('.message-bubble').append(newReactions);
+  if(focused)previous.querySelector('[data-message-focus="'+CSS.escape(focused)+'"]')?.focus({preventScroll:true});
+  if(next.hasAttribute('aria-description'))previous.setAttribute('aria-description',next.getAttribute('aria-description'));
   return true;
 }
 function connectorStackFormation(target,desired){
