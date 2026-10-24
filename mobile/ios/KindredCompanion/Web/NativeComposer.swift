@@ -168,7 +168,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
             let parent=item.kind=="suggestion" ? suggestionScroll : material.contentView
             if node.superview !== parent { node.removeFromSuperview();parent.addSubview(node) }
             if let button=node as? UIButton {
-                let key=[item.symbol,item.text,String(item.primary),String(Double(item.font))]
+                let key=[item.symbol,item.text,String(item.primary),String(Double(item.font)),String(next.dark)]
                 if contentKeys[item.id] != key {
                 var config=item.primary ? UIButton.Configuration.filled() : .plain()
                 config.baseBackgroundColor = item.primary ? .label : .clear
@@ -176,7 +176,13 @@ final class NativeComposer: UIView, UITextViewDelegate {
                 config.cornerStyle = .capsule;config.contentInsets = .zero
                 if item.primary { config.background.backgroundInsets = NSDirectionalEdgeInsets(top:4,leading:4,bottom:4,trailing:4) }
                 if item.symbol.isEmpty { config.title=item.text;config.titleLineBreakMode = .byTruncatingTail }
-                else { config.image=UIImage(systemName:item.symbol,withConfiguration:UIImage.SymbolConfiguration(pointSize:20,weight:.regular)) }
+                else {
+                    let symbol=UIImage(systemName:item.symbol,withConfiguration:UIImage.SymbolConfiguration(pointSize:20,weight:.regular))
+                    // The filled primary circle needs opaque contrasting ink.
+                    // Glass vibrancy must not turn its template glyph into
+                    // the same color as that circle.
+                    config.image=item.primary ? symbol?.withTintColor(next.dark ? .black : .white,renderingMode:.alwaysOriginal) : symbol
+                }
                 button.configuration=config;contentKeys[item.id]=key
                 }
                 button.isEnabled=item.enabled;button.accessibilityLabel=item.text

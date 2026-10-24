@@ -162,6 +162,28 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         window = nil
     }
 
+    func testNativeComposerPrimaryGlyphPaintsInBothThemes() async throws {
+        guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
+        for theme in ["dark","light"] {
+            try await setFixtureAppearance(theme)
+            try await waitFor("native primary glyph model") { self.session.glassControls.composer.model?.dark == (theme=="dark") && !self.session.glassControls.composer.isHidden }
+            let composer=session.glassControls.composer,item=try XCTUnwrap(composer.model?.items.first(where:{$0.primary}))
+            let button=try XCTUnwrap(composer.material.contentView.subviews.compactMap {$0 as? UIButton}.first(where:{$0.accessibilityIdentifier=="kindred-native-composer-"+item.id}))
+            window.layoutIfNeeded();button.layoutIfNeeded()
+            let image=UIGraphicsImageRenderer(bounds:window.bounds).image {_ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true)}
+            let center=button.convert(CGPoint(x:button.bounds.midX,y:button.bounds.midY),to:window)
+            var ink=0
+            for x in stride(from:-10,through:10,by:2) { for y in stride(from:-10,through:10,by:2) {
+                let pixel=try Self.imagePixel(image,point:CGPoint(x:center.x+CGFloat(x),y:center.y+CGFloat(y)))
+                if theme=="dark" ? pixel.prefix(3).allSatisfy({$0<100}) : pixel.prefix(3).allSatisfy({$0>155}) { ink+=1 }
+            }}
+            let a=XCTAttachment(image:image);a.name="native-primary-glyph-"+theme;a.lifetime = .keepAlways;add(a)
+            let info:[String:Any]=["theme":theme,"inkSamples":ink,"symbol":item.symbol,"imageFrame":button.imageView?.frame.debugDescription ?? "nil","imageAlpha":button.imageView?.alpha ?? -1,"tint":button.imageView?.tintColor.resolvedColor(with:button.traitCollection).description ?? "nil","style":button.traitCollection.userInterfaceStyle.rawValue]
+            let data=XCTAttachment(data:try JSONSerialization.data(withJSONObject:info,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");data.name="native-primary-glyph-geometry";data.lifetime = .keepAlways;add(data)
+            XCTAssertGreaterThan(ink,5,"Native primary control must paint a contrasting symbol inside its circle")
+        }
+    }
+
     func testNativeComposerTypingKeyboardAndSend() async throws {
         guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
         try await waitFor("genuine native composer") { self.session.glassControls.composer.model != nil && !self.session.glassControls.composer.isHidden }
