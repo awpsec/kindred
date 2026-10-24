@@ -1,0 +1,177 @@
+{
+  "at": "2026-10-24T04:17:31.208207+00:00",
+  "scope": "UNCHANGED_BACKEND_27_EVIDENCE_CARRY_ONLY",
+  "execution_source": "3f141093d3548a20e8a05fec535bad27e5947fec",
+  "current_server_source": "7d1f353ca450f3eedc9aaeb0267c1e2dca28d626",
+  "actual_original_names_executed": 27,
+  "new_tests_executed": 0,
+  "same_cohort_not_additional27": true,
+  "not_current_local_test_PASS": true,
+  "current_product_version": "0.87.5",
+  "prior_product_version": "0.87.3",
+  "changed_paths": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "tools/frontend/test-artifact-back.cjs",
+    "tools/frontend/test-bot-center-integration.cjs",
+    "tools/frontend/test-nametag-pane-position.cjs",
+    "ui/app.js",
+    "ui/shell-polish.css",
+    "ui/workspace-artifacts.js"
+  ],
+  "all_production_Rust_test_source_package_script_objects_modes_exact": 153,
+  "Cargo_manifest_and_lock_only_version_literal_inverse": true,
+  "test_source_sha256": {
+    "src/main.rs": "f5d49a8c113938eee9b4135d45f6ff20f2a7815d4cd4f0304481857e59d70860",
+    "src/profiles.rs": "ecdbab5bee2ad3905f6834758bccbaf7582a9d9d96539d6f1fdc5cd483673642",
+    "src/profile_tests.rs": "fbfe3779211945032ab20d1af6d1b8fc59509006ccdf019461dd99a9fed4389f",
+    "src/network_settings.rs": "2d3aa17c2dc8abbed447c469d841971ffed83b7a561727b0cd2609c61e55379b",
+    "src/progress_updates.rs": "3639eb701b01a6440abe88da0907bf3d4ba48608c8bbb69b82865a4e9767435a",
+    "src/tests.rs": "b47c3d7fefc7199774106e478e456dc2303313637a3ac3cf853da63ea175758a",
+    "src/chat_history_tests.rs": "ed2956bad3a56f91a7b8b55355c091d11417a2dbea5ad1a0c81e6bb51aa07f95"
+  },
+  "prior_build_receipt_sha256": "eea3c01b1a375068040a45263cfb16acb36dfa1a4940c4873acba5b3b16d785d",
+  "receipt_evidence": {
+    "shared_maximum_seconds": 1200,
+    "commands": [
+      {
+        "executed": 5,
+        "names": [
+          "profiles::network_settings::tests::addresses_normalize_and_public_http_is_rejected",
+          "profiles::network_settings::tests::check_metadata_redirect_limits_and_protocol",
+          "profiles::network_settings::tests::check_roots_and_reserved_addresses",
+          "profiles::network_settings::tests::descriptor_roundtrip_and_generation_are_independent_of_pending_save",
+          "profiles::network_settings::tests::tailnet_and_bridge_boundaries"
+        ],
+        "reported_test_seconds": 0.0,
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--locked",
+          "--offline",
+          "--bin",
+          "kindred",
+          "profiles::network_settings::tests::",
+          "--",
+          "--test-threads=1"
+        ],
+        "command_elapsed_seconds": 0.9208956030197442,
+        "maximum_seconds": 600,
+        "stdout_sha256": "9f96899dc8589fdc5dc368980ac939fd464684595db794379d851e674d5ca097"
+      },
+      {
+        "executed": 19,
+        "names": [
+          "progress_updates::tests::activity_distinguishes_slow_single_actions_and_bounds_each_phase",
+          "progress_updates::tests::classification_first_real_work_promotes_opening_and_retains_model_title",
+          "progress_updates::tests::classification_ordinary_conversation_and_memory_never_become_work",
+          "progress_updates::tests::classification_qualification_metadata_is_not_repeated_and_untagged_finals_fence_next_phase",
+          "progress_updates::tests::classification_segment_boundaries_preserve_conversation_in_both_directions",
+          "progress_updates::tests::cli_updates_group_by_default_and_completion_stays_visible",
+          "progress_updates::tests::compact_activity_tracks_overlapping_tools_without_exposing_content",
+          "progress_updates::tests::declined_parallel_call_does_not_hide_another_active_call",
+          "progress_updates::tests::defaults_inherit_and_overrides_survive_identity_edits",
+          "progress_updates::tests::latest_silent_phase_repair_preserves_old_and_narrated_phases",
+          "progress_updates::tests::live_mode_changes_only_affect_future_messages_and_separate_segments",
+          "progress_updates::tests::live_reminders_follow_cadence_and_changes_during_work",
+          "progress_updates::tests::model_task_title_is_scoped_persistent_and_available_in_history",
+          "progress_updates::tests::paginated_commentary_carries_only_its_persisted_marker",
+          "progress_updates::tests::silent_anchor_respects_final_fences_preferences_and_routines",
+          "progress_updates::tests::silent_existing_task_backfill_is_event_based_ordered_and_idempotent",
+          "progress_updates::tests::silent_question_continuation_keeps_group_and_can_finish_quietly",
+          "progress_updates::tests::silent_work_has_one_durable_anchor_without_becoming_a_message",
+          "progress_updates::tests::staged_presentation_is_display_only_and_phase_scoped"
+        ],
+        "reported_test_seconds": 1.64,
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--locked",
+          "--offline",
+          "--bin",
+          "kindred",
+          "progress_updates::tests::",
+          "--",
+          "--test-threads=1"
+        ],
+        "command_elapsed_seconds": 1.893296661961358,
+        "maximum_seconds": 600,
+        "stdout_sha256": "a29d78d5bc54414adbbd10287a5b46ba86225b340bd67ed7b190a2d4405334ab"
+      },
+      {
+        "executed": 1,
+        "names": [
+          "tests::event_polling_indexes_preserve_history_and_activity"
+        ],
+        "reported_test_seconds": 0.04,
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--locked",
+          "--offline",
+          "--bin",
+          "kindred",
+          "tests::event_polling_indexes_preserve_history_and_activity",
+          "--",
+          "--test-threads=1",
+          "--exact"
+        ],
+        "command_elapsed_seconds": 0.3131066680070944,
+        "maximum_seconds": 600,
+        "stdout_sha256": "8cf0ef1558897a2c4c06a51f4b361cc62778a3c66ab933bcf7d0a389103e566a"
+      },
+      {
+        "executed": 1,
+        "names": [
+          "chat_history_tests::message_pages_are_bounded_stable_and_chat_scoped"
+        ],
+        "reported_test_seconds": 0.35,
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--locked",
+          "--offline",
+          "--bin",
+          "kindred",
+          "chat_history_tests::message_pages_are_bounded_stable_and_chat_scoped",
+          "--",
+          "--test-threads=1",
+          "--exact"
+        ],
+        "command_elapsed_seconds": 0.5727379980380647,
+        "maximum_seconds": 600,
+        "stdout_sha256": "f8389693edf6f3ef51bbce57bf16ea061de9bdee5f5302262d67d7b435c0015c"
+      },
+      {
+        "executed": 1,
+        "names": [
+          "profiles::tests::docker_network_settings_require_admin_and_preserve_pending_generation"
+        ],
+        "reported_test_seconds": 0.51,
+        "argv": [
+          "cargo",
+          "test",
+          "--release",
+          "--locked",
+          "--offline",
+          "--bin",
+          "kindred",
+          "profiles::tests::docker_network_settings_require_admin_and_preserve_pending_generation",
+          "--",
+          "--test-threads=1",
+          "--exact"
+        ],
+        "command_elapsed_seconds": 0.7766759530059062,
+        "maximum_seconds": 600,
+        "stdout_sha256": "eaf4ef5935fe9a60a08089f8bbac2e8a1966c5061df77877a00220a2a2ee9727"
+      }
+    ],
+    "executed": 27
+  },
+  "source_assets_changed_new_compile_package_required": true,
+  "no_paired_PIN_or_desktop_acceptance_claim": true
+}
