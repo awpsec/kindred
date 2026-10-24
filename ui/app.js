@@ -1846,7 +1846,7 @@ function renderBotSettings() {
 }
 function botInitiativeControl(bot) {
   const root=node('section','bot-initiative-settings'),toggle=switchField('Take initiative',profile(bot).initiative===true);
-  const help=node('p','muted small','Do useful background research, prepare drafts, and bring you updates. Your existing permissions still apply. Turning this off leaves routines, monitoring, and teammate updates unchanged.');
+  const help=node('p','muted small','Research, prepare drafts, and bring you updates.');
   help.id='bot-initiative-help';toggle.input.setAttribute('aria-describedby',help.id);
   const details=node('div'),guidance=field('What should this bot keep an eye on?',profile(bot).initiative_instructions||'','textarea',{rows:3,maxLength:2000,placeholder:'For example, follow up on project plans and delivery updates. Bring useful results to our DM.'});
   const budget=node('p','muted small');
