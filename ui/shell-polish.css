@@ -108,6 +108,12 @@ html:not([data-mobile]) .group-conversation .header-actions{position:absolute;ri
 html:not([data-mobile]) .conversation-header #bot-details:is(:hover,:focus-visible){transform:translateX(calc(-50% + 10px));max-width:calc(100% - 12px);}
 html:not([data-mobile]) .group-conversation .conversation-header #bot-details{max-width:calc(100% - 180px);}
 html:not([data-mobile]) .group-conversation .conversation-header #bot-details:is(:hover,:focus-visible){max-width:calc(100% - 160px);}
+/* Leave room for the right pane without changing the native iOS header. */
+html:not([data-mobile]):not([data-kindred-ios]) .conversation-header #bot-details{transition:left .18s ease-out,transform .18s ease-out,padding-right .13s ease-out;}
+html:not([data-mobile]):not([data-kindred-ios]) .shell:has(>:is(#details-panel,#computer-panel):not([hidden])) .conversation-header{z-index:2;}
+html:not([data-mobile]):not([data-kindred-ios]) .shell:has(>:is(#details-panel,#computer-panel):not([hidden])) .conversation-header #bot-details{left:16px;transform:translateX(0);}
+html[data-motion=off]:not([data-mobile]):not([data-kindred-ios]) .conversation-header #bot-details{transition:none;}
+@media(prefers-reduced-motion:reduce){html:not([data-mobile]):not([data-kindred-ios]) .conversation-header #bot-details{transition:none;}}
 html:not([data-mobile]) .conversation-header .chat-window-drag{display:none;}
 html:not([data-mobile]) .conversation .messages{padding-top:65px;scroll-padding-top:65px;}
 }
