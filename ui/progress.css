@@ -32,3 +32,11 @@ progress::-moz-progress-bar{background:var(--progress-accent)}
 /* Task-owned choices and approvals follow the activity disclosure without
    moving live controls or animating each review card independently. */
 #content .task-owned-review{margin-inline-start:24px;max-width:calc(100% - 24px)}
+
+/* One identity and one live status per task; details keep their disclosure. */
+.task-activity[data-task-status]{position:relative;padding-inline-end:32px;box-sizing:border-box}
+.task-activity[data-task-status] .summary-progress-heading{border:0;flex-wrap:wrap;padding-bottom:0}
+.task-activity[data-task-status] .summary-progress-live-status{flex:0 0 calc(100% - 42px);margin-inline-start:42px;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
+.task-activity>.work-stop{position:absolute;inset:0 0 auto auto}
+.task-activity:hover>.work-stop,.task-activity:focus-within>.work-stop{opacity:1;pointer-events:auto}
+@media(pointer:coarse){.task-activity>.work-stop{width:44px;height:44px;padding:12px}.task-activity[data-task-status]{padding-inline-end:46px}}

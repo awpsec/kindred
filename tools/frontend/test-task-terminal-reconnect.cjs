@@ -31,7 +31,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   // A new explicit continuation is a new identity, not the failed child revived.
   const next={...root,id:'new-continuation',status:'running',created:now+1};const nextMessages=[...all,marker(8,next.id)];
   await replay(nextMessages,[root,child]);let v=await observe('new continuation before metadata');assert.equal(v.finished,'false');assert.equal(v.status,'Recorded activity');assert.equal(v.timers,0);
-  await replay(nextMessages,[root,child,next]);v=await observe('new continuation active');assert.equal(v.finished,'false');assert.equal(v.timers,1);assert.equal(v.working,1);
+  await replay(nextMessages,[root,child,next]);v=await observe('new continuation active');assert.equal(v.finished,'false');assert.equal(v.timers,1);assert.equal(v.working,0,'Live tasks do not shimmer');
   const details=group(root.id).locator(':scope>details');if(!(await details.evaluate(n=>n.open)))await group(root.id).locator('.summary-progress-heading').click();
   next.status='completed';const completed=[...nextMessages,{...marker(9,next.id),kind:'assistant',text:'Continuation verified.',progress:{...progress(next.id),phase:'final_answer'}}];await replay(completed,[root,child,next]);await page.waitForFunction(()=>!document.querySelector('[data-progress-group="parent-task"]>details').open);v=await observe('new continuation completion');assert.equal(v.status,'Finished');assert.equal(v.finished,'true');assert.equal(v.timers,0);
   await group(root.id).locator('.summary-progress-heading').click();await page.waitForTimeout(300);assert(await details.evaluate(n=>n.open));
@@ -40,7 +40,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   // The same run can start another phase after a final answer: phase scope matters.
   const multi={...root,id:'multi-phase',status:'running'};const phaseA='phase-A',phaseB='phase-B';const first=[marker(20,multi.id,phaseA),{...marker(21,multi.id,phaseA),kind:'assistant',text:'First phase result.',progress:{...progress(multi.id,phaseA),phase:'final_answer'}}];
   await replay(first,[multi]);assert.equal((await observe('same-run first phase ended',phaseA)).finished,'true');
-  await replay([...first,marker(22,multi.id,phaseB)],[multi]);v=await observe('same-run new phase active',phaseB);assert.equal(v.finished,'false');assert.equal(v.timers,1);assert.equal(v.working,1);
+  await replay([...first,marker(22,multi.id,phaseB)],[multi]);v=await observe('same-run new phase active',phaseB);assert.equal(v.finished,'false');assert.equal(v.timers,1);assert.equal(v.working,0,'Live tasks do not shimmer');
   assert.deepEqual(errors,[]);if(out){fs.writeFileSync(path.join(out,'terminal-reconnect.json'),JSON.stringify({engine,observations,errors},null,2));await page.screenshot({path:path.join(out,'phase-scope.png')});}
   console.log(JSON.stringify({engine,passed:true,failedChildSticky:true,newContinuationActive:true,phaseScoped:true,readingChoicesPreserved:true,errors}));
  }finally{await browser.close();server.closeAllConnections();server.close();}
