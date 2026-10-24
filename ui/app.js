@@ -836,7 +836,8 @@ function updateWorkLabel(label) {
   label.replaceChildren(text,timer);continueLoops(label);
   label.title=stale?'The server has not confirmed new activity. The timer is paused at the last received status.':a.run_created_at?'Task elapsed: '+elapsedTime(now-a.run_created_at):'';
 }
-const chatMotionReduced=()=>document.hidden||!document.hasFocus()||document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches;
+function clientFocused(){return document.hasFocus()||(window.__KINDRED_MOBILE_PLATFORM==='ios'&&window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true);}
+const chatMotionReduced=()=>document.hidden||!clientFocused()||document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches;
 const WORK_DEPARTURE_MS=1970, REPLY_ARRIVAL_MS=240;
 function prepareChatPresentation(entry,runs,messages,mode) {
   entry.finishing??=new Map();entry.replyArrivals??=new Map();
@@ -4283,13 +4284,13 @@ composerClearance.observe($('composer-area'));
 document.addEventListener('visibilitychange',()=>{if(document.hidden)settleComposerClearance();});
 function isDraftingFor(id) {
   const selected=state.chat ? state.chat.members.includes(id) : state.bot?.id===id;
-  return selected && document.activeElement===$("prompt") && Date.now()-(state.lastTyped||0)<6500;
+  return selected && (document.activeElement===$("prompt")||window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true) && Date.now()-(state.lastTyped||0)<6500;
 }
 let typingReactionChat=null;
 function wakeCuriousBot() {
   const now=Date.now(),chat=composerChatId();
   const alreadyTyping=typingReactionChat===chat&&now-(state.lastTyped||0)<6500;
-  state.lastTyped=now;typingReactionChat=document.activeElement===$("prompt")?chat:null;
+  state.lastTyped=now;typingReactionChat=(document.activeElement===$("prompt")||window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true)?chat:null;
   // The first input changes expression. Subsequent keys only extend the typing
   // deadline; the normal activity tick maintains timers and animation phase.
   if(!alreadyTyping)updateReactions();
@@ -5563,7 +5564,7 @@ function addUnreadDot(control,id,bot){
 function scheduleReadReceipt(){clearTimeout(readReceiptTimer);readReceiptTimer=setTimeout(markVisibleConversationRead,300);}
 async function markVisibleConversationRead(){
   const id=currentConversationId(),attention=state.attention.chats[id],entry=chatHistory.get(id),content=$('content');
-  if(chatOpening||!attention?.unread||readRequests.has(id)||document.hidden||!document.hasFocus()||document.querySelector('dialog[open]')||!chatScroll.follow||!entry?.loaded||entry.openingAttention||entry.hasAfter||state.renderedChatId!==id)return;
+  if(chatOpening||!attention?.unread||readRequests.has(id)||document.hidden||!clientFocused()||document.querySelector('dialog[open]')||!chatScroll.follow||!entry?.loaded||entry.openingAttention||entry.hasAfter||state.renderedChatId!==id)return;
   if(!$('computer-panel').hidden&&$('computer-panel').classList.contains('expanded'))return;
   if(!entry.messages.some(m=>m.seq===attention.latest_message_seq))return;
   const bounds=content.getBoundingClientRect();if(!bounds.width||!bounds.height||content.scrollHeight-content.scrollTop-content.clientHeight>80)return;
@@ -7693,7 +7694,7 @@ addEventListener('pageshow',e=>{invalidateNavigationRecovery();pageHidden=false;
 // Cancellation for a new interaction discards the old destination; cancellation
 // by the browser, reduced motion or backgrounding settles the current destination.
 const motionPreference=matchMedia('(prefers-reduced-motion: reduce)'),activeMotion=new Set();
-function motionAllowed() { return !document.hidden && document.hasFocus() && !state.general.reduced_motion && document.documentElement.dataset.motion!=='off' && !motionPreference.matches; }
+function motionAllowed() { return !document.hidden && clientFocused() && !state.general.reduced_motion && document.documentElement.dataset.motion!=='off' && !motionPreference.matches; }
 function trackMotion(animation,duration,settled=()=>{}) {
   let timer,done=false;
   const settle=complete=>{

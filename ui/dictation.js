@@ -292,7 +292,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
 
   function fail(error){notice(error.message||'Dictation could not complete.',true);render();}
   mic.addEventListener('pointerdown',event=>{
-    if(usesIOS()&&phase==='idle'){const selection=getSelection();iosCaret={focused:document.activeElement===editor,range:selection?.rangeCount?selection.getRangeAt(0).cloneRange():null};}
+    if(usesIOS()&&phase==='idle'){const selection=getSelection();iosCaret={focused:document.activeElement===editor||(window.__KINDRED_MOBILE_PLATFORM==='ios'&&window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true),range:selection?.rangeCount?selection.getRangeAt(0).cloneRange():null};}
     if(usesNative()||usesIOS())event.preventDefault();
   });
   mic.onclick=()=>void (phase==='recording'?stop():start()).catch(fail);cancelButton.onclick=()=>void cancel();
