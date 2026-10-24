@@ -29,7 +29,7 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
   assert.equal(await call('edit',{revision:0,text:'Stale edit'}),false);
   assert.equal(await page.locator('#prompt').evaluate(n=>n.value),'Native 🦋 draft');
   assert(await call('edit',{revision:2,text:'@',selection:[1,0]}));
-  await page.waitForFunction(()=>__kindredNativeComposer.snapshot(false)?.items.some(i=>i.kind==='suggestion'));
+  await page.waitForFunction(()=>{const c=nativeMessages.filter(m=>m.composer).at(-1)?.composer;return c?.popup?.height>0&&c.items.some(i=>i.kind==='suggestion');});
   assert((await model()).composer.popup.height>0,'native suggestions keep their real scroll area');
   assert(await call('key',{key:'Enter',revision:2,text:'@',selection:[1,0]}));
   await page.waitForFunction(()=>document.querySelector('#prompt [data-mention]'));
