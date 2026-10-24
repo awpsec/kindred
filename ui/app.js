@@ -6136,9 +6136,11 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       }
       renderAttachments(group,[file]);area.append(group);previousSender=null;continue;
     }
-    if(trackerAnchors.has(m.seq))area.append(trackerAnchors.get(m.seq));
-    if(stacked.has(m.seq)||m.kind==='continuation')continue;
-    if (!m.text?.trim()&&m.kind!=='task_progress') continue;
+    const anchoredTracker=trackerAnchors.get(m.seq);
+    if(stacked.has(m.seq)||m.kind==='continuation'||(!m.text?.trim()&&m.kind!=='task_progress')){
+      if(anchoredTracker){appendTranscriptTimestamp(m.created);area.append(anchoredTracker);}
+      continue;
+    }
     if(m.kind==='task_progress'&&!summaries.has(m.progress?.group_id))continue;
     if(hiddenCompletionMessage(m) && !runs.find(r=>r.id===m.run_id)?.error)continue;
     if(boundary&&!unreadInserted&&!['connector_artifact','task_progress'].includes(m.kind)&&(chat.shared?!m.mine:m.sender!=='user')&&m.sender!=='system'&&m.seq>boundary.after&&m.seq<=boundary.through){
@@ -6147,6 +6149,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       if(boundary.seenAt&&Date.now()-boundary.seenAt>8000)divider.classList.add('has-faded');
       area.append(divider);unreadObserver.observe(divider);
     }
+    if(anchoredTracker){appendTranscriptTimestamp(m.created);area.append(anchoredTracker);}
     if(m.kind==='task_progress'){previousSender=null;continue;}
     if(taskQuestionSeqs.has(m.seq)){const owner=runs.find(r=>r.id===m.question.run_id)||state.allRuns.find(r=>r.id===m.question.run_id)||state.details.get(m.question.run_id)?.run;area.append(attachTaskReview(taskQuestionReceipt(m,entry,m.question.task_group_id,owner?.progress_started||owner?.created||0),m.question.task_group_id,taskTrackers));previousSender=null;continue;}
     if(m.kind==='connection_card'&&validConnectionCard(m.text)){
