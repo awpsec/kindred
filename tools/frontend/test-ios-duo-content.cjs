@@ -148,18 +148,21 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
       close(compact.x+compact.width/2,lane.x+lane.width/2,'compact composer stays centered');
       close(compact.y+compact.height,lane.y+lane.height,'bottom corner status region does not lift the full composer wrapper');
       const history=await rect('.conversation-history');
-      assert(history.y+history.height<=compact.y+1,'chat scroller and its indicator stop above the composer');
+      assert(history.y+history.height>=compact.y+compact.height-1,'the transcript continues beneath the floating composer');
+      const indicator=await rect('.ios-reading-indicator');
+      assert(indicator.y+indicator.height<=compact.y+1,'the reading indicator stops above the composer');
       const idle=await rect('#composer');
       await page.locator('#prompt').focus();await settled();const focused=await rect('#composer');
       close(focused.height,idle.height,'focusing a single-line input cannot add an empty row');
       close(focused.y+focused.height,idle.y+idle.height,'focus keeps the composer bottom anchored');
       await page.locator('#prompt').blur();
-      const fade=await page.locator('.conversation>.composer-area').evaluate(node=>getComputedStyle(node,'::before').maskImage);
-      assert(fade.includes('36%')&&fade.includes('64%')&&fade.endsWith('rgba(0, 0, 0, 0))'),'the outer frost fades at both ends');
+      const footer=await page.locator('.conversation>.composer-area').evaluate(node=>getComputedStyle(node,'::before').content);
+      assert.equal(footer,'none','only the input capsule has a material; there is no full-width footer wash');
+      assert(await page.locator('#composer').evaluate(node=>getComputedStyle(node).backdropFilter.includes('blur')),'the capsule samples the live scrolling backdrop');
       await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{isDuoInner:true,isSlab:false,isPortrait:false,keyboardVisible:true});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
       await settled();close((await rect('.conversation>.composer-area')).width,(await rect('.conversation')).width,'an opened keyboard-shortened viewport retains the full composer lane');
       assert.deepEqual(errors,[]);await page.screenshot({path:path.join(out,`v${version}-${side}.png`)});
-      reports.push({serverVersion:version,railSide:side,safeRailTotal:totalRail,railPreference:76,railPersistsThroughDetailsGearBack:true,detailsOverlay:true,quarterWidthMaximum:true,historyClearRailLatestAtTrailingEdge:true,fullComposerLane:true,connectedCanvasClearRail:true,computerSharesBotCenter:true,controlledGutterPointer:true,cancelledTouchGuard:true,closedUpperFiveRows:true,searchUpperFourRows:true,finiteWAAPIReorderReclassifies:true,scrollAndReorderReclassify:true,searchSafeSide:true,reducedMotion:true,nativeDockReduceMotion:true,nativeViewportContour:true,closedLandscapeCompactComposer:true,softBothBlurEdges:true,innerKeyboardFullComposer:true});await page.close();
+      reports.push({serverVersion:version,railSide:side,safeRailTotal:totalRail,railPreference:76,railPersistsThroughDetailsGearBack:true,detailsOverlay:true,quarterWidthMaximum:true,historyClearRailLatestAtTrailingEdge:true,fullComposerLane:true,connectedCanvasClearRail:true,computerSharesBotCenter:true,controlledGutterPointer:true,cancelledTouchGuard:true,closedUpperFiveRows:true,searchUpperFourRows:true,finiteWAAPIReorderReclassifies:true,scrollAndReorderReclassify:true,searchSafeSide:true,reducedMotion:true,nativeDockReduceMotion:true,nativeViewportContour:true,closedLandscapeCompactComposer:true,liveComposerBackdrop:true,indicatorClearOfComposer:true,innerKeyboardFullComposer:true});await page.close();
     }
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(reports,null,2));console.log(JSON.stringify({passed:true,engine:'webkit',reports}));
   }finally{await browser.close();server.closeAllConnections();server.close();}
