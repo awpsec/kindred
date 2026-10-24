@@ -158,6 +158,41 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         window = nil
     }
 
+    func testComposerBackdropFollowsScrollingContent() async throws {
+        for theme in ["dark","light"] {
+            try await setFixtureAppearance(theme)
+            let contained=try await boolean("(()=>{const c=document.querySelector('#composer').getBoundingClientRect(),a=document.querySelector('#content').getBoundingClientRect();return a.bottom>=c.bottom && getComputedStyle(document.querySelector('#composer')).backdropFilter.includes('blur') && getComputedStyle(document.querySelector('#composer-area'),'::before').content==='none' && !document.documentElement.hasAttribute('data-ios-native-composer')})()")
+            XCTAssertTrue(contained,"the reading viewport continues beneath the composer without a footer layer")
+            _ = try await js("""
+            window.__backdropProbe?.remove();
+            const area=document.querySelector('#content'),probe=document.createElement('div');
+            probe.style.cssText='height:2000px;min-height:2000px;width:100%;background:linear-gradient(#ff2040 0 50%,#00dd70 50% 100%)';
+            area.append(probe);window.__backdropProbe=probe;
+            window.__moveBackdrop=center=>{const c=document.querySelector('#composer').getBoundingClientRect();area.scrollTop+=probe.getBoundingClientRect().top-(c.top+8)+center;};true
+            """)
+            try await Task.sleep(nanoseconds:200_000_000)
+            var pixels:[[Double]]=[]
+            for (label,center) in [("red",500),("green",1500)] {
+                _ = try await js("window.__moveBackdrop(\(center));true")
+                try await waitFor("scrolling backdrop reaches sample") {
+                    try await self.boolean("Math.abs(document.querySelector('#composer').getBoundingClientRect().top+8-window.__backdropProbe.getBoundingClientRect().top-\(center))<1")
+                }
+                try await Task.sleep(nanoseconds:150_000_000)
+                let samplePoint=try await js("(()=>{const r=document.querySelector('#composer').getBoundingClientRect();return [r.x+r.width/2,r.y+8]})()") as? [Double]
+                let point=try XCTUnwrap(samplePoint)
+                let image=UIGraphicsImageRenderer(bounds:window.bounds).image { _ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true) }
+                pixels.append(try Self.imagePixel(image,point:session.webView.convert(CGPoint(x:point[0],y:point[1]),to:window)))
+                let attachment=XCTAttachment(image:image);attachment.name="live-composer-\(theme)-\(label)";attachment.lifetime = .keepAlways;add(attachment)
+            }
+            XCTAssertGreaterThan(pixels[0][0]-pixels[0][1],20,"red conversation content shows through the input")
+            XCTAssertGreaterThan(pixels[1][1]-pixels[1][0],20,"scrolling green content changes the material")
+            XCTAssertGreaterThan(Self.colourDistance(pixels[0],pixels[1]),50,"the composer must not sample a static canvas")
+            let indicator=try await boolean("(()=>{const i=document.querySelector('.ios-reading-indicator').getBoundingClientRect(),c=document.querySelector('#composer-area').getBoundingClientRect();return i.height>=24 && i.bottom<=c.top})()")
+            XCTAssertTrue(indicator,"the reading indicator remains above the floating input")
+            _ = try await js("window.__backdropProbe.remove();true")
+        }
+    }
+
     func testKeyboardOpenClosePreservesDraftAndToolbarAboveKeyboard() async throws {
         try await checkComposer(label: "idle-centered")
         let draft = "Native draft\nSecond line\nThird line"
