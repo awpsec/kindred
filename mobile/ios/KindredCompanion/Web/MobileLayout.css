@@ -435,23 +435,17 @@ html[data-kindred-ios][data-ios-outer-landscape=true] .conversation>.composer-ar
 
 /* Focusing a single line opens UIKit's keyboard, not a second empty input row.
    Drafts, attachments, replies and questions still grow to their natural size. */
-html[data-kindred-ios] #composer:focus-within:not(:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating)) {
+html[data-kindred-ios] #composer:is(:focus-within,[data-ios-native-focused]):not(:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating)) {
   grid-template-rows:auto auto auto minmax(44px,auto); min-height:56px; padding:5px 10px; align-content:start; border-radius:28px;
 }
-html[data-kindred-ios] #composer:focus-within:not(:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating)) #prompt {
+html[data-kindred-ios] #composer:is(:focus-within,[data-ios-native-focused]):not(:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating)) #prompt {
   grid-column:2/4; grid-row:4; align-self:center; min-height:24px; padding:0 4px; margin:0;
 }
 
 /* Keep the transcript behind the floating input. Reserve room at its scroll
    end, rather than cutting a canvas-colored footer out of the viewport. */
 html[data-kindred-ios] .conversation>.conversation-history { margin-bottom:0; }
-html[data-kindred-ios] .conversation .messages { padding-bottom:calc(var(--ios-chat-bottom,62px) + 12px); scroll-padding-bottom:calc(var(--ios-chat-bottom,62px) + 12px); scrollbar-width:none; }
-html[data-kindred-ios] .conversation .messages::-webkit-scrollbar { display:none; }
-html[data-kindred-ios] .ios-reading-indicator { position:absolute; width:3px; z-index:3; pointer-events:none; opacity:0; transition:opacity 160ms; }
-html[data-kindred-ios] .ios-reading-indicator[data-active=true] { opacity:1; }
-html[data-kindred-ios] .ios-reading-indicator>span { position:absolute; left:0; right:0; border-radius:3px; background:color-mix(in srgb,var(--fg) 40%,transparent); }
-@media(prefers-reduced-motion:reduce) { html[data-kindred-ios] .ios-reading-indicator { transition:none; } }
-html[data-kindred-ios][data-motion=off] .ios-reading-indicator { transition:none; }
+html[data-kindred-ios] .conversation .messages { padding-bottom:calc(var(--ios-chat-bottom,62px) + 12px); scroll-padding-bottom:calc(var(--ios-chat-bottom,62px) + 12px); }
 
 /* Retained native panes fade at their final geometry. A disappearing side
    pane is removed from flex at the start, not in the fade's final frame. */
@@ -619,3 +613,10 @@ html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .color-option { j
 html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .outline-button { width:100%; min-height:44px; }
 html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .outline-button[aria-pressed=true] { background:var(--hover); border-color:var(--soft); }
 html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] button:focus-visible { outline:2px solid var(--fg); outline-offset:-2px; }
+
+/* UIKit foreground sits in a genuine UIGlassEffect.contentView above the
+   conversation. Keep the DOM geometry/model, with no web material or ink. */
+html[data-kindred-ios] #composer[data-ios-native-composer] {
+  opacity:0!important; pointer-events:none!important; background:transparent!important;
+  -webkit-backdrop-filter:none!important; backdrop-filter:none!important; box-shadow:none!important;
+}

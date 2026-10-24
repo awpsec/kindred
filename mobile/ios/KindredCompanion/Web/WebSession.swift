@@ -134,6 +134,13 @@ final class WebSession: NSObject {
             self.webView.callAsyncJavaScript("window.__kindredGlassControls?.perform(id, document)",
                 arguments: ["id": id, "document": document], in: nil, in: .page) { _ in }
         }
+        glassControls.composer.command = { [weak self] command in
+            guard let self, self.origin.matches(self.webView.url),
+                  !self.nativeNavigationBlocked || (command["action"] as? String == "focus" && command["focused"] as? Bool == false),
+                  command["document"] as? String == self.glassControls.document else { return }
+            self.webView.callAsyncJavaScript("return window.__kindredNativeComposer?.perform(command)",
+                arguments:["command":command],in:nil,in:.page) { _ in }
+        }
         // Match a saved explicit appearance before the first web frame arrives.
         if let saved = CachedWebAppearance.load(accountID: account.id), !saved.followsSystem {
             presentation.canvas = saved.color
@@ -206,6 +213,7 @@ final class WebSession: NSObject {
     func setNativeNavigationBlocked(_ blocked: Bool) {
         if blocked && !nativeNavigationBlocked { cancelSidebarResize() }
         nativeNavigationBlocked = blocked
+        if blocked { glassControls.composer.blur() }
         if blocked { edgeBack?.cancel(); invalidateDictationContext(reason: "context-changed", preserveVerifiedChat: true) }
     }
 
@@ -261,6 +269,7 @@ final class WebSession: NSObject {
            let js = try? String(contentsOf: jsURL, encoding: .utf8) {
             let messageGestures = Bundle.main.url(forResource: "mobile-messages", withExtension: "js")
                 .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+            let composer = Bundle.main.url(forResource: "NativeComposer", withExtension: "js").flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
             let layout = """
             (function () {
               if (window.top !== window.self || window.location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
@@ -268,6 +277,7 @@ final class WebSession: NSObject {
               style.textContent = \(WebBootstrap.javaScriptString(css));
               document.head.append(style);
               \(messageGestures)
+              \(composer)
               \(js)
             })();
             """
@@ -541,6 +551,14 @@ final class WebSession: NSObject {
         case WebSession.navigationHandler:
             edgeBack?.setNavigation(WebNavigation(body: message.body))
         case WebSession.accountsHandler:
+            if let body=message.body as? [String:Any],body["action"] as? String == "native-composer-focus",
+               let document=body["document"] as? String,document==glassControls.document,
+               let context=body["context"] as? String,context==glassControls.composer.model?.context,
+               !nativeNavigationBlocked,origin.matches(webView.url) {
+                if body["focused"] as? Bool == true { glassControls.composer.focus(document:document,context:context) }
+                else { glassControls.composer.blur() }
+                return
+            }
             if let body = message.body as? [String: Any], body["action"] as? String == "glass-controls",
                let sequence = body["sequence"] as? Int, sequence > 0,
                let ids = glassControls.update(body, in: webView), let document = glassControls.document {
