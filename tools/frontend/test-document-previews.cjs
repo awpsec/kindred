@@ -26,7 +26,7 @@ if(require.main===module)(async()=>{const files=await createFiles();
  const card=name=>page.getByRole('region',{name:'File: '+name,exact:true});
  const open=async name=>{await card(name).getByRole('button',{name:'More file actions'}).click();await card(name).getByRole('button',{name:'Preview',exact:true}).click();await page.getByRole('dialog').waitFor();};
  const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test-results/document-previews');fs.mkdirSync(out,{recursive:true});
- await card('review.docx').getByRole('button',{name:'Download',exact:true}).click();await card('review.docx').getByRole('button',{name:'Show in folder'}).click();assert.deepEqual(await page.evaluate(()=>[window.__saved,window.__revealed]),[{id:'review.docx'},{receipt:'receipt'}]);
+ await card('review.docx').getByRole('button',{name:'Download',exact:true}).click();await card('review.docx').getByRole('button',{name:/^Show in (?:folder|Finder)$/}).click();assert.deepEqual(await page.evaluate(()=>[window.__saved,window.__revealed]),[{id:'review.docx'},{receipt:'receipt'}]);
  assert((await card('review.docx').boundingBox()).height<80);await page.screenshot({path:path.join(out,'compact-files.png'),clip:{x:268,y:130,width:540,height:280}});
  await open('review.docx');await page.locator('.document-word').getByText('Quarterly review').waitFor();assert.equal(await page.locator('.document-word').evaluate(n=>n.tagName),'ARTICLE');assert.equal(await page.locator('.document-word iframe').count(),0);await page.screenshot({path:path.join(out,'word-preview.png')});
  for(const theme of ['dark','light']){
@@ -57,7 +57,7 @@ extra=true;await page.waitForTimeout(5500);await page.locator('.document-word').
  await open('notes.txt');await page.getByRole('button',{name:'Close',exact:true}).click();await page.waitForTimeout(600);assert.equal(await page.getByRole('dialog').count(),0);
  // Browser downloads retain the original bytes; native reveal stays absent there.
  await page.evaluate(async()=>{const {fileCard}=await import('/artifacts.js');document.querySelector('#content').append(fileCard({id:'browser',name:'browser.txt',size:14},{getBlob:async()=>new Blob(['original bytes']),notice:()=>{}}));});
- const downloaded=page.waitForEvent('download');await card('browser.txt').getByRole('button',{name:'Download',exact:true}).click();const receipt=await downloaded;assert.equal(fs.readFileSync(await receipt.path(),'utf8'),'original bytes');assert.equal(await card('browser.txt').getByRole('button',{name:'Show in folder'}).count(),0);
+ const downloaded=page.waitForEvent('download');await card('browser.txt').getByRole('button',{name:'Download',exact:true}).click();const receipt=await downloaded;assert.equal(fs.readFileSync(await receipt.path(),'utf8'),'original bytes');assert.equal(await card('browser.txt').getByRole('button',{name:/^Show in (?:folder|Finder)$/}).count(),0);
  await page.setViewportSize({width:600,height:760});await page.screenshot({path:path.join(out,'compact-files-narrow.png')});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await card('review.docx').getByRole('button',{name:'More file actions'}).click();await page.keyboard.press('Escape');await page.waitForFunction(()=>document.querySelector('.deliverable-more').getAttribute('aria-expanded')==='false');
  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine:process.env.WEBKIT?'webkit':'chromium',office:true,pdf:true,compactCard:true,nativeReveal:true,pollingStable:true}));
