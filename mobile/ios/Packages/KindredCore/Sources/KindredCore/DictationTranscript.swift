@@ -34,12 +34,21 @@ public struct DictationTranscript {
     public mutating func update(_ hypothesis: String, segments: [Segment] = [],
                                 speechStart: TimeInterval? = nil, speechDuration: TimeInterval? = nil) -> String {
         guard !hypothesis.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
-        let length = (hypothesis as NSString).length
+        let utf16 = Array(hypothesis.utf16)
+        let length = utf16.count
+        // Foundation's NSRange bridge differs between Darwin and Linux for
+        // offsets inside a surrogate pair. Validate scalar boundaries directly.
+        func isScalarBoundary(_ offset: Int) -> Bool {
+            guard offset > 0 && offset < length else { return true }
+            return !(0xD800...0xDBFF).contains(utf16[offset - 1]) ||
+                   !(0xDC00...0xDFFF).contains(utf16[offset])
+        }
         var timed = segments
         let valid = !timed.isEmpty && timed.allSatisfy {
             $0.start.isFinite && $0.start >= 0 && $0.duration.isFinite && $0.duration > 0 &&
             $0.end.isFinite && $0.range.location >= 0 && $0.range.length > 0 &&
             $0.range.location <= length && $0.range.length <= length - $0.range.location &&
+            isScalarBoundary($0.range.location) && isScalarBoundary(NSMaxRange($0.range)) &&
             Range($0.range, in: hypothesis) != nil
         } && zip(timed, timed.dropFirst()).allSatisfy {
             $0.start <= $1.start && NSMaxRange($0.range) <= $1.range.location
