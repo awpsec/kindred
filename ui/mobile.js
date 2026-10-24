@@ -160,8 +160,11 @@ export function installMobileNavigation({route,back,resized,computerGeometryVali
   function avoidCameraControls(pose){
     for(const node of document.querySelectorAll('.conversation-header,.composer-area,.computer-panel .panel-header')){
       const rect=node.getBoundingClientRect();let left=rect.left,right=rect.right;
+      // Native safe-area padding already moves controls below a status band.
+      // Project only obstructions crossing the usable row, not its padding.
+      const css=getComputedStyle(node),top=rect.top+(parseFloat(css.paddingTop)||0),bottom=rect.bottom-(parseFloat(css.paddingBottom)||0);
       for(const r of pose.regions.filter(r=>r.kind==='occlusion'||(r.kind==='division'&&r.height>r.width))){
-        if(r.y>=rect.bottom||r.y+r.height<=rect.top||r.x>=right||r.x+r.width<=left)continue;
+        if(r.y>=bottom||r.y+r.height<=top||r.x>=right||r.x+r.width<=left)continue;
         if(r.x-left>right-r.x-r.width)right=Math.max(left,r.x);else left=Math.min(right,r.x+r.width);
       }
       node.style.setProperty('--ios-camera-left',(left-rect.left)+'px');
