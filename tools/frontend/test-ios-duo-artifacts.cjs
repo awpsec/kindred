@@ -61,7 +61,13 @@ function pdf(count){
  const initialZoom=Number((await zoom.textContent()).replace('%',''));await zoomAction('Zoom in');await p.waitForFunction(before=>Number(document.querySelector('.ios-document-zoom-trigger').textContent.replace('%',''))>before,initialZoom);
  await zoomAction('Fit width');await p.waitForFunction(()=>document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent==='Fit width');
  await zoomAction('Fit page');await p.waitForFunction(()=>document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent==='Fit page');
- await p.getByRole('button',{name:'Refresh document',exact:true}).click();await p.locator('.document-pdf-page[data-page="1"] canvas').waitFor();await p.waitForFunction(()=>/%$/.test(document.querySelector('.ios-document-zoom-trigger')?.textContent||''));assert.equal(await zoom.count(),1,'refresh replaces the zoom controller without leaving a stale header control');assert.equal(await p.locator('.ios-document-zoom-menu').count(),1);
+ const previousZoom=await p.locator('.ios-document-zoom-menu').elementHandle();
+ await p.getByRole('button',{name:'Refresh document',exact:true}).click();
+ // The previous canvas remains visible while Refresh is loading. Wait for the
+ // replacement controller before starting fold/retention checks.
+ await p.waitForFunction(n=>!n.isConnected,previousZoom);
+ await p.waitForFunction(()=>document.querySelector('[aria-label="Refresh document"]')?.disabled===false);
+ await p.locator('.document-pdf-page[data-page="1"] canvas').waitFor();await p.waitForFunction(()=>/%$/.test(document.querySelector('.ios-document-zoom-trigger')?.textContent||''));assert.equal(await zoom.count(),1,'refresh replaces the zoom controller without leaving a stale header control');assert.equal(await p.locator('.ios-document-zoom-menu').count(),1);
  await p.screenshot({path:path.join(out,'inner-document.png')});fs.writeFileSync(path.join(out,'controls.json'),JSON.stringify(await p.locator('.artifact-library-filters select').evaluateAll(ns=>ns.map(n=>({html:n.outerHTML,value:n.value,color:getComputedStyle(n).color,display:getComputedStyle(n).display,rect:n.getBoundingClientRect().toJSON()}))),null,2));
  if(baseline){fs.writeFileSync(path.join(out,'geometry.json'),JSON.stringify(await geometry(),null,2));return;}
  let g=await geometry();assert.equal(g.layout,'split');assert(g.library.visible&&g.document.visible&&!g.library.inert&&!g.document.inert);assert(g.library.x+g.library.width<=g.document.x+1);assert(g.document.x+g.document.width<=783.1,'preview clears measured right rail');
