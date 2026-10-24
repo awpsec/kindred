@@ -6120,7 +6120,10 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     const key=taskOwners.get(JSON.stringify([run.id,run.bot_id||run.participant])),tracker=key&&taskTrackers.get(key);
     return tracker?._progressRunId===run.id&&tracker.dataset.progressFinished==='false'?key:null;
   };
-  const projectedTrackers=new Map([...summaries].filter(([,items])=>items[0].projectedProgress).map(([key,items])=>[items.find(m=>!m.projectedProgress).seq,taskTrackers.get(key)]));
+  // Emit at the first owned transcript row, even when persisted commentary
+  // precedes its marker. Keep the marker identity and every message in order.
+  const trackerAnchors=new Map(),anchoredTasks=new Set();
+  for(const m of transcript){const key=m.progress?.group_id;if(!anchoredTasks.has(key)&&summaries.get(key)?.includes(m)){trackerAnchors.set(m.seq,taskTrackers.get(key));anchoredTasks.add(key);}}
   for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
   for (const m of transcript) {
     if(m.kind==='shared_attachment'){
@@ -6133,7 +6136,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       }
       renderAttachments(group,[file]);area.append(group);previousSender=null;continue;
     }
-    if(projectedTrackers.has(m.seq))area.append(projectedTrackers.get(m.seq));
+    if(trackerAnchors.has(m.seq))area.append(trackerAnchors.get(m.seq));
     if(stacked.has(m.seq)||m.kind==='continuation')continue;
     if (!m.text?.trim()&&m.kind!=='task_progress') continue;
     if(m.kind==='task_progress'&&!summaries.has(m.progress?.group_id))continue;
@@ -6144,7 +6147,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       if(boundary.seenAt&&Date.now()-boundary.seenAt>8000)divider.classList.add('has-faded');
       area.append(divider);unreadObserver.observe(divider);
     }
-    if(m.kind==='task_progress'){const items=summaries.get(m.progress.group_id);if(items&&items.find(i=>i.kind==='task_progress').seq===m.seq){const tracker=taskTrackers.get(m.progress.group_id);if(tracker)area.append(tracker);}previousSender=null;continue;}
+    if(m.kind==='task_progress'){previousSender=null;continue;}
     if(taskQuestionSeqs.has(m.seq)){const owner=runs.find(r=>r.id===m.question.run_id)||state.allRuns.find(r=>r.id===m.question.run_id)||state.details.get(m.question.run_id)?.run;area.append(attachTaskReview(taskQuestionReceipt(m,entry,m.question.task_group_id,owner?.progress_started||owner?.created||0),m.question.task_group_id,taskTrackers));previousSender=null;continue;}
     if(m.kind==='connection_card'&&validConnectionCard(m.text)){
       const group=node('article','message-group connection-message');group.dataset.message=String(m.seq);group.append(chatConnectionCard(m.text));area.append(group);previousSender=null;continue;
