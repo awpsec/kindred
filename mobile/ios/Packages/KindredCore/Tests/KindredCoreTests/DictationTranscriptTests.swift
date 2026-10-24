@@ -63,10 +63,21 @@ final class DictationTranscriptTests: XCTestCase {
         XCTAssertEqual(value.update("First?", segments: segment("First?", start: 0.5)), "First. Second")
     }
     func testInvalidUTF16SplitDoesNotBecomeTimedHistory() {
+        // Neither endpoint may cut a surrogate pair, including after ASCII.
+        for (text, range) in [("😀", NSRange(location: 0, length: 1)),
+                              ("😀", NSRange(location: 1, length: 1)),
+                              ("A😀B", NSRange(location: 0, length: 2)),
+                              ("A😀B", NSRange(location: 2, length: 2))] {
+            var value = DictationTranscript()
+            let split = [DictationTranscript.Segment(range: range, start: 0, duration: 1)]
+            XCTAssertEqual(value.update(text, segments: split), text)
+            XCTAssertEqual(value.update("Correction"), "Correction")
+        }
+    }
+    func testWholeEmojiRangeBecomesTimedHistory() {
         var value = DictationTranscript()
-        let splitEmoji = [DictationTranscript.Segment(range: NSRange(location: 0, length: 1), start: 0, duration: 1)]
-        value.update("😀", segments: splitEmoji)
-        XCTAssertEqual(value.update("Correction"), "Correction")
+        value.update("😀", segments: segment("😀", start: 0))
+        XCTAssertEqual(value.update("Next", segments: segment("Next", start: 4)), "😀 Next")
     }
     func testZeroAndInvalidTimingsRemainProvisional() {
         for bad in [0.0, -1.0, Double.nan, Double.infinity] {
