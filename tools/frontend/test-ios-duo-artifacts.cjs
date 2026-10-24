@@ -69,6 +69,8 @@ function pdf(count){
   return {count:effects.length,before:before.width,middle:middle.width,after:after.width};
  });assert(transition.count>=2&&transition.middle>transition.before&&transition.middle<transition.after,'artifact sidebar and document interpolate their widths');
  await p.evaluate(()=>document.documentElement.dataset.motion='off');await action('chats');await settle();
+ await relay({width:669,height:951,side:'none',edge:0,top:64});g=await geometry();assert.equal(g.layout,'split','open portrait keeps a resizable list when the preview fits');assert(await resize.isVisible());assert(g.document.width>=320);
+ await relay({});assert.equal((await geometry()).library.width,beforeCancel,'portrait clamping does not overwrite the preferred width');
  const documentNode=await p.locator('.artifact-studio-preview').evaluate(n=>{n.dataset.retentionProbe='kept';return true;});assert(documentNode);
  const originalLoads=snapshot().loads;await p.getByRole('button',{name:'Show 9 more',exact:true}).click();await p.locator('.artifact-studio-library-list').evaluate(e=>e.scrollTop=100);const originalListScroll=await p.locator('.artifact-studio-library-list').evaluate(e=>e.scrollTop);assert(originalListScroll>0);
  for(const side of ['left','right']){
