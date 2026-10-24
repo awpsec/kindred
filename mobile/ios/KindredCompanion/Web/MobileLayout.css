@@ -223,11 +223,20 @@ html[data-kindred-ios] :is(.artifact-studio-library-item,.artifact-folder-headin
 html[data-kindred-ios] .artifact-studio-library-status { padding:12px 24px 0; font-size:12px; }
 html[data-kindred-ios] .artifact-studio-library-empty { padding:24px 16px; font-size:16px; }
 html[data-kindred-ios] .artifact-workbench { padding-bottom:var(--ios-safe-bottom); }
-html[data-kindred-ios] .artifact-workbench-header { flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; min-height:calc(72px + var(--ios-safe-top)); padding:calc(12px + var(--ios-safe-top)) 16px 12px; border:0; }
+html[data-kindred-ios] .artifact-workbench-header { flex-direction:row; flex-wrap:nowrap; align-items:center; gap:8px; min-height:calc(72px + var(--ios-safe-top)); padding:calc(12px + var(--ios-safe-top)) 16px 12px; border:0; }
 html[data-kindred-ios] .artifact-workbench-title { flex:1; min-width:80px; }
 html[data-kindred-ios] .artifact-workbench-actions { margin-left:auto; }
 html[data-kindred-ios] .artifact-workbench-actions button { width:44px; height:44px; min-width:44px; min-height:44px; padding:11px; border-radius:50%; color:var(--fg); }
 html[data-kindred-ios] .artifact-workbench-actions button[aria-label=Download] { display:none; }
+html[data-kindred-ios] .ios-document-zoom { display:flex; align-items:center; flex:none; }
+html[data-kindred-ios] .artifact-studio .ios-document-zoom-trigger { width:64px; min-width:64px; height:44px; padding:0 8px; font-size:calc(13px * var(--text-scale,1)); font-variant-numeric:tabular-nums; }
+html[data-kindred-ios] .ios-document-zoom-menu { position:fixed; inset:auto; margin:0; width:220px; max-width:calc(100% - 16px); padding:6px; border:1px solid var(--line); border-radius:18px; background:var(--surface); color:var(--fg); }
+html[data-kindred-ios] .ios-document-zoom-menu:not(:popover-open) { display:none!important; }
+html[data-kindred-ios] .ios-document-zoom-menu:popover-open { display:flex; flex-direction:column; align-items:stretch; }
+html[data-kindred-ios] .ios-document-zoom-menu .document-zoom-value { display:none; }
+html[data-kindred-ios] .ios-document-zoom-menu button { min-height:44px; text-align:left; }
+html[data-kindred-ios] .document-body[data-ios-header-zoom] { overflow:hidden; }
+html[data-kindred-ios] .document-body[data-ios-header-zoom]>.document-word { flex:1; min-height:0; flex-shrink:1; }
 html[data-kindred-ios] :is(.artifact-workbench-actions button[aria-label^="Edit "],.artifact-workbench-actions button[aria-label="Finish editing"],.workspace-artifact-actions>button:first-child,[data-message-action=edit]) { display:none; }
 html[data-kindred-ios] .artifact-workbench-body { padding:16px; }
 html[data-kindred-ios] .artifact-workbench-body:has(>.artifact-studio-preview) { padding:0; }
@@ -292,7 +301,7 @@ html[data-kindred-ios][data-ios-duo=true] .artifact-studio-library-title { font-
 html[data-kindred-ios][data-ios-duo=true] .artifact-studio-library-item>.artifact-kind-icon { width:24px; height:24px; flex:none; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-studio-library-item time { font-size:11px; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-workbench-header { min-height:76px; padding:16px; gap:8px; align-items:center; }
-html[data-kindred-ios] .artifact-workbench-title { flex:1 1 120px; min-width:0; }
+html[data-kindred-ios] .artifact-workbench-title { flex:1 1 0; min-width:0; }
 html[data-kindred-ios] .artifact-title-input { min-width:0; max-width:100%; font-size:calc(16px * var(--text-scale,1)); }
 html[data-kindred-ios] .artifact-workbench-actions { flex-wrap:wrap; gap:4px; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-studio:is([data-ios-artifact-layout=split],[data-ios-artifact-layout=stacked])>.artifact-studio-library { background:var(--surface); border-radius:18px; }

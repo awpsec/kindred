@@ -37,7 +37,7 @@ private final class GlassChromeButton: UIButton {
 /// Floating chrome and the composer sit above WebKit. The retained page owns
 /// their layout and actions, while UIKit owns the glass and native editor.
 struct NativeGlassControl {
-    static let identifiers: Set<String> = ["identity", "latest", "accounts", "search", "new", "library", "chats", "computer", "bot-settings", "artifact-back", "artifact-more", "artifact-document-more", "artifact-search", "artifact-new"]
+    static let identifiers: Set<String> = ["identity", "latest", "accounts", "search", "new", "library", "chats", "computer", "bot-settings", "artifact-back", "artifact-more", "artifact-document-more", "artifact-zoom", "artifact-refresh", "artifact-search", "artifact-new"]
     let id: String
     let frame: CGRect
     let title: String
@@ -171,7 +171,7 @@ final class NativeGlassControls: UIView {
                     if let button = button as? GlassChromeButton, item.id == "identity" { button.avatar.image = image }
                     else { configuration.image = image }
                 } else {
-                    configuration.image = UIImage(systemName: item.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: item.title.isEmpty ? 20 : 15, weight: .regular))
+                    configuration.image = item.symbol.isEmpty ? nil : UIImage(systemName: item.symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: item.title.isEmpty ? 20 : 15, weight: .regular))
                 }
                 var title = AttributedString(item.title)
                 title.font = .systemFont(ofSize: item.fontSize, weight: item.id == "identity" ? .semibold : .regular)
