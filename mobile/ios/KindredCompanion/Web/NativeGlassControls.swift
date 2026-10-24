@@ -8,23 +8,26 @@ private final class GlassChromeButton: UIButton {
     var identity = false
     var imageInset: CGFloat = 8
     var imageGap: CGFloat = 8
-    let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
+    var titleFrame: CGRect?
+    var avatarCenter: CGPoint?
     override init(frame: CGRect) {
         super.init(frame: frame)
-        chevron.tintColor = .secondaryLabel; chevron.isUserInteractionEnabled = false
         avatar.isUserInteractionEnabled = false; name.isUserInteractionEnabled = false
-        avatar.isAccessibilityElement = false; name.isAccessibilityElement = false; chevron.isAccessibilityElement = false
+        avatar.isAccessibilityElement = false; name.isAccessibilityElement = false
         avatar.contentMode = .scaleAspectFit; name.lineBreakMode = .byTruncatingTail
         name.textColor = .label
-        addSubview(avatar); addSubview(name); addSubview(chevron)
+        addSubview(avatar); addSubview(name)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func layoutSubviews() {
         super.layoutSubviews()
-        chevron.frame = CGRect(x: bounds.maxX-20,y: bounds.midY-7,width:8,height:14)
-        avatar.frame = CGRect(x: imageInset,y: bounds.midY-15,width:30,height:30)
+        // Follow the retained pill's actual content slots. Its compact layout
+        // does not reserve space for a permanently visible trailing chevron.
+        // Keep the artwork fixed in size while its slot moves during a morph.
+        let center = avatarCenter ?? CGPoint(x: imageInset+15, y: bounds.midY)
+        avatar.frame = CGRect(x: center.x-15,y: center.y-15,width:30,height:30)
         let leading = imageInset+30+imageGap
-        name.frame = CGRect(x: leading,y: 0,width:max(0,bounds.width-leading-26),height:bounds.height)
+        name.frame = titleFrame ?? CGRect(x: leading,y: 0,width:max(0,bounds.width-leading-imageInset),height:bounds.height)
     }
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         bounds.insetBy(dx: -max(0,44-bounds.width)/2,dy: -max(0,44-bounds.height)/2).contains(point)
@@ -48,6 +51,8 @@ struct NativeGlassControl {
     let interactive: Bool
     let imageInset: CGFloat
     let imageGap: CGFloat
+    let titleFrame: CGRect?
+    let avatarCenter: CGPoint?
 
     init?(_ body: [String: Any]) {
         guard let id = body["id"] as? String, Self.identifiers.contains(id),
@@ -73,6 +78,17 @@ struct NativeGlassControl {
             return value
         }
         imageInset = spacing("imageInset"); imageGap = spacing("imageGap")
+        if let value = body["titleRect"] {
+            guard let rect = value as? [Double], rect.count == 4, rect.allSatisfy(\.isFinite),
+                  abs(rect[0]) <= 800, abs(rect[1]) <= 120,
+                  (0...800).contains(rect[2]), (0...120).contains(rect[3]) else { return nil }
+            titleFrame = CGRect(x:rect[0],y:rect[1],width:rect[2],height:rect[3])
+        } else { titleFrame = nil }
+        if let value = body["avatarCenter"] {
+            guard let center = value as? [Double], center.count == 2, center.allSatisfy(\.isFinite),
+                  abs(center[0]) <= 800, abs(center[1]) <= 120 else { return nil }
+            avatarCenter = CGPoint(x:center[0],y:center[1])
+        } else { avatarCenter = nil }
     }
 }
 
@@ -138,7 +154,7 @@ final class NativeGlassControls: UIView {
                 var configuration = UIButton.Configuration.glass()
                 configuration.cornerStyle = .capsule
                 configuration.baseForegroundColor = .label
-                configuration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: item.id == "identity" ? 8 : 10, bottom: 4, trailing: item.id == "identity" ? 26 : 10)
+                configuration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: item.id == "identity" ? 8 : 10, bottom: 4, trailing: 10)
                 configuration.titleLineBreakMode = .byTruncatingTail
                 configuration.imagePadding = 7
                 if let shape = item.shape {
@@ -169,10 +185,9 @@ final class NativeGlassControls: UIView {
             if let button = button as? GlassChromeButton {
                 button.identity = item.id == "identity"
                 button.imageInset = item.imageInset; button.imageGap = item.imageGap
+                button.titleFrame = item.titleFrame; button.avatarCenter = item.avatarCenter
                 button.avatar.isHidden = !button.identity; button.name.isHidden = !button.identity
                 button.name.alpha = item.titleOpacity
-                button.chevron.isHidden = !button.identity || item.frame.width < 70
-                button.chevron.alpha = item.titleOpacity
                 button.setNeedsLayout()
             }
             button.layoutIfNeeded()

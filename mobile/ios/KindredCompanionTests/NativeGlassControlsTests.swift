@@ -14,6 +14,29 @@ final class NativeGlassControlsTests: XCTestCase {
         for rect in [[0.0,0,.infinity,44],[0,0,44,-1],[0,0,2000,44]] {
             var value=control();value["rect"]=rect;XCTAssertNil(NativeGlassControl(value))
         }
+        for (key,value) in [("titleRect",[0.0,0,Double.nan,20]),("titleRect",[0.0,0,-1,20]),("avatarCenter",[Double.infinity,19])] {
+            var row=control();row[key]=value;XCTAssertNil(NativeGlassControl(row))
+        }
+    }
+
+    func testCompactNametagFitsShortNameUsingMeasuredContentSlots() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Liquid Glass requires iOS 26") }
+        let web=WKWebView(frame:CGRect(x:0,y:0,width:1000,height:720)),glass=NativeGlassControls(frame:web.bounds),document=UUID().uuidString
+        // Actual compact Piper pill, measured in the shipped WebKit layout.
+        var row=control();row["rect"]=[556.5,20,97.48,38];row["titleRect"]=[46.0,9,38.48,20];row["avatarCenter"]=[26.0,19]
+        XCTAssertEqual(glass.update(["document":document,"controls":[row]],in:web),["identity"])
+        let button=try XCTUnwrap(glass.subviews.first as? UIButton),label=try XCTUnwrap(button.subviews.compactMap{$0 as? UILabel}.first)
+        XCTAssertEqual(button.frame.width,97.48,accuracy:0.01,"preserve the intended compact pill")
+        XCTAssertEqual(label.frame,CGRect(x:46,y:9,width:38.48,height:20))
+        XCTAssertLessThanOrEqual(label.sizeThatFits(CGSize(width:800,height:120)).width,label.bounds.width,"Piper must fit without shrinking its measured font or truncating")
+        XCTAssertEqual(label.font.pointSize,15)
+        let avatar=try XCTUnwrap(button.subviews.compactMap{$0 as? UIImageView}.first)
+        XCTAssertEqual(avatar.frame,CGRect(x:11,y:4,width:30,height:30))
+        row["interactive"]=false;row["rect"]=[720.0,10,38,38];row["titleRect"]=[34.0,9,0,20];row["avatarCenter"]=[19.0,19];row["titleOpacity"]=0.0
+        _=glass.update(["document":document,"controls":[row]],in:web)
+        XCTAssertTrue(glass.subviews.first === button)
+        XCTAssertEqual(avatar.frame,CGRect(x:4,y:4,width:30,height:30),"the artwork remains fixed while moving into the toolbar")
+        XCTAssertEqual(label.frame.width,0);XCTAssertEqual(label.alpha,0)
     }
 
     func testRetainsControlsThroughGeometryAndRestoresPassThroughOnReset() throws {

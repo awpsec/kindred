@@ -2004,26 +2004,46 @@
       return rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.left < innerWidth && rect.bottom > 0 && rect.top < (nativeHeight || innerHeight);
     };
     const opacity = node => {let value=1;for(let n=node;n&&n!==html;n=n.parentElement)value*=Number(getComputedStyle(n).opacity);return value;};
+    const glassRouteAllows = id => {
+      const route = duoRoute(), artifact = route === 'artifacts' || route === 'artifact';
+      if (id.startsWith('artifact-')) return artifact;
+      if (artifact || route === 'marketplace') return false;
+      if (id === 'bot-settings') return route === 'details';
+      if (['identity','latest','chats','computer'].includes(id)) return route === 'bot-chat' || route === 'chat-list';
+      return true;
+    };
     const scan = () => {
       glassFrame = 0; current.clear(); const controls = [];
       const covered = document.hidden || !!document.querySelector('dialog[open]');
       if (!covered) for (const [id,selector,symbol] of specs) {
+        if (!glassRouteAllows(id)) continue;
         const source = document.querySelector(selector), ghost = id === 'identity' && document.querySelector('.ios-identity-handoff');
         if (!source) continue;
         // Composite group artwork stays with its retained web renderer.
         if (id === 'identity' && (source.querySelector('.participant-stack') || source.querySelectorAll('.character').length !== 1)) continue;
         const node = ghost || source;
         if (!(ghost ? ghost.isConnected && ghost.getClientRects().length : visible(node))) continue;
-        // A pane can cover the chat without removing it from the document.
-        if (['identity','latest','chats','computer','bot-settings'].includes(id) && (computer?.hidden === false || document.querySelector('#details-panel')?.hidden === false) && !node.closest('.computer-panel,.details-panel')) continue;
         const alpha = opacity(node); if (alpha < .005) continue;
         const rect = node.getBoundingClientRect(), style = getComputedStyle(node), identity = id === 'identity';
         const title = identity ? (source.querySelector('strong')?.textContent || '').trim().slice(0,160) : id === 'latest' ? node.textContent.trim().slice(0,160) : '';
         const label = identity ? title+' details' : (node.getAttribute('aria-label') || node.title || node.textContent.trim() || id).slice(0,200);
         const avatar = source?.querySelector('.character'), shape = avatar?.dataset.avatarBody || avatar?.dataset.shape;
         const color = avatar?.dataset.avatarColor || (avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '');
+        const round = n => Math.round(n*100)/100;
+        let identityGeometry = {};
+        if (identity) {
+          const text = node.querySelector('strong'), slot = text?.parentElement.getBoundingClientRect(), textRect = text?.getBoundingClientRect();
+          const artwork = node.querySelector('.character')?.parentElement.getBoundingClientRect();
+          if (textRect && slot && artwork) {
+            const left = Math.max(rect.left,slot.left,textRect.left), top = Math.max(rect.top,slot.top,textRect.top);
+            identityGeometry = {
+              titleRect:[left-rect.x,top-rect.y,Math.max(0,Math.min(rect.right,slot.right,textRect.right)-left),Math.max(0,Math.min(rect.bottom,slot.bottom,textRect.bottom)-top)].map(round),
+              avatarCenter:[artwork.x+artwork.width/2-rect.x,artwork.y+artwork.height/2-rect.y].map(round),
+            };
+          }
+        }
         current.set(id,{source,node,interactive:!ghost});
-        controls.push({id,title,label,symbol,shape,color,rect:[rect.x,rect.y,rect.width,rect.height].map(n=>Math.round(n*100)/100),
+        controls.push({id,title,label,symbol,shape,color,rect:[rect.x,rect.y,rect.width,rect.height].map(round),...identityGeometry,
           fontSize:parseFloat(identity ? getComputedStyle(source.querySelector('strong') || source).fontSize : style.fontSize),
           imageInset:parseFloat(style.paddingLeft)||0,imageGap:parseFloat(style.columnGap)||0,
           opacity:alpha,titleOpacity:ghost ? Number(getComputedStyle(ghost.lastElementChild).opacity) : 1,interactive:!ghost});
@@ -2046,11 +2066,11 @@
       },
       perform(id,document) {
         if (document !== glassDocument || window.document.querySelector('dialog[open]')) return;
-        const control=current.get(id);if(!control?.interactive||!visible(control.source))return;
+        const control=current.get(id);if(!glassRouteAllows(id)||!control?.interactive||!visible(control.source))return;
         control.source.click();schedule();
       },
     };
-    observeUI(schedule).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style','hidden','disabled','open','aria-label','aria-disabled','data-shape','data-avatar-body','data-avatar-color']});
+    observeUI(schedule).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style','hidden','inert','disabled','open','aria-label','aria-disabled','data-ios-artifact-view','data-ios-artifact-layout','data-shape','data-avatar-body','data-avatar-color']});
     observeUI(schedule).observe(html,{attributes:true,attributeFilter:['style','class','data-theme','data-motion']});
     const resize = new ResizeObserver(schedule);
     for(const node of [shell,sidebar,conversation,composerArea,header])if(node)resize.observe(node);
