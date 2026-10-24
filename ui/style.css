@@ -4712,10 +4712,21 @@ details.bot-chat-section>summary::before{top:calc(50% - 7px)}
 
 
 /* Shards are the content itself, with no code toolbar or document-card actions. */
-.inline-shard{width:720px;max-width:100%;overflow:hidden;border-radius:12px;margin:10px 0;background:var(--surface)}
-.inline-shard>.shard-frame{display:block;width:100%;height:180px;max-height:480px;border:0;background:var(--surface);color-scheme:inherit}
-.shard-loading,.shard-error{display:block;font-size:13px;color:var(--muted);padding:12px 16px}
+.inline-shard{width:720px;max-width:100%;min-width:0;overflow:hidden;border-radius:14px;margin:10px 0;background:var(--surface);contain:inline-size}
+.shard-stage{min-width:0;overflow:hidden}
+.shard-stage>.shard-frame{display:block;width:100%;height:180px;border:0;background:var(--surface);color-scheme:inherit}
+.shard-loading,.shard-error{display:block;font-size:13px;color:var(--muted);padding:12px 16px;overflow-wrap:anywhere}
+.inline-shard [hidden]{display:none!important}
+.shard-actions{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:2px 8px 6px;flex-wrap:wrap}
+.shard-actions button{border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:12px;min-height:32px;padding:5px 10px;touch-action:manipulation}
+.shard-actions button:hover{background:var(--hover);color:var(--fg)}
+.shard-actions button:focus-visible,.shard-source pre:focus-visible{outline:2px solid var(--accent,var(--fg));outline-offset:-2px}
+.shard-source{padding:0 16px 16px;min-width:0}
+.shard-note{font-size:12px;color:var(--muted);margin:4px 0 10px}
+.shard-source pre{max-height:240px;overflow:auto;margin:0;white-space:pre;tab-size:2;font:12px/1.65 var(--mono,monospace);background:var(--bg);padding:12px;border-radius:8px}
 .message-bubble:has(>.inline-shard:only-child){padding:0;background:transparent;max-width:100%}
+@media(pointer:coarse){.shard-actions button{min-height:44px;min-width:44px}}
+
 
 .connector-stack-group.is-forming,.connector-stack-group.is-advancing{position:relative;overflow:hidden;transform-origin:top left}
 .connector-collapse-ghosts{position:absolute;inset:0;pointer-events:none}

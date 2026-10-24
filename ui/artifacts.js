@@ -54,7 +54,7 @@ export async function artifactDocument(source,language,bootstrap=''){
  }
  const {transform,runtime}=await import('./artifact-vendor.js');
  const code=transform(source,{filename:'artifact.jsx',presets:[['react',{runtime:'classic'}]],plugins:['transform-modules-commonjs'],sourceType:'module'}).code;
- const boot=`const exports={};const module={exports};function require(name){if(name==='react')return React;if(name==='react-dom/client'||name==='react-dom')return ReactDOM;throw new Error('This preview supports React only. Remove the external import: '+name);}try{${code}\nconst Component=module.exports.default||exports.default||(typeof App!=='undefined'?App:null);if(Component)ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Component));else if(!document.getElementById('root').childNodes.length)throw new Error('Export a default React component or define App.');}catch(error){document.getElementById('root').textContent='Preview error: '+error.message;}`;
+ const boot=`const exports={};const module={exports};function require(name){if(name==='react')return React;if(name==='react-dom/client'||name==='react-dom')return ReactDOM;throw new Error('This preview supports React only. Remove the external import: '+name);}try{${code}\nconst Component=module.exports.default||exports.default||(typeof App!=='undefined'?App:null);if(Component)ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Component));else if(!document.getElementById('root').childNodes.length)throw new Error('Export a default React component or define App.');}catch(error){document.getElementById('root').textContent='Preview error: '+error.message;dispatchEvent(new CustomEvent('kindred-preview-error',{detail:String(error.message)}));}`;
  return '<!doctype html><html><head>'+head+'</head><body><div id="root"></div><script>'+escapeScript(runtime)+'</script><script>'+escapeScript(boot)+'</script></body></html>';
 }
 export function artifactPreview(source,language,name='Artifact'){
@@ -69,26 +69,70 @@ export function artifactPreview(source,language,name='Artifact'){
  header.append(status,show,control('Download',()=>download(source,name.match(/\.(html?|jsx)$/i)?name:name+'.'+language,language==='html'?'text/html':'text/plain')));
  box.append(header,element('p','artifact-hint','Interactive preview · isolated from your chat and connected accounts'),stage);return box;
 }
-// Shards are message-local interactive views, not hosted/shared documents.
+// The bridge only reports presentation state. It cannot call host/native APIs.
+function shardBridge(theme){
+ const send=(kind,extra={})=>parent.postMessage({kind,...extra},'*');
+ const apply=next=>{
+  if(!next||typeof next!=='object')return;
+  const root=document.documentElement;
+  for(const key of ['surface','fg','muted','accent','border'])if(typeof next[key]==='string')root.style.setProperty('--'+key,next[key]);
+  if(typeof next.font==='string')root.style.setProperty('--font-sans',next.font);
+  if(typeof next.fontSize==='string')root.style.setProperty('--widget-font-size',next.fontSize);
+  if(next.scheme==='dark'||next.scheme==='light')root.style.colorScheme=next.scheme;
+ };
+ const style=document.createElement('style');
+ style.textContent='html{height:auto;overflow:auto}body{margin:0;padding:16px;background:var(--surface);color:var(--fg);font:var(--widget-font-size,14px)/1.5 var(--font-sans);overflow-wrap:anywhere}button,input,select,textarea{font:inherit;color:inherit}button,input,select,textarea{accent-color:var(--accent)}button{touch-action:manipulation}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}img,svg,canvas{max-width:100%}@media(pointer:coarse){button,input,select{min-height:44px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}';
+ document.head.append(style);apply(theme);
+ addEventListener('message',e=>{if(e.source===parent&&e.data?.kind==='kindred-shard-theme')apply(e.data.theme);});
+ const error=value=>send('kindred-shard-error',{message:String(value?.message||value||'This view could not start.').slice(0,240)});
+ addEventListener('error',e=>{if(e.message)error(e.message);});
+ addEventListener('unhandledrejection',e=>error(e.reason));
+ addEventListener('kindred-preview-error',e=>error(e.detail));
+ addEventListener('DOMContentLoaded',()=>{
+  let queued=false,settled=false;
+  const size=()=>{if(queued||!settled)return;queued=true;requestAnimationFrame(()=>{queued=false;send('kindred-shard-size',{height:document.body.getBoundingClientRect().height});});};
+  new ResizeObserver(size).observe(document.body);
+  // React commits after DOMContentLoaded. Measure only after its first paint and
+  // bundled fonts settle, then freeze the outer height so later edits cannot move chat.
+  Promise.resolve(document.fonts?.ready).then(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{settled=true;size();send('kindred-shard-ready');})));
+ });
+}
+function shardTheme(){
+ const css=getComputedStyle(document.documentElement),body=getComputedStyle(document.body);
+ return {surface:css.getPropertyValue('--surface').trim(),fg:css.getPropertyValue('--fg').trim(),muted:css.getPropertyValue('--muted').trim(),accent:css.getPropertyValue('--accent').trim()||css.getPropertyValue('--fg').trim(),border:css.getPropertyValue('--line').trim(),scheme:css.colorScheme.includes('dark')?'dark':'light',font:body.fontFamily,fontSize:body.fontSize};
+}
+// Shards are temporary, message-local interactive views, not saved artifacts.
 export function inlineShard(source,language,name='Interactive view'){
- const box=element('section','inline-shard');box.dataset.shardSignature=JSON.stringify([language,source]);box.setAttribute('aria-label',name);
- box.append(element('span','shard-loading','Building view…'));
- let frame=null,disposed=false,started=false,visibility=null,removal=null;
+ const box=element('section','inline-shard'),stage=element('div','shard-stage'),status=element('span','shard-loading','Building view…'),actions=element('div','shard-actions'),sourcePanel=element('div','shard-source');
+ box.dataset.shardSignature=JSON.stringify([language,source]);box.setAttribute('aria-label',name);status.setAttribute('role','status');
+ const sourcePre=element('pre','',source);sourcePre.tabIndex=0;sourcePre.setAttribute('aria-label','View source');
+ sourcePanel.append(element('p','shard-note','Temporary view. Leaving this chat, reloading, or retrying resets your inputs. Save a separate artifact to keep them.'),sourcePre);sourcePanel.hidden=true;
+ let frame=null,disposed=false,started=false,visibility=null,removal=null,themeObserver=null,timer=null,generation=0,naturalHeight=180,collapsedHeight=null,expanded=false,failed=false;
+ const expand=control('Expand',()=>{expanded=!expanded;expand.textContent=expanded?'Collapse':'Expand';expand.setAttribute('aria-expanded',String(expanded));box.classList.toggle('shard-expanded',expanded);size();});
+ expand.setAttribute('aria-expanded','false');expand.title='Show more of this view';
+ const showSource=control('Source',()=>{sourcePanel.hidden=!sourcePanel.hidden;showSource.setAttribute('aria-expanded',String(!sourcePanel.hidden));});showSource.setAttribute('aria-expanded','false');
+ const retry=control('Retry',()=>mount(true));retry.hidden=true;retry.title='Restart this view and reset its inputs';actions.append(expand,showSource,retry);box.append(stage,status,actions,sourcePanel);
+ function size(){if(frame){const height=expanded?Math.max(240,Math.min(800,window.innerHeight*.75)):(collapsedHeight??180);frame.style.height=height+'px';}}
+ function fail(error){if(disposed||failed)return;failed=true;clearTimeout(timer);box.dataset.state='error';status.className='shard-error';status.textContent='This view could not load. '+String(error?.message||error||'Try again or view its source.').slice(0,240);status.hidden=false;stage.hidden=true;retry.hidden=false;expand.disabled=true;}
  const receive=e=>{
   if(!frame||e.source!==frame.contentWindow||e.origin!=='null'||disposed)return;
-  if(e.data?.kind==='kindred-shard-size'&&Number.isFinite(e.data.height))frame.style.height=Math.max(64,Math.min(480,Math.ceil(e.data.height)))+'px';
+  if(e.data?.kind==='kindred-shard-size'&&Number.isFinite(e.data.height)&&e.data.height>0){naturalHeight=Math.ceil(e.data.height);if(collapsedHeight===null)collapsedHeight=Math.max(120,Math.min(320,naturalHeight));size();}
+  if(e.data?.kind==='kindred-shard-ready'&&!failed){clearTimeout(timer);box.dataset.state='ready';status.hidden=true;lastTheme='';theme();}
+  if(e.data?.kind==='kindred-shard-error')fail(typeof e.data.message==='string'?e.data.message:'Try again or view its source.');
  };
- async function mount(){
-  if(started||disposed||!box.isConnected)return;started=true;visibility?.disconnect();
+ let lastTheme='';
+ function theme(){if(!frame)return;const value=shardTheme(),key=JSON.stringify(value);if(key===lastTheme)return;lastTheme=key;frame?.contentWindow?.postMessage({kind:'kindred-shard-theme',theme:value},'*');}
+ async function mount(reset=false){
+  if((started&&!reset)||disposed||!box.isConnected)return;started=true;visibility?.disconnect();const attempt=++generation;
+  clearTimeout(timer);failed=false;frame?.remove();frame=null;lastTheme='';naturalHeight=180;collapsedHeight=null;stage.hidden=false;status.hidden=false;status.className='shard-loading';status.textContent='Building view…';retry.hidden=true;expand.disabled=false;box.dataset.state='loading';
+  timer=setTimeout(()=>fail('Try again or view its source.'),12000);
   try{
-   const css=getComputedStyle(document.documentElement),theme={background:css.getPropertyValue('--surface').trim(),color:css.getPropertyValue('--fg').trim(),scheme:css.colorScheme};
-   const bridge=`(()=>{const theme=${JSON.stringify(theme)};const style=document.createElement('style');style.textContent=':root{color-scheme:'+theme.scheme+'}body{margin:0;padding:16px;background:'+theme.background+';color:'+theme.color+'}';document.head.append(style);addEventListener('DOMContentLoaded',()=>{let queued=false;const size=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;parent.postMessage({kind:'kindred-shard-size',height:document.body.getBoundingClientRect().height},'*');});};new ResizeObserver(size).observe(document.body);size();});})();`;
-   const doc=await artifactDocument(source,language,bridge);if(disposed||!box.isConnected)return;
-   frame=element('iframe','artifact-frame shard-frame');frame.title=name;frame.setAttribute('sandbox','allow-scripts');frame.referrerPolicy='no-referrer';frame.setAttribute('allow',"camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'");loadArtifactFrame(frame,doc);box.replaceChildren(frame);
-  }catch(error){if(!disposed)box.replaceChildren(element('p','shard-error','This view could not render. '+error.message));}
+   const doc=await artifactDocument(source,language,'('+shardBridge.toString()+')('+JSON.stringify(shardTheme())+');');if(disposed||attempt!==generation||!box.isConnected||failed)return;
+   frame=element('iframe','artifact-frame shard-frame');frame.title=name;frame.setAttribute('sandbox','allow-scripts');frame.referrerPolicy='no-referrer';frame.setAttribute('allow',"camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'");loadArtifactFrame(frame,doc);stage.replaceChildren(frame);size();
+  }catch(error){if(attempt===generation)fail(error);}
  }
- // Render reconciliation creates disposable nodes. Only mounted, visible shards run code.
- queueMicrotask(()=>{if(!box.isConnected)return;window.addEventListener('message',receive);visibility=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))void mount();},{rootMargin:'100px'});visibility.observe(box);removal=new MutationObserver(()=>{if(!box.isConnected){disposed=true;visibility.disconnect();removal.disconnect();window.removeEventListener('message',receive);}});removal.observe(document.body,{childList:true,subtree:true});});
+ // Disposable reconciliation nodes never run. Keep mounted frames intact on updates.
+ queueMicrotask(()=>{if(!box.isConnected)return;window.addEventListener('message',receive);window.addEventListener('resize',size);visibility=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))void mount();},{rootMargin:'100px'});visibility.observe(box);themeObserver=new MutationObserver(theme);for(const target of [document.documentElement,document.body])themeObserver.observe(target,{attributes:true,attributeFilter:['style','class','data-theme','data-accent']});removal=new MutationObserver(()=>{if(!box.isConnected){disposed=true;generation++;clearTimeout(timer);visibility.disconnect();removal.disconnect();themeObserver.disconnect();window.removeEventListener('message',receive);window.removeEventListener('resize',size);}});removal.observe(document.body,{childList:true,subtree:true});});
  return box;
 }
 function completedFences(text){
@@ -106,7 +150,7 @@ export function enhanceMarkdown(root,{sourceText}={}){
  for(const pre of root.querySelectorAll('pre')){
   const code=pre.querySelector('code');if(!code)continue;
   const language=(code.className.match(/(?:^|\s)language-([\w-]+)/)?.[1]||'text').toLowerCase(),source=code.textContent;
-  if(['html','jsx','react','shard-html','shard-jsx'].includes(language)){
+  if(['shard-html','shard-jsx'].includes(language)){
    if(sourceText!==undefined&&!complete)complete=completedFences(sourceText);
    if(complete&&!complete.has(language+'\0'+source.trimEnd())){pre.replaceWith(element('span','shard-loading','Building view…'));continue;}
    pre.replaceWith(inlineShard(source,language.includes('html')?'html':'jsx'));continue;
