@@ -654,13 +654,37 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         return (metrics, image)
     }
 
+    private func setFixtureAppearance(_ theme: String) async throws {
+        window.endEditing(true)
+        try await waitFor("Appearance setting keyboard dismissal") { !self.keyboardVisible }
+        _ = try await js("document.querySelector('#settings-button').click();true")
+        try await waitFor("Appearance Theme control is loaded") {
+            try await self.boolean("!!document.querySelector('#settings-dialog[open] select[aria-label=Theme]:not(:disabled)')")
+        }
+        // applyGeneral owns the DOM theme. A DOM-only override leaves the
+        // saved account setting dark and is reverted by UIKit's media change.
+        _ = try await js("const theme=document.querySelector('#settings-dialog select[aria-label=Theme]');theme.value='\(theme)';theme.dispatchEvent(new Event('change',{bubbles:true}));true")
+        try await waitFor("Appearance Theme is saved") {
+            try await self.boolean("document.querySelector('.general-settings-form .preference-status')?.textContent==='Saved' && document.documentElement.dataset.theme==='\(theme)'")
+        }
+        _ = try await js("window.__composerSavedTheme=null;fetch('/api/settings').then(r=>r.json()).then(v=>window.__composerSavedTheme=v.theme);true")
+        try await waitFor("Appearance Theme persists in the fixture") {
+            try await self.boolean("window.__composerSavedTheme==='\(theme)'")
+        }
+        _ = try await js("document.querySelector('#settings-close').click();true")
+        try await waitFor("Appearance setting dismissal") {
+            try await self.boolean("!document.querySelector('#settings-dialog').open")
+        }
+    }
+
     private func checkSendSurfaceMatrix() async throws {
         for theme in ["dark", "light"] {
+            try await setFixtureAppearance(theme)
             for populated in [false, true] {
                 for keyboard in [false, true] {
                     let label = "send-" + theme + (populated ? "-populated" : "-empty") + (keyboard ? "-open" : "-closed")
                     let draft = populated ? "Send surface fixture" : ""
-                    _ = try await js("document.documentElement.dataset.theme='\(theme)';const p=document.querySelector('#prompt');p.textContent='\(draft)';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.\(keyboard ? "focus({preventScroll:true})" : "blur()");true")
+                    _ = try await js("const p=document.querySelector('#prompt');p.textContent='\(draft)';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.\(keyboard ? "focus({preventScroll:true})" : "blur()");true")
                     if !keyboard { window.endEditing(true) }
                     try await waitFor("actual keyboard state for " + label) { self.keyboardVisible == keyboard }
                     let observed = try await checkComposer(label: label)
@@ -672,7 +696,8 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         }
         window.endEditing(true)
         try await waitFor("Send matrix keyboard cleanup") { !self.keyboardVisible }
-        _ = try await js("document.documentElement.dataset.theme='dark';const p=document.querySelector('#prompt');p.textContent='';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
+        try await setFixtureAppearance("dark")
+        _ = try await js("const p=document.querySelector('#prompt');p.textContent='';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
         let sends = try await js("window.__composerSends.length") as? Int
         XCTAssertEqual(sends, 1, "Paint matrix must not submit another message")
     }
