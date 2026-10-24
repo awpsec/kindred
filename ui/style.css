@@ -6272,3 +6272,10 @@ html:not([data-mobile]) #composer:is(.is-multiline,.is-replying,.has-files,.is-d
 #prompt .composer-url[data-site]>.composer-url-prefix{white-space:nowrap}
 #prompt .composer-url[data-site]>.composer-url-prefix::before{content:"";display:inline-block;width:13px;height:13px;margin-right:4px;vertical-align:-1px;background-image:var(--composer-link-icon);background-repeat:no-repeat;background-position:center;background-size:contain;user-select:none;pointer-events:none;}
 #prompt .composer-url:is([data-site="github"],[data-site="notion"],[data-site="web"])>.composer-url-prefix::before{background-image:none;background-color:currentColor;mask-image:var(--composer-link-icon);mask-repeat:no-repeat;mask-position:center;mask-size:contain;}
+
+/* Markdown attachments retain source punctuation and line numbers. */
+.deliverable-type[data-kind="source"]{color:var(--muted);background:var(--hover)}
+.document-body>.document-source{flex:1;min-height:0;display:flex;overflow:auto;background:var(--bg);color:var(--fg);padding:18px 0;tab-size:4}
+.document-source>pre{font:calc(13px * var(--text-scale,1))/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:0;border:0;border-radius:0;max-height:none;overflow:visible;white-space:pre;overflow-wrap:normal;background:transparent;color:inherit}
+.document-source>.document-source-gutter{position:sticky;left:0;z-index:1;flex:none;min-width:3ch;padding:0 12px 0 16px;text-align:right;color:var(--muted);background:var(--bg);user-select:none;-webkit-user-select:none}
+.document-source>.document-source-code{flex:1;min-width:max-content;padding:0 20px 0 12px}

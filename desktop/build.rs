@@ -41,6 +41,7 @@ fn main() {
             "read_clipboard_text",
             "save_chat_file",
             "reveal_chat_file",
+            "open_chat_file",
             "open_profile_home",
             "position_profile_home",
             "close_profile_home",

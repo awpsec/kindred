@@ -209,6 +209,13 @@ function renderContinuousPdf(pdf, name, body, foot, paginatedWord, firstSize) {
  });
  return {ready,dispose:()=>{if(disposed)return;disposed=true;revision++;resolveReady();cancelAnimationFrame(frame);zoom.dispose();viewport.removeEventListener('scroll',schedule);active?.task.cancel();for(const entry of pages)release(entry);near.clear();}};
 }
+// Treat Markdown attachments as editable source, never as document instructions.
+export function renderMarkdownSource(text,name){
+ const source=el('div','document-source');source.tabIndex=0;source.setAttribute('role','region');source.setAttribute('aria-label',name+' source');
+ const gutter=el('pre','document-source-gutter'),code=el('pre','document-source-code');gutter.setAttribute('aria-hidden','true');
+ const lines=text.split(/\r\n|\n|\r/).length;gutter.textContent=Array.from({length:lines},(_,i)=>String(i+1)).join('\n');
+ code.textContent=text;code.setAttribute('aria-label','Markdown source');source.append(gutter,code);return source;
+}
 export async function openDocumentPreview({card,name,extension,getBlob,getPagePreview,download,createDownloadButton,renderMarkdown,artifactPreview,mount=null,onMount=null,onUnavailable=()=>{}}){
  const dialog=el(mount?'section':'dialog',mount?'document-inline':'document-dialog'),head=el('header','document-header'),body=el('div','document-body'),foot=el('footer','document-footer','Quick preview · Download for the original formatting.');
  const title=el('strong','',name);dialog.setAttribute('aria-label',name+' preview');
@@ -259,7 +266,7 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
   }else if(['png','jpg','jpeg','webp','gif'].includes(extension)){
    const img=el('img','document-image');img.alt=name;const url=URL.createObjectURL(blob);img.onload=img.onerror=()=>URL.revokeObjectURL(url);dialog.addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});img.src=url;body.replaceChildren(img);
   }else{
-   if(blob.size>256*1024)throw Error('Text preview supports files up to 256 KB. Download to view the full file.');const text=await blob.text();if(closed)return;const content=extension==='md'&&renderMarkdown?renderMarkdown(text):el('pre','deliverable-text',text);content.classList.add('document-prose');body.replaceChildren(content);
+   if(blob.size>256*1024)throw Error('Text preview supports files up to 256 KB. Download to view the full file.');const text=await blob.text();if(closed)return;const markdownSource=['md','markdown'].includes(extension),content=markdownSource?renderMarkdownSource(text,name):el('pre','deliverable-text',text);if(!markdownSource)content.classList.add('document-prose');body.replaceChildren(content);if(markdownSource)foot.textContent='Markdown source · '+text.split(/\r\n|\n|\r/).length+' lines';
   }
  }catch(error){clearTimeout(timer);if(!closed&&/Original file (?:not found|identity changed|bytes changed)/.test(String(error.message||'')))onUnavailable();if(!closed&&!passwordRequired)body.replaceChildren(el('p','document-status',/Original file (?:not found|identity changed|bytes changed)/.test(String(error.message||''))?'The original file is no longer available.':'Preview unavailable. '+(error.message||'Download to view this file.')));}
  return handle;

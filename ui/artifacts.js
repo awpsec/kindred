@@ -119,16 +119,19 @@ export function enhanceMarkdown(root,{sourceText}={}){
 }
 const fileSvg=(path)=>{const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.7');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');svg.setAttribute('aria-hidden','true');const p=document.createElementNS(svg.namespaceURI,'path');p.setAttribute('d',path);svg.append(p);return svg;};
 const savedDownloads=new Map();
-export function fileCard(attachment,{getBlob,getPagePreview,nativeSave,nativeReveal,notice,renderMarkdown}){
+export function fileCard(attachment,{getBlob,getPagePreview,nativeSave,nativeReveal,nativeOpen,notice,renderMarkdown}){
  const name=attachment.name||attachment.title||'File',extension=name.split('.').pop().toLowerCase(),card=element('section','deliverable-card'),heading=element('div','deliverable-heading'),badge=element('span','deliverable-type'),copy=element('div','deliverable-copy');
- const kind=['xlsx','xls','csv'].includes(extension)?'sheet':['docx','doc','md','txt'].includes(extension)?'word':extension==='pdf'?'pdf':'file';card.dataset.kind=kind;badge.dataset.kind=kind;badge.title=extension.toUpperCase()+' file';
- badge.append(fileSvg(kind==='sheet'?'M5 3h10l4 4v14H5z M14 3v5h5 M8 11h8v7H8z M8 14h8 M12 11v7':kind==='word'?'M5 3h10l4 4v14H5z M14 3v5h5 M8 12h8 M8 15h8 M8 18h5':kind==='pdf'?'M5 3h10l4 4v14H5z M14 3v5h5 M8 17c4-6 3-8 2-7s1 8 5 6-6-1-7 1':'M5 3h10l4 4v14H5z M14 3v5h5'));
+ const markdownFile=['md','markdown'].includes(extension);
+ const kind=markdownFile?'source':['xlsx','xls','csv'].includes(extension)?'sheet':['docx','doc','txt'].includes(extension)?'word':extension==='pdf'?'pdf':'file';card.dataset.kind=kind;badge.dataset.kind=kind;badge.title=extension.toUpperCase()+' file';
+ badge.append(fileSvg(kind==='sheet'?'M5 3h10l4 4v14H5z M14 3v5h5 M8 11h8v7H8z M8 14h8 M12 11v7':kind==='word'?'M5 3h10l4 4v14H5z M14 3v5h5 M8 12h8 M8 15h8 M8 18h5':kind==='source'?'m8 8-4 4 4 4m8-8 4 4-4 4m-3-10-2 12':kind==='pdf'?'M5 3h10l4 4v14H5z M14 3v5h5 M8 17c4-6 3-8 2-7s1 8 5 6-6-1-7 1':'M5 3h10l4 4v14H5z M14 3v5h5'));
  card.dataset.fileSignature=JSON.stringify([attachment.id,name,attachment.size??null,attachment.source_url||null]);card.setAttribute('aria-label','File: '+name);copy.title=name;copy.append(element('strong','deliverable-name',name),element('span','deliverable-size',extension.toUpperCase()+(Number.isFinite(attachment.size)?' · '+(attachment.size<1024?attachment.size+' B':attachment.size<1048576?(attachment.size/1024).toFixed(1)+' KB':(attachment.size/1048576).toFixed(1)+' MB'):'')));heading.append(badge,copy);card.append(heading);
  const actions=element('div','deliverable-actions'),split=element('div','deliverable-split'),downloadControls=new Set(),announcement=element('span','download-announcement');
  announcement.setAttribute('role','status');announcement.setAttribute('aria-live','polite');card.append(announcement);
  const storageKey='kindred-file-saved:'+attachment.id;let saved=nativeSave?savedDownloads.get(attachment.id)?.receipt:null,savedAt=nativeSave?savedDownloads.get(attachment.id)?.at:0;
  if(nativeSave&&!savedAt)try{const at=Number(localStorage.getItem(storageKey));if(Number.isFinite(at)&&at>0&&at<=Date.now())savedAt=at;}catch{}
- let phase=savedAt?'saved':'idle',confirmed=!!savedAt;
+ let phase=savedAt?'saved':'idle',confirmed=!!savedAt,opening=false;
+ const openButton=markdownFile&&nativeSave&&nativeOpen?control('Open',()=>openSaved()):null;
+ const paintOpen=()=>{if(openButton){openButton.disabled=opening||phase==='saving';openButton.textContent=opening?(phase==='saving'?'Downloading…':'Opening…'):'Open';openButton.setAttribute('aria-busy',String(opening));openButton.title='Open '+name+' in your default app';}};
  const folderLabel=/Mac/.test(navigator.platform)?'Show in Finder':'Show in folder',reveal=control('',async()=>{try{await nativeReveal(saved);}catch(e){notice(String(e.message||e),true);}});reveal.classList.add('deliverable-reveal');reveal.setAttribute('aria-label',folderLabel);reveal.title=folderLabel;reveal.append(fileSvg('M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z'));reveal.hidden=!saved;
  const paintDownload=b=>{
   b.dataset.state=phase;b.disabled=phase==='saving'||phase==='saved';b.setAttribute('aria-busy',String(phase==='saving'));
@@ -137,7 +140,7 @@ export function fileCard(attachment,{getBlob,getPagePreview,nativeSave,nativeRev
   if(phase==='saved'){const check=fileSvg('m5 12 4 4L19 6');check.classList.add('download-check');b.append(check);}
   b.title=phase==='saved'?(nativeSave?'Saved to Downloads '+new Date(savedAt).toLocaleString()+'. Use Download again for another copy.':'Sent to your browser. Check browser downloads for the saved file.'):phase==='saving'?'Downloading '+name:label+' '+name;
  };
- const updateDownloads=()=>{for(const b of downloadControls){if(!b.isConnected){downloadControls.delete(b);continue;}paintDownload(b);}again.hidden=!confirmed;again.disabled=phase==='saving';more.hidden=[...menu.children].every(n=>n.hidden);};
+ const updateDownloads=()=>{paintOpen();for(const b of downloadControls){if(!b.isConnected){downloadControls.delete(b);continue;}paintDownload(b);}again.hidden=!confirmed;again.disabled=phase==='saving';more.hidden=[...menu.children].every(n=>n.hidden);};
  const save=async(force=false)=>{
   if(phase==='saving'||(phase==='saved'&&!force))return;phase='saving';announcement.textContent='Downloading '+name+'…';updateDownloads();
   try{
@@ -154,15 +157,21 @@ export function fileCard(attachment,{getBlob,getPagePreview,nativeSave,nativeRev
   finally{updateDownloads();}
  };
  const createDownloadButton=({iconOnly=false}={})=>{for(const b of downloadControls)if(!b.isConnected)downloadControls.delete(b);const b=element('button','artifact-action file-download'+(iconOnly?' document-icon-button':''));b.type='button';b.onclick=()=>void save();downloadControls.add(b);paintDownload(b);return b;};
- const downloadButton=createDownloadButton();split.append(downloadButton);actions.append(split);if(nativeReveal)actions.append(reveal);heading.append(actions);
+ const openSaved=async()=>{
+  if(opening||phase==='saving')return;opening=true;paintOpen();
+  try{if(!saved)await save(true);if(saved){await nativeOpen(saved);announcement.textContent='Opened '+name+' in your default app.';}}
+  catch(error){notice('Could not open '+name+'. '+String(error.message||error),true);}
+  finally{opening=false;paintOpen();}
+ };
+ const downloadButton=openButton||createDownloadButton();paintOpen();split.append(downloadButton);actions.append(split);if(nativeReveal)actions.append(reveal);heading.append(actions);
  const menu=element('div','deliverable-menu');menu.setAttribute('popover','auto');menu.setAttribute('aria-label','File actions');
  const more=element('button','artifact-action deliverable-more');more.type='button';more.title='More file actions';more.setAttribute('aria-label','More file actions');more.setAttribute('aria-expanded','false');more.popoverTargetElement=menu;more.append(fileSvg('m7 10 5 5 5-5'));
  let menuTracking,menuObserver;
  const stopMenuTracking=()=>{menuTracking?.abort();menuObserver?.disconnect();};
  const positionMenu=()=>{if(!more.isConnected){stopMenuTracking();return;}const r=more.getBoundingClientRect(),clip=more.closest('#content')?.getBoundingClientRect();if(r.bottom<(clip?.top||0)||r.top>(clip?.bottom||innerHeight)){menu.hidePopover();return;}menu.style.left=Math.max(8,Math.min(innerWidth-menu.offsetWidth-8,r.right-menu.offsetWidth))+'px';menu.style.top=Math.max(8,Math.min(innerHeight-menu.offsetHeight-8,r.bottom+menu.offsetHeight+8>innerHeight?r.top-menu.offsetHeight-6:r.bottom+6))+'px';};
  menu.addEventListener('toggle',e=>{const open=e.newState==='open';more.setAttribute('aria-expanded',String(open));stopMenuTracking();if(open){positionMenu();menu.querySelector('button:not([hidden]),a:not([hidden])')?.focus({preventScroll:true});menuTracking=new AbortController();menuObserver=new MutationObserver(()=>{if(!more.isConnected)stopMenuTracking();});menuObserver.observe(document.body,{childList:true,subtree:true});window.addEventListener('resize',positionMenu,{signal:menuTracking.signal});document.addEventListener('scroll',positionMenu,{capture:true,passive:true,signal:menuTracking.signal});}});
- const previewable=['docx','xlsx','pdf','html','htm','jsx','md','txt','csv','json','png','jpg','jpeg','webp','gif'].includes(extension);
- if(previewable)menu.append(control('Preview',async()=>{try{menu.hidePopover();more.focus();const {openDocumentPreview}=await import('./document-preview.js');if(!card.isConnected)return;await openDocumentPreview({card,name,extension,getBlob:()=>getBlob(attachment.id),getPagePreview:getPagePreview?(signal)=>getPagePreview(attachment.id,signal):null,createDownloadButton,renderMarkdown,artifactPreview});}catch(error){notice('Preview unavailable. '+error.message,true);}}));
+ const previewable=['docx','xlsx','pdf','html','htm','jsx','md','markdown','txt','csv','json','png','jpg','jpeg','webp','gif'].includes(extension);
+ if(previewable){const preview=control('Preview',async()=>{try{if(menu.matches(':popover-open'))menu.hidePopover();(markdownFile?preview:more).focus();const {openDocumentPreview}=await import('./document-preview.js');if(!card.isConnected)return;await openDocumentPreview({card,name,extension,getBlob:()=>getBlob(attachment.id),getPagePreview:getPagePreview?(signal)=>getPagePreview(attachment.id,signal):null,createDownloadButton,renderMarkdown,artifactPreview});}catch(error){notice('Preview unavailable. '+error.message,true);}});if(markdownFile)actions.insertBefore(preview,nativeReveal?reveal:null);else menu.append(preview);}
  try{const u=new URL(attachment.source_url);if(u.protocol==='https:'&&['drive.google.com','docs.google.com'].includes(u.hostname)&&!u.username&&!u.password){const a=element('a','artifact-action','Open in Google Drive');a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';a.onclick=()=>menu.hidePopover();menu.append(a);}}catch{}
  const again=control('Download again',async()=>{menu.hidePopover();await save(true);});again.hidden=!confirmed;menu.append(again);more.hidden=[...menu.children].every(n=>n.hidden);split.append(more);card.append(menu);return card;
 }

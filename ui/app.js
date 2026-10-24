@@ -9063,7 +9063,7 @@ function renderAttachments(target, attachments) {
       if(state.token!==token)throw new Error('Connection changed');
       const response=await fetch('/api/deliverables/'+encodeURIComponent(id)+'/preview',{headers:{Authorization:'Bearer '+token},cache:'no-store',signal});
       if(!response.ok||!response.headers.get('Content-Type')?.startsWith('application/pdf'))throw new Error('Page preview unavailable');const blob=await response.blob();if(state.token!==token)throw new Error('Connection changed');if(blob.size>32*1024*1024)throw new Error('Preview exceeds limit');return blob;
-    },nativeSave,nativeReveal:window.__KINDRED_FILE_DELIVERY?receipt=>nativeInvoke('reveal_chat_file',{receipt}):null,notice,renderMarkdown:markdown}));
+    },nativeSave,nativeOpen:window.__KINDRED_MARKDOWN_OPEN?async receipt=>{if(state.token!==token)throw new Error('Connection changed');return nativeInvoke('open_chat_file',{receipt});}:null,nativeReveal:window.__KINDRED_FILE_DELIVERY?receipt=>nativeInvoke('reveal_chat_file',{receipt}):null,notice,renderMarkdown:markdown}));
   }
 }
 

@@ -1,4 +1,6 @@
-//! Save only authenticated chat deliverables; reveal only receipts issued here.
+//! Save authenticated chat deliverables; reveal/open only receipts issued here.
+#[path = "markdown_download.rs"]
+mod markdown_download;
 use crate::{
     desktop::{self, Desktop},
     surface::Surface,
@@ -227,6 +229,29 @@ pub async fn reveal_chat_file(
     .await
     .map_err(|e| e.to_string())?;
     result?;
+    Ok(json!({"ok":true}))
+}
+// A receipt, not a page-supplied path, identifies the saved Markdown file.
+#[tauri::command]
+pub async fn open_chat_file(
+    window: Surface,
+    state: tauri::State<'_, Desktop>,
+    downloads: tauri::State<'_, Downloads>,
+    receipt: String,
+) -> Result<Value, String> {
+    desktop::trusted(&window, &state)?;
+    let (origin, path) = downloads
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&receipt)
+        .cloned()
+        .ok_or("Download this file first")?;
+    if origin != session_scope(&state) {
+        return Err("This download belongs to another workspace session".into());
+    }
+    let path = markdown_download::checked_path(&path)?;
+    open::that_detached(path).map_err(|_| "The file could not be opened. Choose a default app for Markdown files in your computer settings.".to_string())?;
     Ok(json!({"ok":true}))
 }
 #[cfg(test)]
