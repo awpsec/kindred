@@ -282,6 +282,14 @@
   // Artifacts retain the server's editor/save closures, but navigate as two
   // pages on iOS. Returning to the list never destroys an in-progress editor.
   const artifactPages = new Map();
+  const artifactSidebarKey='kindred-ios-artifact-sidebar-v1:'+(window.__KINDRED_MOBILE_PROFILE||'');
+  let artifactSidebarWidth=210,artifactSidebarHidden=false;
+  try {
+    const saved=JSON.parse(localStorage.getItem(artifactSidebarKey)||'null');
+    if(Number.isFinite(saved?.width)&&saved.width>=76&&saved.width<=600)artifactSidebarWidth=saved.width;
+    if(typeof saved?.hidden==='boolean')artifactSidebarHidden=saved.hidden;
+  }catch{}
+  const saveArtifactSidebar=()=>{try{localStorage.setItem(artifactSidebarKey,JSON.stringify({width:artifactSidebarWidth,hidden:artifactSidebarHidden}));}catch{}};
   const artifactRouteEvent = 'kindred-ios-artifact-route';
   for (const method of ['pushState', 'replaceState']) {
     const original = history[method];
@@ -298,7 +306,7 @@
   const artifactDocumentRoute = () => /^\/artifacts\/[^/]+\/?$/.test(location.pathname) || new URLSearchParams(location.hash.slice(1)).has('artifact');
   // Artifact panes use the same measured native geometry as chat. Keep the
   // preview mounted: a fold changes frames, never the selected document.
-  const artifactFrames = () => {
+  const artifactFrames = (hidden=false) => {
     const layout = window.__KINDRED_IOS_LAYOUT || {}, geometry = window.__KINDRED_NATIVE_GEOMETRY || {};
     const width = innerWidth, height = Math.min(innerHeight, nativeHeight || innerHeight);
     const finite = value => Number.isFinite(value) ? Math.max(0,value) : 0;
@@ -327,7 +335,7 @@
     const horizontal = regions.find(r=>r.kind==='division'&&r.width>r.height&&r.y>frame.y&&r.y+r.height<frame.y+frame.height);
     const scale = Math.max(1,parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1);
     const minLibrary=220*scale, minDocument=320*scale, divider=vertical||horizontal, exclusions=regions.filter(r=>r!==divider);
-    let library, documentFrame, mode='single';
+    let library, documentFrame, mode='single',resizable=false,maximum=0;
     if (layout.isDuoInner === true && vertical) {
       library=avoid({...frame,width:vertical.x-frame.x},exclusions);
       documentFrame=avoid({...frame,x:vertical.x+vertical.width,width:frame.x+frame.width-vertical.x-vertical.width},exclusions);
@@ -337,13 +345,14 @@
       library=avoid({...frame,y:horizontal.y+horizontal.height,height:frame.y+frame.height-horizontal.y-horizontal.height},exclusions);
       if(documentFrame.height>=200*scale&&library.height>=200*scale&&frame.width>=minDocument) mode='stacked';
     } else if (layout.isDuoInner === true && frame.width>=720*scale) {
-      const listWidth=Math.min(280*scale,Math.max(minLibrary,frame.width*.32));
+      maximum=Math.floor(Math.max(76,Math.min(width/4,frame.width-minDocument)));
+      const listWidth=hidden?0:Math.max(76,Math.min(artifactSidebarWidth,maximum));
       library=avoid({...frame,width:listWidth},exclusions);
       documentFrame=avoid({...frame,x:frame.x+listWidth,width:frame.width-listWidth},exclusions);
-      if(library.width>=minLibrary&&documentFrame.width>=minDocument) mode='split';
+      if((hidden||library.width>=76)&&documentFrame.width>=minDocument) { mode='split';resizable=true; }
     }
     if(mode==='single') library=documentFrame=avoid(frame,regions);
-    return {mode,library,document:documentFrame};
+    return {mode,library,document:documentFrame,resizable,maximum};
   };
   const artifactButton = (label, path) => {
     const button = document.createElement('button');
@@ -362,8 +371,9 @@
     const brand = root.querySelector('.artifact-studio-library-brand');
     if (!library || !workbench || !toolbar || !input || !create || !brand) return;
     const nav = document.createElement('header'); nav.className = 'ios-artifact-navigation';
-    const chats = artifactButton('Back to chats', '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9 9 0 0 1-4-.9L3 21l1.9-5a9 9 0 0 1-.9-4 8.4 8.4 0 0 1 8.5-9H13a8.4 8.4 0 0 1 8 8z"/>');
-    chats.onclick = () => brand.click(); // Includes the server's unsaved-edit guard.
+    const more = artifactButton('More options', '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>');
+    more.classList.add('ios-artifact-more');more.setAttribute('aria-haspopup','menu');
+    more.onclick = () => openLibraryMenu(more);
     const find = artifactButton('Search artifacts', '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>');
     find.setAttribute('aria-expanded', 'false');
     find.onclick = () => {
@@ -374,19 +384,34 @@
     };
     create.classList.add('ios-artifact-button');
     create.innerHTML = icon('<path d="M12 5v14M5 12h14"/>');
-    nav.append(chats, find, create);
+    nav.append(more, find, create);
     // Keep the existing type chooser and its action closures next to +.
     const addMenu = root.querySelector('.artifact-add-menu');
     if (addMenu) nav.append(addMenu);
     library.prepend(nav);
-    const back = artifactButton('Back to artifacts', '<path d="m14 5-7 7 7 7"/>');
-    const page = {ignoredRoute:null, show:null, dispose:null, layout:null};
+    const back = artifactButton('Back to artifacts', '<path d="M4 6h16M4 12h16M4 18h16"/>');
+    const documentMore=artifactButton('More options', '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>');
+    documentMore.classList.add('ios-artifact-more');documentMore.setAttribute('aria-haspopup','menu');
+    documentMore.onclick=()=>openLibraryMenu(documentMore);
+    const handle=document.createElement('div');handle.className='ios-duo-resizer';handle.dataset.pane='artifacts';handle.tabIndex=0;
+    handle.setAttribute('role','separator');handle.setAttribute('aria-orientation','vertical');handle.setAttribute('aria-label','Resize artifact list');root.append(handle);
+    const page = {ignoredRoute:null, show:null, dispose:null, layout:null, toggle:null, drag:null};
     const show = documentView => {
       root.dataset.iosArtifactView = documentView ? 'document' : 'list';
       page.layout();
     };
     page.layout = () => {
-      const frames = nativeDuo ? artifactFrames() : {mode:'single'};
+      const documentView=root.dataset.iosArtifactView==='document';
+      const frames = nativeDuo ? artifactFrames(documentView&&artifactSidebarHidden) : {mode:'single'};
+      const hidden=frames.resizable&&documentView&&artifactSidebarHidden;
+      root.dataset.iosArtifactLibraryHidden=String(hidden);
+      root.dataset.iosArtifactCompact=String(frames.resizable&&!hidden&&frames.library.width<128);
+      root.dataset.iosArtifactToggleAvailable=String(frames.resizable&&documentView);
+      handle.hidden=!frames.resizable||hidden;
+      if(frames.resizable){
+        handle.style.left=(frames.library.x+frames.library.width-12)+'px';handle.style.top=frames.library.y+'px';handle.style.height=frames.library.height+'px';
+        handle.setAttribute('aria-valuemin','76');handle.setAttribute('aria-valuemax',String(frames.maximum));handle.setAttribute('aria-valuenow',String(Math.round(frames.library.width)));
+      }
       if(root.dataset.iosArtifactLayout!==frames.mode) root.dataset.iosArtifactLayout=frames.mode;
       for(const [name,pane] of [['library',library],['document',workbench]]) {
         for(const key of ['x','y','width','height']) {
@@ -395,15 +420,50 @@
           else if(pane.style.getPropertyValue(property)!==value+'px') pane.style.setProperty(property,value+'px');
         }
       }
-      const documentView=root.dataset.iosArtifactView==='document', split=frames.mode!=='single';
-      const hiddenPane=split?null:documentView?library:workbench;
+      const split=frames.mode!=='single';
+      const hiddenPane=hidden?library:split?null:documentView?library:workbench;
       const moveFocus=hiddenPane?.contains(document.activeElement);
-      library.inert=!split&&documentView; workbench.inert=!split&&!documentView;
+      library.inert=hidden||(!split&&documentView); workbench.inert=!split&&!documentView;
       if(moveFocus) {
         const target=documentView?workbench:library;
         target.tabIndex=-1; target.focus({preventScroll:true});
       }
     };
+    page.toggle=()=>{
+      if(root.dataset.iosArtifactToggleAvailable!=='true'||page.drag||document.querySelector('dialog[open]'))return;
+      artifactSidebarHidden=!artifactSidebarHidden;saveArtifactSidebar();page.layout();
+      window.dispatchEvent(new Event('kindred-native-geometry'));
+    };
+    const dragGeometry=()=>{const l=window.__KINDRED_IOS_LAYOUT||{},g=window.__KINDRED_NATIVE_GEOMETRY||{};return JSON.stringify([innerWidth,nativeHeight||innerHeight,l.isDuoInner,l.railSide,l.leftInset,l.rightInset,l.topInset,l.bottomInset,(g.reservedRegions||[]).filter(r=>r.active!==false).map(r=>[r.kind,r.x,r.y,r.width,r.height])]);};
+    handle.addEventListener('pointerdown',event=>{
+      if(handle.hidden||event.button!==0||!event.isPrimary||page.drag||document.querySelector('dialog[open]'))return;
+      event.preventDefault();event.stopImmediatePropagation();
+      const before=artifactSidebarWidth,start=library.getBoundingClientRect().width,x=event.clientX,id=event.pointerId,geometry=dragGeometry();
+      const shield=document.createElement('div');shield.className='pane-resize-shield';shield.setAttribute('aria-hidden','true');document.body.append(shield);
+      root.dataset.iosArtifactResizing='true';html.classList.add('pane-resizing');handle.setPointerCapture(id);
+      const move=next=>{if(next.pointerId===id){artifactSidebarWidth=Math.max(76,Math.min(Number(handle.getAttribute('aria-valuemax')),start+next.clientX-x));page.layout();}};
+      const finish=commit=>{
+        if(!page.drag)return;page.drag=null;
+        handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',cancel);handle.removeEventListener('lostpointercapture',cancel);document.removeEventListener('keydown',escape,true);
+        if(handle.hasPointerCapture(id))handle.releasePointerCapture(id);
+        shield.remove();delete root.dataset.iosArtifactResizing;html.classList.remove('pane-resizing');
+        if(!commit)artifactSidebarWidth=before;else{if(artifactSidebarWidth<128)artifactSidebarWidth=76;saveArtifactSidebar();}
+        page.layout();window.dispatchEvent(new Event('kindred-native-geometry'));
+      };
+      const up=next=>{if(next.pointerId===id)finish(true);},cancel=()=>finish(false),escape=next=>{if(next.key==='Escape'){next.preventDefault();cancel();}};
+      page.drag={cancel,geometry};handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',cancel);handle.addEventListener('lostpointercapture',cancel);document.addEventListener('keydown',escape,true);
+    });
+    handle.addEventListener('keydown',event=>{
+      if(handle.hidden||page.drag||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      event.preventDefault();event.stopImmediatePropagation();
+      const maximum=Number(handle.getAttribute('aria-valuemax'));
+      artifactSidebarWidth=event.key==='Home'?76:event.key==='End'?maximum:Math.max(76,Math.min(maximum,library.getBoundingClientRect().width+(event.key==='ArrowLeft'?-16:16)));
+      saveArtifactSidebar();page.layout();window.dispatchEvent(new Event('kindred-native-geometry'));
+    });
+    const checkDrag=event=>{if(page.drag&&(event?.type==='pagehide'||page.drag.geometry!==dragGeometry()||document.hidden||document.querySelector('dialog[open]')))page.drag.cancel();};
+    const modalObserver=observeUI(checkDrag);modalObserver.observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
+    for(const event of ['kindred-ios-layout','kindred-native-geometry','resize','pagehide'])window.addEventListener(event,checkDrag);
+    document.addEventListener('visibilitychange',checkDrag);
     back.onclick = () => {
       page.ignoredRoute = location.pathname;
       history.pushState({}, '', '/artifacts');
@@ -411,7 +471,10 @@
       library.querySelector('.artifact-studio-library-item.selected')?.focus({preventScroll:true});
     };
     // The server rebuilds the document toolbar when refreshing a preview.
-    const placeBack = () => { if (back.parentElement !== toolbar) toolbar.prepend(back); };
+    const placeBack = () => {
+      if (back.parentElement !== toolbar) toolbar.prepend(back);
+      if (documentMore.parentElement !== toolbar) toolbar.append(documentMore);
+    };
     const toolbarObserver = observeUI(placeBack);
     toolbarObserver.observe(toolbar, {childList:true}); placeBack();
     library.addEventListener('click', event => {
@@ -424,7 +487,11 @@
       history.pushState({}, '', '/artifacts/' + encodeURIComponent(row.dataset.artifactId));
       show(true);
     }, true);
-    page.show = show; page.dispose = () => toolbarObserver.disconnect();
+    page.show = show; page.dispose = () => {
+      page.drag?.cancel();toolbarObserver.disconnect();modalObserver.disconnect();
+      for(const event of ['kindred-ios-layout','kindred-native-geometry','resize','pagehide'])window.removeEventListener(event,checkDrag);
+      document.removeEventListener('visibilitychange',checkDrag);
+    };
     artifactPages.set(root, page);
     show(artifactDocumentRoute());
   };
@@ -454,9 +521,9 @@
   accounts.id = 'ios-accounts';
   accounts.type = 'button';
   accounts.className = 'icon-button';
-  accounts.setAttribute('aria-label', 'Profile and settings');
-  accounts.title = 'Profile and settings';
-  accounts.textContent = 'You';
+  accounts.setAttribute('aria-label', 'More options');
+  accounts.title = 'More options';
+  accounts.innerHTML = icon('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>');
   accounts.setAttribute('aria-haspopup','menu');
   accounts.setAttribute('aria-expanded','false');
   const top = sidebar?.querySelector('.sidebar-top');
@@ -476,7 +543,8 @@
   libraryMenu.id = 'ios-library-menu';
   libraryMenu.setAttribute('popover', 'auto');
   libraryMenu.setAttribute('role', 'menu');
-  libraryMenu.setAttribute('aria-label', 'Profile');
+  libraryMenu.setAttribute('aria-label', 'More options');
+  let libraryMenuAnchor=accounts;
   // Keep the original navigation entries in place: the Artifacts workspace
   // reuses its entry as the return-to-Chats action while it is open.
   for (const [id, label, path] of [
@@ -491,9 +559,11 @@
     const text = document.createElement('span');
     text.textContent = label;
     item.append(text);
+    item.dataset.navigation=id;
     item.onclick = () => {
       libraryMenu.hidePopover();
-      document.getElementById(id)?.click();
+      if(id==='artifacts-button'&&document.querySelector('.artifact-studio')) document.querySelector('.artifact-studio-library-brand')?.click();
+      else document.getElementById(id)?.click();
     };
     libraryMenu.append(item);
   }
@@ -501,18 +571,25 @@
   manageAccounts.type='button';manageAccounts.setAttribute('role','menuitem');manageAccounts.textContent='Manage accounts';
   manageAccounts.onclick=()=>{libraryMenu.hidePopover();window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'open'});};
   libraryMenu.append(manageAccounts);
-  sidebar?.append(libraryMenu);
+  document.body.append(libraryMenu);
   const positionLibraryMenu = () => {
     if (!libraryMenu.matches(':popover-open')) return;
-    const anchor = accounts.getBoundingClientRect();
+    const anchor = libraryMenuAnchor.getBoundingClientRect();
     libraryMenu.style.left = `${Math.max(12, Math.min(anchor.left, innerWidth - libraryMenu.offsetWidth - 12))}px`;
     libraryMenu.style.top = `${anchor.bottom + 8}px`;
   };
-  accounts.onclick = more.onclick = () => {
+  function openLibraryMenu(anchor) {
+    libraryMenuAnchor.setAttribute('aria-expanded','false');
+    libraryMenuAnchor=anchor;
+    lastMenuSource=anchor;
+    const artifactItem=libraryMenu.querySelector('[data-navigation=artifacts-button] span');
+    if(artifactItem){const artifacts=!!document.querySelector('.artifact-studio');artifactItem.textContent=artifacts?'Chats':'Artifacts';artifactItem.previousElementSibling.innerHTML=artifacts?'<path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9 9 0 0 1-4-.9L3 21l1.9-5a9 9 0 0 1-.9-4 8.4 8.4 0 0 1 8.5-9H13a8.4 8.4 0 0 1 8 8z"/>':'<path d="M3 7h7l2 2h9v11H3z"/>';}
     libraryMenu.togglePopover();
     positionLibraryMenu();
-  };
-  libraryMenu.addEventListener('toggle', event => accounts.setAttribute('aria-expanded', String(event.newState === 'open')));
+  }
+  accounts.onclick = () => openLibraryMenu(accounts);
+  more.onclick = () => openLibraryMenu(more);
+  libraryMenu.addEventListener('toggle', event => libraryMenuAnchor.setAttribute('aria-expanded', String(event.newState === 'open')));
   libraryMenu.addEventListener('keydown', event => {
     const items = [...libraryMenu.querySelectorAll('button')];
     const index = items.indexOf(document.activeElement);
@@ -619,7 +696,6 @@
   const avatar = document.querySelector('#user-avatar');
   const updateAccount = () => {
     const initial = avatar?.textContent.trim() || 'You';
-    accounts.textContent = initial;
     accountInitial.textContent = initial;
     accountName.textContent = document.querySelector('#identity-name')?.textContent.trim() || 'Your account';
   };
@@ -1898,7 +1974,8 @@
     if (!nativeDuo) return;
     const route = duoRoute();
     if (route !== 'bot-chat' && html.hasAttribute('data-ios-identity-handoff')) finishIdentityHandoff();
-    const listAvailable = (route === 'bot-chat' || (!botCenter() && route === 'computer')) && nativeSidebarActive();
+    const artifactRoot=document.querySelector('.artifact-studio'),artifacts=['artifacts','artifact'].includes(route);
+    const listAvailable = artifacts ? route==='artifact'&&artifactRoot?.dataset.iosArtifactToggleAvailable==='true' : (route === 'bot-chat' || (!botCenter() && route === 'computer')) && nativeSidebarActive();
     const avatar = document.querySelector('#header-avatar .character'), shape = avatar?.dataset.avatarBody || avatar?.dataset.shape || 'round', color = avatar?.dataset.avatarColor || (avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '');
     const state = {action:'duo-navigation', botCenterAvailable:botCenter(), route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160),
       reduceMotion:html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches,
@@ -1906,7 +1983,7 @@
       botAvatarColor:/^#[0-9a-f]{6}$/i.test(color) ? color : '#2475ff',
       botDetailsAvailable:['bot-chat','computer'].includes(route) && !!document.querySelector('#bot-details') && !document.querySelector('#bot-details').disabled,
       artifactLibraryVisible:['artifacts','artifact'].includes(route) && document.querySelector('.artifact-studio-library')?.inert === false,
-      listVisible:listAvailable && !nativeSidebarHidden,
+      listVisible:artifacts ? artifactRoot?.querySelector('.artifact-studio-library')?.inert===false : listAvailable && !nativeSidebarHidden,
       listToggleAvailable:listAvailable,
       computerExpandAvailable:!botCenter() && route === 'computer' && html.dataset.iosDuoInner === 'true' && !!document.querySelector('#computer-expand') && !document.querySelector('#computer-expand').disabled,
       computerExpanded:route === 'computer' && computer.classList.contains('expanded'),
@@ -1926,8 +2003,13 @@
     const route = duoRoute();
     if (!nativeDuo || (document.querySelector('dialog[open]') && !(action === 'back' && route === 'marketplace'))) return;
     if (action === 'chats') {
-      if (nativeSidebarActive()) window.__kindredNativeSidebar.toggle();
+      if(['artifacts','artifact'].includes(route))artifactPages.get(document.querySelector('.artifact-studio'))?.toggle();
+      else if (nativeSidebarActive()) window.__kindredNativeSidebar.toggle();
       publishDuoNavigation(); return;
+    }
+    if(action==='chatHome') {
+      if(['artifacts','artifact'].includes(route))document.querySelector('.artifact-studio-library-brand')?.click();
+      publishDuoNavigation();return;
     }
     if (action === 'expandComputer') {
       if (!botCenter() && route === 'computer' && html.dataset.iosDuoInner === 'true') document.querySelector('#computer-expand')?.click();
@@ -1946,7 +2028,7 @@
         else document.querySelector('#ios-computer-back')?.click();
       } else if (route === 'details') document.querySelector('#details-close')?.click();
       else if (route === 'artifact') document.querySelector('.artifact-workbench-header [aria-label="Back to artifacts"]')?.click();
-      else if (route === 'artifacts') document.querySelector('.ios-artifact-navigation [aria-label="Back to chats"]')?.click();
+      else if (route === 'artifacts') document.querySelector('.artifact-studio-library-brand')?.click();
       else if (route === 'marketplace') document.querySelector('#marketplace-dialog')?.close();
       else if (route === 'bot-chat') {
         if (typeof window.__KINDRED_MOBILE_BACK === 'function') window.__KINDRED_MOBILE_BACK('chat-list');
@@ -1965,7 +2047,7 @@
     }
     publishDuoNavigation();
   }};
-  observeUI(publishDuoNavigation).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','inert','class','data-ios-artifact-view','data-ios-artifact-layout','data-shape','data-avatar-body','data-avatar-color']});
+  observeUI(publishDuoNavigation).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','inert','class','data-ios-artifact-view','data-ios-artifact-layout','data-ios-artifact-toggle-available','data-ios-artifact-library-hidden','data-shape','data-avatar-body','data-avatar-color']});
   observeUI(publishDuoNavigation).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
   observeUI(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo','data-ios-duo-inner','data-ios-sidebar-hidden','data-ios-native-sidebar','data-ios-native-sidebar-hidden','data-motion']});
   matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',publishDuoNavigation);
@@ -1978,15 +2060,16 @@
     const specs = [
       ['identity','.conversation-header .bot-heading',''],
       ['latest','.conversation>.composer-area>.jump-latest','chevron.down'],
-      ['accounts','#ios-accounts','person.crop.circle'],
+      ['accounts','#ios-accounts','ellipsis'],
       ['search','#ios-search','magnifyingglass'],
       ['new','.sidebar-top #new-bot','plus'],
       ['library','#ios-library-more','ellipsis'],
       ['chats','#mobile-menu','chevron.backward'],
       ['computer','#show-computer','desktopcomputer'],
       ['bot-settings','#bot-settings','gearshape'],
-      ['artifact-back','.ios-artifact-button[aria-label="Back to artifacts"]','chevron.backward'],
-      ['artifact-chats','.ios-artifact-navigation [aria-label="Back to chats"]','bubble.left.and.bubble.right'],
+      ['artifact-back','.ios-artifact-button[aria-label="Back to artifacts"]','line.3.horizontal'],
+      ['artifact-more','.ios-artifact-navigation .ios-artifact-more','ellipsis'],
+      ['artifact-document-more','.artifact-workbench-header .ios-artifact-more','ellipsis'],
       ['artifact-search','.ios-artifact-navigation [aria-label="Search artifacts"]','magnifyingglass'],
       ['artifact-new','.ios-artifact-navigation .artifact-add','plus'],
     ];
@@ -2071,7 +2154,7 @@
       perform(id,document) {
         if (document !== glassDocument || window.document.querySelector('dialog[open]')) return;
         const control=current.get(id);if(!glassRouteAllows(id)||!control?.interactive||!visible(control.source))return;
-        control.source.click();schedule();
+        lastMenuSource=control.source;control.source.click();schedule();
       },
     };
     observeUI(schedule).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style','hidden','inert','disabled','open','aria-label','aria-disabled','data-ios-artifact-view','data-ios-artifact-layout','data-shape','data-avatar-body','data-avatar-color']});

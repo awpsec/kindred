@@ -37,7 +37,7 @@ private final class GlassChromeButton: UIButton {
 /// Floating chrome and the composer sit above WebKit. The retained page owns
 /// their layout and actions, while UIKit owns the glass and native editor.
 struct NativeGlassControl {
-    static let identifiers: Set<String> = ["identity", "latest", "accounts", "search", "new", "library", "chats", "computer", "bot-settings", "artifact-back", "artifact-chats", "artifact-search", "artifact-new"]
+    static let identifiers: Set<String> = ["identity", "latest", "accounts", "search", "new", "library", "chats", "computer", "bot-settings", "artifact-back", "artifact-more", "artifact-document-more", "artifact-search", "artifact-new"]
     let id: String
     let frame: CGRect
     let title: String
