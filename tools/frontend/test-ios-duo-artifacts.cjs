@@ -48,6 +48,11 @@ function pdf(count){
  await p.screenshot({path:path.join(out,'inner-library.png')});
  await p.locator('[data-artifact-id="duo-document"]').click();await p.locator('.artifact-title-input').waitFor();await p.locator('.document-pdf-page[data-page="1"] canvas').waitFor();await settle();
  const zoom=p.locator('.ios-document-zoom-trigger');
+ for(const [theme,surround] of [['dark','rgb(17, 17, 17)'],['light','rgb(233, 235, 239)']]){
+  const colors=await p.evaluate(theme=>{document.documentElement.dataset.theme=theme;const view=document.querySelector('.document-pdf'),paper=view.querySelector('.document-pdf-page'),canvas=paper.querySelector('canvas');return {surround:getComputedStyle(view).backgroundColor,paper:getComputedStyle(paper).backgroundColor,filter:getComputedStyle(view).filter,pageFilter:getComputedStyle(canvas).filter};},theme);
+  assert.equal(colors.surround,surround,'document surround follows '+theme+' mode');assert.equal(colors.paper,'rgb(255, 255, 255)','theme never changes the original PDF paper');assert.equal(colors.filter,'none');assert.equal(colors.pageFilter,'none');
+ }
+ await p.evaluate(()=>document.documentElement.dataset.theme='dark');
  await p.waitForFunction(()=>{const trigger=document.querySelector('.ios-document-zoom-trigger'),control=accountRequests.filter(v=>v.action==='glass-controls').at(-1)?.controls.find(c=>c.id==='artifact-zoom');return /%$/.test(trigger?.textContent||'')&&control?.title===trigger.textContent;});
  const zoomPlacement=await p.evaluate(()=>{const r=n=>{const b=n.getBoundingClientRect();return {top:b.top,bottom:b.bottom,left:b.left,right:b.right,height:b.height};};return {header:r(document.querySelector('.artifact-workbench-header')),trigger:r(document.querySelector('.ios-document-zoom-trigger')),body:r(document.querySelector('.document-body')),pages:r(document.querySelector('.document-pdf-continuous')),menu:getComputedStyle(document.querySelector('.ios-document-zoom-menu')).display};});
  assert(zoomPlacement.trigger.top>=zoomPlacement.header.top&&zoomPlacement.trigger.bottom<=zoomPlacement.header.bottom,'zoom belongs to the document header');assert(zoomPlacement.header.height<=80&&zoomPlacement.pages.top<=zoomPlacement.body.top+1,'no separate toolbar row takes document height');assert.equal(zoomPlacement.menu,'none');
