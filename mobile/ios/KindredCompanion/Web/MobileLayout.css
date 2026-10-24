@@ -619,3 +619,19 @@ html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .color-option { j
 html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .outline-button { width:100%; min-height:44px; }
 html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] .outline-button[aria-pressed=true] { background:var(--hover); border-color:var(--soft); }
 html[data-kindred-ios] .avatar-popover[data-ios-avatar-picker] button:focus-visible { outline:2px solid var(--fg); outline-offset:-2px; }
+
+/* Preview surfaces share the measured artifact safe area, including the cover
+   display's native rail. No renderer/control may extend underneath that rail. */
+html[data-kindred-ios] :is(.document-dialog,.workspace-artifact-dialog,.screenshot-dialog,.chat-media-dialog)[data-ios-preview-fit][open] {
+  animation:none; box-sizing:border-box; inset:var(--ios-preview-y) auto auto var(--ios-preview-x);
+  width:var(--ios-preview-width); max-width:var(--ios-preview-width);
+  height:var(--ios-preview-height); max-height:var(--ios-preview-height); margin:0; padding:0;
+}
+html[data-kindred-ios] dialog[data-ios-preview-fit] :is(.document-header,.ios-preview-header,.dialog-header,.chat-media-heading) { min-height:64px; padding:10px 16px; }
+html[data-kindred-ios] .chat-media-dialog[data-ios-preview-fit] .chat-media-view { min-width:0; padding:16px; }
+html[data-kindred-ios] .chat-media-dialog[data-ios-preview-fit] .chat-media-full> :is(img,canvas,video) { display:block; max-height:max(40px,calc(var(--ios-preview-height) - 160px)); object-fit:contain; }
+html[data-kindred-ios] .chat-media-dialog.is-video[data-ios-preview-fit] { background:transparent; }
+html[data-kindred-ios] .chat-media-dialog.is-video[data-ios-preview-fit] .chat-media-heading { position:absolute; width:1px; height:1px; min-height:0; padding:0; overflow:hidden; clip-path:inset(50%); }
+html[data-kindred-ios] .chat-media-dialog.is-video[data-ios-preview-fit] .chat-media-heading:has(button:focus-visible) { width:auto; height:auto; min-height:44px; bottom:4px; left:16px; clip-path:none; overflow:visible; }
+html[data-kindred-ios] .chat-media-dialog.is-video[data-ios-preview-fit] .chat-media-filename { display:none; }
+html[data-kindred-ios] .chat-media-dialog.is-video[data-ios-preview-fit] .chat-media-full>video { max-height:max(40px,calc(var(--ios-preview-height) - 56px)); }

@@ -268,6 +268,13 @@
       }
       if (!head || !close) continue;
       dialog.dataset.iosPreview = 'true';
+      if (dialog.matches('.chat-media-dialog.is-video')) {
+        // Touch dismisses on the surrounding space. Retain an accessible close
+        // action for VoiceOver/keyboard without a floating window title bar.
+        dialog.tabIndex = -1;
+        dialog.focus({preventScroll:true});
+        for (const action of head.querySelectorAll('button,a')) if (action !== close) action.hidden = true;
+      }
       close.setAttribute('aria-label','Close preview'); close.title = 'Close preview';
       close.innerHTML = icon('<path d="m6 6 12 12M18 6 6 18"/>');
       if (dialog.matches('.document-dialog')) {
@@ -298,7 +305,7 @@
   const artifactDocumentRoute = () => /^\/artifacts\/[^/]+\/?$/.test(location.pathname) || new URLSearchParams(location.hash.slice(1)).has('artifact');
   // Artifact panes use the same measured native geometry as chat. Keep the
   // preview mounted: a fold changes frames, never the selected document.
-  const artifactFrames = () => {
+  const artifactFrames = (single = false) => {
     const layout = window.__KINDRED_IOS_LAYOUT || {}, geometry = window.__KINDRED_NATIVE_GEOMETRY || {};
     const width = innerWidth, height = Math.min(innerHeight, nativeHeight || innerHeight);
     const finite = value => Number.isFinite(value) ? Math.max(0,value) : 0;
@@ -328,15 +335,15 @@
     const scale = Math.max(1,parseFloat(getComputedStyle(html).getPropertyValue('--text-scale'))||1);
     const minLibrary=220*scale, minDocument=320*scale, divider=vertical||horizontal, exclusions=regions.filter(r=>r!==divider);
     let library, documentFrame, mode='single';
-    if (layout.isDuoInner === true && vertical) {
+    if (!single && layout.isDuoInner === true && vertical) {
       library=avoid({...frame,width:vertical.x-frame.x},exclusions);
       documentFrame=avoid({...frame,x:vertical.x+vertical.width,width:frame.x+frame.width-vertical.x-vertical.width},exclusions);
       if(library.width>=minLibrary&&documentFrame.width>=minDocument) mode='split';
-    } else if (layout.isDuoInner === true && horizontal) {
+    } else if (!single && layout.isDuoInner === true && horizontal) {
       documentFrame=avoid({...frame,height:horizontal.y-frame.y},exclusions);
       library=avoid({...frame,y:horizontal.y+horizontal.height,height:frame.y+frame.height-horizontal.y-horizontal.height},exclusions);
       if(documentFrame.height>=200*scale&&library.height>=200*scale&&frame.width>=minDocument) mode='stacked';
-    } else if (layout.isDuoInner === true && frame.width>=720*scale) {
+    } else if (!single && layout.isDuoInner === true && frame.width>=720*scale) {
       const listWidth=Math.min(280*scale,Math.max(minLibrary,frame.width*.32));
       library=avoid({...frame,width:listWidth},exclusions);
       documentFrame=avoid({...frame,x:frame.x+listWidth,width:frame.width-listWidth},exclusions);
@@ -1405,6 +1412,13 @@
   let messageReadingEpoch = 0, messageGeometryEpoch = 0, messageReadingActive = false;
   function updateNativeContentClearance() {
     updateNativeSheets();
+    // A preview is one retained surface, even across folds. Fit it inside one
+    // usable rectangle, excluding native rail, camera/status and active hinges.
+    const previewFrame = artifactFrames(true).document;
+    for (const dialog of document.querySelectorAll('.document-dialog[open],.workspace-artifact-dialog[open],.screenshot-dialog[open],.chat-media-dialog[open]')) {
+      for (const [key,value] of Object.entries(previewFrame)) setContentInset(dialog,'--ios-preview-'+key,value);
+      dialog.toggleAttribute('data-ios-preview-fit',true);
+    }
     updateAvatarPickers();
     const value = window.__KINDRED_IOS_LAYOUT || {}, side = html.dataset.iosRailSide;
     const edgeLeft = nativeDuo && side === 'left' ? Math.min(innerWidth,Math.max(0,Number(value.leftInset)||0)) : 0;

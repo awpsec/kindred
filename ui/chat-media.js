@@ -89,6 +89,7 @@ export function chatMedia(file,{getBlob,nativeSave,notice,icon,scope=''}){
 }
 export function openChatMedia({name,type,getBlob,download,icon,origin}){
  const dialog=el('dialog','chat-media-dialog'),head=el('header','chat-media-heading'),title=el('span','chat-media-filename',name),body=el('div','chat-media-view'),status=el('p','chat-media-loading','Loading…');
+ dialog.classList.toggle('is-video',type.video);
  dialog.setAttribute('aria-label',name);head.append(title,control('Download',()=>void download(),icon,'download'),control('Close',()=>dialog.close(),icon,'close'));body.append(status);dialog.append(head,body);
  let url,surface,dead=false,zoom=1;
  const cleanup=()=>{if(dead)return;dead=true;surface?.dispose();if(url)URL.revokeObjectURL(url);dialogs.delete(dialog);controllers.delete(lifetime);dialog.remove();updateVisibility();if(origin?.isConnected)origin.focus({preventScroll:true});};
@@ -98,7 +99,7 @@ export function openChatMedia({name,type,getBlob,download,icon,origin}){
  void (async()=>{
   try{
    const blob=await getBlob();if(dead||!dialog.isConnected)return;url=URL.createObjectURL(blob);
-   const error=()=>{if(dead)return;status.textContent=type.video?'This video cannot be played here. You can still download it.':'This image cannot be displayed. You can still download it.';status.hidden=false;};
+   const error=()=>{if(dead)return;status.replaceChildren(document.createTextNode(type.video?'This video cannot be played here. ':'This image cannot be displayed. '),control('Download',()=>void download()));status.hidden=false;};
    surface=mediaSurface(type,url,name,error);surface.root.classList.add('chat-media-full');body.append(surface.root);status.hidden=true;
    if(type.video){surface.image.controls=true;surface.image.preload='auto';surface.image.autoplay=false;surface.image.muted=false;dialog.classList.add('is-video');}
    else{
@@ -112,7 +113,8 @@ export function openChatMedia({name,type,getBlob,download,icon,origin}){
     if(dead||!motion()||!origin?.isConnected)return;
     const from=origin.getBoundingClientRect(),to=surface.root.getBoundingClientRect();
     if(!from.width||!to.width)return;
-    surface.root.animate([{transform:`translate(${from.x-to.x}px,${from.y-to.y}px) scale(${Math.min(1,from.width/to.width)})`,opacity:.5},{transform:'none',opacity:1}],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'});
+    const frames=document.documentElement.hasAttribute('data-kindred-ios')?[{opacity:.5},{opacity:1}]:[{transform:`translate(${from.x-to.x}px,${from.y-to.y}px) scale(${Math.min(1,from.width/to.width)})`,opacity:.5},{transform:'none',opacity:1}];
+    surface.root.animate(frames,{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'});
    };
    surface.image.addEventListener(type.video?'loadedmetadata':'load',reveal,{once:true});
   }catch{if(!dead)status.textContent='Media unavailable. Close and try again.';}
