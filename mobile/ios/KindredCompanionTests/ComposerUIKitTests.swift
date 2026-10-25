@@ -219,7 +219,8 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
         _ = try await js("""
         const original=window.fetch.bind(window);
-        window.__slashMode='hold';window.__slashRequests=0;
+        window.__slashMode='hold';window.__slashRequests=0;window.__slashKeys=[];
+        document.querySelector('#prompt').addEventListener('keydown',event=>queueMicrotask(()=>window.__slashKeys.push({key:event.key,prevented:event.defaultPrevented,text:document.querySelector('#prompt').value,menuHidden:document.querySelector('#command-options').hidden})),true);
         window.fetch=(input,options={})=>{
           const url=new URL(typeof input==='string'?input:input.url,location.href);
           if(url.pathname!=='/api/commands')return original(input,options);
@@ -253,6 +254,9 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         composer.editor.insertText("/dom")
         try await waitFor("Return choice loaded") { composer.editor.hasSuggestions && composer.model?.text=="/dom" }
         composer.editor.insertText("\n")
+        try await Task.sleep(nanoseconds:200_000_000)
+        let debug:[String:Any]=["nativeText":composer.editor.text ?? "", "selection":composer.editor.selectedRange.debugDescription,"modelText":composer.model?.text ?? "", "page":try await js("({keys:window.__slashKeys,text:document.querySelector('#prompt').value,menuHidden:document.querySelector('#command-options').hidden,sends:window.__composerSends.length})") ?? [:]]
+        let trace=XCTAttachment(data:try JSONSerialization.data(withJSONObject:debug,options:[.prettyPrinted]),uniformTypeIdentifier:"public.json");trace.name="native-slash-return-state";trace.lifetime = .keepAlways;add(trace)
         try await waitFor("Return chooses command without sending") { composer.editor.text=="/domain-review " }
         let unsent=try await js("window.__composerSends.length") as? Int
         XCTAssertEqual(unsent,0)

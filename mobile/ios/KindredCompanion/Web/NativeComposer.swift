@@ -70,6 +70,10 @@ final class NativeComposer: UIView, UITextViewDelegate {
         var insertingNewline=false,hasSuggestions=false
         var key:((String)->Void)?
         var pastePayload: (([String:Any])->Void)?
+        override func insertText(_ text:String) {
+            if text=="\n",!insertingNewline,markedTextRange==nil { key?("Enter");return }
+            super.insertText(text)
+        }
         override func paste(_ sender: Any?) {
             if let image=UIPasteboard.general.image,let data=image.pngData(),data.count<=12_000_000 {
                 pastePayload?(["image":data.base64EncodedString()]);return
@@ -180,6 +184,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
                 config.baseBackgroundColor = item.primary ? .label : .clear
                 config.baseForegroundColor = item.primary ? .systemBackground : .label
                 config.cornerStyle = .capsule;config.contentInsets = .zero
+                if item.kind=="suggestion" { config.titleAlignment = .leading }
                 if item.primary { config.background.backgroundInsets = NSDirectionalEdgeInsets(top:4,leading:4,bottom:4,trailing:4) }
                 if item.symbol.isEmpty {
                     config.title=item.text;config.titleLineBreakMode = item.kind=="suggestion" ? .byWordWrapping : .byTruncatingTail
@@ -196,6 +201,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
                 }
                 button.configuration=config;button.titleLabel?.numberOfLines=item.kind=="suggestion" ? 3 : 1;contentKeys[item.id]=key
                 }
+                button.contentHorizontalAlignment=item.kind=="suggestion" ? .leading : .center
                 button.isEnabled=item.enabled;button.accessibilityLabel=item.text
                 button.accessibilityIdentifier="kindred-native-composer-"+item.id
             } else if let image=node as? UIImageView { image.image=item.image.flatMap(UIImage.init(data:))
