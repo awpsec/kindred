@@ -11,7 +11,10 @@ progress::-moz-progress-bar{background:var(--progress-accent)}
 .task-activity.task-compact .summary-progress-heading{border:0;padding-bottom:0;flex-wrap:nowrap;color:var(--muted)}
 .task-activity.task-compact .summary-progress-task{min-width:0}
 .task-activity.task-compact .summary-progress-time{flex:none;white-space:nowrap}
-#content .task-activity{margin-inline:var(--task-header-inset)}
+#content .task-activity{margin-inline:var(--task-header-inset);max-width:calc(100% - 2 * var(--task-header-inset));padding-inline-end:0;container-type:inline-size;transition:margin-inline-start .24s ease-out,margin-inline-end .24s ease-out,max-width .24s ease-out,padding-inline-end .24s ease-out}
+#content .task-activity[data-progress-finished="true"]{margin-inline:0;max-width:100%}
+.task-activity .summary-progress-heading{filter:grayscale(0);transition:filter .24s ease-out}
+.task-activity[data-progress-finished="true"] .summary-progress-heading{filter:grayscale(1)}
 .task-activity .summary-progress-activity{padding:10px 0 4px var(--task-body-indent)}
 .task-activity .task-stages{list-style:none;margin:12px 0 4px;padding:0 0 0 var(--task-body-indent)}
 .task-activity .task-stage{position:relative;padding:5px 0 5px 18px;color:var(--muted);overflow-wrap:anywhere}
@@ -35,9 +38,24 @@ progress::-moz-progress-bar{background:var(--progress-accent)}
 #content .task-owned-review{margin-inline-start:calc(var(--task-header-inset) + var(--task-body-indent));margin-inline-end:var(--task-header-inset);max-width:calc(100% - 2 * var(--task-header-inset) - var(--task-body-indent))}
 
 /* One identity and one live status per task; details keep their disclosure. */
-.task-activity[data-task-status]{position:relative;padding-inline-end:32px;box-sizing:border-box}
+#content .task-activity[data-task-status]{position:relative;padding-inline-end:32px;box-sizing:border-box}
 .task-activity[data-task-status] .summary-progress-heading{border:0;flex-wrap:wrap;padding-bottom:0}
 .task-activity[data-task-status] .summary-progress-live-status{flex:0 0 calc(100% - 42px);margin-inline-start:42px;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
 .task-activity>.work-stop{position:absolute;inset:0 0 auto auto}
 .task-activity:hover>.work-stop,.task-activity:focus-within>.work-stop{opacity:1;pointer-events:auto}
-@media(pointer:coarse){.task-activity>.work-stop{width:44px;height:44px;padding:12px}.task-activity[data-task-status]{padding-inline-end:46px}}
+@media(pointer:coarse){.task-activity>.work-stop{width:44px;height:44px;padding:12px}#content .task-activity[data-task-status]{padding-inline-end:46px}}
+
+/* Use the chat column's width, including when a desktop side pane is open. */
+@container (min-width:560px){
+  .task-activity[data-task-status] .summary-progress-heading{flex-wrap:nowrap}
+  .task-activity[data-task-status] .summary-progress-task{flex:0 1 auto}
+  .task-activity[data-task-status] .summary-progress-live-status{flex:0 1 auto;min-width:0;margin-inline-start:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .task-activity[data-task-status] .summary-progress-live-status::before{content:'·';margin-inline-end:6px;color:var(--muted)}
+  .task-activity[data-task-status] .summary-progress-time{order:1;flex:0 0 auto;margin-inline-start:auto;margin-inline-end:0}
+}
+:root[data-page-hidden] .task-activity .working-glimmer{animation-play-state:paused}
+:root:is([data-page-hidden],[data-motion="off"]) #content .task-activity,
+:root:is([data-page-hidden],[data-motion="off"]) .task-activity .summary-progress-heading{transition:none}
+@media(prefers-reduced-motion:reduce){
+  #content .task-activity,.task-activity .summary-progress-heading{transition:none}
+}

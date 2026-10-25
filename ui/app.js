@@ -5122,6 +5122,8 @@ function updateTaskStatus(label){
     if(state.activityReadAt&&(Date.now()-state.activityReadAt)/1000>15)text='Connection lost · last known: '+text;
   }
   if(label.textContent!==text)label.textContent=text;
+  const stale=state.activityReadAt&&(Date.now()-state.activityReadAt)/1000>15;
+  label.classList.toggle('working-glimmer',run?.status==='running'&&!label.dataset.taskStatusFixed&&!stale&&!(current&&activity.provider_retry?.phase==='retrying'));
   label.title=text;
 }
 function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
@@ -5154,7 +5156,12 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   const details=node('details','summary-progress-disclosure');details.open=completing||manual||(staged&&!finished&&!entry.progressClosed.has(key));
   const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender);
   const chevron=node('span','summary-progress-chevron','⌄');chevron.setAttribute('aria-hidden','true');title.append(chevron);
-  if(bot){const avatar=buddy(bot,22);avatar.setAttribute('aria-hidden','true');title.append(avatar,node('span','summary-progress-author',bot.name));}
+  if(bot){
+    // A completed receipt belongs to this task, not the bot's next activity.
+    const avatar=finished?character({...portrait(bot),animated:false},22):buddy(bot,22);
+    if(finished)delete avatar.dataset.botId;
+    avatar.setAttribute('aria-hidden','true');title.append(avatar,node('span','summary-progress-author',bot.name));
+  }
   const status=finished?({completed:'Finished',failed:'Failed',cancelled:'Stopped',interrupted:'Interrupted'}[(terminal?.status||run?.status)]||'Finished'):!run?'Recorded activity':(waiting||run?.status==='awaiting_user')?'Waiting for your answer':(run?.status==='cancelling'||stoppingTasks.has(run?.id))?'Stopping':run?.status==='awaiting_approval'?'Waiting for your approval':run?.status==='queued'?'Queued':null;
   const live=!finished&&run&&(active(run)||run.status==='queued')&&ownsRun(run.id,run.bot_id,key);
   const waits=live?ownedWaits.filter(w=>w.parent_run_id===currentRunId):[];
