@@ -127,7 +127,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // Bind the fixture's exact shared candidate, not a stale connected UI.
         _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
         try await waitFor("exact Send candidate UI manifest") {
-            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='3620ed9f602f8ea8d585a4cd1b51f7cf852c86e130d2c0d1bb19d0d86a0d64fc' && window.__sendSurfaceFixture?.['app.js']==='2074571889b52582450fcff2fa0d73e51b5d6bec9844a9cf2c2c69327e7143ec' && window.__sendSurfaceFixture?.['dictation.js']==='a76b4a64ef45384053f8ade870045b9791e163ffeb63a57111e2c0198879983c'")
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='3620ed9f602f8ea8d585a4cd1b51f7cf852c86e130d2c0d1bb19d0d86a0d64fc' && window.__sendSurfaceFixture?.['app.js']==='2074571889b52582450fcff2fa0d73e51b5d6bec9844a9cf2c2c69327e7143ec' && window.__sendSurfaceFixture?.['commands.js']==='5f4f2e6b9ee5cd0141ab36625da8c60fe6e98aa0488abf1a20e3e33d97095046' && window.__sendSurfaceFixture?.['dictation.js']==='a76b4a64ef45384053f8ade870045b9791e163ffeb63a57111e2c0198879983c'")
         }
         try await waitFor("injected native capability reconciles through bridge") {
             try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && window.__KINDRED_IOS_DICTATION?.recognizerAvailable===true")
@@ -213,6 +213,59 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         XCTAssertGreaterThan(composer.indicatorSurfaces,0,"native reading scroll view found for standard indicator inset")
         let report:[String:Any]=["nativeGlass":true,"nativeEditor":true,"keyboardShows":keyboardShows,"nativeIndicatorSurfaces":composer.indicatorSurfaces,"draftPreserved":true,"singleSend":true]
         let evidence=XCTAttachment(data:try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted]),uniformTypeIdentifier:"public.json");evidence.name="native-composer-input";evidence.lifetime = .keepAlways;add(evidence)
+    }
+
+    func testNativeSlashCommandsLoadingFilteringAndSelection() async throws {
+        guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
+        _ = try await js("""
+        const original=window.fetch.bind(window);
+        window.__slashMode='hold';window.__slashRequests=0;
+        window.fetch=(input,options={})=>{
+          const url=new URL(typeof input==='string'?input:input.url,location.href);
+          if(url.pathname!=='/api/commands')return original(input,options);
+          window.__slashRequests++;
+          const response=()=>new Response(JSON.stringify([{name:'domain-review',description:'Review a domain',source:'skill',action:'run',parameters:[{name:'domain',required:true,rest:false}],usage:'/domain-review <domain>'}]),{status:200,headers:{'Content-Type':'application/json'}});
+          return window.__slashMode==='hold'?new Promise(resolve=>window.__releaseSlash=()=>resolve(response())):Promise.resolve(response());
+        };true
+        """)
+        let composer=session.glassControls.composer
+        try await waitFor("native composer ready for slash") { composer.model != nil && !composer.isHidden }
+        composer.editor.becomeFirstResponder()
+        try await waitFor("native slash keyboard") { composer.editor.isFirstResponder && self.keyboardVisible }
+        composer.editor.insertText("/")
+        try await waitFor("native command loading status") { !composer.popup.isHidden && composer.model?.items.contains(where: { $0.kind=="suggestion-label" && $0.text.contains("Loading commands") })==true }
+        XCTAssertTrue(composer.popup.effect is UIGlassEffect)
+        let webFocused=try await boolean("document.activeElement===document.querySelector('#prompt')")
+        XCTAssertFalse(webFocused,"the native editor keeps keyboard ownership")
+        _ = try await js("window.__slashMode='ready';window.__releaseSlash();true")
+        try await waitFor("slash choices in native material") { composer.model?.items.contains(where: { $0.kind=="suggestion" && $0.text.contains("/domain-review") })==true }
+        let image=XCTAttachment(image:UIGraphicsImageRenderer(bounds:window.bounds).image { _ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true) });image.name="native-slash-commands";image.lifetime = .keepAlways;add(image)
+        composer.editor.selectedRange=NSRange(location:0,length:(composer.editor.text as NSString).length)
+        composer.editor.insertText("/dom")
+        try await waitFor("native command filter") { composer.model?.text=="/dom" && composer.model?.items.contains(where: { $0.kind=="suggestion" && $0.text.contains("/domain-review") })==true }
+        let button=try XCTUnwrap(composer.suggestionScroll.subviews.compactMap {$0 as? UIButton}.first(where: {$0.accessibilityLabel?.contains("/domain-review")==true}))
+        let center=button.convert(CGPoint(x:button.bounds.midX,y:button.bounds.midY),to:window)
+        XCTAssertTrue(window.hitTest(center,with:nil)===button,"the native command row is tappable above the keyboard")
+        button.sendActions(for:.primaryActionTriggered)
+        try await waitFor("tap inserts command and caret") { composer.editor.text=="/domain-review " && composer.editor.selectedRange.location==15 }
+        XCTAssertTrue(composer.editor.isFirstResponder)
+        composer.editor.selectedRange=NSRange(location:0,length:(composer.editor.text as NSString).length)
+        composer.editor.insertText("/dom")
+        try await waitFor("Return choice loaded") { composer.editor.hasSuggestions && composer.model?.text=="/dom" }
+        composer.editor.insertText("\n")
+        try await waitFor("Return chooses command without sending") { composer.editor.text=="/domain-review " }
+        let unsent=try await js("window.__composerSends.length") as? Int
+        XCTAssertEqual(unsent,0)
+        composer.editor.insertText("acme.test")
+        try await waitFor("command parameter reaches original draft") { try await self.boolean("document.querySelector('#prompt').value==='/domain-review acme.test'") }
+        composer.emit("send")
+        try await waitFor("command sends exactly once") { try await self.boolean("window.__composerSends.length===1 && window.__composerSends[0].prompt==='/domain-review acme.test' && document.querySelector('#prompt').value===''") }
+        composer.editor.insertText("/zz")
+        try await waitFor("native empty command status") { !composer.popup.isHidden && composer.model?.items.contains(where: { $0.kind=="suggestion-label" && $0.text.contains("No matching commands") })==true }
+        composer.editor.resignFirstResponder()
+        try await waitFor("command popup dismisses with focus") { composer.popup.isHidden && !self.keyboardVisible }
+        let report:[String:Any]=["nativeGlass":true,"loading":true,"filteredChoices":true,"tapAndReturnSelection":true,"caretPreserved":true,"keyboardRetained":true,"oneOriginalSend":true,"emptyStatus":true,"blurDismisses":true]
+        let evidence=XCTAttachment(data:try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted]),uniformTypeIdentifier:"public.json");evidence.name="native-slash-commands-result";evidence.lifetime = .keepAlways;add(evidence)
     }
 
     func testComposerBackdropFollowsScrollingContent() async throws {
@@ -584,7 +637,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             (()=>{const rect=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
               const p=document.querySelector('#prompt'),shell=document.querySelector('#app'),v=visualViewport;
               return {draftMatches:p?.textContent==='Keyboard ownership fixture draft',sendCount:window.__composerSends.length,
-                uiMatches:window.__sendSurfaceFixture?.['style.css']==='3620ed9f602f8ea8d585a4cd1b51f7cf852c86e130d2c0d1bb19d0d86a0d64fc'&&window.__sendSurfaceFixture?.['app.js']==='2074571889b52582450fcff2fa0d73e51b5d6bec9844a9cf2c2c69327e7143ec'&&window.__sendSurfaceFixture?.['dictation.js']==='a76b4a64ef45384053f8ade870045b9791e163ffeb63a57111e2c0198879983c',
+                uiMatches:window.__sendSurfaceFixture?.['style.css']==='3620ed9f602f8ea8d585a4cd1b51f7cf852c86e130d2c0d1bb19d0d86a0d64fc'&&window.__sendSurfaceFixture?.['app.js']==='2074571889b52582450fcff2fa0d73e51b5d6bec9844a9cf2c2c69327e7143ec'&&window.__sendSurfaceFixture?.['commands.js']==='5f4f2e6b9ee5cd0141ab36625da8c60fe6e98aa0488abf1a20e3e33d97095046' && window.__sendSurfaceFixture?.['dictation.js']==='a76b4a64ef45384053f8ade870045b9791e163ffeb63a57111e2c0198879983c',
                 uiManifest:window.__sendSurfaceFixture,viewport:{width:innerWidth,height:innerHeight},
                 client:{width:document.documentElement.clientWidth,height:document.documentElement.clientHeight},
                 visual:v?{width:v.width,height:v.height,offsetTop:v.offsetTop,offsetLeft:v.offsetLeft,scale:v.scale}:null,

@@ -19,6 +19,8 @@ export function createCommandsUI({editor,composer,api,connected,unavailable=()=>
   const menu=document.createElement('div');menu.id='command-options';menu.className='command-options';menu.hidden=true;
   menu.setAttribute('role','listbox');menu.setAttribute('aria-label','Commands');composer.before(menu);
   editor.setAttribute('aria-autocomplete','list');editor.setAttribute('aria-controls',menu.id);
+  const nativeEditing=()=>window.__KINDRED_MOBILE_PLATFORM==='ios'&&composer.hasAttribute('data-ios-native-composer');
+  const focused=()=>document.activeElement===editor||(nativeEditing()&&window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true);
   let commands=[],updated=0,pending=null,selected=0,items=[],dismissed=null,error='',generation=0,lastCompletion=null;
   const node=(tag,classes,text)=>{const n=document.createElement(tag);n.className=classes||'';if(text!==undefined)n.textContent=text;return n;};
   function close(){menu.hidden=true;items=[];editor.removeAttribute('aria-activedescendant');}
@@ -95,7 +97,7 @@ export function createCommandsUI({editor,composer,api,connected,unavailable=()=>
   }
   function show(){
     updateHint();const token=completion();
-    if(!connected()||document.activeElement!==editor||!token||dismissed===token.key){close();return;}
+    if(!connected()||!focused()||!token||dismissed===token.key){close();return;}
     const query=token.query;
     items=commands.filter(c=>c.name.includes(query)||c.description?.toLowerCase().includes(query)).sort((a,b)=>Number(!a.name.startsWith(query))-Number(!b.name.startsWith(query))||a.name.localeCompare(b.name)).slice(0,8);
     menu.replaceChildren();menu.hidden=false;document.getElementById('mention-options').hidden=true;
@@ -123,7 +125,12 @@ export function createCommandsUI({editor,composer,api,connected,unavailable=()=>
     if(!token)range.selectNodeContents(editor);
     const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
     const spacing=token?.suffix&&/^[\s.,;:!?)}\]]/.test(token.suffix)?'':' ';
-    document.execCommand('insertText',false,'/'+command.name+spacing);
+    if(nativeEditing()){
+      // UIKit owns focus; the retained DOM editor is deliberately noneditable.
+      // Replace its selected token without asking WebKit to take the keyboard.
+      range.deleteContents();const text=document.createTextNode('/'+command.name+spacing);range.insertNode(text);
+      range.setStartAfter(text);range.collapse(true);selection.removeAllRanges();selection.addRange(range);
+    }else document.execCommand('insertText',false,'/'+command.name+spacing);
     dismissed=completion()?.key||null;
     editor.dispatchEvent(new Event('input',{bubbles:true}));onDraft();updateHint();
   }
@@ -161,8 +168,8 @@ export function createCommandsUI({editor,composer,api,connected,unavailable=()=>
   editor.addEventListener('input',update);
   editor.addEventListener('focus',update);
   editor.addEventListener('click',update);
-  document.addEventListener('selectionchange',()=>{if(document.activeElement===editor)update();});
-  editor.addEventListener('blur',()=>setTimeout(()=>{if(document.activeElement!==editor)close();},0));
+  document.addEventListener('selectionchange',()=>{if(focused())update();});
+  editor.addEventListener('blur',()=>setTimeout(()=>{if(!focused())close();},0));
   document.addEventListener('pointerdown',e=>{if(!menu.contains(e.target)&&!editor.contains(e.target)){dismissed=completion()?.key;close();}});
   // Opening the library never starts a model task or changes the current draft.
   return {keydown,beforeSend,select,refresh:show,invalidate,reset,load,openLibrary};

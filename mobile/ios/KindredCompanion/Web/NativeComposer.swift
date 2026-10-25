@@ -11,6 +11,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
             let frame: CGRect, font: CGFloat
             let enabled: Bool, primary: Bool
             let image: Data?
+            var inPopup: Bool { kind == "suggestion" || kind == "suggestion-label" }
         }
         let context: String, text: String, placeholder: String
         let frame: CGRect, editor: CGRect, scroller: CGRect
@@ -19,6 +20,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
         let dark: Bool, editing: Bool
         let ack: Int
         let items: [Item]
+        let selection: NSRange?
         let popupFrame:CGRect?, popupHeight:CGFloat, popupOffset:CGFloat
         init?(_ value: [String: Any]) {
             func rect(_ raw: Any?) -> CGRect? {
@@ -39,12 +41,16 @@ final class NativeComposer: UIView, UITextViewDelegate {
                   let rows=value["items"] as? [[String:Any]],rows.count<=80 else { return nil }
             var items:[Item]=[]
             for row in rows {
-                guard let id=row["id"] as? String,id.count<=80,let kind=row["kind"] as? String,["button","suggestion","label","image"].contains(kind),
+                guard let id=row["id"] as? String,id.count<=80,let kind=row["kind"] as? String,["button","suggestion","suggestion-label","label","image"].contains(kind),
                       let text=row["text"] as? String,text.count<=4000,let symbol=row["symbol"] as? String,symbol.count<=64,
                       let r=rect(row["rect"]),let size=row["font"] as? Double,size.isFinite,(8...64).contains(size) else { return nil }
                 items.append(Item(id:id,kind:kind,text:text,symbol:symbol,frame:r,font:size,enabled:row["enabled"] as? Bool != false,primary:row["primary"] as? Bool == true,image:(row["image"] as? String).flatMap { $0.count<=180000 ? Data(base64Encoded:$0) : nil }))
             }
             guard Set(items.map(\.id)).count==items.count else { return nil }
+            if let range=value["selection"] as? [Int] {
+                guard range.count==2,range.allSatisfy({$0>=0}),range[0]<=(text as NSString).length,range[1]<=(text as NSString).length-range[0] else { return nil }
+                selection=NSRange(location:range[0],length:range[1])
+            } else { selection=nil }
             if let popup=value["popup"] as? [String:Any] {
                 guard let box=rect(popup["rect"]),let height=popup["height"] as? Double,height.isFinite,(0...20000).contains(height),
                       let offset=popup["offset"] as? Double,offset.isFinite,(0...20000).contains(offset) else { return nil }
@@ -138,7 +144,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
         if textChanged {
             let selection=editor.selectedRange
             editor.text=next.text
-            editor.selectedRange=NSRange(location:min(selection.location,(next.text as NSString).length),length:0)
+            editor.selectedRange=next.selection ?? NSRange(location:min(selection.location,(next.text as NSString).length),length:0)
         }
         if editor.isEditable != next.editing { editor.isEditable=next.editing }
         let styleKey=[next.font,next.line,next.inset.top,next.inset.left,next.inset.bottom,next.inset.right]
@@ -165,7 +171,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
                 nodes[id]=button;node=button
             } else if item.kind=="image" { let image=UIImageView();image.contentMode = .scaleAspectFill;image.clipsToBounds=true;nodes[item.id]=image;node=image
             } else { let label=UILabel();label.numberOfLines=0;label.textColor = .secondaryLabel;nodes[item.id]=label;node=label }
-            let parent=item.kind=="suggestion" ? suggestionScroll : material.contentView
+            let parent=item.inPopup ? suggestionScroll : material.contentView
             if node.superview !== parent { node.removeFromSuperview();parent.addSubview(node) }
             if let button=node as? UIButton {
                 let key=[item.symbol,item.text,String(item.primary),String(Double(item.font)),String(next.dark)]
@@ -175,7 +181,12 @@ final class NativeComposer: UIView, UITextViewDelegate {
                 config.baseForegroundColor = item.primary ? .systemBackground : .label
                 config.cornerStyle = .capsule;config.contentInsets = .zero
                 if item.primary { config.background.backgroundInsets = NSDirectionalEdgeInsets(top:4,leading:4,bottom:4,trailing:4) }
-                if item.symbol.isEmpty { config.title=item.text;config.titleLineBreakMode = .byTruncatingTail }
+                if item.symbol.isEmpty {
+                    config.title=item.text;config.titleLineBreakMode = item.kind=="suggestion" ? .byWordWrapping : .byTruncatingTail
+                    config.titleTextAttributesTransformer=UIConfigurationTextAttributesTransformer { attributes in
+                        var attributes=attributes;attributes.font = .systemFont(ofSize:item.font);return attributes
+                    }
+                }
                 else {
                     let symbol=UIImage(systemName:item.symbol,withConfiguration:UIImage.SymbolConfiguration(pointSize:20,weight:.regular))
                     // The filled primary circle needs opaque contrasting ink.
@@ -183,7 +194,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
                     // the same color as that circle.
                     config.image=item.primary ? symbol?.withTintColor(next.dark ? .black : .white,renderingMode:.alwaysOriginal) : symbol
                 }
-                button.configuration=config;contentKeys[item.id]=key
+                button.configuration=config;button.titleLabel?.numberOfLines=item.kind=="suggestion" ? 3 : 1;contentKeys[item.id]=key
                 }
                 button.isEnabled=item.enabled;button.accessibilityLabel=item.text
                 button.accessibilityIdentifier="kindred-native-composer-"+item.id
@@ -202,7 +213,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
         placeholder.frame=editor.frame.inset(by:model.inset)
         let suggestions=model.items.filter {$0.kind=="suggestion"}
         editor.hasSuggestions = !suggestions.isEmpty
-        popup.isHidden=suggestions.isEmpty || model.popupFrame==nil
+        popup.isHidden = !model.items.contains(where: { $0.inPopup }) || model.popupFrame==nil
         popup.frame=model.popupFrame.map { convert($0,from:web) } ?? .zero
         suggestionScroll.frame=popup.bounds;suggestionScroll.contentSize=CGSize(width:popup.bounds.width,height:model.popupHeight)
         let popupKey=model.context+"|"+(suggestions.first?.id ?? "")
@@ -210,8 +221,8 @@ final class NativeComposer: UIView, UITextViewDelegate {
             suggestionScroll.contentOffset=CGPoint(x:0,y:model.popupOffset);lastPopupKey=popupKey;lastPopupOffset=model.popupOffset
         }
         for item in model.items {
-            let target=convert(item.frame,from:web),parent=item.kind=="suggestion" ? popup.frame : shell
-            nodes[item.id]?.frame=target.offsetBy(dx:-parent.minX,dy:-parent.minY+(item.kind=="suggestion" ? model.popupOffset : 0))
+            let target=convert(item.frame,from:web),parent=item.inPopup ? popup.frame : shell
+            nodes[item.id]?.frame=target.offsetBy(dx:-parent.minX,dy:-parent.minY+(item.inPopup ? model.popupOffset : 0))
         }
         updateScrollIndicator()
     }

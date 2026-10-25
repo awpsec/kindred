@@ -43,7 +43,9 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
     if(covered||!allowed()||!visible(form))return null;
     const next=contextKey();if(!next)return null;
     if(next!==context){context=next;ack=0;}
-    actions.clear();const items=[];
+    actions.clear();const items=[],commandMenu=document.querySelector('#command-options');
+    commandMenu?.toggleAttribute('data-ios-native-popup',active);
+    const suggestions=[form.querySelector('#mention-options:not([hidden])'),commandMenu?.hidden?null:commandMenu].find(visible);
     for(const button of form.querySelectorAll('button')){
       if(!visible(button)||button.closest('#mention-options,.command-options'))continue;
       const id=key(button);actions.set(id,button);items.push({id,kind:'button',text:(button.getAttribute('aria-label')||button.title||button.textContent).slice(0,4000),symbol:symbol(button),rect:rect(button),font:parseFloat(getComputedStyle(button).fontSize)||16,enabled:!button.disabled,primary:button.id==='send'||button.classList.contains('is-primary')});
@@ -57,8 +59,13 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
       if(right<=left||bottom<=top)continue;
       items.push({id:key(n),kind:'label',text:n.textContent.slice(0,4000),symbol:'',rect:[left,top,right-left,bottom-top],font:parseFloat(getComputedStyle(parent).fontSize)||13});
     }
-    for(const button of form.querySelectorAll('#mention-options button,.command-options button')){
-      if(!visible(button))continue;const id=key(button);actions.set(id,button);items.push({id,kind:'suggestion',text:button.textContent.slice(0,4000),symbol:'',rect:rect(button),font:16,enabled:!button.disabled});
+    for(const button of suggestions?.querySelectorAll('button')||[]){
+      if(!visible(button))continue;const id=key(button);actions.set(id,button);items.push({id,kind:'suggestion',text:button.innerText.slice(0,4000),symbol:'',rect:rect(button),font:parseFloat(getComputedStyle(button).fontSize)||16,enabled:!button.disabled});
+    }
+    if(suggestions===commandMenu){
+      for(const label of commandMenu.querySelectorAll('.command-menu-heading,.command-empty,.command-menu-footer')){
+        if(visible(label))items.push({id:key(label),kind:'suggestion-label',text:label.textContent.slice(0,4000),symbol:'',rect:rect(label),font:parseFloat(getComputedStyle(label).fontSize)||13});
+      }
     }
     for(const image of form.querySelectorAll('img')){
       if(!visible(image)||!image.complete||!image.naturalWidth)continue;
@@ -66,14 +73,16 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
         items.push({id:key(image),kind:'image',text:image.alt||'',image:encoded.data,symbol:'',rect:rect(image),font:13});}catch{}
     }
     if(items.length>80)return null;
-    const css=getComputedStyle(editor),style=getComputedStyle(form),suggestions=form.querySelector('#mention-options:not([hidden]),.command-options:not([hidden])');
+    const css=getComputedStyle(editor),style=getComputedStyle(form),selection=getSelection();let selected;
+    if(selection?.rangeCount){const r=selection.getRangeAt(0);if(editor.contains(r.startContainer)&&editor.contains(r.endContainer)){const before=r.cloneRange();before.selectNodeContents(editor);before.setEnd(r.startContainer,r.startOffset);selected=[before.toString().length,r.toString().length];}}
     return {context,text:value(),placeholder:editor.dataset.placeholder||'Message',rect:rect(form),editor:rect(editor),scroller:rect(document.querySelector('#content')),
       radius:Math.min(64,parseFloat(style.borderTopLeftRadius)||28),font:parseFloat(css.fontSize),line:parseFloat(css.lineHeight)||24,
-      inset:[css.paddingTop,css.paddingRight,css.paddingBottom,css.paddingLeft].map(n=>parseFloat(n)||0),dark:document.documentElement.dataset.theme!=='light',ack,items,...(suggestions&&visible(suggestions)?{popup:{rect:rect(suggestions),height:suggestions.scrollHeight,offset:suggestions.scrollTop}}:{}),editing:editor.getAttribute('aria-disabled')!=='true'};
+      inset:[css.paddingTop,css.paddingRight,css.paddingBottom,css.paddingLeft].map(n=>parseFloat(n)||0),dark:document.documentElement.dataset.theme!=='light',ack,items,selection:selected,...(suggestions?{popup:{rect:rect(suggestions),height:suggestions.scrollHeight,offset:suggestions.scrollTop}}:{}),editing:editor.getAttribute('aria-disabled')!=='true'};
   };
   const setActive=wanted=>{
     if(wanted===active)return;
     active=wanted;
+    document.querySelector('#command-options')?.toggleAttribute('data-ios-native-popup',active);
     if(active){
       const transferFocus=document.activeElement===editor;
       saved={editable:editor.getAttribute('contenteditable'),tabindex:editor.getAttribute('tabindex'),aria:form.getAttribute('aria-hidden')};

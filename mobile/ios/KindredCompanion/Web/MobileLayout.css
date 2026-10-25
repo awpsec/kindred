@@ -650,7 +650,8 @@ html[data-kindred-ios] .chat-media-dialog.is-video[data-ios-preview-fit] .chat-m
 html[data-kindred-ios] .chat-media-dialog.is-video[data-ios-preview-fit] .chat-media-full>video { max-height:max(40px,calc(var(--ios-preview-height) - 56px)); }
 /* UIKit foreground sits in a genuine UIGlassEffect.contentView above the
    conversation. Keep the DOM geometry/model, with no web material or ink. */
-html[data-kindred-ios] #composer[data-ios-native-composer] {
+html[data-kindred-ios] #composer[data-ios-native-composer],
+html[data-kindred-ios] #command-options[data-ios-native-popup] {
   opacity:0!important; pointer-events:none!important; background:transparent!important;
   -webkit-backdrop-filter:none!important; backdrop-filter:none!important; box-shadow:none!important;
 }
