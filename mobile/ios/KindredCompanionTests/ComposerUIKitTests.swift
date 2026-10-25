@@ -262,7 +262,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         XCTAssertEqual(unsent,0)
         composer.editor.insertText("acme.test")
         try await waitFor("command parameter reaches original draft") { try await self.boolean("document.querySelector('#prompt').value==='/domain-review acme.test'") }
-        composer.emit("send")
+        composer.editor.insertText("\n")
         try await waitFor("command sends exactly once") { try await self.boolean("window.__composerSends.length===1 && window.__composerSends[0].prompt==='/domain-review acme.test' && document.querySelector('#prompt').value===''") }
         composer.editor.insertText("/zz")
         try await waitFor("native empty command status") { !composer.popup.isHidden && composer.model?.items.contains(where: { $0.kind=="suggestion-label" && $0.text.contains("No matching commands") })==true }
