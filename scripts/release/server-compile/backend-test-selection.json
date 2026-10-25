@@ -1,0 +1,45 @@
+{
+  "production_parent": "618c9a08e59302e722c9a0869e44b1bac307836a",
+  "test_child": "6ae05515c8e608ffa1457107aa41590bc091a9e2",
+  "selectors": [
+    "rpc::tests::codex_turn_errors_retry_only_known_temporary_failures",
+    "rpc::tests::upstream_error_pages_are_not_forwarded_and_plain_errors_are_bounded",
+    "provider_retry::tests::codex_terminal_error_classification_survives_wrapping",
+    "provider_retry::tests::codex_policy_failure_stops_once_and_preserves_the_chat_reason",
+    "provider_retry::tests::cancellation_during_backoff_never_starts_another_attempt",
+    "provider_retry::tests::no_replay_of_unknown_tool_outcomes_or_permanent_errors",
+    "provider_retry::tests::retries_recover_in_same_run_and_exhaust_exactly_five",
+    "providers::tests::codex_error_protocol_preserves_terminal_reason_and_retry_classification"
+  ],
+  "expected_each": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0
+  },
+  "protocol_subcases": 9,
+  "route": "Builder sole selected current-crate combined FIRST Linux45; offline release build/no-run shared1800/global2100, each <=600 and remainingglobal; no localCargo or oldEXE",
+  "execution": "NOT_RUN",
+  "source_bindings": {
+    "ui/app.js": {
+      "desktop_server_exact": true,
+      "sha256": "6fea97380a50b52ab4c4d5a6836c81898ef3940b38020054436cb4550bd6a788"
+    },
+    "ui/dictation.js": {
+      "desktop_server_exact": true,
+      "sha256": "a76b4a64ef45384053f8ade870045b9791e163ffeb63a57111e2c0198879983c"
+    },
+    "src/rpc.rs": {
+      "sha256": "d241f20afb2ed554748b9d7478ee4b4e5d6d311e99461451c300a9031f0d62f3",
+      "bytes": 15370
+    },
+    "src/providers.rs": {
+      "sha256": "971286e59f2feade34eca09d93f9eb34a43c57819002d7d7217b3d34331d32ca",
+      "bytes": 59903
+    },
+    "src/provider_retry.rs": {
+      "sha256": "759a507dad59a8798c2bb6ba406df9cecb2e6b434b0449896c0f9f116b06d910",
+      "bytes": 24458
+    }
+  },
+  "fixture_validation": "Embedded Python AST parse only; no Rust compile/runtime claimed"
+}
