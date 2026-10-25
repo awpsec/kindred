@@ -149,8 +149,8 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
       close(compact.y+compact.height,lane.y+lane.height,'bottom corner status region does not lift the full composer wrapper');
       const history=await rect('.conversation-history');
       assert(history.y+history.height>=compact.y+compact.height-1,'the transcript continues beneath the floating composer');
-      const indicator=await rect('.ios-reading-indicator');
-      assert(indicator.y+indicator.height<=compact.y+1,'the reading indicator stops above the composer');
+      assert.equal(await page.locator('.ios-reading-indicator').count(),0,'no synthetic scrollbar is inserted in the conversation');
+      assert.notEqual(await page.locator('#content').evaluate(n=>getComputedStyle(n).scrollbarWidth),'none','retain the standard WebKit scroll indicator');
       const idle=await rect('#composer');
       await page.locator('#prompt').focus();await settled();const focused=await rect('#composer');
       close(focused.height,idle.height,'focusing a single-line input cannot add an empty row');
@@ -162,7 +162,7 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
       await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{isDuoInner:true,isSlab:false,isPortrait:false,keyboardVisible:true});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
       await settled();close((await rect('.conversation>.composer-area')).width,(await rect('.conversation')).width,'an opened keyboard-shortened viewport retains the full composer lane');
       assert.deepEqual(errors,[]);await page.screenshot({path:path.join(out,`v${version}-${side}.png`)});
-      reports.push({serverVersion:version,railSide:side,safeRailTotal:totalRail,railPreference:76,railPersistsThroughDetailsGearBack:true,detailsOverlay:true,quarterWidthMaximum:true,historyClearRailLatestAtTrailingEdge:true,fullComposerLane:true,connectedCanvasClearRail:true,computerSharesBotCenter:true,controlledGutterPointer:true,cancelledTouchGuard:true,closedUpperFiveRows:true,searchUpperFourRows:true,finiteWAAPIReorderReclassifies:true,scrollAndReorderReclassify:true,searchSafeSide:true,reducedMotion:true,nativeDockReduceMotion:true,nativeViewportContour:true,closedLandscapeCompactComposer:true,liveComposerBackdrop:true,indicatorClearOfComposer:true,innerKeyboardFullComposer:true});await page.close();
+      reports.push({serverVersion:version,railSide:side,safeRailTotal:totalRail,railPreference:76,railPersistsThroughDetailsGearBack:true,detailsOverlay:true,quarterWidthMaximum:true,historyClearRailLatestAtTrailingEdge:true,fullComposerLane:true,connectedCanvasClearRail:true,computerSharesBotCenter:true,controlledGutterPointer:true,cancelledTouchGuard:true,closedUpperFiveRows:true,searchUpperFourRows:true,finiteWAAPIReorderReclassifies:true,scrollAndReorderReclassify:true,searchSafeSide:true,reducedMotion:true,nativeDockReduceMotion:true,nativeViewportContour:true,closedLandscapeCompactComposer:true,liveComposerBackdrop:true,nativeScrollIndicator:true,innerKeyboardFullComposer:true});await page.close();
     }
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(reports,null,2));console.log(JSON.stringify({passed:true,engine:'webkit',reports}));
   }finally{await browser.close();server.closeAllConnections();server.close();}

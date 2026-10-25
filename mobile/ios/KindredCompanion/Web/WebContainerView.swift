@@ -294,6 +294,7 @@ final class WebHostView: UIView {
         hasDivision = hasDivision || session.presentation.isDuo
         let webView = session.webView
         guard webView.superview !== self else { return }
+        let restoreComposerFocus=session.glassControls.composer.editor.isFirstResponder
         subviews.forEach { $0.removeFromSuperview() }
         webView.removeFromSuperview()
         webView.translatesAutoresizingMaskIntoConstraints = false
@@ -301,6 +302,7 @@ final class WebHostView: UIView {
         session.glassControls.removeFromSuperview()
         addSubview(session.glassControls)
         session.glassControls.frame = bounds
+        if restoreComposerFocus { DispatchQueue.main.async { [weak session] in session?.glassControls.composer.editor.becomeFirstResponder() } }
         NSLayoutConstraint.activate([
             webView.leadingAnchor.constraint(equalTo: leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: trailingAnchor),

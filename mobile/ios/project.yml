@@ -36,8 +36,11 @@ targets:
         excludes:
           - "**/*.md"
           - "Web/MobileLayout.js"
+          - "Web/NativeComposer.js"
           - "Web/MobileLayout.css"
           - "Views/BotToolbarArtwork.json"
+      - path: KindredCompanion/Web/NativeComposer.js
+        buildPhase: resources
       - path: KindredCompanion/Web/MobileLayout.js
         buildPhase: resources
       - path: KindredCompanion/Web/MobileLayout.css

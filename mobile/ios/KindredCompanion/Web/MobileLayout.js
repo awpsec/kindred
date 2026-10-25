@@ -1731,42 +1731,11 @@
     if (control) obstructionObserver.observe(control);
   }
   let lastComposerExtent = null;
-  // The scroller paints under the input; its indicator stays in the exposed
-  // reading area instead of disappearing behind the floating composer.
-  const readingIndicator=document.createElement('div'), readingThumb=document.createElement('span');
-  readingIndicator.className='ios-reading-indicator';readingIndicator.setAttribute('aria-hidden','true');
-  readingIndicator.append(readingThumb);conversation.append(readingIndicator);
-  let readingIndicatorFrame=0,readingIndicatorTimer=0;
-  const indicatorStyle=(node,key,value)=>{if(node.style[key]!==value)node.style[key]=value;};
-  const updateReadingIndicator=()=>{
-    readingIndicatorFrame=0;
-    const area=readingHistory,view=area?.getBoundingClientRect(),parent=conversation.getBoundingClientRect();
-    if(!view?.height||area.scrollHeight<=area.clientHeight+1||area.closest('[hidden]')){readingIndicator.hidden=true;return;}
-    const input=composerArea?.getBoundingClientRect(),top=Math.max(view.top,header.getBoundingClientRect().bottom)+4;
-    const bottom=Math.min(view.bottom,input?.height?input.top:view.bottom)-4, height=Math.max(0,bottom-top);
-    const lane=parseFloat(getComputedStyle(conversation).getPropertyValue('--ios-content-right'))||0;
-    readingIndicator.hidden=height<24;
-    indicatorStyle(readingIndicator,'left',`${view.right-parent.left-lane-5}px`);
-    indicatorStyle(readingIndicator,'top',`${top-parent.top}px`);indicatorStyle(readingIndicator,'height',`${height}px`);
-    const thumb=Math.min(height,Math.max(24,height*area.clientHeight/area.scrollHeight));
-    const progress=Math.max(0,Math.min(1,area.scrollTop/(area.scrollHeight-area.clientHeight)));
-    indicatorStyle(readingThumb,'height',`${thumb}px`);indicatorStyle(readingThumb,'top',`${progress*(height-thumb)}px`);
-  };
-  const scheduleReadingIndicator=()=>{if(!readingIndicatorFrame)readingIndicatorFrame=requestAnimationFrame(updateReadingIndicator);};
-  readingHistory?.addEventListener('scroll',()=>{
-    readingIndicator.dataset.active='true';clearTimeout(readingIndicatorTimer);
-    readingIndicatorTimer=setTimeout(()=>{readingIndicator.dataset.active='false';},700);scheduleReadingIndicator();
-  },{passive:true});
-  const readingSize=new ResizeObserver(scheduleReadingIndicator);
-  for(const node of [readingHistory,composerArea,header])if(node)readingSize.observe(node);
-  observeUI(scheduleReadingIndicator).observe(readingHistory,{childList:true,subtree:true});
-  for(const name of ['resize','kindred-ios-layout','kindred-native-geometry'])window.addEventListener(name,scheduleReadingIndicator);
   const updateClearance = () => {
     const top = header.getBoundingClientRect().height;
     const bottom = composerArea?.hidden ? 0 : (composerArea?.getBoundingClientRect().height || 0) + (parseFloat(getComputedStyle(html).getPropertyValue('--ios-composer-obstruction')) || 0);
     conversation.style.setProperty('--ios-chat-top', `${top}px`);
     conversation.style.setProperty('--ios-chat-bottom', `${bottom}px`);
-    scheduleReadingIndicator();
     const form = document.querySelector('#composer'), rect = form?.getBoundingClientRect();
     const visible = nativeDuo && rect?.height > 0 && !shell.hidden && !form.closest('[hidden]') && getComputedStyle(form).visibility !== 'hidden' &&
       !document.querySelector('dialog[open],.artifact-studio') && document.querySelector('#details-panel')?.hidden !== false &&
@@ -2181,6 +2150,7 @@
       if (['identity','latest','chats','computer'].includes(id)) return route === 'bot-chat' || route === 'chat-list';
       return true;
     };
+    let nativeComposer;
     const scan = () => {
       glassFrame = 0; current.clear(); const controls = [];
       const covered = document.hidden || !!document.querySelector('dialog[open]');
@@ -2217,15 +2187,18 @@
           imageInset:parseFloat(style.paddingLeft)||0,imageGap:parseFloat(style.columnGap)||0,
           opacity:alpha,titleOpacity:ghost ? Number(getComputedStyle(ghost.lastElementChild).opacity) : 1,interactive:!ghost});
       }
-      const payload = JSON.stringify({action:'glass-controls',document:glassDocument,controls});
+      const composer=nativeComposer?.snapshot(covered);
+      const payload = JSON.stringify({action:'glass-controls',document:glassDocument,controls,...(composer?{composer}:{})});
       if (payload !== glassLast) {glassLast=payload;window.webkit?.messageHandlers?.kindredAccounts?.postMessage({...JSON.parse(payload),sequence:++glassSerial});}
       if (!stopped && document.getAnimations().some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))) schedule();
     };
     const schedule = () => {if(!stopped&&!glassFrame)glassFrame=requestAnimationFrame(scan);};
+    nativeComposer=window.__kindredCreateNativeComposer?.({documentID:glassDocument,schedule,allowed:()=>duoRoute()==='bot-chat'});
     window.__kindredGlassControls = {
       setActive(document,ids,sequence) {
         if (document !== glassDocument || sequence !== glassSerial || !Array.isArray(ids)) return false;
-        const nodes = new Set(ids.map(id=>current.get(id)?.node).filter(Boolean));
+        nativeComposer?.setActive(ids.includes('composer'));
+        const nodes = new Set(ids.filter(id=>id!=='composer').map(id=>current.get(id)?.node).filter(Boolean));
         for (const node of replaced.keys()) if(!nodes.has(node))restore(node);
         for (const node of nodes) {
           if (!replaced.has(node)) replaced.set(node,{'aria-hidden':node.getAttribute('aria-hidden'),tabindex:node.getAttribute('tabindex')});
@@ -2245,7 +2218,7 @@
     for(const node of [shell,sidebar,conversation,composerArea,header])if(node)resize.observe(node);
     for(const name of ['resize','kindred-ios-layout','kindred-native-geometry','kindred-ios-toolbar','pageshow'])window.addEventListener(name,()=>{stopped=false;schedule();});
     document.addEventListener('scroll',schedule,true);
-    window.addEventListener('pagehide',()=>{stopped=true;cancelAnimationFrame(glassFrame);glassFrame=0;current.clear();for(const node of replaced.keys())restore(node);glassLast='';window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'glass-controls',document:glassDocument,sequence:++glassSerial,controls:[]});});
+    window.addEventListener('pagehide',()=>{nativeComposer?.setActive(false);stopped=true;cancelAnimationFrame(glassFrame);glassFrame=0;current.clear();for(const node of replaced.keys())restore(node);glassLast='';window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'glass-controls',document:glassDocument,sequence:++glassSerial,controls:[]});});
     schedule();
   }
   // Hand navigation to the page before slow fonts/images finish loading.

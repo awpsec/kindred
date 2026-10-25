@@ -23,9 +23,14 @@ const result=await page.evaluate(async()=>{
  const noReplay=rows.every(row=>!row.getAnimations().length&&getComputedStyle(row).opacity==='1');
  revealReply(rows[0],Date.now()-1000);
  const stale=!rows[0].getAnimations().length;
- rows.forEach(row=>row.remove());return {foreground,settled,background,noReplay,stale};
+ focused=false;window.__KINDRED_MOBILE_PLATFORM='ios';window.__KINDRED_NATIVE_COMPOSER_FOCUSED=true;
+ revealReply(rows[0],Date.now());const nativeEditorFocus=rows[0].getAnimations().length===1;
+ window.dispatchEvent(new Event('blur'));window.__KINDRED_MOBILE_PLATFORM='desktop';
+ revealReply(rows[0],Date.now());const desktopIgnoresNativeFlag=!rows[0].getAnimations().length;
+ delete window.__KINDRED_NATIVE_COMPOSER_FOCUSED;delete window.__KINDRED_MOBILE_PLATFORM;
+ rows.forEach(row=>row.remove());return {foreground,settled,background,noReplay,stale,nativeEditorFocus,desktopIgnoresNativeFlag};
 });
-assert.deepEqual(result,{foreground:true,settled:true,background:true,noReplay:true,stale:true});
+assert.deepEqual(result,{foreground:true,settled:true,background:true,noReplay:true,stale:true,nativeEditorFocus:true,desktopIgnoresNativeFlag:true});
 assert.deepEqual(errors,[]);console.log('Unfocused message motion: foreground entrances, blur settlement, background suppression and no replay passed');
 }finally{await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;server.close();});
