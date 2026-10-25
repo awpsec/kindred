@@ -11,6 +11,8 @@ final class NativeComposer: UIView, UITextViewDelegate {
             let frame: CGRect, font: CGFloat
             let enabled: Bool, primary: Bool
             let image: Data?
+            let title: String?, detail: String, badge: String
+            let selected: Bool
             var inPopup: Bool { kind == "suggestion" || kind == "suggestion-label" }
         }
         let context: String, text: String, placeholder: String
@@ -22,6 +24,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
         let items: [Item]
         let selection: NSRange?
         let popupFrame:CGRect?, popupHeight:CGFloat, popupOffset:CGFloat
+        let commandPopup: Bool, popupExclusions: [CGRect]
         init?(_ value: [String: Any]) {
             func rect(_ raw: Any?) -> CGRect? {
                 guard let a=raw as? [Double],a.count==4,a.allSatisfy(\.isFinite),abs(a[0])<20000,abs(a[1])<20000,
@@ -44,7 +47,9 @@ final class NativeComposer: UIView, UITextViewDelegate {
                 guard let id=row["id"] as? String,id.count<=80,let kind=row["kind"] as? String,["button","suggestion","suggestion-label","label","image"].contains(kind),
                       let text=row["text"] as? String,text.count<=4000,let symbol=row["symbol"] as? String,symbol.count<=64,
                       let r=rect(row["rect"]),let size=row["font"] as? Double,size.isFinite,(8...64).contains(size) else { return nil }
-                items.append(Item(id:id,kind:kind,text:text,symbol:symbol,frame:r,font:size,enabled:row["enabled"] as? Bool != false,primary:row["primary"] as? Bool == true,image:(row["image"] as? String).flatMap { $0.count<=180000 ? Data(base64Encoded:$0) : nil }))
+                let title=row["title"] as? String,detail=row["detail"] as? String ?? "",badge=row["badge"] as? String ?? ""
+                guard (title?.count ?? 0)<=128,detail.count<=2000,badge.count<=128 else { return nil }
+                items.append(Item(id:id,kind:kind,text:text,symbol:symbol,frame:r,font:size,enabled:row["enabled"] as? Bool != false,primary:row["primary"] as? Bool == true,image:(row["image"] as? String).flatMap { $0.count<=180000 ? Data(base64Encoded:$0) : nil },title:title,detail:detail,badge:badge,selected:row["selected"] as? Bool == true))
             }
             guard Set(items.map(\.id)).count==items.count else { return nil }
             if let range=value["selection"] as? [Int] {
@@ -55,15 +60,54 @@ final class NativeComposer: UIView, UITextViewDelegate {
                 guard let box=rect(popup["rect"]),let height=popup["height"] as? Double,height.isFinite,(0...20000).contains(height),
                       let offset=popup["offset"] as? Double,offset.isFinite,(0...20000).contains(offset) else { return nil }
                 popupFrame=box;popupHeight=height;popupOffset=offset
-            } else { popupFrame=nil;popupHeight=0;popupOffset=0 }
+                commandPopup=popup["commands"] as? Bool == true
+                let regions=popup["exclusions"] as? [[Double]] ?? []
+                guard regions.count<=16 else { return nil }
+                let decoded=regions.compactMap { rect($0) }
+                guard decoded.count==regions.count else { return nil }
+                popupExclusions=decoded
+            } else { popupFrame=nil;popupHeight=0;popupOffset=0;commandPopup=false;popupExclusions=[] }
             self.context=context;self.text=text;self.placeholder=placeholder;self.frame=frame;self.editor=editor;self.scroller=scroller
             self.radius=radius;self.font=font;self.line=line;inset=UIEdgeInsets(top:insets[0],left:insets[3],bottom:insets[2],right:insets[1])
             self.dark=dark;self.ack=ack;self.items=items;editing=value["editing"] as? Bool != false
         }
     }
-    private final class Button: UIButton {
+    private class Button: UIButton {
         override func point(inside point:CGPoint,with event:UIEvent?)->Bool {
             bounds.insetBy(dx:-max(0,44-bounds.width)/2,dy:-max(0,44-bounds.height)/2).contains(point)
+        }
+    }
+    private final class CommandButton: Button {
+        let nameLabel=UILabel(),detailLabel=UILabel(),badgeLabel=UILabel()
+        var rowHeight:CGFloat { max(52,nameLabel.font.lineHeight+(detailLabel.isHidden ? 0:detailLabel.font.lineHeight+3)+20) }
+        override init(frame:CGRect) {
+            super.init(frame:frame);layer.cornerRadius=10
+            for label in [nameLabel,detailLabel,badgeLabel] { label.isUserInteractionEnabled=false;label.isAccessibilityElement=false;label.lineBreakMode = .byTruncatingTail;addSubview(label) }
+            nameLabel.textColor = .label;detailLabel.textColor = .secondaryLabel;badgeLabel.textColor = .secondaryLabel
+            badgeLabel.textAlignment = .center;badgeLabel.layer.cornerRadius=5;badgeLabel.clipsToBounds=true;badgeLabel.backgroundColor = .tertiarySystemFill
+            nameLabel.accessibilityIdentifier="kindred-command-title";detailLabel.accessibilityIdentifier="kindred-command-description";badgeLabel.accessibilityIdentifier="kindred-command-source"
+        }
+        required init?(coder:NSCoder) { fatalError("init(coder:) is unavailable") }
+        func apply(_ item:Model.Item) {
+            nameLabel.text=item.title;detailLabel.text=item.detail;badgeLabel.text=item.badge
+            let size=max(14,item.font);nameLabel.font = .systemFont(ofSize:size,weight:.semibold);detailLabel.font = .systemFont(ofSize:max(12,size*0.9));badgeLabel.font = .systemFont(ofSize:min(18,max(10,size*0.75)))
+            detailLabel.isHidden=item.detail.isEmpty;isSelected=item.selected;isEnabled=item.enabled
+            accessibilityLabel=[item.title ?? item.text,item.detail,item.badge].filter {!$0.isEmpty}.joined(separator:", ")
+            accessibilityIdentifier="kindred-native-composer-"+item.id;setNeedsLayout()
+        }
+        override var isSelected:Bool { didSet { updateFill() } }
+        override var isHighlighted:Bool { didSet { updateFill() } }
+        private func updateFill() { backgroundColor = isSelected || isHighlighted ? .secondarySystemFill : .clear }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            let inset:CGFloat=12,badgeWidth=min(92,badgeLabel.sizeThatFits(bounds.size).width+12)
+            badgeLabel.isHidden=bounds.width<290 || (badgeLabel.text ?? "").isEmpty
+            let badgeSpace:CGFloat=badgeLabel.isHidden ? 0:badgeWidth+12
+            let width=max(0,bounds.width-inset*2-badgeSpace),titleHeight=nameLabel.font.lineHeight,detailHeight=detailLabel.isHidden ? 0:detailLabel.font.lineHeight
+            let top=max(8,(bounds.height-titleHeight-detailHeight-(detailLabel.isHidden ? 0:3))/2)
+            nameLabel.frame=CGRect(x:inset,y:top,width:width,height:titleHeight)
+            detailLabel.frame=CGRect(x:inset,y:top+titleHeight+3,width:width,height:detailHeight)
+            badgeLabel.frame=CGRect(x:bounds.width-inset-badgeWidth,y:(bounds.height-24)/2,width:badgeWidth,height:24)
         }
     }
     final class Editor: UITextView {
@@ -95,6 +139,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
     let material=UIVisualEffectView(),popup=UIVisualEffectView()
     let editor=Editor(),placeholder=UILabel(),suggestionScroll=UIScrollView()
     private var lastPopupOffset:CGFloat?,lastPopupKey:String?
+    private var commandListKey:String?,commandSelectionID:String?
     private var nodes:[String:UIView]=[:]
     private var contentKeys:[String:[String]]=[:]
     private var textStyleKey:[CGFloat]=[]
@@ -170,14 +215,15 @@ final class NativeComposer: UIView, UITextViewDelegate {
             let node:UIView
             if let old=nodes[item.id] { node=old }
             else if item.kind=="button" || item.kind=="suggestion" {
-                let button=Button(type:.system);let id=item.id
+                let button:Button=item.title==nil ? Button(type:.system) : CommandButton(frame:.zero);let id=item.id
                 button.addAction(UIAction { [weak self] _ in self?.emit("action",extra:["id":id]) },for:.primaryActionTriggered)
                 nodes[id]=button;node=button
             } else if item.kind=="image" { let image=UIImageView();image.contentMode = .scaleAspectFill;image.clipsToBounds=true;nodes[item.id]=image;node=image
             } else { let label=UILabel();label.numberOfLines=0;label.textColor = .secondaryLabel;nodes[item.id]=label;node=label }
             let parent=item.inPopup ? suggestionScroll : material.contentView
             if node.superview !== parent { node.removeFromSuperview();parent.addSubview(node) }
-            if let button=node as? UIButton {
+            if let button=node as? CommandButton { button.apply(item) }
+            else if let button=node as? UIButton {
                 let key=[item.symbol,item.text,String(item.primary),String(Double(item.font)),String(next.dark)]
                 if contentKeys[item.id] != key {
                 var config=item.primary ? UIButton.Configuration.filled() : .plain()
@@ -221,6 +267,11 @@ final class NativeComposer: UIView, UITextViewDelegate {
         editor.hasSuggestions = !suggestions.isEmpty
         popup.isHidden = !model.items.contains(where: { $0.inPopup }) || model.popupFrame==nil
         popup.frame=model.popupFrame.map { convert($0,from:web) } ?? .zero
+        if model.commandPopup {
+            layoutCommands(model,shell:shell,web:web)
+            updateScrollIndicator();return
+        }
+        commandListKey=nil;commandSelectionID=nil
         suggestionScroll.frame=popup.bounds;suggestionScroll.contentSize=CGSize(width:popup.bounds.width,height:model.popupHeight)
         let popupKey=model.context+"|"+(suggestions.first?.id ?? "")
         if lastPopupKey != popupKey || lastPopupOffset != model.popupOffset {
@@ -231,6 +282,52 @@ final class NativeComposer: UIView, UITextViewDelegate {
             nodes[item.id]?.frame=target.offsetBy(dx:-parent.minX,dy:-parent.minY+(item.inPopup ? model.popupOffset : 0))
         }
         updateScrollIndicator()
+    }
+    private func layoutCommands(_ model:Model,shell:CGRect,web:WKWebView) {
+        // Native rows keep name, description and source in separate slots.
+        // The menu is anchored to the composer, not stretched across the chat.
+        let viewport=convert(web.bounds,from:web),top=max(viewport.minY+8,window?.safeAreaInsets.top ?? 0)+4
+        var width=max(0,min(440,shell.width-16)),x=max(viewport.minX+8,shell.minX+8),bottom=shell.minY-6
+        x=min(x,max(viewport.minX+8,viewport.maxX-width-8))
+        let rows=model.items.filter {$0.inPopup}
+        var heights:[String:CGFloat]=[:],contentHeight:CGFloat=8
+        for item in rows {
+            let height=(nodes[item.id] as? CommandButton)?.rowHeight ?? (item.id=="commands-heading" ? 26:max(44,item.font*2+16))
+            heights[item.id]=height;contentHeight+=height
+        }
+        contentHeight+=8
+        var height=max(0,min(contentHeight,320,bottom-top))
+        for exclusion in model.popupExclusions {
+            let r=convert(exclusion,from:web),box=CGRect(x:x,y:bottom-height,width:width,height:height)
+            guard box.intersects(r) else { continue }
+            if r.width>viewport.width*0.65 {
+                let below=bottom-r.maxY-8
+                if below>=96 { height=min(height,below) }
+                else { bottom=min(bottom,r.minY-8);height=max(0,min(height,bottom-top)) }
+            } else {
+                let left=max(0,r.minX-8-x),right=max(0,x+width-r.maxX-8)
+                if left>=right { width=left } else { x=r.maxX+8;width=right }
+            }
+        }
+        popup.frame=CGRect(x:x,y:bottom-height,width:width,height:height)
+        suggestionScroll.frame=popup.bounds;suggestionScroll.contentInsetAdjustmentBehavior = .never
+        suggestionScroll.contentSize=CGSize(width:width,height:contentHeight)
+        var y:CGFloat=8
+        for item in model.items {
+            if item.inPopup {
+                let inset:CGFloat=item.title==nil ? 16:6
+                nodes[item.id]?.frame=CGRect(x:inset,y:y,width:max(0,width-inset*2),height:heights[item.id] ?? 0)
+                if let label=nodes[item.id] as? UILabel { label.font = .systemFont(ofSize:max(12,item.font),weight:item.id=="commands-heading" ? .medium:.regular) }
+                y+=heights[item.id] ?? 0
+            } else {
+                nodes[item.id]?.frame=convert(item.frame,from:web).offsetBy(dx:-shell.minX,dy:-shell.minY)
+            }
+        }
+        let key=model.context+"|"+rows.map(\.id).joined(separator:"|")
+        if commandListKey != key { suggestionScroll.contentOffset = .zero;commandListKey=key }
+        if let selected=model.items.first(where:{$0.selected}),selected.id != commandSelectionID,let node=nodes[selected.id] {
+            suggestionScroll.scrollRectToVisible(node.frame.insetBy(dx:0,dy:-4),animated:false);commandSelectionID=selected.id
+        }
     }
     /// Public UIScrollView API, matched to the actual reading viewport rather
     /// than a fabricated DOM scrollbar in the middle of the conversation.

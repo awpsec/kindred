@@ -215,6 +215,60 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let evidence=XCTAttachment(data:try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted]),uniformTypeIdentifier:"public.json");evidence.name="native-composer-input";evidence.lifetime = .keepAlways;add(evidence)
     }
 
+    func testNativeCommandPickerReadableRowsAndStableSelection() async throws {
+        guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
+        _ = try await js("""
+        const original=window.fetch.bind(window);
+        window.fetch=(input,options={})=>{
+          const url=new URL(typeof input==='string'?input:input.url,location.href);
+          if(url.pathname!=='/api/commands')return original(input,options);
+          return Promise.resolve(new Response(JSON.stringify(Array.from({length:8},(_,i)=>({name:'entry-'+i+'-long-command-name',description:'A detailed command description that should truncate cleanly rather than colliding with other rows or the source badge.',source:i%2?'Gmail':'built-in',action:'run',parameters:[],usage:'/entry-'+i}))),{status:200,headers:{'Content-Type':'application/json'}}));
+        };
+        window.__KINDRED_IOS_TOOLBAR={x:innerWidth-100,y:80,width:84,height:Math.max(1,innerHeight-160)};true
+        """)
+        let composer=session.glassControls.composer
+        for theme in ["dark","light"] {
+            try await setFixtureAppearance(theme)
+            try await waitFor("native picker editor") { composer.model != nil && !composer.isHidden }
+            composer.editor.becomeFirstResponder()
+            try await waitFor("picker software keyboard") { composer.editor.isFirstResponder && self.keyboardVisible }
+            composer.editor.selectedRange=NSRange(location:0,length:(composer.editor.text as NSString).length)
+            composer.editor.insertText("/")
+            try await waitFor("eight structured command rows") { !composer.popup.isHidden && composer.model?.items.filter({$0.title != nil}).count==8 }
+            window.layoutIfNeeded()
+            XCTAssertLessThanOrEqual(composer.popup.bounds.width,440)
+            XCTAssertLessThanOrEqual(composer.popup.frame.maxY,composer.material.frame.minY-5)
+            XCTAssertGreaterThan(composer.popup.frame.minY,0)
+            for exclusion in composer.model?.popupExclusions ?? [] {
+                XCTAssertFalse(composer.popup.frame.intersects(composer.convert(exclusion,from:session.webView)),"picker avoids the native dock and display exclusions")
+            }
+            let buttons=composer.suggestionScroll.subviews.compactMap {$0 as? UIButton}
+            XCTAssertEqual(buttons.count,8)
+            for button in buttons {
+                button.layoutIfNeeded()
+                let labels=button.subviews.compactMap {$0 as? UILabel}
+                let title=try XCTUnwrap(labels.first(where:{$0.accessibilityIdentifier=="kindred-command-title"}))
+                let detail=try XCTUnwrap(labels.first(where:{$0.accessibilityIdentifier=="kindred-command-description"}))
+                let badge=try XCTUnwrap(labels.first(where:{$0.accessibilityIdentifier=="kindred-command-source"}))
+                XCTAssertEqual(title.frame.minX,detail.frame.minX)
+                XCTAssertGreaterThanOrEqual(detail.frame.minY,title.frame.maxY+2)
+                XCTAssertGreaterThan(title.font.pointSize,detail.font.pointSize)
+                XCTAssertEqual(detail.numberOfLines,1)
+                XCTAssertGreaterThanOrEqual(button.bounds.height,44)
+                if !badge.isHidden { XCTAssertLessThan(title.frame.maxX,badge.frame.minX) }
+            }
+            let retained=buttons.first
+            for _ in 0..<5 { composer.emit("selection") }
+            try await Task.sleep(nanoseconds:200_000_000)
+            XCTAssertTrue(composer.suggestionScroll.subviews.contains(where:{$0 === retained}),"selection acknowledgements retain the visible rows")
+            for _ in 0..<7 { composer.editor.key?("ArrowDown") }
+            try await waitFor("native picker scrolls selected row") { composer.model?.items.first(where:{$0.selected})?.title=="/entry-7-long-command-name" && composer.suggestionScroll.contentOffset.y>0 }
+            let screenshot=XCTAttachment(image:UIGraphicsImageRenderer(bounds:window.bounds).image { _ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true) });screenshot.name="native-command-picker-"+theme;screenshot.lifetime = .keepAlways;add(screenshot)
+            composer.editor.resignFirstResponder()
+            try await waitFor("picker keyboard dismissal") { !self.keyboardVisible }
+        }
+    }
+
     func testNativeSlashCommandsLoadingFilteringAndSelection() async throws {
         guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
         _ = try await js("""
