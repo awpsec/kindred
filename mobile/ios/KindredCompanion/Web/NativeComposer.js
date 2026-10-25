@@ -80,7 +80,8 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
     if(items.length>80)return null;
     const css=getComputedStyle(editor),style=getComputedStyle(form),selection=getSelection();let selected;
     if(selection?.rangeCount){const r=selection.getRangeAt(0);if(editor.contains(r.startContainer)&&editor.contains(r.endContainer)){const before=r.cloneRange();before.selectNodeContents(editor);before.setEnd(r.startContainer,r.startOffset);selected=[before.toString().length,r.toString().length];}}
-    const exclusions=[window.__KINDRED_IOS_TOOLBAR,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions||[]).filter(r=>r.active!==false)].filter(r=>r&&[r.x,r.y,r.width,r.height].every(Number.isFinite)&&r.width>0&&r.height>0).slice(0,16).map(r=>[r.x,r.y,r.width,r.height]);
+    const identity=document.querySelector('#bot-details[data-ios-native-glass]'),identityBox=identity&&visible(identity)?identity.getBoundingClientRect():null;
+    const exclusions=[window.__KINDRED_IOS_TOOLBAR,identityBox,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions||[]).filter(r=>r.active!==false)].filter(r=>r&&[r.x,r.y,r.width,r.height].every(Number.isFinite)&&r.width>0&&r.height>0).slice(0,16).map(r=>[r.x,r.y,r.width,r.height]);
     return {context,text:value(),placeholder:editor.dataset.placeholder||'Message',rect:rect(form),editor:rect(editor),scroller:rect(document.querySelector('#content')),
       radius:Math.min(64,parseFloat(style.borderTopLeftRadius)||28),font:parseFloat(css.fontSize),line:parseFloat(css.lineHeight)||24,
       inset:[css.paddingTop,css.paddingRight,css.paddingBottom,css.paddingLeft].map(n=>parseFloat(n)||0),dark:document.documentElement.dataset.theme!=='light',ack,items,selection:selected,...(suggestions?{popup:{rect:rect(suggestions),height:suggestions.scrollHeight,offset:suggestions.scrollTop,commands:suggestions===commandMenu,exclusions}}:{}),editing:editor.getAttribute('aria-disabled')!=='true'};

@@ -234,7 +234,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             try await waitFor("picker software keyboard") { composer.editor.isFirstResponder && self.keyboardVisible }
             composer.editor.selectedRange=NSRange(location:0,length:(composer.editor.text as NSString).length)
             composer.editor.insertText("/")
-            try await waitFor("eight structured command rows") { !composer.popup.isHidden && composer.model?.items.filter({$0.title != nil}).count==8 }
+            try await waitFor("eight structured command rows") { !composer.popup.isHidden && composer.model?.dark==(theme=="dark") && composer.model?.ack==composer.revision && composer.model?.items.filter({$0.title != nil}).count==8 }
             window.layoutIfNeeded()
             XCTAssertLessThanOrEqual(composer.popup.bounds.width,440)
             XCTAssertLessThanOrEqual(composer.popup.frame.maxY,composer.material.frame.minY-5)
@@ -260,7 +260,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             let retained=buttons.first
             for _ in 0..<5 { composer.emit("selection") }
             try await Task.sleep(nanoseconds:200_000_000)
-            XCTAssertTrue(composer.suggestionScroll.subviews.contains(where:{$0 === retained}),"selection acknowledgements retain the visible rows")
+            XCTAssertTrue(composer.suggestionScroll.subviews.contains(where:{$0 === retained}),"selection acknowledgements retain the visible rows in \(theme): \(retained?.accessibilityIdentifier ?? "nil")")
             for _ in 0..<7 { composer.editor.key?("ArrowDown") }
             try await waitFor("native picker scrolls selected row") { composer.model?.items.first(where:{$0.selected})?.title=="/entry-7-long-command-name" && composer.suggestionScroll.contentOffset.y>0 }
             let screenshot=XCTAttachment(image:UIGraphicsImageRenderer(bounds:window.bounds).image { _ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true) });screenshot.name="native-command-picker-"+theme;screenshot.lifetime = .keepAlways;add(screenshot)

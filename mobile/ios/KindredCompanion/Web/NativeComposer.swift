@@ -79,12 +79,14 @@ final class NativeComposer: UIView, UITextViewDelegate {
     }
     private final class CommandButton: Button {
         let nameLabel=UILabel(),detailLabel=UILabel(),badgeLabel=UILabel()
+        private let badgeBackground=UIView()
         var rowHeight:CGFloat { max(52,nameLabel.font.lineHeight+(detailLabel.isHidden ? 0:detailLabel.font.lineHeight+3)+20) }
         override init(frame:CGRect) {
             super.init(frame:frame);layer.cornerRadius=10
+            badgeBackground.isUserInteractionEnabled=false;badgeBackground.layer.cornerRadius=5;badgeBackground.backgroundColor = .quaternarySystemFill;addSubview(badgeBackground)
             for label in [nameLabel,detailLabel,badgeLabel] { label.isUserInteractionEnabled=false;label.isAccessibilityElement=false;label.lineBreakMode = .byTruncatingTail;addSubview(label) }
-            nameLabel.textColor = .label;detailLabel.textColor = .secondaryLabel;badgeLabel.textColor = .secondaryLabel
-            badgeLabel.textAlignment = .center;badgeLabel.layer.cornerRadius=5;badgeLabel.clipsToBounds=true;badgeLabel.backgroundColor = .tertiarySystemFill
+            nameLabel.textColor = .label;detailLabel.textColor = .secondaryLabel;badgeLabel.textColor = .label
+            badgeLabel.textAlignment = .center;badgeLabel.backgroundColor = .clear
             nameLabel.accessibilityIdentifier="kindred-command-title";detailLabel.accessibilityIdentifier="kindred-command-description";badgeLabel.accessibilityIdentifier="kindred-command-source"
         }
         required init?(coder:NSCoder) { fatalError("init(coder:) is unavailable") }
@@ -108,6 +110,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
             nameLabel.frame=CGRect(x:inset,y:top,width:width,height:titleHeight)
             detailLabel.frame=CGRect(x:inset,y:top+titleHeight+3,width:width,height:detailHeight)
             badgeLabel.frame=CGRect(x:bounds.width-inset-badgeWidth,y:(bounds.height-24)/2,width:badgeWidth,height:24)
+            badgeBackground.frame=badgeLabel.frame;badgeBackground.isHidden=badgeLabel.isHidden
         }
     }
     final class Editor: UITextView {
@@ -183,6 +186,9 @@ final class NativeComposer: UIView, UITextViewDelegate {
     }
     func prepare(_ next:Model?,document:String,in web:WKWebView) {
         guard let next else { applying=true;blur();applying=false;desiredVisible=false;confirmed=false;isHidden=true;return }
+        // An older web acknowledgement must not remove/recreate suggestions
+        // while a newer UIKit edit is still making its round trip.
+        if self.document==document,model?.context==next.context,next.ack<revision { return }
         desiredVisible=true
         if self.document != document || model?.context != next.context {
             blur();revision=0;editor.undoManager?.removeAllActions()
@@ -300,7 +306,9 @@ final class NativeComposer: UIView, UITextViewDelegate {
         for exclusion in model.popupExclusions {
             let r=convert(exclusion,from:web),box=CGRect(x:x,y:bottom-height,width:width,height:height)
             guard box.intersects(r) else { continue }
-            if r.width>viewport.width*0.65 {
+            if r.height<=80,r.minY<=top+64 {
+                height=max(0,min(height,bottom-r.maxY-8))
+            } else if r.width>viewport.width*0.65 {
                 let below=bottom-r.maxY-8
                 if below>=96 { height=min(height,below) }
                 else { bottom=min(bottom,r.minY-8);height=max(0,min(height,bottom-top)) }
@@ -366,6 +374,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
         applying=true;blur();applying=false
         isHidden=true;confirmed=false;desiredVisible=false;model=nil;document=nil;revision=0;indicatorSurfaces=0
         nodes.values.forEach {$0.removeFromSuperview()};nodes.removeAll();contentKeys.removeAll();textStyleKey=[];lastPopupOffset=nil;lastPopupKey=nil
+        commandListKey=nil;commandSelectionID=nil
     }
     func textViewDidChange(_ textView:UITextView) {
         guard !applying else { return };revision+=1;placeholder.isHidden = !textView.text.isEmpty
