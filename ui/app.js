@@ -2493,7 +2493,7 @@ async function settingsGeneral(revision) {
   const speechPane=dictation.querySelector('.settings-pane');speechPane.insertBefore(dictationUI.microphoneControl(),speechPane.querySelector('.dictation-model-row'));
   system.root.hidden=!system.body.children.length;
   form.append(identity.root,appearance.root,conversations.root,dictation,system.root,bots.root,versions.root);
-  const serverControls=[...progress.inputs,name.input,prefs.input,theme,accent,motion.input,activity.input,separateBots.input,delivery,timezone,approval.input,notifications];
+  const serverControls=[...progress.inputs,name.input,prefs.input,theme,accent,motion.input,activity.input,separateBots.input,timezone,approval.input,notifications];
   serverControls.forEach(control=>control.disabled=true);
   root.append(form);renderVersions();
   for(const input of [theme,accent,motion.input])input.addEventListener('change',()=>{state.general={...state.general,theme:theme.value,accent_color:accent.value,reduced_motion:motion.input.checked};applyGeneral();});
