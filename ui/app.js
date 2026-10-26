@@ -3588,6 +3588,7 @@ function disconnectDesktop() {
   state.desktopNavigationHidden=false;state.desktopNavigationBot=null;
   if(state.teaching){state.teaching.paused=true;renderTeaching();}
   state.stopDesktopGlass?.();state.stopDesktopGlass=null;
+  state.stopDesktopFit?.();state.stopDesktopFit=null;
   state.stopComputerPointer?.();state.stopComputerPointer=null;
   clearTimeout(state.desktopRetryTimer);
   clearTimeout(state.desktopTimeout);
@@ -3598,6 +3599,57 @@ function disconnectDesktop() {
   state.rfb = null;
   $("desktop").replaceChildren();
   $("desktop-loading")?.remove();
+}
+// Fit the viewer to protocol dimensions, never to its high-DPI presentation
+// buffer. Extra vertical space belongs below the screen controls and routines.
+function fitDesktopToScreen(host){
+  // The installed iOS adapter already owns its aspect fit, keyboard and hinge
+  // bounds. Its controls are rearranged into a separate native layout.
+  if(window.__KINDRED_MOBILE_PLATFORM==='ios')return ()=>{};
+  const panel=$('computer-panel'),area=$('desktop'),canvas=host.querySelector('canvas');
+  if(!canvas)return ()=>{};
+  let stopped=false;
+  const number=value=>Number.parseFloat(value)||0;
+  const fit=()=>{
+    if(stopped||!host.isConnected||panel.hidden||panel.inert)return;
+    const width=Number(canvas.dataset.framebufferWidth)||canvas.width,height=Number(canvas.dataset.framebufferHeight)||canvas.height;
+    if(!(width>0&&height>0))return;
+    const ratio=width/height,p=getComputedStyle(panel),a=getComputedStyle(area);
+    const availableWidth=panel.clientWidth-number(p.paddingLeft)-number(p.paddingRight)-number(a.marginLeft)-number(a.marginRight);
+    if(availableWidth<1)return;
+    let fittedHeight=availableWidth/ratio;
+    if(panel.classList.contains('expanded')||panel.matches(':fullscreen')){
+      let routineSpace=0;
+      let occupied=number(p.paddingTop)+number(p.paddingBottom)+number(a.marginTop)+number(a.marginBottom);
+      for(const child of panel.children){
+        if(child===area)continue;
+        const style=getComputedStyle(child);if(style.display==='none')continue;
+        const size=child.id==='computer-routines'?(routineSpace=Math.min(155,child.scrollHeight)):child.getBoundingClientRect().height;
+        occupied+=size+number(style.marginTop)+number(style.marginBottom);
+      }
+      // At large accessibility sizes the pane can scroll rather than crushing
+      // its desktop or hiding the controls. Normal layouts fit without scrolling.
+      fittedHeight=Math.min(fittedHeight,Math.max(Math.min(120,fittedHeight),panel.clientHeight-occupied));
+      const room=Math.max(routineSpace,panel.clientHeight-occupied+routineSpace-fittedHeight);
+      const next=Math.round(room*100)/100+'px';
+      if(panel.style.getPropertyValue('--screen-routines-height')!==next)panel.style.setProperty('--screen-routines-height',next);
+    }
+    for(const [key,value] of [['width',fittedHeight*ratio],['height',fittedHeight]]){
+      const next=Math.round(value*100)/100+'px';
+      if(area.style.getPropertyValue('--screen-fit-'+key)!==next)area.style.setProperty('--screen-fit-'+key,next);
+    }
+  };
+  panel.classList.add('screen-sized');
+  const resize=new ResizeObserver(fit);
+  const observe=()=>{resize.observe(panel);for(const child of panel.children)if(child!==area)resize.observe(child);fit();};
+  const layout=new MutationObserver(observe);layout.observe(panel,{childList:true,attributes:true,attributeFilter:['class','hidden','inert']});
+  const pixels=new MutationObserver(fit);pixels.observe(canvas,{attributes:true,attributeFilter:['data-framebuffer-width','data-framebuffer-height','width','height']});
+  state.fitDesktop=fit;observe();
+  return ()=>{
+    stopped=true;resize.disconnect();layout.disconnect();pixels.disconnect();
+    if(state.fitDesktop===fit)state.fitDesktop=null;
+    panel.classList.remove('screen-sized');panel.style.removeProperty('--screen-routines-height');for(const key of ['width','height'])area.style.removeProperty('--screen-fit-'+key);
+  };
 }
 // Sample only a tiny decorative copy; the actual VNC canvas stays untouched.
 function desktopGlass(host) {
@@ -3625,7 +3677,7 @@ function revealDesktop(host) {
   const loading=$("desktop-loading");
   if(!motionAllowed()){loading?.remove();return;}
   const timing={duration:260,easing:'cubic-bezier(.2,.8,.2,1)'};
-  trackMotion(host.animate([{opacity:0,transform:'scale(.985)'},{opacity:1,transform:'none'}],timing),timing.duration,()=>{});
+  trackMotion(host.animate([{opacity:0,transform:'scale(.985)'},{opacity:1,transform:'none'}],timing),timing.duration,()=>{if(host.isConnected)refitComputer();});
   if(loading){loading.id='';loading.inert=true;trackMotion(loading.animate([{opacity:1},{opacity:0}],{duration:200,easing:'ease-out',fill:'forwards'}),200,()=>loading.remove());}
 }
 // A still of the last frame lets a closing pane fade out showing its screen.
@@ -3692,6 +3744,7 @@ async function retryDesktop(generation, message, allowRetry=true, explicitPhase=
   clearTimeout(state.desktopRetryTimer);
   state.desktopConnected = false;
   state.stopDesktopGlass?.();state.stopDesktopGlass=null;
+  state.stopDesktopFit?.();state.stopDesktopFit=null;
   let phase=explicitPhase||await readScreenPhase();
   if(generation!==state.desktopGeneration||($('computer-panel').hidden||$('computer-panel').inert))return;
   if(message&&['asleep','waking'].includes(phase))phase='failed';
@@ -3801,6 +3854,7 @@ async function connectDesktop({isCurrent=()=>true,allowRetry=true,wake=true}={})
       state.desktopRetry = 0;
       state.desktopConnected = true;
       state.desktopScreenPhase='ready';$('desktop').dataset.screenState='ready';
+      state.stopDesktopFit?.();state.stopDesktopFit=fitDesktopToScreen(host);
       state.stopDesktopGlass?.();state.stopDesktopGlass=desktopGlass(host);
       revealDesktop(host);
       $("desktop-error").hidden = true;
@@ -7723,7 +7777,7 @@ function paneLayoutSnapshot(){
   const shell=$('app'),chat=shell.querySelector('.conversation'),sidebar=shell.querySelector('.sidebar');
   return {shell:shell.getBoundingClientRect(),sidebar:sidebar.getBoundingClientRect(),chat:chat.getBoundingClientRect(),panels:rightPanes().map(panel=>({panel,visible:!panel.hidden,rect:panel.getBoundingClientRect()})),screen:$('desktop').getBoundingClientRect()};
 }
-function refitComputer(){if(state.rfb)state.rfb.scaleViewport=true;}
+function refitComputer(){state.fitDesktop?.();if(state.rfb)state.rfb.scaleViewport=true;}
 function finishComputerTransition(){paneLayoutMotion?.finish();for(const motion of [...nativePaneMotion.values()])motion.finish();refitComputer();}
 window.addEventListener('resize',finishComputerTransition);
 // Native iOS owns pane geometry (including the Duo list and hinge insets).

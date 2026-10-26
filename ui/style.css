@@ -2915,6 +2915,15 @@ input[type="checkbox"]:checked::after {
   min-height: 170px;
   aspect-ratio: 8/5;
 }
+/* Live frames follow the remote desktop instead of filling a tall letterbox. */
+.computer-panel.screen-sized {overflow:auto;}
+.computer-panel.screen-sized > :not(#desktop) {flex-shrink:0;}
+.computer-panel.screen-sized #desktop {
+  flex:none;align-self:center;aspect-ratio:auto;min-height:0;
+  width:var(--screen-fit-width);height:var(--screen-fit-height);max-width:calc(100% - 28px);
+}
+.computer-panel.screen-sized .desktop-canvas {min-height:0;aspect-ratio:auto;}
+.computer-panel.screen-sized.expanded > #computer-routines {flex:none;max-height:var(--screen-routines-height,155px);}
 .desktop-loading {
   position: absolute;
   inset: 0;
