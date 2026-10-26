@@ -24,6 +24,7 @@ const source=fs.readFileSync(path.resolve(__dirname,'../../ui/docker-network.js'
         window.network=await(await import('/docker-network.js')).mountDockerNetwork(document.querySelector('#host'),{api,dialog:document.querySelector('dialog'),reload:()=>{window.reloads++;}});
       },scenario);
       assert.equal(await page.evaluate(()=>isSecureContext),false);
+      await page.getByText('Advanced network settings',{exact:true}).click();
       if(scenario==='bridge') {
         assert.equal(await page.locator('select').count(),0);await page.getByText(/Docker publishes this server/).waitFor();
       } else {
