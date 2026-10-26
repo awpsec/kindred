@@ -310,19 +310,43 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
 
     const hardware=el('section','vm-resource-settings'),heading=el('h3','','Shared VM resources');
     const status=el('p','muted','Loading computer settings…');status.setAttribute('role','status');
-    hardware.append(heading,status);pages.Computers.append(hardware);
+    const diagnostics=el('div','vm-resource-diagnostics');diagnostics.setAttribute('aria-label','Computer setup checks');
+    hardware.append(heading,status,diagnostics);pages.Computers.append(hardware);
     const form=el('form','vm-resource-form'),fields={},readouts={};
     for(const [key,title,min,max,step] of [['cpus','CPUs',1,32,1],['memory_mb','RAM (GB)',1,256,0.5],['disk_gb','Disk (GB)',8,2048,1]]){
       const f=label(title,'number','');f.input.min=min;f.input.max=max;f.input.step=step;f.input.required=true;fields[key]=f.input;const readout=el('div','vm-resource-readout');readout.append(el('span','',title),el('span','vm-resource-value'));readouts[key]=readout;form.append(f.root,readout);
     }
-    const help=el('p','muted small','All bots in this workspace share this VM. Set its resources before first startup, or shut it down before changing them. An existing disk can only increase.');
+    const help=el('p','muted small','All bots in this workspace share this VM. Shut it down before changing resources. An existing disk cannot shrink; Recreate computer makes a fresh disk instead.');
     const actions=el('div','row-actions'),save=el('button','outline-button','Save resources');save.type='submit';
-    let resourceBusy=false,resourceDirty=false,resourceState=null,provisioned=true;
+    let resourceBusy=false,resourceDirty=false,resourceState=null,provisioned=true,canRecreate=false;
     const power=button('Shut down',async()=>{
       if(resourceBusy)return;resourceBusy=true;renderResourceControls();status.textContent=resourceState==='running'?'Shutting down…':'Starting…';
       try{const response=await fetch('/api/vm/'+(resourceState==='running'?'shutdown':'start'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+getToken()},body:'{}',signal:AbortSignal.timeout(120000)});const value=await response.json();if(!response.ok)throw Error(value.error||'Computer action failed');await loadResources();}
       catch(e){status.textContent=e.message;}finally{resourceBusy=false;renderResourceControls();}
-    },'outline-button');actions.append(save,power);form.append(help,actions);hardware.append(form);form.hidden=true;
+    },'outline-button');
+    const recreate=button('Recreate computer…',()=>{
+      if(resourceBusy||resourceState==='running'||!provisioned||!canRecreate)return;
+      const prompt=dialog('Recreate computer'),fresh=el('form','profile-auth'),inputs={};
+      prompt.append(el('p','','Creates a fresh computer for this workspace. Installed apps, files and guest sign-ins will not appear in the new computer. Chats, bots and workspace settings stay. The old computer is archived on the server; it is not deleted.'),fresh);
+      for(const [key,title] of [['cpus','CPUs'],['memory_mb','RAM (GB)'],['disk_gb','Disk (GB)']]){
+        const f=label(title,'number',key==='disk_gb'?Math.min(30,Number(fields[key].value)):Math.min(Number(fields[key].value),Number(fields[key].max)));
+        f.input.min=key==='disk_gb'?8:1;f.input.max=fields[key].max;f.input.step=fields[key].step;f.input.required=true;inputs[key]=f.input;fresh.append(f.root);
+      }
+      const confirm=fieldSet(fresh,'Type RECREATE to confirm','text','','off'),error=el('p','error'),submit=el('button','primary','Archive and recreate');submit.type='submit';
+      fresh.append(error,submit,button('Cancel',()=>prompt.close()));
+      fresh.onsubmit=async event=>{
+        event.preventDefault();if(resourceBusy||!fresh.reportValidity())return;
+        if(confirm.value!=='RECREATE'){error.textContent='Type RECREATE to confirm a fresh computer.';return;}
+        resourceBusy=true;submit.disabled=true;renderResourceControls();error.textContent='';
+        try{
+          const value=await api('computer-settings/recreate',{confirmation:confirm.value,resources:Object.fromEntries(Object.entries(inputs).map(([key,input])=>[key,Number(input.value)*(key==='memory_mb'?1024:1)]))});
+          await loadResources();prompt.close();status.textContent='Old computer archived. Start the computer to set up the fresh disk.';
+          status.dataset.archiveId=value.archive_id||'';
+        }catch(e){error.textContent=e.message;}finally{resourceBusy=false;submit.disabled=false;renderResourceControls();}
+      };
+      confirm.focus();
+    },'subtle-button');
+    actions.append(save,power,recreate);form.append(help,actions);hardware.append(form);form.hidden=true;
     function renderResourceControls(){
       const editable=resourceState!=='running';
       for(const [key,input] of Object.entries(fields)){input.disabled=resourceBusy||!editable;input.parentElement.hidden=!editable;readouts[key].hidden=editable;readouts[key].lastChild.textContent=input.value;}
@@ -330,13 +354,19 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
       power.disabled=resourceBusy||(editable&&(resourceDirty||!form.checkValidity()));
       power.title=resourceDirty?'Save resources before starting':'';
       power.textContent=resourceState==='running'?'Shut down':'Start computer';
+      recreate.disabled=resourceBusy||resourceState==='running'||!provisioned;
+      recreate.hidden=!canRecreate;
     }
     form.addEventListener('input',()=>{resourceDirty=true;renderResourceControls();});
     async function loadResources(){
       try{const value=await api('computer-settings');if(value.supported===false){status.textContent='This legacy computer is managed outside Kindred. Its host administrator controls its resources.';return;}
-        resourceDirty=false;provisioned=value.provisioned!==false;resourceState=value.state;for(const [key,input] of Object.entries(fields))input.value=key==='memory_mb'?value.resources[key]/1024:value.resources[key];fields.disk_gb.min=provisioned?value.resources.disk_gb:8;
+        resourceDirty=false;provisioned=value.provisioned!==false;canRecreate=value.recreation_supported===true;resourceState=value.state;for(const [key,input] of Object.entries(fields))input.value=key==='memory_mb'?value.resources[key]/1024:value.resources[key];fields.disk_gb.min=provisioned?value.resources.disk_gb:8;
+        help.textContent=canRecreate?'All bots in this workspace share this VM. Shut it down before changing resources. An existing disk cannot shrink; Recreate computer makes a fresh disk instead.':'All bots in this workspace share this VM. Shut it down before changing resources. An existing disk cannot shrink. Update the server for computer recreation controls.';
         if(value.limits){fields.cpus.max=value.limits.cpus[1];fields.memory_mb.max=value.limits.memory_mb[1]/1024;}
         form.hidden=false;status.textContent=!provisioned?'Not started. Set shared VM resources before starting.':resourceState==='running'?'Running':'Stopped';
+        diagnostics.replaceChildren();
+        if(value.diagnostics?.acceleration)diagnostics.append(el('p','muted small','Startup acceleration: '+(value.diagnostics.acceleration.effective==='kvm'?'KVM':value.diagnostics.acceleration.effective==='tcg'?'software emulation (TCG)':'KVM unavailable')));
+        for(const warning of value.diagnostics?.warnings||[])diagnostics.append(el('p','muted small',warning));
         if(value.capacity)status.textContent+=` · Server/container: ${value.capacity.cpus} CPUs, ${(value.capacity.memory_budget_mb/1024).toFixed(1)} GB RAM available for a stopped VM (0.5 GB reserved for the server).`;
         if(resourceState!=='running'&&!form.checkValidity())status.textContent+=' Choose resources within this capacity before starting.';
         renderResourceControls();
