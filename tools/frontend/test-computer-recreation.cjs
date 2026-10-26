@@ -27,7 +27,7 @@ const path=require('node:path');
       }
       return route.fulfill({json:value});
     });
-    await page.route('**/recreate-fixture',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><html data-theme="dark"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body><div id="identity-row"></div><input id="remember-device" type="checkbox"><form id="connect-form"><h1>Connect</h1></form></body></html>'}));
+    await page.route('**/recreate-fixture',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><html data-theme="dark"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/shell-polish.css"></head><body><div id="identity-row"></div><input id="remember-device" type="checkbox"><form id="connect-form"><h1>Connect</h1></form></body></html>'}));
     async function open(){
       await page.goto(origin+'/recreate-fixture');
       await page.evaluate(async()=>{const {createProfileUI}=await import('/profiles.js');const ui=createProfileUI({getToken:()=> 'fixture',setToken:()=>{},connect:async()=>{},notice:m=>{throw Error(m)}});await ui.init();});
@@ -49,6 +49,8 @@ const path=require('node:path');
     await confirmation.fill('yes');await dialog.getByRole('button',{name:'Archive and recreate',exact:true}).click();
     await dialog.getByText('Type RECREATE to confirm a fresh computer.',{exact:true}).waitFor();assert.equal(writes.length,0);
     await confirmation.fill('RECREATE');await dialog.getByLabel('Disk (GB)',{exact:true}).fill('16');
+    const heading=await dialog.getByRole('heading',{name:'Recreate computer',exact:true}).boundingBox();assert(heading.y>=0&&heading.y<850);
+    assert.equal(await confirmation.evaluate(input=>getComputedStyle(input).borderTopWidth),'0px');
     if(evidence)await page.screenshot({path:path.join(evidence,engine+'-recreate-confirmation.png')});
     await dialog.getByRole('button',{name:'Archive and recreate',exact:true}).click();
     await dialog.getByText('A bot is working. Stop active tasks first.',{exact:true}).waitFor();assert.equal(resources.disk_gb,160);

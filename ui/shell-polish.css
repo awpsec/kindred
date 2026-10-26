@@ -234,6 +234,14 @@ html[data-accent]:not([data-accent=monochrome]) #send{--button:var(--message-acc
 #account-manager-dialog .account-manager-add{width:100%;min-height:42px;margin:16px 0;border:0;border-radius:12px;background:var(--hover);text-align:left;padding:10px 14px;}
 #account-manager-dialog .account-manager-add::before{content:'+';margin-right:10px;font-size:calc(18px * var(--text-scale, 1));vertical-align:-1px;}
 
+/* Computer recovery keeps confirmation and resources together on small screens. */
+.computer-recreate-dialog>p{font-size:13px;line-height:1.5;color:var(--soft)}
+.computer-recreate-dialog .profile-auth label{margin:0}
+.computer-recreate-dialog .computer-recreate-resources{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.computer-recreate-dialog input{background:var(--hover);border:0;border-radius:10px;box-shadow:none}
+.computer-recreate-dialog input:focus-visible{outline:2px solid var(--soft);outline-offset:2px}
+.computer-recreate-dialog .row-actions{justify-content:flex-end}
+.computer-recreate-dialog .error:empty{display:none}
 /* Hosted networking uses the same compact, filled controls as bot settings. */
 .server-admin-dialog .hosted-network {gap:20px;}
 .server-admin-dialog .hosted-network>fieldset {display:flex;flex-direction:column;gap:22px;min-width:0;}

@@ -326,23 +326,25 @@ export function createProfileUI({getToken,setToken,connect,beforeSwitch,restoreA
     },'outline-button');
     const recreate=button('Recreate computer…',()=>{
       if(resourceBusy||resourceState==='running'||!provisioned||!canRecreate)return;
-      const prompt=dialog('Recreate computer'),fresh=el('form','profile-auth'),inputs={};
+      const prompt=dialog('Recreate computer'),fresh=el('form','profile-auth'),inputs={},resourceFields=el('div','computer-recreate-resources');
+      prompt.classList.add('computer-recreate-dialog');fresh.append(resourceFields);
       prompt.append(el('p','','Creates a fresh computer for this workspace. Installed apps, files and guest sign-ins will not appear in the new computer. Chats, bots and workspace settings stay. The old computer is archived on the server; it is not deleted.'),fresh);
       for(const [key,title] of [['cpus','CPUs'],['memory_mb','RAM (GB)'],['disk_gb','Disk (GB)']]){
         const f=label(title,'number',key==='disk_gb'?Math.min(30,Number(fields[key].value)):Math.min(Number(fields[key].value),Number(fields[key].max)));
-        f.input.min=key==='disk_gb'?8:1;f.input.max=fields[key].max;f.input.step=fields[key].step;f.input.required=true;inputs[key]=f.input;fresh.append(f.root);
+        f.input.min=key==='disk_gb'?8:1;f.input.max=fields[key].max;f.input.step=fields[key].step;f.input.required=true;inputs[key]=f.input;resourceFields.append(f.root);
       }
       const confirm=fieldSet(fresh,'Type RECREATE to confirm','text','','off'),error=el('p','error'),submit=el('button','primary','Archive and recreate');submit.type='submit';
-      fresh.append(error,submit,button('Cancel',()=>prompt.close()));
+      const cancel=button('Cancel',()=>prompt.close()),dismiss=prompt.querySelector('.profile-dialog-heading button'),buttons=el('div','row-actions');buttons.append(cancel,submit);fresh.append(error,buttons);
+      fresh.addEventListener('input',()=>{error.textContent='';});prompt.addEventListener('cancel',event=>{if(resourceBusy)event.preventDefault();});
       fresh.onsubmit=async event=>{
         event.preventDefault();if(resourceBusy||!fresh.reportValidity())return;
         if(confirm.value!=='RECREATE'){error.textContent='Type RECREATE to confirm a fresh computer.';return;}
-        resourceBusy=true;submit.disabled=true;renderResourceControls();error.textContent='';
+        resourceBusy=true;submit.disabled=cancel.disabled=dismiss.disabled=true;renderResourceControls();error.textContent='';
         try{
           const value=await api('computer-settings/recreate',{confirmation:confirm.value,resources:Object.fromEntries(Object.entries(inputs).map(([key,input])=>[key,Number(input.value)*(key==='memory_mb'?1024:1)]))});
           await loadResources();prompt.close();status.textContent='Old computer archived. Start the computer to set up the fresh disk.';
           status.dataset.archiveId=value.archive_id||'';
-        }catch(e){error.textContent=e.message;}finally{resourceBusy=false;submit.disabled=false;renderResourceControls();}
+        }catch(e){error.textContent=e.message;}finally{resourceBusy=false;submit.disabled=cancel.disabled=dismiss.disabled=false;renderResourceControls();}
       };
       confirm.focus();
     },'subtle-button');
