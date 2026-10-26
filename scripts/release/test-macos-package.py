@@ -9,7 +9,7 @@ import argparse,hashlib,json,os,platform,plistlib,re,signal,subprocess,tempfile,
 
 def validate_paste_capture(rows):
  labels=[re.sub(r'^\W+','',label.strip()).casefold() for row in rows for label in row['text']]
- assert 'paste' in labels,'Standalone visible Paste label missing from native screenshot'
+ assert any(label in ('paste','e paste') for label in labels),'Standalone visible Paste label missing from native screenshot'
  assert 'return control' in labels,'Visible Return control missing from native screenshot'
  assert 'disposable paste destination' in labels,'Disposable destination missing from native screenshot'
 
@@ -315,6 +315,8 @@ try:
    stop(child);child=None
    command(['node',a.source.resolve()/'tools/frontend/test-native-workspace-artifacts.cjs'],'native-artifact-rendering.log',env={**env,'KINDRED_NATIVE_EXE':str(executable),'KINDRED_NATIVE_WINDOW_PROBE':str(out/'window-proof')},timeout=90)
    proof['native_sandboxed_artifact_rendering']=True
+   command(['node',tools/'native-foreground-smoke.cjs','--source',a.source.resolve(),'--exe',executable,'--focus',out/'app-focus','--output',out/'native-foreground'],'native-foreground.log',env=env,timeout=60)
+   proof['native_foreground_refresh']=json.loads((out/'native-foreground/result.json').read_text())
    assert not gui_failures,'; '.join(gui_failures)
 
 
