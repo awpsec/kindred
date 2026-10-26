@@ -32,4 +32,7 @@ if action != "status" && action != "move" {
     }
     precondition(app.isActive == (action != "background"), "Unexpected application focus")
 }
-print("{\"active\":\(app.isActive),\"canPostEvents\":\(CGPreflightPostEventAccess())}")
+let windows = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+let visibleMainWindows = windows.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }.count
+let status: [String: Any] = ["active": app.isActive, "canPostEvents": CGPreflightPostEventAccess(), "visibleMainWindows": visibleMainWindows]
+print(String(data: try! JSONSerialization.data(withJSONObject: status, options: [.sortedKeys]), encoding: .utf8)!)
