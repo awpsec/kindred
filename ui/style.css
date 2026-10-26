@@ -3720,8 +3720,9 @@ html[data-motion="off"] #composer,html[data-motion="off"] .composer-reply .icon-
 .control-notice-copy {flex:1 1 190px;min-width:0;overflow-wrap:anywhere;}
 .control-notice-copy p {margin:4px 0 0;color:var(--muted);line-height:1.5;}
 .control-notice-row button {flex:none;}
-.control-notice-error {flex-basis:100%;margin:0;color:var(--danger);}
-#computer-control-error {margin:0 14px 8px;font-size:calc(12px * var(--text-scale,1));}
+.control-notice-error {margin:0;color:var(--danger);}
+.control-notice-row > .control-notice-error {flex-basis:100%;}
+#computer-control-error {flex:none;margin:0 14px 8px;font-size:calc(12px * var(--text-scale,1));}
 #queue-status .small-button {margin-left:8px;}
 @media(max-width:600px){.control-notice{right:16px;top:44px;max-height:55dvh;} .control-notice-row button {min-height:36px;} }
 
