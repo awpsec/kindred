@@ -7731,9 +7731,10 @@ window.addEventListener('resize',finishComputerTransition);
 // the installed adapter's compatibility animation. Keep geometry in normal
 // layout; consecutive tab show/hide mutations settle before the next paint.
 function transitionNativePaneLayout(change){
+  const settleChat=beginChatLayoutChange();
   paneLayoutMotion?.finish();
   const before=new Map(rightPanes().map(panel=>[panel,{visible:!panel.hidden&&!panel.inert,rect:panel.getBoundingClientRect(),opacity:Number(getComputedStyle(panel).opacity),moving:nativePaneMotion.has(panel)}]));
-  change();layoutPanes();
+  change();layoutPanes();settleChat();
   for(const panel of rightPanes()){
     const visible=!panel.hidden&&!panel.inert,prior=before.get(panel);
     if(visible===prior.visible){
@@ -7762,13 +7763,13 @@ function transitionNativePaneLayout(change){
 }
 function transitionPaneLayout(change){
   if(window.__KINDRED_MOBILE_PLATFORM==='ios')return transitionNativePaneLayout(change);
-  const before=paneLayoutSnapshot();
+  const settleChat=beginChatLayoutChange(),before=paneLayoutSnapshot();
   paneLayoutMotion?.cancel();
   change();layoutPanes();
   const after=paneLayoutSnapshot();
-  if(!motionAllowed()||$('app').hidden){for(const panel of rightPanes())if(panel.hidden&&panel.dataset.clearPaneOnClose){$('details-content').replaceChildren();delete panel.dataset.clearPaneOnClose;}refitComputer();return;}
+  if(!motionAllowed()||$('app').hidden){for(const panel of rightPanes())if(panel.hidden&&panel.dataset.clearPaneOnClose){$('details-content').replaceChildren();delete panel.dataset.clearPaneOnClose;}refitComputer();settleChat();return;}
   const moving=after.panels.filter((p,i)=>p.visible||before.panels[i].visible);
-  if(!moving.length)return;
+  if(!moving.length){settleChat();return;}
   const shell=$('app'),sidebar=shell.querySelector('.sidebar'),screen=$('desktop');
   const reserve=node('div','pane-layout-reservation');reserve.setAttribute('aria-hidden','true');
   shell.querySelector('.conversation').after(reserve);
@@ -7801,7 +7802,7 @@ function transitionPaneLayout(change){
     cancelAnimationFrame(frame);
     for(const animation of animations){animation.oncancel=null;animation.cancel();}
     for(const restore of restores)restore();reserve.remove();paneLayoutMotion=null;
-    layoutPanes();refitComputer();
+    layoutPanes();refitComputer();settleChat();
   };
   control=trackMotion(animations[0],timing.duration,cleanup);paneLayoutMotion=control;
   // External cancellation (including webview lifecycle) settles every sibling.
@@ -8392,7 +8393,22 @@ function saveAvatarChoice(bot,patch){
 }
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.avatar-menu'))closeAvatarMenus();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAvatarMenus();$('new-menu').hidden=true;}});
-const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0,disclosure:null,disclosureSummary:null,disclosureFrame:0};
+const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0,layout:null,disclosure:null,disclosureSummary:null,disclosureFrame:0};
+// Width changes can clamp scrollTop and dispatch a scroll event before the
+// resize observer runs. Preserve reading intent through the entire pane motion;
+// browser layout corrections must never be mistaken for a person's scroll.
+function beginChatLayoutChange(){
+  if(!chatScroll.follow)captureChatAnchor();
+  const layout={view:chatScroll.view};chatScroll.layout=layout;
+  return ()=>{
+    if(chatScroll.layout!==layout)return;
+    restoreChatPosition();
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      if(chatScroll.layout!==layout)return;
+      restoreChatPosition();chatScroll.layout=null;
+    }));
+  };
+}
 function captureChatAnchor(){
   const area=$('content'),top=area.getBoundingClientRect().top;
   const visible=[...area.querySelectorAll(':scope > [data-message], :scope > [data-run]')].filter(n=>n.getBoundingClientRect().bottom>top+1).slice(0,3);
@@ -8457,7 +8473,7 @@ function beginChatRender(view){
   messageActionFocus=chatScroll.view===view && focused?.dataset.messageFocus && focused.closest('[data-message]') ? {seq:focused.closest('[data-message]').dataset.message,control:focused.dataset.messageFocus}:null;
   questionFocus=focused?.closest('.question-card') && chatScroll.view===view?{id:focused.closest('.question-card').dataset.questionId,target:focused.dataset.questionFocus,start:focused.selectionStart,end:focused.selectionEnd}:null;
   if(chatScroll.view!==view){
-    chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
+    chatScroll.layout=null;chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
     const saved=chatHistory.get(view)?.scroll;
     chatScroll.view=view;chatScroll.follow=saved?.follow??true;chatScroll.anchor=saved?.anchor??null;chatScroll.top=saved?.top??0;
   }
@@ -8495,6 +8511,7 @@ function followChatLatest(){
 }
 $('content').addEventListener('scroll',()=>{
   if(chatOpening||chatScroll.rendering)return;
+  if(chatScroll.layout?.view===chatScroll.view){restoreChatPosition();return;}
   const area=$('content');
   // Measuring a collapsed disclosure can temporarily clamp scrollTop before
   // its height animation is attached. That browser adjustment is not a user
@@ -8518,7 +8535,7 @@ function readingGesture(e){
   if(e.type==='wheel'||e.type==='touchmove'||e.type==='keydown')requestAnimationFrame(loadVisibleHistoryEdge);
   if((e.type==='pointerdown'||e.type==='keydown'&&e.key===' ')&&chatScroll.follow&&e.target.closest('summary,button[aria-expanded]')===chatScroll.disclosureSummary)return;
   if(e.type==='keydown'&&(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(e.key)||e.target.closest('input,textarea,[contenteditable=true]')))return;
-  chatScroll.disclosure=null;chatScroll.disclosureSummary=null;chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
+  chatScroll.layout=null;chatScroll.disclosure=null;chatScroll.disclosureSummary=null;chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
 }
 for(const name of ['wheel','touchstart','touchmove','pointerdown','keydown'])$('content').addEventListener(name,readingGesture,{passive:true});

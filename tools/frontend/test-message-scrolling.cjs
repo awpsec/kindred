@@ -13,6 +13,8 @@ const assert=require('node:assert/strict');
   await page.route(origin+'/api/chats/dm-piper*',r=>r.fulfill({json:{chat:{id:'dm-piper',members:['piper']},messages:[{seq:1,sender:'piper',kind:'message',text,created:Math.floor(Date.now()/1000)}],page:{has_before:false,has_after:false}}}));
   await page.goto(origin);await page.locator('#content .markdown-code').waitFor();await page.locator('#chat-loading').waitFor({state:'detached'});
   await page.emulateMedia({reducedMotion:'reduce'});
+  // Long replies are now collapsed by default; exercise scrolling after the reader expands it.
+  await page.getByRole('button',{name:'Show more',exact:true}).click();
   for(const selector of ['.message-bubble','.markdown-table','.markdown-code pre']){
    const target=page.locator('#content '+selector).first();
    const point=await target.evaluate(n=>{const chat=document.querySelector('#content');chat.scrollTop+=n.getBoundingClientRect().top-chat.getBoundingClientRect().top+300;const r=n.getBoundingClientRect(),c=chat.getBoundingClientRect();return{x:r.left+40,y:c.top+Math.min(200,c.height/2)};});
