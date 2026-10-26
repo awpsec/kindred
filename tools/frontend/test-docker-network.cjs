@@ -26,7 +26,7 @@ const source=fs.readFileSync(path.resolve(__dirname,'../../ui/docker-network.js'
       assert.equal(await page.evaluate(()=>isSecureContext),false);
       await page.getByText('Advanced network settings',{exact:true}).click();
       if(scenario==='bridge') {
-        assert.equal(await page.locator('select').count(),0);await page.getByText(/Docker publishes this server/).waitFor();
+        assert.equal(await page.locator('select').count(),0);await page.getByText(/Docker controls which interfaces can reach port 9444/).waitFor();
       } else {
         await page.getByLabel('Connection access').selectOption('all');
         if(scenario==='removed-origin')await page.getByLabel('Primary server URL').fill('https://new.example');
