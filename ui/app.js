@@ -5058,7 +5058,7 @@ function taskReviewGroup(message,groups,chatId,messages=[]){
   }
   return null;
 }
-function attachTaskReview(row,key,trackers,pending=!!row.querySelector('[data-task-review-pending="true"]')){
+function attachTaskReview(row,key,trackers,pending=false){
   const tracker=key&&trackers.get(key);if(!tracker)return row;
   row.dataset.taskOwner=key;
   const identity=row.dataset.message||(row.dataset.approval&&'approval-'+row.dataset.approval)||(row.dataset.run&&'run-'+row.dataset.run);
@@ -6431,6 +6431,22 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   }
   // A pending card must remain reachable even when its run is in a bot-only
   // collaboration chat or outside the loaded message page. Never copy history.
+  // Legacy approvals may share a worker wrapper with narration and tool history.
+  // Extract the card alone; exposing that wrapper would leak working details.
+  const placedLegacyApprovals=new Set();
+  for(const card of [...area.querySelectorAll('[data-approval][data-task-review-pending]')]){
+    if(placedLegacyApprovals.has(card.dataset.approval)){card.remove();continue;}
+    placedLegacyApprovals.add(card.dataset.approval);
+    const runId=card.dataset.taskReviewRun,run=runs.find(r=>r.id===runId)||state.allRuns.find(r=>r.id===runId)||state.details.get(runId)?.run;
+    if(!run)continue;
+    const approval=(state.details.get(runId)?.approvals||[]).find(a=>a.id===card.dataset.approval)||state.approvals.find(a=>a.id===card.dataset.approval);
+    let anchor=card;while(anchor.parentElement!==area)anchor=anchor.parentElement;
+    const group=node('article','message-group approval-message');group.dataset.message='legacy-approval-'+card.dataset.approval;
+    // Reviews without an explicit task/phase link retain their standalone place.
+    const key=approval&&taskReviewGroup({approval,run_id:runId,sender:run.bot_id},summaries,id,data.messages);
+    area.insertBefore(group,anchor);group.append(card);
+    attachTaskReview(group,key,taskTrackers,card.dataset.taskReviewPending==='true');
+  }
   const requestStrips=node('div','human-request-signposts');requestStrips.dataset.message='human-request-signposts-'+id;
   for(const task of pendingHumanRequests()) {
     const run=state.allRuns.find(r=>r.id===task.run_id),delegation=delegationContext(run),bot=state.bots.find(b=>b.id===task.bot_id);
@@ -8826,7 +8842,7 @@ function taskCards(run) {
   const block=node('div','task-cards');
   const receipts=state.details.get(run.id)?.approvals;
   const approvals=receipts || state.approvals.filter(a=>a.run_id===run.id);
-  for(const a of approvals)if(!a.args?.artifact_id&&!a.message_seq&&!((a.status||'pending')==='pending'&&simpleApproval(a))){const card=approvalCard(a,run);card.dataset.approval=a.id;card.dataset.taskReviewPending=String((a.status||'pending')==='pending');block.append(card);}
+  for(const a of approvals)if(!a.args?.artifact_id&&!a.message_seq&&!((a.status||'pending')==='pending'&&simpleApproval(a))){const card=approvalCard(a,run);card.dataset.approval=a.id;card.dataset.taskReviewRun=run.id;card.dataset.taskReviewPending=String((a.status||'pending')==='pending');block.append(card);}
   for(const t of state.userTasks.filter(t=>t.run_id===run.id).reverse()) {
     // A takeover request is a quiet notice: what the bot needs, why, and one
     // obvious Take over action. Long instructions fold; finished steps collapse

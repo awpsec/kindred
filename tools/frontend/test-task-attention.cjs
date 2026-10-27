@@ -23,13 +23,19 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};let pending=true,finished=false;
   const run=()=>({id:'signin',bot_id:'piper',chat_id:chat.id,status:pending?'awaiting_user':finished?'completed':'running',created:now-300,progress_started:now-300,task_title:'Prepare the client report',prompt:'Prepare the client report.',output:finished?'The report is ready.':'',error:''});
   const task=()=>({id:'login',run_id:'signin',bot_id:'piper',title:'Sign in to the client portal',instructions:'Please sign in on the bot computer. I’ll continue the report when you return control.',authentication:{method:'signin',service:'the client portal'},status:pending?'pending':'resumed',outcome:pending?'':'done',created:now-20});
+  const approval=()=>({id:'legacy-review',run_id:'signin',bot_id:'piper',chat_id:chat.id,task_group_id:'report',tool:'custom_action',args:{},status:pending?'pending':'approved',created:now-22});
   const progress={mode:'summaries',phase:'commentary',run_id:'signin',group_id:'report',work_qualified:true,task_title:'Prepare the client report',presentation:{mode:'staged',promoted:true,stages:['Gather sources','Prepare report'],current_stage:0},activity:{completed:2,recent:[{label:'Open the client portal',created:now-30}]}};
   const messages=[{seq:1,sender:'user',kind:'message',text:'Prepare the client report.',created:now-305},{seq:2,sender:'piper',run_id:'signin',kind:'task_progress',text:'',created:now-300,progress},{seq:3,sender:'piper',run_id:'signin',kind:'assistant',text:'The portal needs you to sign in before I can continue.',created:now-25,progress}];
-  await p.route(origin+'/api/**',r=>{const n=new URL(r.request().url()).pathname,send=json=>r.fulfill({json});if(n==='/api/chats')return send([chat]);if(n==='/api/runs')return send([run()]);if(n==='/api/runs/signin')return send({run:run(),events:[{seq:10,kind:'user_action',body:{id:'login'},created:now-20}],approvals:[]});if(n==='/api/user-tasks')return send([task()]);if(n==='/api/chats/'+chat.id)return send({chat,messages,page:{has_before:false,has_after:false}});if(n==='/api/activity')return send({});return r.continue();});
+  await p.route(origin+'/api/**',r=>{const n=new URL(r.request().url()).pathname,send=json=>r.fulfill({json});if(n==='/api/chats')return send([chat]);if(n==='/api/runs')return send([run()]);if(n==='/api/runs/signin')return send({run:run(),events:[{seq:10,kind:'user_action',body:{id:'login'},created:now-20},{seq:11,kind:'assistant',body:{text:'Working details that belong under the task.'},created:now-21}],approvals:[approval()]});if(n==='/api/user-tasks')return send([task()]);if(n==='/api/chats/'+chat.id)return send({chat,messages,page:{has_before:false,has_after:false}});if(n==='/api/activity')return send({});return r.continue();});
   await p.goto(origin);const header=p.locator('.summary-progress-heading'),row=p.locator('[data-message="human-task-login"]');await row.waitFor();await p.evaluate(()=>document.fonts.ready);await p.waitForTimeout(350);
   if(!expanded){await header.click();await p.waitForTimeout(300);}
+  const legacy=p.locator('[data-message="legacy-approval-legacy-review"]');
+  assert(await legacy.isVisible(),'Only the legacy approval card stays outside the collapsed worker');
+  assert.equal(await legacy.getAttribute('data-task-commentary'),null);
+  assert.equal(await p.locator('[data-approval="legacy-review"]').count(),1);
   assert(await row.isVisible(),'Pending handoff must be visible even with a collapsed job');
   assert.equal(await row.getAttribute('data-task-commentary'),null,'Pending handoff is outside history');
+  assert.equal(await p.getByText('Working details that belong under the task.',{exact:true}).isVisible(),expanded,'Pending control never exposes its worker narration outside the disclosure');
   assert(await row.getByRole('button',{name:'Take over',exact:true}).isVisible());
   const pendingBox=await row.boundingBox();assert(pendingBox.x>=0&&pendingBox.x+pendingBox.width<=width+1,'Pending action fits the available native viewport');
   assert.equal(await p.locator('[data-user-task="login"]').count(),1);
@@ -39,13 +45,15 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   pending=false;await p.evaluate(()=>window.attentionRefresh());
   assert(await p.locator('.connector-transfer-ghost').count()>0,'Confirmed handoff animates into its owning job');
   assert.equal(await row.getAttribute('data-task-commentary'),'report');
+  assert.equal(await legacy.getAttribute('data-task-commentary'),'report');
+  assert.equal(await legacy.isVisible(),expanded,'Resolved legacy approval follows the task disclosure');
   if(expanded){assert(await row.isVisible());const x=await p.locator('.summary-progress-activity').evaluate(n=>n.getBoundingClientRect().x+parseFloat(getComputedStyle(n).paddingInlineStart));assert(Math.abs((await row.boundingBox()).x-x)<1,'Resolved receipt aligns with task history');}
   else assert(!await row.isVisible(),'Resolved handoff follows collapsed history');
   await p.waitForTimeout(450);assert.equal(await p.locator('.connector-transfer-ghost,.connector-transfer-space').count(),0,'Transfer clears its presentation-only copies');
   assert(await (expanded?row.locator('summary'):header).evaluate(n=>n===document.activeElement),'Focus follows the resolved receipt or its visible owning header');
   await p.evaluate(()=>window.attentionRefresh());assert.equal(await p.locator('.connector-transfer-ghost').count(),0,'Refresh does not replay completed transfer');
   await p.screenshot({path:path.join(out,`${engine}-${width}-${expanded?'expanded':'collapsed'}-resolved.png`)});
-  await p.reload();await header.waitFor();assert.equal(await p.locator('[data-user-task="login"]').count(),1);assert.equal(await p.locator('.connector-transfer-ghost').count(),0,'History load does not replay');
+  await p.reload();await header.waitFor();assert.equal(await p.locator('[data-user-task="login"]').count(),1);assert.equal(await p.locator('[data-approval="legacy-review"]').count(),1);assert.equal(await p.locator('.connector-transfer-ghost').count(),0,'History load does not replay');
   finished=true;messages.push({seq:4,sender:'piper',kind:'result',run_id:'signin',text:'The report is ready.',created:now});await p.evaluate(()=>window.attentionRefresh());await p.waitForTimeout(450);
   assert.equal(await p.locator('[data-user-task="login"]').count(),1,'Finishing the job preserves one handoff receipt');assert(!await row.isVisible(),'Finished job keeps the resolved handoff in its collapsed history');
   finished=false;messages.pop();
