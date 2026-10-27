@@ -36,6 +36,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   assert(await row.isVisible(),'Pending handoff must be visible even with a collapsed job');
   assert.equal(await row.getAttribute('data-task-commentary'),null,'Pending handoff is outside history');
   assert.equal(await p.getByText('Working details that belong under the task.',{exact:true}).isVisible(),expanded,'Pending control never exposes its worker narration outside the disclosure');
+  assert.equal(await row.locator('.human-task').evaluate(n=>getComputedStyle(n).borderRadius),'12px','Pending card keeps its visible rounded treatment after base styles load');
   assert(await row.getByRole('button',{name:'Take over',exact:true}).isVisible());
   const pendingBox=await row.boundingBox();assert(pendingBox.x>=0&&pendingBox.x+pendingBox.width<=width+1,'Pending action fits the available native viewport');
   assert.equal(await p.locator('[data-user-task="login"]').count(),1);

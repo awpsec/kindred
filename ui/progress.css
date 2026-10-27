@@ -37,7 +37,7 @@ progress::-moz-progress-bar{background:var(--progress-accent)}
    follows the activity disclosure. */
 #content .task-owned-review{margin-inline-start:calc(var(--task-header-inset) + var(--task-body-indent));margin-inline-end:var(--task-header-inset);max-width:calc(100% - 2 * var(--task-header-inset) - var(--task-body-indent))}
 #content .task-attention{margin-inline:0;max-width:100%;margin-block:14px}
-.task-attention .human-task{border-radius:12px;padding:16px;background:color-mix(in srgb,var(--fg) 6%,var(--bg))}
+.task-attention .task-card.human-task{border-radius:12px;padding:16px;background:color-mix(in srgb,var(--fg) 6%,var(--bg))}
 .task-attention .human-task .human-task-meta{color:var(--fg);font-weight:600}
 #content .task-attention.task-question-receipt{box-sizing:border-box;width:min(100%,560px);padding:14px 16px;border-radius:12px;background:color-mix(in srgb,var(--fg) 6%,var(--bg));font-size:calc(14px * var(--text-scale,1))}
 .task-attention .task-question-answer.muted{color:var(--fg);font-size:calc(12px * var(--text-scale,1));font-weight:500}
