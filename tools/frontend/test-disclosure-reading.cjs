@@ -19,7 +19,7 @@ const results=[];const check=(name,ok,detail)=>results.push({name,ok:!!ok,detail
   const run={id:'done-run',bot_id:'piper',chat_id:'dm-piper',status:'completed',prompt:'Sign in to Gmail',output:'Signed in.',error:'',depth:0,created:now-400,progress_started:now-400};
   let messages=[...earlier];
   if(kind==='receipt'){messages.push({seq:21,sender:'piper',kind:'result',run_id:'done-run',text:'Signed in and checked the inbox.',created:now-10});}
-  if(kind==='summary'){const ups=Array.from({length:24},(_,i)=>({seq:21+i,sender:'piper',kind:'assistant',run_id:'done-run',created:now-390+i*15,text:'Update '+(i+1)+': I checked another batch of messages and recorded what changed in the tracker so the summary stays accurate.',progress:{mode:'summaries',phase:'commentary',run_id:'done-run',group_id:'g1',task_title:'Review inbox'}}));messages.push(...ups,{seq:60,sender:'piper',kind:'result',run_id:'done-run',text:'Done reviewing the inbox.',created:now-5});}
+  if(kind==='summary'){const ups=Array.from({length:24},(_,i)=>({seq:22+i,sender:'piper',kind:'assistant',run_id:'done-run',created:now-390+i*15,text:'Update '+(i+1)+': I checked another batch of messages and recorded what changed in the tracker so the summary stays accurate.',progress:{mode:'summaries',phase:'commentary',run_id:'done-run',group_id:'g1',task_title:'Review inbox'}}));messages.push({seq:21,sender:'piper',kind:'task_progress',run_id:run.id,created:now-400,text:'',progress:{...ups[0].progress,work_qualified:true,presentation:{mode:'staged',promoted:true,stages:['Review messages','Check inbox'],current_stage:1}}},...ups,{seq:60,sender:'piper',kind:'result',run_id:'done-run',text:'Done reviewing the inbox.',created:now-5});}
   if(kind==='long'){const lines=Array.from({length:70},(_,i)=>`Line ${i+1}: here is a detailed paragraph of the report that keeps going for a while.`).join('\n\n');messages.push({seq:21,sender:'piper',kind:'message',text:lines,created:now-5});}
   await p.route(url=>url.pathname==='/api/runs',r=>r.fulfill({json:[run]}).catch(()=>{}));
   await p.route(origin+'/api/runs/done-run',r=>r.fulfill({json:{run,events:[],approvals:[]}}).catch(()=>{}));
@@ -68,13 +68,15 @@ const results=[];const check=(name,ok,detail)=>results.push({name,ok:!!ok,detail
     }}
    check(`A ${w} ${scheme} no errors`,p.errors.length===0,p.errors);await p.context().close();}
   if(SC.includes('B'))
-  // B. Tall summary progress disclosure at bottom: where does the clicked heading go?
+  // B. Dispatch the disclosure click without locator auto-scrolling: the
+  // header is deliberately capped at the top after expansion. Measure the
+  // application animation, not Playwright moving the header before the click.
   for(const w of [1100,390]){const p=await open('summary',{width:w});const s=p.locator(p.sel).last();await toBottom(p);
-   const fr=await record(p,()=>s.click());const g=await gap(p);const head=await s.evaluate(n=>{const a=document.querySelector('#content').getBoundingClientRect(),b=n.getBoundingClientRect();return {headTopInView:Math.round(b.top-a.top),headBottomInView:Math.round(b.bottom-a.top),viewH:Math.round(a.height)};});
+   const fr=await record(p,()=>s.evaluate(n=>n.click()));const g=await gap(p);const head=await s.evaluate(n=>{const a=document.querySelector('#content').getBoundingClientRect(),b=n.getBoundingClientRect();return {headTopInView:Math.round(b.top-a.top),headBottomInView:Math.round(b.bottom-a.top),viewH:Math.round(a.height)};});
    info(`B ${w} tall summary expand: final`,{gap:g,...head,ctrlTopFrames:fr.map(f=>f.ctrlTop).filter((v,i,a)=>i===0||v!==a[i-1]).join(',')});
    check(`B ${w} tall summary: clicked heading visible every pre-paint frame`,head.headTopInView>=0&&fr.length>0&&fr.every(f=>f.ctrlTop>=0&&(f.ctrlTop<=9||f.gap<4)),{...head,frames:fr});
    await p.screenshot({path:path.join(out,`${engine}-B-summary-expanded-${w}.png`)});
-   const fr2=await record(p,()=>s.click());check(`B ${w} tall summary collapse continuous at bottom`,(await gap(p))<3&&fr2.length>0&&fr2.every(f=>f.ctrlTop>=0&&(f.ctrlTop<=9||f.gap<4)),{finalGap:await gap(p),maxGap:Math.max(...fr2.map(f=>f.gap)),minimumHeadingTop:Math.min(...fr2.map(f=>f.ctrlTop)),frames:fr2});
+   const fr2=await record(p,()=>s.evaluate(n=>n.click()));check(`B ${w} tall summary collapse continuous at bottom`,(await gap(p))<3&&fr2.length>0&&fr2.every(f=>f.ctrlTop>=0&&(f.ctrlTop<=9||f.gap<4)),{finalGap:await gap(p),maxGap:Math.max(...fr2.map(f=>f.gap)),minimumHeadingTop:Math.min(...fr2.map(f=>f.ctrlTop)),frames:fr2});
    await p.context().close();}
   if(SC.includes('C'))
   // C. Long message Show more at bottom: pointer vs keyboard. Track where the fold line lands.

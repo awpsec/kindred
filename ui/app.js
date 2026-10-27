@@ -5124,21 +5124,35 @@ function appendProgressTimestamp(content,m,entry,run){
 }
 function setTaskCommentaryExpanded(key,expanded,animate=true){
   const rows=[...$('content').querySelectorAll('[data-task-commentary]')].filter(n=>n.dataset.taskCommentary===key);
-  for(const row of rows)setTaskCommentaryRowExpanded(row,key,expanded,animate&&!row.classList.contains('task-owned-review'));
+  setTaskCommentaryRowsExpanded(rows,key,expanded,animate);
 }
 function setTaskCommentaryRowExpanded(row,key,expanded,animate=true){
-    // Polling an unchanged disclosure must not replay row motion.
-    if(!row.finishTaskCommentary&&row.hidden===!expanded)return;
-    const height=row.hidden?0:row.getBoundingClientRect().height,fromOpacity=row.hidden?0:getComputedStyle(row).opacity,fromMargin=row.hidden?'0px':getComputedStyle(row).marginBlock;
-    row.finishTaskCommentary?.();
-    row.hidden=false;
-    const target=row.getBoundingClientRect().height,margin=getComputedStyle(row).marginBlock;
-    if(!expanded&&row.contains(document.activeElement))$('content').querySelector('[data-progress-group="'+CSS.escape(key)+'"]>details>summary')?.focus({preventScroll:true});
-    if(!animate||!motionAllowed()){row.hidden=!expanded;return;}
+  setTaskCommentaryRowsExpanded([row],key,expanded,animate);
+}
+function setTaskCommentaryRowsExpanded(rows,key,expanded,animate){
+  // Reveal and measure the whole disclosure in batches. Interleaving a hidden
+  // write with the next row's geometry read forces a full chat layout per update.
+  const moving=rows.filter(row=>row.finishTaskCommentary||row.hidden===expanded);
+  if(!moving.length)return;
+  const animated=animate&&motionAllowed(),focus=!expanded&&moving.some(row=>row.contains(document.activeElement));
+  const states=moving.map(row=>{
+    const tween=animated&&!row.classList.contains('task-owned-review');
+    const style=tween&&!row.hidden?getComputedStyle(row):null;
+    return {row,tween,height:tween&&!row.hidden?row.getBoundingClientRect().height:0,opacity:style?.opacity||0,margin:style?.marginBlock||'0px'};
+  });
+  for(const {row,tween} of states){row.finishTaskCommentary?.();row.hidden=tween?false:!expanded;}
+  for(const state of states)if(state.tween){
+    state.target=expanded?state.row.getBoundingClientRect().height:0;
+    state.targetMargin=expanded?getComputedStyle(state.row).marginBlock:'0px';
+  }
+  if(focus)$('content').querySelector('[data-progress-group="'+CSS.escape(key)+'"]>details>summary')?.focus({preventScroll:true});
+  for(const {row,tween,height,opacity,margin,target,targetMargin} of states){
+    if(!tween)continue;
     row.style.overflow='hidden';
-    const motion=row.animate([{height:height+'px',opacity:fromOpacity,marginBlock:fromMargin},{height:(expanded?target:0)+'px',opacity:expanded?1:0,marginBlock:expanded?margin:'0px'}],{duration:220,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});
+    const motion=row.animate([{height:height+'px',opacity,marginBlock:margin},{height:target+'px',opacity:expanded?1:0,marginBlock:targetMargin}],{duration:220,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});
     const finish=()=>{motion.cancel();row.hidden=!expanded;row.style.removeProperty('overflow');delete row.finishTaskCommentary;delete row.refreshTaskCommentary;};
     const control=trackMotion(motion,220,finish);row.finishTaskCommentary=()=>control.finish();row.refreshTaskCommentary=()=>setTaskCommentaryRowExpanded(row,key,expanded);
+  }
 }
 function cancelProgressCompletion(group){
   const pending=group._progressCompletion;
