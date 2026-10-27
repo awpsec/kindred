@@ -1,4 +1,6 @@
 /* One visual bot center, backed by the existing details and computer panes. */
+/* The header stays above controls within its pane, below the artifact workspace. */
+#details-panel.has-bot-center,#computer-panel.has-bot-center{isolation:isolate;}
 .bot-center-heading{position:relative;z-index:41;flex:none;padding:10px 16px 14px;min-width:0;background:var(--panel,var(--bg));}
 .bot-center-actions{display:flex;justify-content:flex-end;gap:7px;min-height:30px;}
 .bot-center-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:30px;height:30px;padding:0;border:0;border-radius:50%;color:var(--muted);background:transparent;cursor:pointer;}
