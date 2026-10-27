@@ -24,6 +24,10 @@ progress::-moz-progress-bar{background:var(--progress-accent)}
 .task-activity .task-stage[data-state="current"]::before{content:'›'}
 @media(hover:hover){.progress-commentary:hover .progress-update-clock{opacity:1}}
 @media(pointer:coarse){.task-question-receipt>.task-question-heading{min-height:44px}}
+/* Adjacent updates share one reveal and height animation. Flow-root includes
+   the children's end margins in that single clipping surface. */
+.task-commentary-block{display:flow-root}
+.task-commentary-block[data-progress-finished="true"]{--task-header-inset:0px}
 /* Interim narration keeps its own sequence and geometry during promotion. */
 #content .message-group.task-commentary{margin-block:4px;padding-inline-start:calc(var(--task-header-inset) + var(--task-body-indent));padding-inline-end:var(--task-header-inset);box-sizing:border-box}
 .message-group.task-commentary .message-row>.message-bubble{background:transparent;border:0;border-radius:0;box-shadow:none;padding:0;font-size:calc(12px * var(--text-scale,1));line-height:1.5;max-width:100%}

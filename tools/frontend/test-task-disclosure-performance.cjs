@@ -16,10 +16,14 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   if(process.env.KINDRED_TEST_APP_OVERRIDE)await page.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(process.env.KINDRED_TEST_APP_OVERRIDE,'utf8')}));
   await page.goto(origin);const disclosure=page.locator('.summary-progress-disclosure');await disclosure.waitFor();await page.evaluate(()=>document.fonts.ready);await page.waitForTimeout(350);
   assert.equal(await page.locator('[data-task-commentary="project"]').count(),count);
+  const firstUpdate=page.locator('[data-task-commentary="project"] .message-text-content').first();assert.equal(await firstUpdate.locator(':scope>p').count(),2,'Fixture uses actual Markdown paragraphs');assert.equal(await firstUpdate.locator('li').count(),2,'Fixture uses an actual Markdown list');
   async function metrics(){return cdp?Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value])):{LayoutCount:0,LayoutDuration:0,RecalcStyleCount:0};}
   for(const expanded of [true,false]){
    const before=await metrics();
    const timing=await disclosure.locator('summary').evaluate(n=>{const start=performance.now();n.click();const handlerMs=performance.now()-start;for(const a of document.getAnimations())a.pause();void document.body.offsetHeight;return {handlerMs,layoutReadyMs:performance.now()-start};});
+   assert.equal(await page.locator('[data-task-commentary-block]').count(),1,'Adjacent prose shares one reveal surface');
+   assert.equal(await page.locator('[data-task-commentary-block]').evaluate(n=>n.getAnimations().length),1,'Disclosure uses one block animation regardless of update count');
+   assert(await page.locator('.task-commentary').evaluateAll(rows=>rows.every(n=>!n.getAnimations().length)),'Ordinary updates do not each create a height animation');
    const after=await metrics(),sample={engine,cpuRate:cdp?rate:1,count,expanded,...timing,layouts:cdp?after.LayoutCount-before.LayoutCount:null,layoutMs:cdp?(after.LayoutDuration-before.LayoutDuration)*1000:null,styleRecalculations:cdp?after.RecalcStyleCount-before.RecalcStyleCount:null};results.push(sample);
    await page.evaluate(()=>{for(const a of document.getAnimations())a.finish();});await page.waitForTimeout(350);
    assert.equal(await disclosure.evaluate(n=>n.open),expanded);assert.equal(await page.locator('[data-task-commentary="project"]:visible').count(),expanded?count:0);

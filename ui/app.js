@@ -5123,7 +5123,7 @@ function appendProgressTimestamp(content,m,entry,run){
   stamp.append(clock);const last=content.lastElementChild;(last?.tagName==='P'?last:content).append(document.createTextNode(' '),stamp);
 }
 function setTaskCommentaryExpanded(key,expanded,animate=true){
-  const rows=[...$('content').querySelectorAll('[data-task-commentary]')].filter(n=>n.dataset.taskCommentary===key);
+  const rows=[...$('content').querySelectorAll('[data-task-commentary-block], [data-task-commentary]')].filter(n=>(n.dataset.taskCommentaryBlock===key||n.dataset.taskCommentary===key)&&!n.parentElement.closest('[data-task-commentary-block]'));
   setTaskCommentaryRowsExpanded(rows,key,expanded,animate);
 }
 function setTaskCommentaryRowExpanded(row,key,expanded,animate=true){
@@ -6515,6 +6515,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     attachTaskReview(group,reviewGroup,taskTrackers,card.dataset.status==='pending');
     area.insertBefore(group,anchor||null);
   }
+  groupTaskCommentary(area);
   reconcileConversation(liveArea,area,mode==='sync'&&!entry.historyChanged);entry.historyChanged=false;
   const artifactTurns=data.messages.filter(m=>m.sender==='user'||m.mine===true||(chat.shared&&chat.participants?.some(p=>p.id===m.sender&&p.kind==='person'))).map(m=>String(m.seq));
   for(const card of liveArea.querySelectorAll('[data-workspace-artifact]'))card.advanceArtifactTurns?.(artifactTurns);
@@ -6529,6 +6530,27 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   for(const divider of liveArea.querySelectorAll('.unread-divider'))unreadObserver.observe(divider);
   for(const finish of entry.finishing.values())if(!taskOwners.get(JSON.stringify([finish.run.id,finish.run.bot_id])))finishingWork(entry,finish);
   endChatRender();
+}
+// Adjacent narration shares one disclosure surface. Keep interrupted runs in
+// separate blocks so user messages and other bots retain their original order.
+// Reviews stay flat: pending requests must remain visible outside task history.
+// Rich cards also retain their parents so regrouping never reloads a live frame.
+function groupTaskCommentary(area){
+  const owners=new Map([...area.querySelectorAll('[data-progress-group]')].map(n=>[n.dataset.progressGroup,n.dataset.progressFinished]));
+  let block=null;
+  for(const row of [...area.children]){
+    if(!row.matches('.task-commentary[data-task-commentary]')||row.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media,[data-connector-artifact]')){block=null;continue;}
+    if(block?.dataset.taskCommentaryBlock!==row.dataset.taskCommentary){
+      block=node('div','task-commentary-block');
+      block.dataset.taskCommentaryBlock=row.dataset.taskCommentary;
+      block.dataset.progressFinished=owners.get(row.dataset.taskCommentary)||'false';
+      block.dataset.message='task-commentary-'+row.dataset.taskCommentary+'-'+row.dataset.message;
+      block.dataset.scrollMessages='';block.hidden=row.hidden;
+      area.insertBefore(block,row);
+    }
+    block.dataset.scrollMessages+=(block.dataset.scrollMessages?' ':'')+row.dataset.message;
+    row.hidden=false;block.append(row);
+  }
 }
 const conversationRenderSignatures=new WeakMap();
 function conversationSignature(node){
@@ -6575,10 +6597,11 @@ function preserveOrdinaryMessage(previous,next){
   // Iframes, previews and other live cards have separate ownership. Do not
   // move them merely because adjacent Markdown changed.
   if(before.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media')||after.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media'))return false;
-  const shell=n=>{const copy=n.cloneNode(true);copy.removeAttribute('aria-description');copy.classList.remove('message-menu-open','reply-arriving');if(previous.refreshTaskCommentary){copy.removeAttribute('hidden');copy.style.removeProperty('overflow');if(!copy.getAttribute('style'))copy.removeAttribute('style');}copy.querySelector('.mobile-message-time')?.remove();copy.querySelector('.message-text-content').replaceChildren();for(const a of copy.querySelectorAll('.message-actions'))a.replaceChildren();const viewport=copy.querySelector('.message-text-viewport');viewport.removeAttribute('style');viewport.classList.remove('is-truncated');const toggle=copy.querySelector('.message-expand');if(toggle)toggle.replaceWith(document.createElement('button'));return copy.outerHTML;};
+  const shell=n=>{const copy=n.cloneNode(true);copy.removeAttribute('aria-description');copy.classList.remove('message-menu-open','reply-arriving','same-author');if(previous.refreshTaskCommentary){copy.removeAttribute('hidden');copy.style.removeProperty('overflow');if(!copy.getAttribute('style'))copy.removeAttribute('style');}copy.querySelector('.mobile-message-time')?.remove();copy.querySelector('.message-text-content').replaceChildren();for(const a of copy.querySelectorAll('.message-actions'))a.replaceChildren();const viewport=copy.querySelector('.message-text-viewport');viewport.removeAttribute('style');viewport.classList.remove('is-truncated');const toggle=copy.querySelector('.message-expand');if(toggle)toggle.replaceWith(document.createElement('button'));return copy.outerHTML;};
   if(shell(previous)!==shell(next))return false;
   const focused=document.activeElement,action=previous.contains(focused)?focused.dataset.messageAction:null,focusPath=[];
   if(before.contains(focused))for(let n=focused;n!==before;n=n.parentNode)focusPath.unshift([...n.parentNode.childNodes].indexOf(n));
+  previous.classList.toggle('same-author',next.classList.contains('same-author'));
   patchConversationText(before,after);
   previous.querySelector('.message-text-viewport')._updateLongMessage?.();
   previous.refreshTaskCommentary?.();
@@ -6767,7 +6790,7 @@ function animateConnectorTaskTransfers(target,transfers){
   target.addEventListener('pointerdown',finish,true);target.addEventListener('keydown',finish,true);
   setTimeout(finish,duration+150);
 }
-function reconcileConversation(target,desired,animate=true){
+function reconcileConversation(target,desired,animate=true,priorCommentary=null){
   const restoreSelection=retainConversationSelection(target);
   target.finishConnectorTransfers?.();
   const transfers=connectorTaskTransfers(target,desired),animateTransfers=animate&&motionAllowed();
@@ -6777,8 +6800,23 @@ function reconcileConversation(target,desired,animate=true){
     const previous=[...target.querySelectorAll('.command-progress')].find(p=>p.dataset.command===next.dataset.command);
     if(previous)next.open=previous.open&&!previous.classList.contains('is-collapsing');
   }
-  const old=new Map([...target.children].filter(n=>n.dataset.message).map(n=>[n.dataset.message,n]));
+  const old=new Map(priorCommentary||[]);
+  for(const n of target.children)if(n.dataset.message)old.set(n.dataset.message,n);
+  const commentary=new Map([...target.querySelectorAll('.task-commentary[data-message]')].map(n=>[n.dataset.message,n])),claimedBlocks=new Set();
   const nodes=[...desired.children].map(next=>{
+    if(next.dataset.taskCommentaryBlock){
+      const members=new Set(next.dataset.scrollMessages.split(' '));
+      const previous=[...target.children].find(n=>!claimedBlocks.has(n)&&n.dataset.taskCommentaryBlock===next.dataset.taskCommentaryBlock&&n.dataset.scrollMessages.split(' ').some(id=>members.has(id)));
+      const block=previous||node('div','task-commentary-block'),signature=conversationSignature(next);claimedBlocks.add(block);
+      if(previous&&(conversationRenderSignatures.get(previous)??conversationSignature(previous))===signature)return previous;
+      block.dataset.message=next.dataset.message;block.dataset.taskCommentaryBlock=next.dataset.taskCommentaryBlock;block.dataset.progressFinished=next.dataset.progressFinished;block.dataset.scrollMessages=next.dataset.scrollMessages;
+      if(!block.finishTaskCommentary)block.hidden=next.hidden;
+      // Reuse rows even if paging or an intervening message splits/joins blocks.
+      // This preserves selections and folded text across changed boundaries.
+      reconcileConversation(block,next,false,commentary);
+      block.refreshTaskCommentary?.();
+      conversationRenderSignatures.set(block,signature);return block;
+    }
     const artifact=next.querySelector('.workspace-artifact[data-workspace-artifact]');
     if(artifact){const previous=[...target.children].find(n=>n.querySelector('.workspace-artifact[data-workspace-artifact]')?.dataset.workspaceArtifact===artifact.dataset.workspaceArtifact);if(previous){previous.dataset.message=next.dataset.message;const data=conversationHistory(currentConversationId()).messages.find(m=>String(m.seq)===next.dataset.message)?.workspace_artifact;if(data)void previous.querySelector('[data-workspace-artifact]').syncArtifact(data);return previous;}}
     const signature=conversationSignature(next),previous=old.get(next.dataset.message)||[...target.children].find(n=>(next.dataset.progressGroup&&n.dataset.progressGroup===next.dataset.progressGroup)||(next.dataset.recovery&&n.dataset.recovery===next.dataset.recovery));
@@ -8522,7 +8560,7 @@ function beginChatLayoutChange(){
 }
 function captureChatAnchor(){
   const area=$('content'),top=area.getBoundingClientRect().top;
-  const visible=[...area.querySelectorAll(':scope > [data-message], :scope > [data-run]')].filter(n=>n.getBoundingClientRect().bottom>top+1).slice(0,3);
+  const visible=[...area.querySelectorAll(':scope > [data-message]:not([data-task-commentary-block]), :scope > [data-run], :scope > [data-task-commentary-block] > [data-message]')].filter(n=>n.getBoundingClientRect().bottom>top+1).slice(0,3);
   chatScroll.top=area.scrollTop;
   const anchors=visible.map(n=>({key:n.dataset.message,run:n.dataset.run,members:n.dataset.scrollMessages?.split(' '),offset:n.getBoundingClientRect().top-top}));
   chatScroll.anchor=anchors.length?{...anchors[0],backups:anchors.slice(1)}:null;
@@ -8541,7 +8579,8 @@ function restoreChatPosition(){
     // not a stable identity; retain any surviving member, then a nearby row.
     for(const candidate of a?[a,...(a.backups||[])]:[]){
       const members=new Set(candidate.members||[candidate.key]);
-      target=[...area.children].find(n=>candidate.key
+      const candidates=[...area.querySelectorAll(':scope > [data-message], :scope > [data-run], :scope > [data-task-commentary-block] > [data-message]')];
+      target=(candidate.key&&candidates.find(n=>n.dataset.message===candidate.key))||candidates.find(n=>candidate.key
         ?members.has(n.dataset.message)||n.dataset.scrollMessages?.split(' ').some(id=>members.has(id))
         :n.dataset.run===candidate.run);
       if(target){matched=candidate;break;}

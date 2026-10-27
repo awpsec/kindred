@@ -25,7 +25,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
      for(const y of [b.bottom+2,b.bottom+12,b.bottom+28])if(y>0&&y<innerHeight)for(const x of [b.left+20,b.left+b.width*.5])if(document.elementsFromPoint(x,y).some(el=>el!==body&&body.contains(el)))leaked++;
      return {height:b.height,details:d.height,bottom:b.bottom,next:n.top,leaked};};
     const frames=[sample()];summary.click();const tween=body.getAnimations()[0];if(!tween)throw new Error('No collapse animation');
-    const key=details.closest('[data-progress-group]').dataset.progressGroup,rows=[...document.querySelectorAll('[data-task-commentary]')].filter(n=>n.dataset.taskCommentary===key),motions=[tween,...rows.flatMap(n=>n.getAnimations())];
+    const key=details.closest('[data-progress-group]').dataset.progressGroup,rows=[...document.querySelectorAll('[data-task-commentary], [data-task-commentary-block]')].filter(n=>(n.dataset.taskCommentary||n.dataset.taskCommentaryBlock)===key),motions=[tween,...rows.flatMap(n=>n.getAnimations())];
     // The tracker and stable transcript siblings animate together. Freeze the
     // whole transition instead of mixing a seeked header with wall-clock rows.
     for(const motion of motions)motion.pause();
