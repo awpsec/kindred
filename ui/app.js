@@ -6791,6 +6791,7 @@ function animateConnectorTaskTransfers(target,transfers){
   setTimeout(finish,duration+150);
 }
 function reconcileConversation(target,desired,animate=true,priorCommentary=null){
+  const focusedCommentary=target.contains(document.activeElement)&&document.activeElement.closest('.task-commentary')?document.activeElement:null;
   const restoreSelection=retainConversationSelection(target);
   target.finishConnectorTransfers?.();
   const transfers=connectorTaskTransfers(target,desired),animateTransfers=animate&&motionAllowed();
@@ -6856,6 +6857,10 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
   if(animateTransfers&&transfers.length)animateConnectorTaskTransfers(target,transfers);
   if(focusedQuestion&&!target.contains(document.activeElement))target.querySelector('[data-task-question="'+CSS.escape(focusedQuestion)+'"]>summary')?.focus({preventScroll:true});
   observeLongMessages(target);
+  // Moving an existing row between blocks preserves its DOM but clears native
+  // keyboard focus. Restore only a surviving, visible commentary control;
+  // pending reviews keep their separate focus-transfer rules above.
+  if(focusedCommentary?.isConnected&&target.contains(focusedCommentary)&&document.activeElement!==focusedCommentary&&focusedCommentary.getClientRects().length)focusedCommentary.focus({preventScroll:true});
   restoreSelection();
   continueLoops(target);
 }

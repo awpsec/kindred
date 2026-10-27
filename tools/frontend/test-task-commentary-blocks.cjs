@@ -20,19 +20,27 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const retained=()=>page.evaluate(()=>[...window.savedUpdates].every(([id,n])=>n===document.querySelector('[data-message="'+id+'"]')));
   const replay=async()=>{await page.evaluate(m=>window.blockReplay(m),messages);assert(await retained(),'Refresh keeps every existing update mounted: '+JSON.stringify(await page.evaluate(()=>[...window.savedUpdates].filter(([id,n])=>n!==document.querySelector('[data-message="'+id+'"]')).map(([id])=>id))));assert.equal(await page.evaluate(()=>getSelection().toString()),'Update 4','Refresh preserves selected prose');};
   messages.find(m=>m.seq===5).text+=' Additional evidence is ready.';await replay();
+  // Reparenting a retained row must also retain its keyboard focus.
+  await page.locator('[data-message="20"] .progress-update-time-toggle').focus();
+  await page.evaluate(()=>{window.savedControl=document.activeElement;const text=document.querySelector('[data-message="4"] .message-text-content>p').firstChild;getSelection().setBaseAndExtent(text,0,text,8);});
+  assert(await page.evaluate(()=>document.activeElement===window.savedControl),'Fixture starts with the commentary clock focused');
   // A newly inserted user message splits the block without moving its updates.
   messages.splice(messages.findIndex(m=>m.seq===11),0,{seq:10.5,sender:'user',kind:'message',text:'Please also check this.',created:now-590+10.5*3});await replay();
   assert.equal(await page.locator('[data-task-commentary-block]').count(),2);
+  assert(await page.evaluate(()=>document.activeElement===window.savedControl),'Split preserves keyboard focus in the second half');
   assert(await page.evaluate(()=>{const row=id=>document.querySelector('[data-message="'+id+'"]');return !!(row(10).compareDocumentPosition(row(10.5))&Node.DOCUMENT_POSITION_FOLLOWING)&&!!(row(10.5).compareDocumentPosition(row(11))&Node.DOCUMENT_POSITION_FOLLOWING);}), 'Intervening message keeps chronological position');
   messages.splice(messages.findIndex(m=>m.seq===10.5),1);await replay();assert.equal(await page.locator('[data-task-commentary-block]').count(),1);
+  assert(await page.evaluate(()=>document.activeElement===window.savedControl),'Merge preserves keyboard focus in the second half');
   messages.splice(2,0,update(2.5));await replay();assert(await page.locator('[data-message="2.5"]').isVisible(),'Paging into the same block retains its open state');
   // Long prose retains its own folding and mounted content inside task history.
   const long=update(26.5,Array.from({length:70},(_,i)=>`Paragraph ${i+1}: Detailed supporting evidence for this review.`).join('\n\n'));messages.splice(-1,0,long);await replay();
   const row=page.locator('[data-message="26.5"]'),more=row.getByRole('button',{name:'Show more',exact:true});await more.waitFor();await more.click();await row.getByRole('button',{name:'Show less',exact:true}).waitFor();
   await page.evaluate(()=>getSelection().removeAllRanges());await page.evaluate(m=>window.blockReplay(m),messages);assert(await row.getByRole('button',{name:'Show less',exact:true}).isVisible(),'Polling preserves the expanded long update');
+  await row.getByRole('button',{name:'Show less',exact:true}).focus();await page.evaluate(()=>window.savedLongControl=document.activeElement);
   // Stateful previews stay outside blocks; grouping must not reparent frames.
   messages.splice(messages.findIndex(m=>m.seq===26.5),0,update(26.25,'```shard-html\n<button onclick="this.textContent=\'Kept\'">Remember choice</button>\n```'));
   await page.evaluate(m=>window.blockReplay(m),messages);
+  assert(await page.evaluate(()=>document.activeElement===window.savedLongControl),'Splitting a long update preserves Show less focus');
   const widget=page.locator('[data-message="26.25"]');await widget.locator('.inline-shard[data-state=ready]').waitFor();
   assert.equal(await widget.evaluate(n=>n.parentElement.hasAttribute('data-task-commentary-block')),false,'Live previews retain their own transcript parent');
   const frame=widget.frameLocator('iframe');await frame.getByRole('button',{name:'Remember choice'}).click();
