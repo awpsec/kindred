@@ -1,0 +1,36 @@
+{
+  "at": "2026-10-28T17:08:37.072117+00:00",
+  "version": "0.87.10",
+  "server": "430a50d55f7d0a426aa748e46cf97c692e98e3e3",
+  "source": {
+    "path": "src/vnc.rs",
+    "sha256": "bfe0fd5cf2d0c5578501846bae289f9794e34c4e810d1be28d3c5f41e6ed8272",
+    "size": 37107
+  },
+  "tests": [
+    "vnc::tests::screen_observation_does_not_reserve_or_wake_and_power_off_is_not_sleep",
+    "vnc::tests::desktop_tickets_are_single_use_bounded_and_expire",
+    "vnc::runtime_start_tests::passive_screen_ensure_cannot_bypass_maintenance_mutex",
+    "vnc::runtime_start_tests::passive_start_admission_rechecks_durable_maintenance_state",
+    "vnc::composition_tests::ticket_startup_and_readiness_share_runtime_admission_for_both_modes",
+    "vnc::composition_tests::passive_session_lifetime_does_not_hold_the_startup_mutex"
+  ],
+  "count": 6,
+  "execution": "Each exact current crate selector onePASS/0FAIL/0ignored with fullstdoutSHA in SAME FIRST45; includes newobservation/noensure actual cases. Prior sourcePASS not packagedproof.",
+  "parent_selection": {
+    "path": "/root/.openrig/workspace/projects/kindred/tasks/release-0879-20261026/BACKEND-TEST-SELECTION.json",
+    "sha256": "526b00b453b39b264b118e55e218cae05aa75d4e91f44c7bf1f1f9f31e3220a6"
+  },
+  "memory_sql": {
+    "command": [
+      "python3",
+      "-B",
+      "deploy/test_continuity_invalidation.py",
+      "-v"
+    ],
+    "expected_cases": 10,
+    "test_sha256": "00d358eadd9c8c960e50a2c7e09bad50243755ba33c77316abfd1eb049a29ca4",
+    "migration_sha256": "0483805e5a02008fc4022c379efd6e9aa325e4312278abb7a8ddee3ede3cc81c",
+    "execution": "Once in current cachedFIRST08710 with realSQLite3.46.1-capable pinned provider/preflight beforeCargo, exact10actualtests/stdout/sourceparity; no stalePASS."
+  }
+}
