@@ -82,7 +82,7 @@ let proofPage=null;const navigation=[];
   }
   const legacy=await browser.newContext(),old=await legacy.newPage(),legacyWrites=[];
   await legacy.addInitScript(({token,platform})=>{sessionStorage.setItem('kindred-token',token);localStorage.setItem('kindred-computer-popout',JSON.stringify({enabled:true}));window.__KINDRED_DESKTOP={platform};window.__TAURI__={core:{invoke:async()=>null}};},{token,platform});
-  await old.route(origin+'/api/computer/screen-state',r=>r.fulfill({json:{state:'ready'}}));
+  await old.route(origin+'/api/computer/screen-state**',r=>r.fulfill({json:{state:'ready'}}));
   await old.route(/\/api\/computer\/(?:observe-session|session)$/,r=>{legacyWrites.push(new URL(r.request().url()).pathname);return r.fulfill({status:404,json:{error:'Unknown endpoint'}});});
   await old.goto(origin);await old.locator('.computer-popout[data-status=unavailable]').waitFor();await old.waitForTimeout(250);
   assert(legacyWrites.length>0&&legacyWrites.every(path=>path==='/api/computer/observe-session'),'Old server cannot fall back to a startup-capable endpoint');await legacy.close();
