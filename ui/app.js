@@ -3551,7 +3551,9 @@ async function connectComputerPopout({host,botId,signal,onReady,onFailure}){
     const labels={asleep:'Screen asleep · Click to open',waking:'Screen waking…',sleeping:'Screen sleeping…',off:'Computer is off · Click to open',paused:'Computer paused · Click to open',failed:'Screen unavailable · Click to open'};
     throw Object.assign(new Error('Screen unavailable'),{screenLabel:labels[phase.state]||'Screen unavailable · Click to open'});
   }
-  const result=await api('/computer/session','POST',{control:false,bot_id:botId},{signal,timeoutMs:180000});
+  // A distinct endpoint fails closed on older servers: do not fall back to
+  // the ordinary viewer's startup-capable session admission.
+  const result=await api('/computer/observe-session','POST',{control:false,bot_id:botId},{signal,timeoutMs:180000}).catch(error=>{if(error?.status===404)error.screenLabel='Update server to pop out computer';throw error;});
   if(signal.aborted)return;
   const url=new URL('/vnc',location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';url.searchParams.set('ticket',result.ticket);
   const container=node('div','computer-popout-rfb');host.append(container);

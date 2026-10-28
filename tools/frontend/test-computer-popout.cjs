@@ -12,7 +12,7 @@ let proofPage=null;const navigation=[];
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await({chromium,webkit}[engine]).launch();
  try{
   const platform=process.env.KINDRED_TEST_PLATFORM||'linux';
-  const page=await browser.newPage({viewport:{width:1320,height:1000}}),errors=[],sessions=[];page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(e.message));
+  const page=await browser.newPage({viewport:{width:1320,height:1000}}),errors=[],sessions=[],sessionPaths=[];page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(e.message));
   proofPage=page;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigation.push({url:frame.url(),at:Date.now()});});
   await page.addInitScript(({token,platform})=>{sessionStorage.setItem('kindred-token',token);window.__KINDRED_DESKTOP={platform};window.__KINDRED_MAC_OVERLAY=platform==='macos';window.__TAURI__={core:{invoke:async()=>null}};},{token,platform});
   const phases={piper:'ready',cersei:'ready'};let heldBot='',releaseHeld=null,heldReceived=null;
@@ -22,7 +22,7 @@ let proofPage=null;const navigation=[];
    if(u.pathname==='/api/chats')return send(['piper','cersei'].map(id=>({id:'dm-'+id,name:id,members:[id]})));
    if(u.pathname==='/api/chats/dm-cersei')return send({chat:{id:'dm-cersei',members:['cersei']},messages:[]});
    if(u.pathname==='/api/computer/screen-state')return send({state:phases[u.searchParams.get('bot_id')]||'ready'});
-   if(u.pathname==='/api/computer/session'){const body=req.postDataJSON();sessions.push(body);if(body.bot_id===heldBot){heldBot='';heldReceived?.();await new Promise(r=>releaseHeld=r);}return send({ticket:stream.ticket(body.bot_id)}).catch(()=>{});}
+   if(['/api/computer/session','/api/computer/observe-session'].includes(u.pathname)){const body=req.postDataJSON();sessions.push(body);sessionPaths.push(u.pathname);if(body.bot_id===heldBot){heldBot='';heldReceived?.();await new Promise(r=>releaseHeld=r);}return send({ticket:stream.ticket(body.bot_id)}).catch(()=>{});}
    if(u.pathname==='/api/computer/resources')return send({uptime_seconds:60,cpu_percent:1,memory_total:100,memory_used:10});
    return route.continue();
   });
@@ -73,12 +73,19 @@ let proofPage=null;const navigation=[];
   await page.setViewportSize({width:1320,height:1000});await page.waitForTimeout(350);
   await surface.press('ArrowDown');await page.waitForTimeout(300);await page.locator('#prompt').fill('A longer draft\nwith several lines\nshould keep the computer clear\nof the entire composer.');await page.waitForTimeout(300);assert((await rect()).bottom<(await page.locator('#composer-area').boundingBox()).y,'Growing composer moves the bottom anchor up');
   await page.evaluate(()=>document.documentElement.dataset.motion='off');await surface.press('ArrowLeft');assert.equal(await window.evaluate(n=>getComputedStyle(n).transitionDuration),'0s');
-  assert(sessions.every(s=>s.control===false),'Passive popout never takes control');assert.equal(stream.inputs.length,0,'Floating pointer gestures never reach the guest');
+  assert(sessionPaths.includes('/api/computer/observe-session'),'Popout requests explicitly non-starting server admission');assert(sessions.every(s=>s.control===false),'Passive popout never takes control');assert.equal(stream.inputs.length,0,'Floating pointer gestures never reach the guest');
   await page.screenshot({path:path.join(out,engine+'-floating.png')});
-  assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,engine+'-verification.json'),JSON.stringify({passed:true,engine,sessions,connections:stream.connections},null,2));
+  assert.deepEqual(errors,[]);
   console.log(JSON.stringify({passed:true,engine,platform,realRfb:true,sessions:sessions.length,inputs:stream.inputs.length,fourCorners:true,dragThreshold:true,refreshDuringDrag:true,noAccidentalWake:true,staleTicketGuard:true,guestContained:true}));await page.close();
   for(const mode of ['browser','ios','invalid-state']){
-   const context=await browser.newContext(),p=await context.newPage();const writes=[],startupErrors=[];p.on('pageerror',e=>startupErrors.push(e.message));await context.addInitScript(({token,mode})=>{sessionStorage.setItem('kindred-token',token);localStorage.setItem('kindred-computer-popout',mode==='invalid-state'?'null':JSON.stringify({enabled:true,corner:'bottom-right',width:300}));if(mode!=='browser'){window.__KINDRED_DESKTOP={platform:'linux'};window.__TAURI__={core:{invoke:async()=>null}};}if(mode==='ios'){window.__KINDRED_MOBILE=true;window.__KINDRED_MOBILE_PLATFORM='ios';}},{token,mode});await p.route(origin+'/api/computer/session',r=>{writes.push(r.request().postData());return r.abort();});await p.goto(origin);await p.locator('#bots button').first().waitFor();await p.waitForTimeout(150);assert.equal(await p.locator('.computer-popout-layer,.computer-popout-toggle').count(),mode==='invalid-state'?2:0,'Only desktop exposes the feature, with corrupt saved state tolerated');assert.equal(writes.length,0);assert.deepEqual(startupErrors,[]);await context.close();
+   const context=await browser.newContext(),p=await context.newPage();const writes=[],startupErrors=[];p.on('pageerror',e=>startupErrors.push(e.message));await context.addInitScript(({token,mode})=>{sessionStorage.setItem('kindred-token',token);localStorage.setItem('kindred-computer-popout',mode==='invalid-state'?'null':JSON.stringify({enabled:true,corner:'bottom-right',width:300}));if(mode!=='browser'){window.__KINDRED_DESKTOP={platform:'linux'};window.__TAURI__={core:{invoke:async()=>null}};}if(mode==='ios'){window.__KINDRED_MOBILE=true;window.__KINDRED_MOBILE_PLATFORM='ios';}},{token,mode});await p.route(/\/api\/computer\/(?:observe-session|session)$/,r=>{writes.push(r.request().postData());return r.abort();});await p.goto(origin);await p.locator('#bots button').first().waitFor();await p.waitForTimeout(150);assert.equal(await p.locator('.computer-popout-layer,.computer-popout-toggle').count(),mode==='invalid-state'?2:0,'Only desktop exposes the feature, with corrupt saved state tolerated');assert.equal(writes.length,0);assert.deepEqual(startupErrors,[]);await context.close();
   }
+  const legacy=await browser.newContext(),old=await legacy.newPage(),legacyWrites=[];
+  await legacy.addInitScript(({token,platform})=>{sessionStorage.setItem('kindred-token',token);localStorage.setItem('kindred-computer-popout',JSON.stringify({enabled:true}));window.__KINDRED_DESKTOP={platform};window.__TAURI__={core:{invoke:async()=>null}};},{token,platform});
+  await old.route(origin+'/api/computer/screen-state',r=>r.fulfill({json:{state:'ready'}}));
+  await old.route(/\/api\/computer\/(?:observe-session|session)$/,r=>{legacyWrites.push(new URL(r.request().url()).pathname);return r.fulfill({status:404,json:{error:'Unknown endpoint'}});});
+  await old.goto(origin);await old.locator('.computer-popout[data-status=unavailable]').waitFor();await old.waitForTimeout(250);
+  assert(legacyWrites.length>0&&legacyWrites.every(path=>path==='/api/computer/observe-session'),'Old server cannot fall back to a startup-capable endpoint');await legacy.close();
+  fs.writeFileSync(path.join(out,engine+'-verification.json'),JSON.stringify({passed:true,engine,platform,sessions,sessionPaths,legacyWrites,exclusions:true,connections:stream.connections},null,2));
  }finally{if(proofPage&&!proofPage.isClosed()){try{fs.writeFileSync(path.join(out,engine+'-failure-state.json'),JSON.stringify({navigation,state:await proofPage.evaluate(()=>({url:location.href,saved:localStorage.getItem('kindred-computer-popout'),token:sessionStorage.getItem('kindred-token'),desktop:window.__KINDRED_DESKTOP,hidden:document.hidden,appHidden:document.getElementById('app')?.hidden,heading:document.getElementById('bot-details')?.textContent,body:document.body?.innerText.slice(-2400)}))},null,2));await proofPage.screenshot({path:path.join(out,engine+'-failure.png')});}catch{}}await browser.close();stream.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);stream.close();server.closeAllConnections();server.close();process.exitCode=1;});
