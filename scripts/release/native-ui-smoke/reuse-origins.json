@@ -1,0 +1,44 @@
+{
+  "windows": {
+    "artifact_id": 12841941557,
+    "run_id": 40744812352,
+    "tool_commit": "86cbe17cbffef1b564956bc4f64f03cba51734d3",
+    "raw_bytes": 28383808,
+    "raw_sha256": "296f71b6fc8b4db162b66450de36aa0067bd9bdd3bf775d065ea7d0ec5c5ff24",
+    "outer_members": [
+      {
+        "name": "desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe",
+        "bytes": 37129216,
+        "CRC": 2247882311
+      }
+    ],
+    "binary_sha256": "46914346a5be42a34c7f287af7b7db169ce18386081627d972c7fd20b778c415",
+    "standalone_sha256": "70145428ae50c5390e8aa4f5454524a2f0fd87f8bb0e25611b16393c855c5547",
+    "original_whole_result": "failure",
+    "product_source": "146373f5e255b62c60b34701d730a6ced0dffbdf"
+  },
+  "macos": {
+    "artifact_id": 12841573177,
+    "run_id": 40744871522,
+    "tool_commit": "86cbe17cbffef1b564956bc4f64f03cba51734d3",
+    "raw_bytes": 77601121,
+    "raw_sha256": "d44398a7ec5025e5a798cb1b5ecf57433a682006a3522134a56531eae3dbda05",
+    "outer_members": [
+      {
+        "name": "unverified-macos-app/Kindred.app.zip",
+        "bytes": 38567981,
+        "CRC": 2563249077
+      },
+      {
+        "name": "desktop/target/aarch64-apple-darwin/release/bundle/dmg/Kindred-0.87.10-aarch64-apple-darwin.dmg",
+        "bytes": 40227071,
+        "CRC": 3774174045
+      }
+    ],
+    "binary_sha256": "daa5b7f02f1a184894168e61daff84c989352261540b5401152aed44c8df87bf",
+    "standalone_sha256": "70145428ae50c5390e8aa4f5454524a2f0fd87f8bb0e25611b16393c855c5547",
+    "original_whole_result": "failure",
+    "product_source": "146373f5e255b62c60b34701d730a6ced0dffbdf",
+    "dmg_sha256": "e2da0f86bcd88f9aff74b35d188ecc96efa6d7cd82d47fd55e55f9ddb8c1edf9"
+  }
+}
