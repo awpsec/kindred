@@ -1,0 +1,27 @@
+.computer-popout-layer{position:absolute;inset:0;pointer-events:none;z-index:6}
+.computer-popout{position:absolute;top:0;left:0;aspect-ratio:16/9;box-sizing:border-box;pointer-events:auto;border-radius:16px;background:var(--surface);box-shadow:0 10px 36px #0004,0 0 0 1px var(--line);touch-action:none}
+.computer-popout.is-settling{transition:transform 260ms cubic-bezier(.22,.8,.24,1)}
+.computer-popout-screen{position:absolute;inset:0;overflow:hidden;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity 180ms ease-out}
+.computer-popout-screen.is-ready{opacity:1}
+.computer-popout-screen>div{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;pointer-events:none}
+.computer-popout-open{position:absolute;inset:0;width:100%;height:100%;display:block;padding:0;border:0;border-radius:inherit;background:transparent;cursor:grab;touch-action:none}
+.computer-popout-open:hover:not(:disabled),.computer-popout-open:active:not(:disabled){background:transparent}
+.computer-popout.is-dragging .computer-popout-open{cursor:grabbing}
+.computer-popout-status{position:absolute;inset:16px;display:flex;align-items:center;justify-content:center;text-align:center;pointer-events:none;color:var(--muted);font-size:12px}
+.computer-popout-return{position:absolute;right:8px;bottom:8px;z-index:2;display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;border-radius:8px;background:var(--surface);color:var(--fg);box-shadow:0 2px 8px #0003;opacity:0;transform:translateY(2px);transition:opacity 100ms ease-out,transform 140ms ease-out}
+.computer-popout:hover .computer-popout-return,.computer-popout:focus-within .computer-popout-return{opacity:1;transform:none}
+.computer-popout-resize{position:absolute;z-index:3;display:grid;place-items:center;width:26px;height:26px;padding:0;border:0;background:transparent;color:var(--muted);opacity:0;touch-action:none}
+.computer-popout:hover .computer-popout-resize,.computer-popout:focus-within .computer-popout-resize{opacity:1}
+.computer-popout-resize:hover:not(:disabled){background:transparent}
+.computer-popout-resize[data-corner=top-left]{top:-4px;left:-4px;cursor:nwse-resize}
+.computer-popout-resize[data-corner=top-right]{top:-4px;right:-4px;cursor:nesw-resize;transform:rotate(90deg)}
+.computer-popout-resize[data-corner=bottom-left]{bottom:-4px;left:-4px;cursor:nesw-resize;transform:rotate(90deg)}
+.computer-popout-resize[data-corner=bottom-right]{bottom:-4px;right:-4px;cursor:nwse-resize}
+.computer-popout-resize[data-corner=bottom-right]+.computer-popout-return{right:34px}
+.computer-popout-target{position:absolute;box-sizing:border-box;width:72px;height:44px;border:2px solid var(--line);border-radius:12px;opacity:0;pointer-events:none;transition:opacity 100ms ease-out}
+.computer-popout-target[data-corner=top-left]{top:12px;left:12px}.computer-popout-target[data-corner=top-right]{top:12px;right:12px}.computer-popout-target[data-corner=bottom-left]{bottom:12px;left:12px}.computer-popout-target[data-corner=bottom-right]{bottom:12px;right:12px}
+.computer-popout-layer.is-moving .computer-popout-target{opacity:1}.computer-popout-target.is-target{border-color:var(--fg);background:color-mix(in srgb,var(--fg) 6%,transparent)}
+.desktop-toolbar .computer-popout-toggle{flex:none;width:28px;height:28px;padding:0;border:0;color:var(--muted);background:transparent}
+:root[data-motion=off] :is(.computer-popout,.computer-popout-screen,.computer-popout-return,.computer-popout-target){transition:none}
+@media(prefers-reduced-motion:reduce){:is(.computer-popout,.computer-popout-screen,.computer-popout-return,.computer-popout-target){transition:none}}
+@media(hover:none){.computer-popout-return,.computer-popout-resize{opacity:1;transform:none}.computer-popout-return{width:44px;height:44px}.computer-popout-resize{width:44px;height:44px}.computer-popout-resize[data-corner=bottom-right]+.computer-popout-return{right:48px}}

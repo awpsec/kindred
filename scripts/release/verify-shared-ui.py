@@ -14,6 +14,8 @@ SHARED = ('ui/navigation-search.js', 'ui/navigation-search.css', 'ui/bot-center.
           'ui/vendor.js', 'ui/visual-panels.js', 'ui/decision-receipts.js', 'ui/connector-cards.js', 'ui/email-recipients.js', 'ui/group-activity.js', 'ui/computer-pointer.js', 'ui/document-preview.js', 'ui/document-worker.js', 'ui/profile-home.html',
           'ui/profile-home.css', 'ui/profile-home.js', 'ui/bundled-dialog.css')
 
+SHARED += ('ui/computer-popout.js', 'ui/computer-popout.css')
+
 def verify(desktop, server, desktop_source, server_source):
     for source in (desktop_source, server_source):
         if not re.fullmatch(r'[0-9a-f]{40}', source):

@@ -22,9 +22,9 @@ export class RFB extends EventTarget {
   await context.route(origin+'/api/computer/session',r=>r.fulfill({json:{ticket:'fixture'}}));
   await context.route(origin+'/api/computer/resources',r=>r.fulfill({status:404,json:{error:'none'}}));
   await context.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
-  await p.goto(origin);await p.locator('#show-computer').waitFor();
+  await p.goto(origin);await p.locator('#bot-details').waitFor();
   // Connecting → live screen is a crossfade, not a cut.
-  await p.locator('#show-computer').click();await p.locator('#desktop-loading').waitFor();
+  await p.locator('#bot-details').click();await p.locator('#details-panel [data-tab=computer]').click();await p.locator('#desktop-loading').waitFor();
   const reveal=await p.evaluate(()=>new Promise(resolve=>{
    const host=document.querySelector('#desktop');const seen={overlap:false,fadeIn:false};
    const tick=()=>{const canvas=host.querySelector('.desktop-canvas'),loading=host.querySelector('.desktop-loading');
@@ -45,15 +45,15 @@ export class RFB extends EventTarget {
   await p.waitForFunction(()=>document.querySelector('#computer-panel').classList.contains('expanded'));
   await p.locator('#computer-expand').click();await preview.waitFor();
   // Closing keeps the last frame visible while the pane fades out.
-  await p.locator('#computer-close').click();
+  await p.getByRole('button',{name:'Close bot center',exact:true}).click();
   const closing=await p.evaluate(()=>{const still=document.querySelector('#desktop .desktop-still');return {still:!!still,painted:!!still&&still.width===1280};});
   assert.deepEqual(closing,{still:true,painted:true},'A closing pane shows its last frame, not a blank screen');
   await p.waitForFunction(()=>document.querySelector('#computer-panel').hidden);
   // Reduced motion: no fade, no still, immediate removal.
   await p.emulateMedia({reducedMotion:'reduce'});
-  await p.locator('#show-computer').click();await p.waitForFunction(()=>document.querySelector('#desktop .desktop-canvas')&&!document.querySelector('#desktop-loading'));
+  await p.locator('#bot-details').click();await p.locator('#details-panel [data-tab=computer]').click();await p.waitForFunction(()=>document.querySelector('#desktop .desktop-canvas')&&!document.querySelector('#desktop-loading'));
   assert.equal(await p.evaluate(()=>document.querySelector('#desktop .desktop-canvas').getAnimations().length),0);
-  await p.locator('#computer-close').click();
+  await p.getByRole('button',{name:'Close bot center',exact:true}).click();
   assert.equal(await p.evaluate(()=>document.querySelector('#desktop .desktop-still')),null);
   // Group pictures: one shared tile; a pair sits on the diagonal without overlap.
   const stacks=await p.evaluate(async()=>{

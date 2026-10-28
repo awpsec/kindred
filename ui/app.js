@@ -1,5 +1,6 @@
 import {createNavigationSearch} from './navigation-search.js';
 import {createBotCenter,libraryItems} from './bot-center.js';
+import {createComputerPopout} from './computer-popout.js';
 import {transcriptAttachments} from './transcript-attachments.js';
 import {mobileSession,mobileConversationKey,mobileRequestedChat,mobileRequestedEvent,installMobileNavigation} from './mobile.js';
 import {createServerUpdater} from './server-update.js';
@@ -45,8 +46,8 @@ import {
 document.addEventListener('pointerdown',()=>{document.documentElement.dataset.inputModality='pointer';},true);
 document.addEventListener('keydown',e=>{if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','Enter',' '].includes(e.key))document.documentElement.dataset.inputModality='keyboard';},true);
 const UI_VERSION = "0.63.0";
-let commandsUI, dictationUI, composerLists, navigationSearch, botCenter;
-function syncBotCenter(){botCenter?.sync();}
+let commandsUI, dictationUI, composerLists, navigationSearch, botCenter, computerPopout;
+function syncBotCenter(){botCenter?.sync();computerPopout?.sync();}
 const CHAT_PAGE_SIZE=50, CHAT_WINDOW_SIZE=150, CHAT_CACHE_SIZE=6;
 const chatHistory=new Map();
 let chatOpening=null;
@@ -96,7 +97,7 @@ const workspaceUI = createWorkspaceImportUI({api,node,button,field,select,modal,
 const profilesUI = createProfileUI({
   getServerVersion:()=>state.status.version,
   workingBots:()=>new Set(state.allRuns.filter(r=>active(r)||delegationContext(r)?.waiting||(r.status==='queued'&&r.delegation?.resuming)).map(r=>r.bot_id)).size,
-  getServerAddress:()=>state.status?.public_url||location.origin, getToken:()=>state.token, setToken:token=>{if(state.token!==token)resetChatMedia();state.token=token;}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
+  getServerAddress:()=>state.status?.public_url||location.origin, getToken:()=>state.token, setToken:token=>{if(state.token!==token)resetChatMedia();state.token=token;computerPopout?.sync();}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
   restoreAfterSwitch:async()=>{
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:state.token});
     if(!$('computer-panel').hidden)await connectDesktop();
@@ -3538,7 +3539,31 @@ async function selectComputerScreen(id,{workspace=false}={}){
   if(choice)choice.value=id;
   if(img){img.dataset.computerPreview=id;img.alt=(state.bots.find(b=>b.id===id)?.name||'Bot')+'’s screen';img.removeAttribute('src');img.style.opacity='0';const fallback=img.parentElement.querySelector('.preview-fallback');if(fallback){fallback.hidden=false;fallback.lastElementChild.textContent='Loading preview…';}}
   renderScreenPicker();renderComputerRoutines();
+  computerPopout?.sync();
   await Promise.all([refreshPreview(),!$('computer-panel').hidden?connectDesktop():Promise.resolve()]);
+}
+// A floating screen is always passive. It owns neither the main RFB connection
+// nor a control lease, and merely selecting a sleeping bot must not wake it.
+async function connectComputerPopout({host,botId,signal,onReady,onFailure}){
+  const phase=await api('/computer/screen-state?bot_id='+encodeURIComponent(botId),'GET',undefined,{signal});
+  if(signal.aborted)return;
+  if(phase.state!=='ready'){
+    const labels={asleep:'Screen asleep · Click to open',waking:'Screen waking…',sleeping:'Screen sleeping…',off:'Computer is off · Click to open',paused:'Computer paused · Click to open',failed:'Screen unavailable · Click to open'};
+    throw Object.assign(new Error('Screen unavailable'),{screenLabel:labels[phase.state]||'Screen unavailable · Click to open'});
+  }
+  const result=await api('/computer/session','POST',{control:false,bot_id:botId},{signal,timeoutMs:180000});
+  if(signal.aborted)return;
+  const url=new URL('/vnc',location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';url.searchParams.set('ticket',result.ticket);
+  const container=node('div','computer-popout-rfb');host.append(container);
+  const rfb=new RFB(container,url.href);let stopped=false;
+  rfb.viewOnly=true;rfb.focusOnClick=false;rfb.scaleViewport=true;rfb.resizeSession=false;rfb.clipViewport=false;rfb.qualityLevel=9;rfb.compressionLevel=2;rfb.background='transparent';
+  const stop=()=>{if(stopped)return;stopped=true;clearTimeout(timeout);signal.removeEventListener('abort',stop);rfb.disconnect();container.remove();};
+  const fail=()=>{if(stopped||signal.aborted)return;stop();onFailure(new Error('Screen disconnected'));};
+  const timeout=setTimeout(fail,35000);
+  signal.addEventListener('abort',stop,{once:true});
+  rfb.addEventListener('connect',()=>{if(!stopped&&!signal.aborted){clearTimeout(timeout);onReady();}});
+  rfb.addEventListener('disconnect',fail);rfb.addEventListener('securityfailure',fail);
+  return stop;
 }
 function renderScreenPicker() {
   let picker = $("screen-picker");
@@ -9738,6 +9763,12 @@ async function openBotLibraryItem(item,origin){
  await openDocumentPreview({card:origin,name,extension,getBlob,getPagePreview,download,renderMarkdown:markdown,artifactPreview});
 }
 
+if(window.__KINDRED_DESKTOP&&!window.__KINDRED_MOBILE&&!window.__KINDRED_MOBILE_PLATFORM){
+ computerPopout=createComputerPopout({mount:$('app'),bounds:document.querySelector('.conversation-history'),composer:$('composer-area'),header:document.querySelector('.conversation-header'),sourcePanel:$('computer-panel'),icon,connect:connectComputerPopout,
+  getContext:()=>{const bot=state.bots.find(b=>b.id===screenBotId());return {scope:state.token,bot,available:!!state.token&&!!bot&&!profile(bot).archived&&!profilesUI.signedOut()&&chatScreenBots().some(b=>b.id===bot.id),visible:!$('app').hidden&&!document.querySelector('.conversation').inert&&!document.querySelector('.artifact-studio')&&!pageSuspended,normalOpen:!$('computer-panel').hidden&&!$('computer-panel').inert,disabled:!!state.teaching};},
+  onDetach:()=>$('computer-close').click(),onOpen:()=>perform(()=>openComputer(false,true)),returnFocus:()=>$('bot-details').focus({preventScroll:true})
+ });
+}
 botCenter=createBotCenter({
  detailsPanel:$('details-panel'),computerPanel:$('computer-panel'),detailsContent:$('details-content'),
  getContext:()=>({bot:state.chat&&!state.chat.id.startsWith('dm-')?null:state.bot,chatId:currentConversationId(),scope:state.token,tab:!$('computer-panel').hidden&&!$('computer-panel').inert?'computer':state.view==='library'?'library':'details',enabled:!!state.bot&&!['settings','artifacts'].includes(state.view)}),

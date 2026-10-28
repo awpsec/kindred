@@ -105,6 +105,7 @@ const iconPaths = {
   send: "M12 20V4m-7 7 7-7 7 7",
   stop: "M6 6h12v12H6z",
   external: "M14 3h7v7M21 3l-11 11M10 3H3v18h18v-7",
+  dock: "M3 4h18v16H3zM15 4v16M6 12h6m-3-3 3 3-3 3",
   link: "M10 14l4-4M8 12l-2 2a3.5 3.5 0 0 0 5 5l2-2M16 12l2-2a3.5 3.5 0 0 0-5-5l-2 2",
   paste: "M9 5H6a2 2 0 0 0-2 2v13h16V7a2 2 0 0 0-2-2h-3M9 3h6v4H9zM8 12h8M8 16h6",
   copy: "M9 9h12v12H9zM5 15H3V3h12v2",
