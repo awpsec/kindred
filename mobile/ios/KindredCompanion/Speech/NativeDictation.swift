@@ -15,6 +15,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
     private let engine = AVAudioEngine()
     private var tapInstalled = false
     private var ownsAudioSession = false
+    private var previousRecordingHaptics: Bool?
     private var permissionTask: Task<Void, Never>?
     private var deadlineTask: Task<Void, Never>?
     private var finalizationTask: Task<Void, Never>?
@@ -22,6 +23,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
     private var transcript = DictationTranscript()
     private(set) var phase = "idle"
     var emit: Emit?
+    var feedback: ((InteractionFeedback) -> Void)?
     var availabilityChanged: (() -> Void)?
     // This is a real recognizer seam for app-hosted prerecorded-audio tests;
     // production always captures the microphone with AVAudioEngine.
@@ -161,7 +163,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
         if let testHooks {
             try testHooks.capture?(operation)
             guard fence.accepts(operation) else { return }
-            phase = "recording"; send("recording", operation)
+            phase = "recording"; send("recording", operation); feedback?(.recordingStarted)
             armRecordingDeadline(operation)
             return
         }
@@ -176,6 +178,10 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
         if testAudio == nil {
             let audio = AVAudioSession.sharedInstance()
             try audio.setCategory(.record, mode: .measurement, options: [])
+            previousRecordingHaptics = audio.allowHapticsAndSystemSoundsDuringRecording
+            // Recording otherwise suppresses the very cue that confirms the
+            // microphone is ready. Restore this session option on every exit.
+            try? audio.setAllowHapticsAndSystemSoundsDuringRecording(true)
             try audio.setActive(true, options: [])
             ownsAudioSession = true
             let input = engine.inputNode
@@ -203,7 +209,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
             }
         }
         guard fence.accepts(operation) else { return }
-        phase = "recording"; send("recording", operation)
+        phase = "recording"; send("recording", operation); feedback?(.recordingStarted)
         if let testAudio { try testAudio(request) }
         armRecordingDeadline(operation)
     }
@@ -228,7 +234,12 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
             transcript = next
             lastText = accumulated
             send(final ? "final" : "partial", operation, text: accumulated)
-            if final { send("stopped", operation, text: accumulated); complete(operation); return }
+            if final {
+                let wasRecording = phase == "recording"
+                send("stopped", operation, text: accumulated); complete(operation)
+                if wasRecording { feedback?(.recordingStopped) }
+                return
+            }
         }
         if failed { fail("recognition-failed", operation) }
     }
@@ -240,6 +251,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
         guard phase == "recording" else { return }
         phase = "finishing"
         releaseCapture()
+        feedback?(.recordingStopped)
         request?.endAudio()
         send("finishing", operation, reason: reason)
         deadlineTask?.cancel(); deadlineTask = nil
@@ -264,6 +276,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
         guard fence.accepts(operation) else { return }
         send("error", operation, text: lastText, reason: code)
         complete(operation)
+        feedback?(.recordingError)
     }
     private func complete(_ operation: DictationOperation) {
         guard fence.accepts(operation) else { return }
@@ -275,6 +288,10 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
         if ownsAudioSession {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             ownsAudioSession = false
+        }
+        if let previousRecordingHaptics {
+            try? AVAudioSession.sharedInstance().setAllowHapticsAndSystemSoundsDuringRecording(previousRecordingHaptics)
+            self.previousRecordingHaptics = nil
         }
     }
     private func finishResources() {
@@ -312,7 +329,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
     func tearDown() {
         cancel(reason: "session-ended")
         NotificationCenter.default.removeObserver(self)
-        recognizer?.delegate = nil; emit = nil; availabilityChanged = nil
+        recognizer?.delegate = nil; emit = nil; feedback = nil; availabilityChanged = nil
     }
 }
 

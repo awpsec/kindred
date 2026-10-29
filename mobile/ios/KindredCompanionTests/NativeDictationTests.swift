@@ -20,6 +20,44 @@ final class NativeDictationTests: XCTestCase {
     private func start(_ service: NativeDictation) {
         service.start(documentID: UUID().uuidString, operationID: "test-op", chatID: "test-chat", locale: "en-US")
     }
+    func testHapticsFollowConfirmedRecordingAndExplicitStopOnce() async throws {
+        let service = NativeDictation(); defer { service.tearDown() }
+        service.testHooks = NativeDictation.TestHooks()
+        var feedback: [InteractionFeedback] = []
+        service.feedback = { feedback.append($0) }
+        start(service); try await wait { service.phase == "recording" }
+        let op = try XCTUnwrap(service.operation)
+        XCTAssertEqual(feedback, [.recordingStarted])
+        for _ in 0..<3 { service.acceptRecognition(text: "Partial draft", final: false, failed: false, operation: op) }
+        XCTAssertEqual(feedback, [.recordingStarted], "Partial speech must not buzz")
+        service.stop(operationID: op.operationID, chatID: op.chatID)
+        service.stop(operationID: op.operationID, chatID: op.chatID)
+        service.acceptRecognition(text: "Final draft", final: true, failed: false, operation: op)
+        service.acceptRecognition(text: "Duplicate", final: true, failed: false, operation: op)
+        XCTAssertEqual(feedback, [.recordingStarted, .recordingStopped])
+    }
+    func testHapticsForAutomaticFinishCancelAndFailureDoNotReplay() async throws {
+        let service = NativeDictation(); defer { service.tearDown() }
+        service.testHooks = NativeDictation.TestHooks()
+        var feedback: [InteractionFeedback] = []
+        service.feedback = { feedback.append($0) }
+        start(service); try await wait { service.phase == "recording" }
+        let op = try XCTUnwrap(service.operation)
+        service.acceptRecognition(text: "Final draft", final: true, failed: false, operation: op)
+        XCTAssertEqual(feedback, [.recordingStarted, .recordingStopped])
+        start(service); try await wait { service.phase == "recording" }
+        service.cancel(); service.cancel()
+        XCTAssertEqual(feedback.last, .recordingStarted, "Cancellation can also be caused by a draft edit and must stay silent")
+        start(service); try await wait { service.phase == "recording" }
+        service.cancel(reason: "context-changed")
+        XCTAssertEqual(feedback.last, .recordingStarted, "Passive navigation should not add a microphone cue")
+        var hooks = NativeDictation.TestHooks(); hooks.microphonePermission = { false }; service.testHooks = hooks
+        let before = feedback.count
+        start(service); try await wait { service.operation == nil }
+        XCTAssertEqual(Array(feedback.dropFirst(before)), [.recordingError], "Denied permission must never signal recording started")
+        service.acceptRecognition(text: "Stale", final: true, failed: false, operation: op)
+        XCTAssertEqual(feedback.last, .recordingError)
+    }
     func testCumulativePartialsFinalAndDuplicateFinal() async throws {
         let service = NativeDictation(); defer { service.tearDown() }
         var hooks = NativeDictation.TestHooks(); var order: [String] = []

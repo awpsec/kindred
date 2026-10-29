@@ -15,6 +15,14 @@ the page editor. UIKit's standard reading indicator is inset above the capsule;
 no DOM scrollbar is drawn. System glass and accessibility preferences remain in
 charge of the material.
 
+Conversation changes use a subtle native selection tick. Dictation provides
+soft start/stop cues and a warning for a failed start or recognition error.
+Feedback follows confirmed recording
+state rather than microphone taps; partial transcripts, incoming messages,
+restoration and background navigation are silent. UIKit respects the system's
+haptics preferences and supported hardware. Dictation temporarily allows
+haptics during its audio session, then restores that option when capture ends.
+
 > **Mac verification (2026-10-03):** the app builds with Xcode 27.2 beta 2.
 > The core suite passes all 39 tests; all 25 native sign-in, Keychain, appearance and
 > layout/fallback tests pass on iOS 27.2. Live sign-in, account navigation, conversation switching,

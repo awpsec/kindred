@@ -65,6 +65,7 @@ final class WebSession: NSObject {
     private var geometry: String?
     private var nativeNavigationBlocked = false
     let dictation = NativeDictation()
+    let haptics = InteractionHaptics()
     private var dictationDocumentGeneration: UInt64 = 0
     private var dictationDocumentID: String?
     private var dictationChatID: String?
@@ -154,6 +155,7 @@ final class WebSession: NSObject {
         controller.add(proxy, contentWorld: .page, name: WebSession.navigationHandler)
         controller.add(proxy, contentWorld: .page, name: WebSession.dictationHandler)
         dictation.emit = { [weak self] payload in self?.emitDictation(payload) }
+        dictation.feedback = { [weak self] feedback in self?.haptics.play(feedback) }
         dictation.availabilityChanged = { [weak self] in self?.publishDictationCapability() }
         edgeBack = EdgeBackGesture(session: self)
         installBootstrap(token: token)
@@ -551,6 +553,19 @@ final class WebSession: NSObject {
         case WebSession.navigationHandler:
             edgeBack?.setNavigation(WebNavigation(body: message.body))
         case WebSession.accountsHandler:
+            if let body = message.body as? [String: Any], body["action"] as? String == "haptic-selection" {
+                guard !nativeNavigationBlocked, loadState.failure == nil, webView.window != nil,
+                      let document = body["document"] as? String, UUID(uuidString: document) != nil,
+                      let key = body["key"] as? String, key.count <= 200,
+                      key.hasPrefix("bots:") || key.hasPrefix("chats:") else { return }
+                webView.callAsyncJavaScript("return window.__kindredHaptics?.acceptsSelection(document, key) === true",
+                    arguments: ["document": document, "key": key], in: nil, in: .page) { [weak self] result in
+                        guard let self, !self.nativeNavigationBlocked, self.origin.matches(self.webView.url),
+                              case .success(let accepted) = result, accepted as? Bool == true else { return }
+                        self.haptics.play(.selection)
+                    }
+                return
+            }
             if let body=message.body as? [String:Any],body["action"] as? String == "native-composer-focus",
                let document=body["document"] as? String,document==glassControls.document,
                let context=body["context"] as? String,context==glassControls.composer.model?.context,

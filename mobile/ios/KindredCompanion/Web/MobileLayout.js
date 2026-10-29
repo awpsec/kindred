@@ -81,6 +81,27 @@
   const menu = document.querySelector('#mobile-menu');
   const sidebar = shell.querySelector('.sidebar');
   const conversation = shell.querySelector('.conversation');
+  // A selection tick belongs to a deliberate conversation change, never a
+  // poll, re-render, initial restore, or tapping the already selected bot.
+  const hapticDocument = crypto.randomUUID();
+  const hapticSelector = '.sidebar :is(.bot-link,.pinned-bot)[data-sidebar-id][data-sidebar-kind]';
+  const hapticKey = control => `${control.dataset.sidebarKind}:${control.dataset.sidebarId}`;
+  const acceptsHapticSelection = (documentID, key) => documentID === hapticDocument &&
+    !document.hidden && !document.querySelector('dialog[open]') &&
+    [...document.querySelectorAll(hapticSelector)].some(control =>
+      control.classList.contains('active') && !control.disabled && hapticKey(control) === key);
+  window.__kindredHaptics = {acceptsSelection: acceptsHapticSelection};
+  document.addEventListener('click', event => {
+    const control = event.target.closest?.(hapticSelector);
+    if (!event.isTrusted || !control || control.disabled || sidebar?.inert ||
+        control.classList.contains('active')) return;
+    const key = hapticKey(control);
+    setTimeout(() => {
+      if (!acceptsHapticSelection(hapticDocument, key)) return;
+      window.webkit?.messageHandlers?.kindredAccounts?.postMessage({
+        action:'haptic-selection',document:hapticDocument,key});
+    }, 0);
+  }, true);
   // An older server may install its message gesture bridge before our bundled
   // script. Reuse its opaque key/actions, but correct the native preview bounds
   // after its pointer handler has published the old full-row rectangle.
