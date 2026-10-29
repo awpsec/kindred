@@ -2,6 +2,9 @@ import AVFoundation
 import KindredCore
 import Speech
 import UIKit
+#if DEBUG
+import os
+#endif
 
 /// One foreground dictation session. Apple receives only on-device recognition requests;
 /// unsupported languages never silently switch to network transcription.
@@ -29,6 +32,9 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
     // production always captures the microphone with AVAudioEngine.
     var testAudio: ((SFSpeechAudioBufferRecognitionRequest) throws -> Void)?
     #if DEBUG
+    struct CaptureStatistics { var buffers = 0; var frames: UInt64 = 0; var peak: Float = 0 }
+    private let captureStatistics = OSAllocatedUnfairLock(initialState: CaptureStatistics())
+    var debugCaptureStatistics: CaptureStatistics { captureStatistics.withLock { $0 } }
     struct TestHooks {
         var speechPermission: () async -> SFSpeechRecognizerAuthorizationStatus? = { .authorized }
         var microphonePermission: () async -> Bool? = { true }
@@ -105,6 +111,9 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
         let operation = fence.begin(documentID: documentID, operationID: operationID, chatID: chatID)
         lastText = ""
         transcript = DictationTranscript()
+        #if DEBUG
+        captureStatistics.withLock { $0 = CaptureStatistics() }
+        #endif
         guard onDeviceAvailable else { fail("on-device-unavailable", operation); return }
         guard recognizerAvailable else { fail("recognizer-unavailable", operation); return }
         phase = "authorizing"; send("authorizing", operation)
@@ -187,7 +196,19 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
             let input = engine.inputNode
             let format = input.outputFormat(forBus: 0)
             guard format.sampleRate > 0, format.channelCount > 0 else { throw NSError(domain: "NativeDictation", code: 1) }
-            input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in request.append(buffer) }
+            #if DEBUG
+            let statistics = captureStatistics
+            #endif
+            input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+                #if DEBUG
+                var peak: Float = 0
+                if let channel = buffer.floatChannelData?[0] {
+                    for index in 0..<Int(buffer.frameLength) { peak = max(peak, abs(channel[index])) }
+                }
+                statistics.withLock { $0.buffers += 1; $0.frames += UInt64(buffer.frameLength); $0.peak = max($0.peak, peak) }
+                #endif
+                request.append(buffer)
+            }
             tapInstalled = true
             engine.prepare()
             try engine.start()

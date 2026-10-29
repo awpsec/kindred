@@ -100,6 +100,19 @@ targets:
         TEST_TARGET_NAME: KindredCompanion
         DEVELOPMENT_TEAM: $(KINDRED_DEVELOPMENT_TEAM)
 schemes:
+  KindredSpeechTests:
+    build:
+      targets:
+        KindredCompanion: all
+        KindredCompanionTests: [test]
+    test:
+      config: Personal
+      environmentVariables:
+        KINDRED_TEST_SPEECH_BUNDLED: "1"
+        KINDRED_TEST_MICROPHONE: "1"
+        KINDRED_TEST_SPEECH_EXPECTED_PHRASES: '["blue bicycle","green garden"]'
+      targets:
+        - KindredCompanionTests
   KindredPersonal:
     build:
       targets:

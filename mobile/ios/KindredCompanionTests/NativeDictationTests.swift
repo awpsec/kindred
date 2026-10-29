@@ -202,7 +202,9 @@ final class NativeDictationTests: XCTestCase {
     /// file after a selected Mac/device test authorizes Speech permission. It
     /// uses production SFSpeechRecognizer and never opens the microphone.
     func testActualOnDeviceRecordedAudioProducesPartialsAndFinal() async throws {
-        guard let path = ProcessInfo.processInfo.environment["KINDRED_TEST_SPEECH_AUDIO_FILE"] else {
+        let bundled = ProcessInfo.processInfo.environment["KINDRED_TEST_SPEECH_BUNDLED"] == "1"
+            ? Bundle(for: Self.self).url(forResource: "dictation-speech", withExtension: "caf")?.path : nil
+        guard let path = ProcessInfo.processInfo.environment["KINDRED_TEST_SPEECH_AUDIO_FILE"] ?? bundled else {
             throw XCTSkip("Actual Apple recognition requires an explicitly selected nonprivate audio fixture and supported device/locale")
         }
         let service = NativeDictation(); defer { service.tearDown() }
@@ -246,6 +248,26 @@ final class NativeDictationTests: XCTestCase {
                 let range = try XCTUnwrap(rest.range(of: phrase.lowercased()), "Every recorded phrase must remain in order after the pauses")
                 rest = rest[range.upperBound...]
             }
+        }
+    }
+
+    func testActualMicrophoneDeliversBuffersWithAndWithoutStartHaptic() async throws {
+        guard ProcessInfo.processInfo.environment["KINDRED_TEST_MICROPHONE"] == "1" else {
+            throw XCTSkip("Actual microphone capture is opt-in on a selected physical device")
+        }
+        for haptic in [false, true] {
+            let service = NativeDictation(); defer { service.tearDown() }
+            let feedback = InteractionHaptics()
+            if haptic { service.feedback = { feedback.play($0) } }
+            var phases: [String] = []
+            service.emit = { if let phase = $0["phase"] as? String { phases.append(phase) } }
+            start(service); try await wait { service.phase == "recording" || phases.contains("error") }
+            try await Task.sleep(nanoseconds: 1_200_000_000)
+            let stats = service.debugCaptureStatistics
+            XCTAssertGreaterThan(stats.buffers, 0, "Live microphone must deliver buffers; start haptic=\(haptic), phases=\(phases)")
+            XCTAssertGreaterThan(stats.frames, 0)
+            XCTAssertFalse(phases.contains("error"))
+            service.cancel(reason: "test-ended")
         }
     }
 }

@@ -23,6 +23,24 @@ restoration and background navigation are silent. UIKit respects the system's
 haptics preferences and supported hardware. Dictation temporarily allows
 haptics during its audio session, then restores that option when capture ends.
 
+### Physical-device dictation checks
+
+Stop Device Hub screen sharing before testing the microphone on an iPhone.
+Wireless pairing and installation may remain connected. Apple's
+[Device Hub sensor-access guidance](https://developer.apple.com/documentation/xcode/interacting-with-your-app-in-device-hub)
+explains that viewing/controlling a physical device prevents lower-priority
+apps from accessing its microphone and camera; recording may return silence.
+
+The opt-in `KindredSpeechTests` scheme uses existing Personal signing and only
+app-hosted tests, without requiring a separately provisioned UI-test runner.
+It enables the bundled nonprivate speech recognition fixture and the real
+microphone buffer test. The former must recognize both phrases across a pause;
+the latter checks buffer delivery with and without the start haptic, and does
+not prove that spoken words reached the microphone. Default simulator suites
+skip both hardware tests. The WebKit native-dictation composer test separately
+checks partial/final transcript delivery through native actions, draft
+preservation, selection acknowledgements, and no automatic sending.
+
 > **Mac verification (2026-10-03):** the app builds with Xcode 27.2 beta 2.
 > The core suite passes all 39 tests; all 25 native sign-in, Keychain, appearance and
 > layout/fallback tests pass on iOS 27.2. Live sign-in, account navigation, conversation switching,
