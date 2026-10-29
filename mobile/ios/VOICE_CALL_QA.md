@@ -5,6 +5,13 @@ General contains a collapsed Voice (OpenAI API) section. Calls use the account's
 OpenAI API key, independently of the selected bot's chat provider. The matching
 server branch is required. No credentials are embedded in the mobile app.
 
+Live delegates requests to the originating bot's normal task system during the
+call. That bot keeps its provider, tools, full context and approval rules; Live
+gets a smaller recent chat excerpt, including prior calls. Public results are
+returned to the voice and retained in chat with their full links. A durable
+delegation ledger prevents end-of-call/restart from repeating dispatched work.
+Approvals and choices still require the normal chat cards.
+
 The dropdown consumes `/api/voice/settings`. That endpoint explicitly identifies
 its source as OpenAI's documented GPT-Live catalog (31 built-in voices, verified
 against the Live session API reference on 2026-10-29). OpenAI currently has no
@@ -51,6 +58,15 @@ the Duo-specific API. Do not replace account data or change the bundle ID.
 7. After ending, verify one quiet “Call ended · m:ss” receipt. The transcript
    must reach the originating bot, including trailing words, without appearing
    as a chat transcript. Test a bot using a provider other than OpenAI.
+8. Ask for a harmless current lookup (for example a bicycle shop and its opening
+   hours), then correct the location while it works. Verify the configured bot
+   does the lookup during the call, Live speaks only returned findings, and
+   names, verified links and phone numbers remain readable in chat afterward.
+9. Exercise a pending choice and approval. Voice should direct the user to the
+   card; saying “yes” must not bypass its approval controls. End while work is
+   running and verify it continues once, with no duplicated external action.
+   Repeat after a dropped connection and server restart. Include a second call
+   that refers to the earlier conversation, and excluded/deleted chat history.
 
 Browser tests cover UI and bridge behavior, not ActivityKit or native audio:
 
@@ -65,12 +81,16 @@ WEBKIT=1 node tools/frontend/test-voice-integration.cjs
 The matching server needs its durable handoff and local WebSocket fixture tests:
 
 ```sh
-cargo test -j1 voice::tests -- --test-threads=1
+cargo test --bin kindred -j1 voice:: -- --test-threads=1
 ```
 
 Both browser engines passed the component and full native-adapter fixtures,
 including all three Duo poses. PCM capture checks passed at 24, 44.1 and 48 kHz.
 No real OpenAI call or native build has been verified by the Linux preparation
 task. The production server code passed `cargo check`; compiling the full Rust
-test harness exceeded the preparation machine's available memory. Do not treat
+test harness exceeded the preparation machine's available memory. Eleven isolated
+tests using the production delegation/transcript code and an in-memory database
+fixture passed, covering durability, corrections, public results, approval
+preservation, context, Unicode and new card-copy limits. These do not replace
+the full server integration suite or a real provider call. Do not treat
 this branch as a published or device-verified release.

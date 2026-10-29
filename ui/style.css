@@ -6327,3 +6327,9 @@ html[data-mobile] #composer.voice-ready.dictation-enabled{grid-template-columns:
 html[data-mobile] .voice-control{width:44px;height:44px}html[data-mobile] .voice-call-tray{gap:10px}html[data-mobile] .voice-wave{display:none}
 @media(prefers-reduced-motion:reduce){.voice-wave i,.voice-settings summary>svg{transition:none}}
 html[data-motion=off] .voice-wave i,html[data-motion=off] .voice-settings summary>svg{transition:none}
+
+/* Keep decision summaries compact; older long details remain fully reachable. */
+.task-question-heading>.task-question-answer{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.task-question-detail{max-height:min(20em,45dvh);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.question-details .question-context{max-height:min(16em,40dvh);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-inline-end:5px}
+.question-receipt>span:not(.question-letter){max-height:min(14em,35dvh);overflow-y:auto;overscroll-behavior:contain}

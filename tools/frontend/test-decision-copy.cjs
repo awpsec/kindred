@@ -1,0 +1,25 @@
+const {server,token}=require('./fixtures/desktop.cjs');
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../../test-results/decision-copy');fs.mkdirSync(out,{recursive:true});
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,engine=process.env.WEBKIT?'webkit':'chromium',browser=await(process.env.WEBKIT?webkit:chromium).launch();
+try {for(const [width,theme] of [[1100,'light'],[390,'dark']].filter(c=>!process.env.KINDRED_COPY_WIDTH||c[0]===Number(process.env.KINDRED_COPY_WIDTH))) {
+ const context=await browser.newContext({viewport:{width,height:900}}),p=await context.newPage(),errors=[],writes=[];p.on('pageerror',e=>errors.push(e.message));
+ await p.addInitScript(token=>sessionStorage.setItem('kindred-token',token),token);
+ const chat={id:'dm-piper',name:'Piper',members:['piper']},q={id:'copy',chat_id:chat.id,delivery_chat_id:chat.id,bot_id:'piper',question:'Research &amp; draft, or review first?',context:'Two options &amp; a clear next step.\n\n'+('Read the verified background before choosing. '.repeat(20)+'\n\n').repeat(6)+'Literal example: &lt;img src=x onerror=alert(1)&gt;\n\n[Source](https://example.com/?a=1&b=2)\n\n`&amp;`',options:['Research &amp; draft','Review first'],status:'pending',answer:'',selected:null,created:Math.floor(Date.now()/1000)};
+ const messages=[{seq:1,sender:'piper',kind:'question',question:q,text:q.question,created:q.created}];
+ await p.route(origin+'/api/**',async route=>{const req=route.request(),n=new URL(req.url()).pathname.slice(4),send=json=>route.fulfill({json});
+  if(n==='/settings')return send({name:'You',theme,reduced_motion:true});if(n==='/bots')return send([{id:'piper',name:'Piper',provider:'codex',profile:{color:'#2475ff',shape:'round'}}]);if(n==='/chats')return send([chat]);if(n==='/runs')return send([]);if(n==='/activity')return send({});if(n==='/questions')return send(q.status==='pending'?[q]:[]);if(n==='/chats/'+chat.id)return send({chat,messages,page:{has_before:false,has_after:false}});
+  if(n==='/questions/copy/answer'){writes.push(req.postDataJSON());q.status='answered';q.selected=0;q.answer='Research &amp; draft. '+('Keep every important decision detail accessible. '.repeat(70));return send(q);}return route.continue();
+ });
+ await p.goto(origin);const card=p.locator('#request-tray [data-question-id="copy"]');await card.waitFor();
+ assert.equal(await p.locator('#request-tray .question-title').innerText(),'Research & draft, or review first?');assert.equal(await card.locator('.question-context').first().innerText(),'Two options & a clear next step.');
+ await p.locator('#request-tray').screenshot({path:path.join(out,engine+'-'+width+'-compact.png')});assert.equal(await card.locator('details').getAttribute('open'),null);await card.locator('summary').click();
+ const details=card.locator('.question-details .question-context');assert(await details.evaluate(e=>e.scrollHeight>e.clientHeight&&e.clientHeight<=innerHeight*.4+1));assert.equal(await details.locator('img').count(),0);assert((await details.innerText()).includes('<img src=x onerror=alert(1)>'));assert.equal(await details.locator('code').innerText(),'&amp;');assert.equal(await details.locator('a').getAttribute('href'),'https://example.com/?a=1&b=2');
+ const unit=await p.evaluate(async()=>{const {decisionText}=await import('/decision-receipts.js');return ['R&amp;D','R&amp;amp;D','&#x26; &#38; &quot;yes&quot;','&lt;script&gt;alert(1)&lt;/script&gt;'].map(decisionText);});assert.deepEqual(unit,['R&D','R&D','& & "yes"','<script>alert(1)</script>']);
+ await p.screenshot({path:path.join(out,engine+'-'+width+'-details.png')});
+ await card.getByRole('button',{name:/Research & draft/}).click();const saved=p.locator('#content [data-question-id="copy"]');await saved.locator('.decision-receipt-summary').waitFor();await saved.locator('.decision-receipt-summary').click();
+ const answer=saved.locator('.question-receipt>span:not(.question-letter)');await answer.waitFor();assert((await answer.innerText()).startsWith('Research & draft.'));assert.equal((await answer.innerText()).trim(),q.answer.replaceAll('&amp;','&').trim());assert(await answer.evaluate(e=>e.scrollHeight>e.clientHeight&&e.clientHeight<=innerHeight*.35+1));assert.deepEqual(writes,[{selected:0}]);
+ assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(errors,[]);await p.screenshot({path:path.join(out,engine+'-'+width+'-answered.png')});await context.close();
+ console.log(JSON.stringify({engine,width,theme,entityText:true,noHTMLExecution:true,linksIntact:true,boundedLegacyDetails:true,fullAnswerRetained:true,selectionIdentity:true}));
+}}finally{await browser.close();server.closeAllConnections();server.close();}})().catch(e=>{console.error(e);process.exitCode=1;server.closeAllConnections();server.close();});

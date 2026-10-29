@@ -7,7 +7,7 @@ import {createServerUpdater} from './server-update.js';
 import {settingsHeaderArt} from './settings-header-art.js';
 import {workspaceArtifactCard,artifactStudio,artifactUpdateRow,artifactUpdateBatches} from './workspace-artifacts.js';
 import {groupActivity,transitionGroupActivity,visibleGroupWorkers,sharedConversationWorkers} from './group-activity.js';
-import { decisionReceipt } from './decision-receipts.js';
+import { decisionReceipt, decisionText, readableDecision } from './decision-receipts.js';
 import {installThemedSelects} from "./select-menu.js";
 import {enhanceMarkdown,fileCard,artifactPreview,inlineShard} from "./artifacts.js";
 import {openChatMedia,chatMedia,chatMediaType,resetChatMedia,collectChatMedia} from "./chat-media.js";
@@ -5126,7 +5126,7 @@ function reopenTaskQuestion(q,entry){
   state.chatKey='';void renderChat(true,'cached');
 }
 function taskQuestionReceipt(m,entry,key,taskStarted){
-  const q=m.question,pending=q.status==='pending',answered=q.status==='answered',outcome=pending?'Waiting for your answer':answered?'You chose: '+q.answer:q.status==='dismissed'?'Dismissed without an answer.':'This question was cancelled.';
+  const q={...m.question,question:decisionText(m.question.question),context:decisionText(m.question.context),answer:decisionText(m.question.answer)},pending=q.status==='pending',answered=q.status==='answered',outcome=pending?'Waiting for your answer':answered?'You chose: '+q.answer:q.status==='dismissed'?'Dismissed without an answer.':'This question was cancelled.';
   entry.questionDetails??=new Set();
   const receipt=node('details','task-question-receipt');receipt.dataset.taskQuestion=q.id;receipt.dataset.message=String(m.seq);receipt.open=!pending&&entry.questionDetails.has(q.id);
   const heading=node('summary','task-question-heading'),glyph=node('span','task-question-glyph',answered?'✓':'?'),text=node('span','task-question-title',q.question),chevron=node('span','task-question-chevron','›');glyph.setAttribute('aria-hidden','true');chevron.setAttribute('aria-hidden','true');heading.append(glyph,text,chevron);
@@ -5152,7 +5152,7 @@ function taskQuestionReceipt(m,entry,key,taskStarted){
       heading.setAttribute('aria-expanded',String(opening));
     },{capture:true});
   }
-  return receipt;
+  return readableDecision(receipt);
 }
 function appendProgressTimestamp(content,m,entry,run){
   if(!Number.isFinite(m.created)||m.created<=0)return;
@@ -5549,11 +5549,12 @@ async function submitQuestion(q,body){
 }
 
 function questionCard(q){
+  q={...q,question:decisionText(q.question),answer:decisionText(q.answer),options:q.options.map(decisionText)};
   const card=node('section','question-card');card.id='question-card-'+encodeURIComponent(q.id);card.dataset.questionId=q.id;card.tabIndex=-1;card.setAttribute('aria-label',q.question);
   const title=node('strong','question-title',q.question);card.append(title);
   if(q.context){
     const paragraphs=q.context.trim().split(/\n\s*\n/),brief=paragraphs[0];
-    const short=q.context.length<=420,showBrief=!short&&brief.length<=320&&paragraphs.length>1;
+    const short=q.context.length<=280,showBrief=!short&&brief.length<=180&&paragraphs.length>1;
     if(short||showBrief){const context=markdown(short?q.context:brief);context.className='question-context';card.append(context);}
     if(!short){const details=node('details','question-details'),summary=node('summary','','Details'),body=markdown(showBrief?paragraphs.slice(1).join('\n\n'):q.context);body.className='question-context';details.append(summary,body);card.append(details);}
   }

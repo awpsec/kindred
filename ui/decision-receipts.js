@@ -1,5 +1,21 @@
 // One lifecycle for completed decisions and completed lists; no history duplication.
 const receipts=new Map();
+const entityDecoder=document.createElement('textarea');
+export function decisionText(value){
+ let text=String(value??'');
+ // Decode entities as text only. Never parse a model label as HTML.
+ for(let pass=0;pass<2;pass++){
+  const next=text.replace(/&(?:#\d{1,7}|#x[\da-f]{1,6}|[a-z][a-z\d]{1,31});/gi,entity=>{entityDecoder.innerHTML=entity;return entityDecoder.value;});
+  if(next===text)break;text=next;
+ }
+ return text;
+}
+export function readableDecision(root){
+ const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),texts=[];let text;
+ while(text=walker.nextNode())if(!text.parentElement?.closest('pre,code,textarea,script,style'))texts.push(text);
+ for(const text of texts)text.nodeValue=decisionText(text.nodeValue);
+ return root;
+}
 const el=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls;if(text!==undefined)n.textContent=text;return n;};
 function signature(root){
  if(root.dataset.visualSignature)return root.dataset.visualSignature;
@@ -16,6 +32,7 @@ const settling=new Set(),settleAll=()=>{for(const finish of [...settling])finish
 addEventListener('blur',settleAll);document.addEventListener('visibilitychange',settleAll);matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',settleAll);
 new MutationObserver(settleAll).observe(document.documentElement,{attributes:true,attributeFilter:['data-motion']});
 export function decisionReceipt(root,{key,title,outcome,terminal=false,compact=false}={}){
+ readableDecision(root);title=decisionText(title);outcome=decisionText(outcome);
  if(!key)return root;
  const previous=receipts.get(key),mounted=document.querySelector('[data-receipt-key="'+CSS.escape(key)+'"]'),oldHeight=mounted?.getBoundingClientRect().height||0,oldWidth=mounted?.getBoundingClientRect().width||0,restoreFocus=mounted?.contains(document.activeElement);
  root.dataset.receiptKey=key;
