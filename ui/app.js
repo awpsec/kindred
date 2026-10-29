@@ -4316,7 +4316,18 @@ window.addEventListener('kindred-interface-font-change',()=>requestAnimationFram
 const composerSpace={height:null,target:0,frame:0};
 function setComposerClearance(height){
   composerSpace.height=height;
-  $('composer-area').closest('.conversation').style.setProperty('--composer-clearance',height+'px');
+  const content=$('content');
+  if(document.documentElement.hasAttribute('data-mobile')){
+    // Native adapters own keyboard, safe-area and split-screen spacing.
+    content.style.removeProperty('padding-bottom');content.style.removeProperty('scroll-padding-bottom');
+    $('composer-area').closest('.conversation').style.setProperty('--composer-clearance',height+'px');
+  }else{
+    // An inherited variable on the conversation invalidates every message and
+    // avatar on every animation frame. These two properties affect only the
+    // scroll container, avoiding full-transcript style work during typing.
+    content.style.paddingBottom=(height+10)+'px';
+    content.style.scrollPaddingBottom=(height+12)+'px';
+  }
   if(chatScroll.follow&&!chatOpening&&!chatScroll.rendering)restoreChatPosition();
 }
 function settleComposerClearance(){
