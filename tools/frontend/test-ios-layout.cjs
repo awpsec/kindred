@@ -301,10 +301,9 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       card.style.cssText='position:fixed;top:100px;left:12px;right:12px;z-index:20';
       document.body.append(card);
     });
-    const fileMenu=await openNativeMenu(page.locator('#ios-file-menu-probe .deliverable-more'));
-    assert.deepEqual(fileMenu.items.map(item=>item.title),['Preview','Open in Google Drive']);
-    assert(await page.locator('#ios-file-menu-probe .deliverable-menu').isHidden());
-    await chooseNative(fileMenu,'Preview');
+    assert.equal(await page.locator('#ios-file-menu-probe .deliverable-actions button').count(),2);
+    assert.equal(await page.locator('#ios-file-menu-probe .deliverable-more').count(),0);
+    await page.locator('#ios-file-menu-probe .file-preview').click();
     await page.waitForFunction(()=>window.fileMenuReads===1);
     await page.locator('.document-dialog').getByRole('button',{name:'Close preview',exact:true}).click();
     await page.evaluate(()=>document.querySelector('#ios-file-menu-probe').remove());

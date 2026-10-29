@@ -1,3 +1,4 @@
+import {nativeFileDelivery,responseFileBlob} from './file-downloads.js';
 import {createNavigationSearch} from './navigation-search.js';
 import {createBotCenter,libraryItems} from './bot-center.js';
 import {createComputerPopout} from './computer-popout.js';
@@ -9250,13 +9251,13 @@ function releaseScreenshotUrls(keepVisible=false) {
 }
 function renderAttachments(target, attachments) {
   const token=state.token;
-  const getBlob=async id=>{
+  const getBlob=async (id,options={})=>{
     if(state.token!==token)throw new Error('Connection changed');
-    const response=await fetch('/api/deliverables/'+encodeURIComponent(id),{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+    const response=await fetch('/api/deliverables/'+encodeURIComponent(id),{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:options.signal});
     if(!response.ok)throw new Error('This file could not be downloaded. Try again.');
-    const blob=await response.blob();if(state.token!==token)throw new Error('Connection changed');if(blob.size>8*1024*1024)throw new Error('File exceeds the chat download limit');return blob;
+    const blob=await responseFileBlob(response,options);if(state.token!==token)throw new Error('Connection changed');return blob;
   };
-  const nativeSave=window.__KINDRED_FILE_DELIVERY?async id=>{if(state.token!==token)throw new Error('Connection changed');return nativeInvoke('save_chat_file',{id});}:null;
+  const delivery=nativeFileDelivery(()=>state.token===token),nativeSave=delivery.nativeSave;
   for(let index=0;index<attachments.length;index++) {
     const attachment=attachments[index];
     if(attachment.kind!=='file'||chatMediaType(attachment)){
@@ -9281,7 +9282,7 @@ function renderAttachments(target, attachments) {
       if(state.token!==token)throw new Error('Connection changed');
       const response=await fetch('/api/deliverables/'+encodeURIComponent(id)+'/preview',{headers:{Authorization:'Bearer '+token},cache:'no-store',signal});
       if(!response.ok||!response.headers.get('Content-Type')?.startsWith('application/pdf'))throw new Error('Page preview unavailable');const blob=await response.blob();if(state.token!==token)throw new Error('Connection changed');if(blob.size>32*1024*1024)throw new Error('Preview exceeds limit');return blob;
-    },nativeSave,nativeOpen:window.__KINDRED_MARKDOWN_OPEN?async receipt=>{if(state.token!==token)throw new Error('Connection changed');return nativeInvoke('open_chat_file',{receipt});}:null,nativeReveal:window.__KINDRED_FILE_DELIVERY?receipt=>nativeInvoke('reveal_chat_file',{receipt}):null,notice,renderMarkdown:markdown}));
+    },...delivery,downloadScope:token,notice,renderMarkdown:markdown}));
   }
 }
 

@@ -49,7 +49,8 @@ protocol WebSessionHost: AnyObject {
 ///
 /// Session rotation, account opening and bounded navigation eligibility messages
 /// are accepted only from the main frame of the exact origin. There is
-/// no file, HTTP or native-execution bridge.
+/// no arbitrary file, HTTP or native-execution bridge. File delivery accepts only
+/// authenticated deliverable IDs and opaque local receipts.
 @MainActor
 @Observable
 final class WebLoadState { var failure: String? }
@@ -61,6 +62,8 @@ final class WebSession: NSObject {
     static let navigationHandler = "kindredNavigation"
     static let dictationHandler = "kindredDictation"
     static let voiceHandler = "kindredVoice"
+    static let filesHandler = "kindredFiles"
+    private let chatFiles: NativeChatFiles
     let loadState = WebLoadState()
     private var edgeBack: EdgeBackGesture?
     private var geometry: String?
@@ -110,6 +113,7 @@ final class WebSession: NSObject {
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
 
     init(account: Account, token: String?, host: WebSessionHost) {
+        chatFiles = NativeChatFiles(account: account.id)
         accountID = account.id
         profileID = account.profileID
         latestToken = token
@@ -156,6 +160,7 @@ final class WebSession: NSObject {
         controller.add(proxy, contentWorld: .page, name: WebSession.navigationHandler)
         controller.add(proxy, contentWorld: .page, name: WebSession.dictationHandler)
         controller.add(proxy, contentWorld: .page, name: WebSession.voiceHandler)
+        controller.add(proxy, contentWorld: .page, name: WebSession.filesHandler)
         dictation.emit = { [weak self] payload in self?.emitDictation(payload) }
         dictation.feedback = { [weak self] feedback in self?.haptics.play(feedback) }
         dictation.availabilityChanged = { [weak self] in self?.publishDictationCapability() }
@@ -264,7 +269,7 @@ final class WebSession: NSObject {
         })();
         """
         let textSize = WebTextSize.script(origin: origin, scale: systemTextScale)
-        controller.addUserScript(WKUserScript(source: source + "\n" + textSize + "\n" + WebDictation.bootstrap(origin: origin) + "\nif(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_VOICE={protocolVersion:1,documentID:window.__KINDRED_IOS_DICTATION.documentID};", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        controller.addUserScript(WKUserScript(source: source + "\n" + textSize + "\n" + WebDictation.bootstrap(origin: origin) + "\nif(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_VOICE={protocolVersion:1,documentID:window.__KINDRED_IOS_DICTATION.documentID};if(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_FILES={protocolVersion:1,documentID:window.__KINDRED_IOS_DICTATION.documentID};", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
         // Bundle the presentation layer so an older server still fits an iPhone.
         // The same exact-origin check as the session bootstrap scopes this script.
         if let cssURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "css"),
@@ -551,6 +556,8 @@ final class WebSession: NSObject {
                 }
                 host?.webSession(self, didReceive: parsed)
             }
+        case WebSession.filesHandler:
+            if let body = message.body as? [String: Any] { receiveFile(body) }
         case WebSession.voiceHandler:
             if let body = message.body as? [String: Any] { receiveVoice(body) }
         case WebSession.dictationHandler:
@@ -795,6 +802,37 @@ final class WebSession: NSObject {
     private func emitDictation(_ payload: [String: Any]) {
         guard origin.matches(webView.url), payload["documentID"] as? String == dictationDocumentID else { return }
         webView.callAsyncJavaScript(WebDictation.eventScript(origin: origin), arguments: ["payload": payload], in: nil, in: .page) { _ in }
+    }
+
+    private func receiveFile(_ body: [String: Any]) {
+        guard let action = body["action"] as? String, ["save", "lookup", "reveal"].contains(action),
+              let requestID = body["requestID"] as? String, UUID(uuidString: requestID) != nil,
+              let document = body["documentID"] as? String, UUID(uuidString: document) != nil,
+              let token = latestToken, !token.isEmpty else { return }
+        let scope = NativeChatFiles.scope(origin: origin.serialized, token: token)
+        let reply: ([String: Any]) -> Void = { [weak self] data in
+            guard let self, self.latestToken == token, self.origin.matches(self.webView.url) else { return }
+            var payload = data; payload["requestID"] = requestID; payload["documentID"] = document
+            self.webView.callAsyncJavaScript("if(window.__KINDRED_IOS_FILES?.documentID===payload.documentID)window.dispatchEvent(new CustomEvent('kindred-ios-files',{detail:payload}))", arguments:["payload":payload],in:nil,in:.page) { _ in }
+        }
+        webView.callAsyncJavaScript("return window.__KINDRED_IOS_FILES?.documentID===document",arguments:["document":document],in:nil,in:.page) { [weak self] result in
+            guard let self, self.latestToken == token, self.origin.matches(self.webView.url),
+                  case .success(let accepted) = result, accepted as? Bool == true else { return }
+            if action == "reveal" {
+                do { let file = try self.chatFiles.reveal(receipt: body["receipt"] as? String ?? "", scope: scope)
+                    self.host?.webSession(self, didDownload: file); reply([:])
+                } catch { reply(["error":error.localizedDescription]) }
+                return
+            }
+            guard let id = body["id"] as? String, UUID(uuidString:id) != nil else { reply(["error":"Invalid chat file"]); return }
+            if action == "lookup" { reply(["receipt":self.chatFiles.lookup(id:id,scope:scope) as Any? ?? NSNull()]); return }
+            guard let url = self.origin.url(path:"/api/deliverables/" + id) else { reply(["error":"Invalid chat file"]); return }
+            var request = URLRequest(url:url,cachePolicy:.reloadIgnoringLocalCacheData,timeoutInterval:60)
+            request.setValue("Bearer " + token,forHTTPHeaderField:"Authorization")
+            self.chatFiles.save(id:id,scope:scope,request:request,webView:self.webView,progress:{ reply(["progress":$0]) }) { result in
+                switch result { case .success(let receipt): reply(["receipt":receipt]); case .failure(let error): reply(["error":error.localizedDescription]) }
+            }
+        }
     }
 
     private func receiveVoice(_ body: [String: Any]) {

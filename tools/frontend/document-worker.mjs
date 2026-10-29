@@ -1,15 +1,16 @@
 import ExcelJS from 'exceljs/lib/doc/workbook.js';
 import SSF from 'ssf';
-import {unzipSync} from 'fflate';
+import {unzipSync,zipSync} from 'fflate';
 // Office files are ZIP containers. Bound both advertised and actual expanded data.
 function checkArchive(bytes){
  let size=0,count=0;
  const files=unzipSync(bytes,{filter:file=>{size+=file.originalSize;if(++count>2000||size>24*1024*1024||file.originalSize>12*1024*1024)throw Error('This document is too complex for a quick preview. Download to view it.');return true;}});
  if(Object.values(files).reduce((n,b)=>n+b.length,0)>24*1024*1024)throw Error('Document preview size limit exceeded.');
+ return files;
 }
 self.onmessage=async({data:{buffer,extension}})=>{try{
  const bytes=new Uint8Array(buffer);if(bytes.length>=8&&[208,207,17,224,161,177,26,225].every((v,i)=>bytes[i]===v))throw Error('This Office file may be password protected or use an unsupported format. Download original to open it.');
- checkArchive(bytes);
+ const files=checkArchive(bytes);
  if(extension==='docx'){
   self.postMessage({buffer},[buffer]);
  }else{
@@ -17,7 +18,13 @@ self.onmessage=async({data:{buffer,extension}})=>{try{
   // cannot resolve valid package-root table targets (for example /xl/tables/table1.xml).
   // Skip tableParts so those references cannot break otherwise readable cells;
   // the original workbook and its tables remain unchanged for download.
-  const book=new ExcelJS();await book.xlsx.load(buffer,{ignoreNodes:['drawing','picture','dataValidations','conditionalFormatting','extLst','tableParts']});
+  // ignoreNodes applies only to worksheet XML. ExcelJS still parses drawing
+  // parts globally, and valid default-namespace drawings leave its model
+  // undefined ("reading anchors"). The cell preview does not render artwork.
+  // Omit those parts from a bounded, temporary ZIP; never alter the original.
+  // Retain VML parts used by cell comments.
+  for(const name of Object.keys(files))if(/^xl\/(?:media\/|charts\/|drawings\/)/.test(name)&&!name.endsWith('.vml')&&!name.endsWith('.vml.rels'))delete files[name];
+  const book=new ExcelJS();await book.xlsx.load(zipSync(files,{level:0}),{ignoreNodes:['drawing','picture','dataValidations','conditionalFormatting','extLst','tableParts']});
   const sheets=book.worksheets.filter(s=>s.state==='visible').slice(0,30).map(sheet=>{
    const rows=[];const rowCount=Math.min(sheet.rowCount,200),columnCount=Math.min(sheet.columnCount,40),merges=(sheet.model.merges||[]).map(range=>{const parts=range.split(':').map(ref=>{const m=/^([A-Z]+)([0-9]+)$/.exec(ref);let col=0;for(const ch of m[1])col=col*26+ch.charCodeAt(0)-64;return {row:Number(m[2]),col};});return {top:parts[0].row,left:parts[0].col,bottom:parts[1]?.row||parts[0].row,right:parts[1]?.col||parts[0].col};}).filter(m=>m.top<=rowCount&&m.left<=columnCount);
    for(let r=1;r<=rowCount;r++){const row=[];for(let c=1;c<=columnCount;c++){

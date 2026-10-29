@@ -67,16 +67,15 @@ fs.mkdirSync(folder,{recursive:true});
    const spacing=await p.locator('.bot-title-row').first().evaluate(n=>{const name=n.querySelector('strong').getBoundingClientRect(),role=n.querySelector('.bot-label').getBoundingClientRect();return {gap:role.left-name.right,sameLine:Math.abs(role.top-name.top)<8};});
    assert(spacing.sameLine&&Math.abs(spacing.gap-5)<1,JSON.stringify({size,spacing}));
   }
-  // File popovers must track their button during scrolling and window resizing.
+  // File actions stay in their card; no detached menu can cover another pane.
   await p.evaluate(async()=>{const {fileCard}=await import('/artifacts.js');const card=fileCard({id:'menu-fixture',name:'Notes.txt'},{getBlob:async()=>new Blob(['Notes']),notice:()=>{}});const area=document.querySelector('#content');area.replaceChildren(card);area.style.paddingTop='300px';const spacer=document.createElement('div');spacer.style.height='1200px';area.append(spacer);area.scrollTop=0;});
-  await p.getByRole('button',{name:'More file actions'}).click();
   for(const width of [1100,800]){
-   await p.setViewportSize({width,height:800});await p.locator('#content').evaluate(n=>n.scrollTop=120);await p.waitForTimeout(100);
-   const placement=await p.locator('.deliverable-menu').evaluate(n=>{const menu=n.getBoundingClientRect(),anchor=document.querySelector('.deliverable-more').getBoundingClientRect();return{gap:menu.top-anchor.bottom,fits:menu.left>=8&&menu.right<=innerWidth-8&&menu.bottom<=innerHeight-8};});
-   assert(placement.fits&&Math.abs(placement.gap-6)<2,JSON.stringify(placement));
+   await p.setViewportSize({width,height:800});await p.locator('#content').evaluate(n=>n.scrollTop=120);
+   const placement=await p.locator('.deliverable-card').evaluate(n=>{const card=n.getBoundingClientRect(),buttons=[...n.querySelectorAll('.deliverable-actions button')].map(b=>b.getBoundingClientRect());return{count:buttons.length,fits:buttons.every(b=>b.left>=card.left&&b.right<=card.right&&b.top>=card.top&&b.bottom<=card.bottom)};});
+   assert.equal(placement.count,2);assert(placement.fits,JSON.stringify(placement));
   }
-  await p.locator('#content').evaluate(n=>n.scrollTop=800);await p.waitForTimeout(100);assert.equal(await p.locator('.deliverable-menu').evaluate(n=>n.matches(':popover-open')),false,'An offscreen trigger must not leave an orphan menu');
-  await p.locator('#content').evaluate(n=>n.scrollTop=0);await p.getByRole('button',{name:'More file actions'}).click();await p.keyboard.press('Escape');assert.equal(await p.locator('.deliverable-menu').evaluate(n=>n.matches(':popover-open')),false);
+  assert.equal(await p.locator('.deliverable-menu').count(),0);
+  await p.getByRole('button',{name:'Preview',exact:true}).click();await p.locator('.deliverable-text').getByText('Notes',{exact:true}).waitFor();await p.keyboard.press('Escape');assert.equal(await p.getByRole('dialog').count(),0);
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,widths:[320,390,768,1320],textSizes:[100,150],themes:['dark','light'],notificationAnchoring:true,providerLayout:true,importSpacing:true,disclosureKeyboard:true,reducedMotion:true}));
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

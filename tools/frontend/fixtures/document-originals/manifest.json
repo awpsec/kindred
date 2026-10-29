@@ -16,6 +16,12 @@
       "name": "styled-multi-sheet.xlsx",
       "size": 2630,
       "sha256": "580792165e8027496fa5ec6be4b20e40728a36b68809b6c05635d862b07b99ef"
+    },
+    {
+      "name": "default-namespace-drawing.xlsx",
+      "size": 8469,
+      "sha256": "ec216afdd4bff1c7a6f3eb9e674d811786df41039a9a9aa5789bf9314e6bedcc",
+      "purpose": "Valid default-namespace DrawingML; previously failed reading anchors. Synthetic 1px image and cells only."
     }
   ],
   "xlsxExpected": {

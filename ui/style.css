@@ -4230,15 +4230,6 @@ html[data-motion="off"] .provider-retry-dots>span{animation:none}
 .deliverable-name{font-size:calc(13px * var(--text-scale,1));font-weight:600;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
 .deliverable-size{font-size:calc(11px * var(--text-scale,1))}
 .deliverable-actions{padding:0;gap:6px;flex-wrap:nowrap;flex:none;align-items:center}
-.deliverable-split{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
-.deliverable-split .artifact-action{border:0;border-radius:0;padding:6px 9px;margin:0;min-height:30px;font-size:12px;background:transparent}
-.deliverable-split .deliverable-more{border-left:1px solid var(--line);padding:5px;width:28px;display:grid;place-items:center}
-.deliverable-more svg,.deliverable-reveal svg{width:16px;height:16px}
-.deliverable-reveal{border:0;padding:6px;background:transparent;display:grid;place-items:center}
-.deliverable-reveal[hidden]{display:none}
-.deliverable-menu{position:fixed;inset:auto;margin:0;padding:5px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);box-shadow:0 8px 28px #0002;min-width:150px}
-.deliverable-menu .artifact-action{display:block;width:100%;border:0;text-align:left;text-decoration:none;border-radius:5px;padding:8px 10px;background:transparent}
-.deliverable-menu .artifact-action:hover,.deliverable-split .artifact-action:hover,.deliverable-reveal:hover{background:var(--hover,#8881)}
 .document-dialog{width:calc(100vw - 48px);height:calc(100dvh - 48px);max-width:none;max-height:none;padding:0;border:1px solid var(--line);border-radius:14px;color:var(--text);background:var(--surface);box-shadow:0 24px 90px #0004}
 .document-dialog[open]{display:flex;flex-direction:column}
 .document-dialog::backdrop{background:#1118}
@@ -4263,7 +4254,7 @@ html[data-motion="off"] .provider-retry-dots>span{animation:none}
 .document-image{display:block;max-width:100%;max-height:100%;object-fit:contain;margin:auto}
 .document-body>.deliverable-text{max-height:none}
 .document-body>.markdown{padding:20px}
-@media(max-width:480px){.deliverable-heading{padding:9px;gap:8px}.deliverable-split .artifact-action{padding:6px}.deliverable-type{flex-basis:28px;width:28px}.document-dialog{width:calc(100vw - 16px);height:calc(100dvh - 24px)}.document-header{padding:10px}.document-pdf{padding:8px}}
+@media(max-width:480px){.deliverable-heading{padding:9px;gap:8px}.deliverable-type{flex-basis:28px;width:28px}.document-dialog{width:calc(100vw - 16px);height:calc(100dvh - 24px)}.document-header{padding:10px}.document-pdf{padding:8px}}
 .document-grid th:first-child{width:40px;max-width:40px;min-width:40px}
 .document-pdf[aria-busy="true"]{cursor:progress}
 
@@ -4303,22 +4294,22 @@ html[data-motion='off'] .document-stack-summary>.icon:last-child{transition:none
 @media(prefers-reduced-motion:reduce){.profile-menu{animation:none}}
 html[data-motion='off'] .profile-menu{animation:none}
 
-.file-download{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:112px;white-space:nowrap}
-.file-download[data-state=saved]:disabled{opacity:1;color:var(--muted);cursor:default}
+.file-download,.file-preview{display:inline-grid;place-items:center;min-width:36px;width:36px;height:36px;padding:8px;border:0;border-radius:9px;background:transparent;color:var(--muted)}
+.file-download:hover,.file-preview:hover{background:var(--hover,#8881);color:var(--text)}
 .file-download[data-state=saving]:disabled{opacity:1;cursor:progress}
-.file-download .download-check{width:15px;height:15px;color:#49a57a;stroke-dasharray:24;animation:download-confirm .24s ease-out}
-.download-dots{display:inline-flex;width:12px;justify-content:space-between}
-.download-dots>span{animation:provider-retry-dot 1.2s infinite}
-.download-dots>span:nth-child(2){animation-delay:.16s}.download-dots>span:nth-child(3){animation-delay:.32s}
+.file-download svg,.file-preview svg{width:20px;height:20px}
+.download-progress-track{opacity:.18}
+.download-progress-fill{transform:rotate(-90deg);transform-origin:center;transition:stroke-dashoffset .16s linear}
+.download-progress.indeterminate{animation:download-spin 1s linear infinite}
+@keyframes download-spin{to{transform:rotate(360deg)}}
+.deliverable-open{display:block;border:0;padding:0;background:transparent;text-align:left;color:inherit;font-family:inherit;font-size:calc(13px * var(--text-scale,1));font-weight:600;max-width:100%;cursor:pointer}
+.deliverable-open:hover{text-decoration:underline;text-underline-offset:3px}
+.deliverable-source{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+@media(pointer:coarse){.file-download,.file-preview{min-width:44px;width:44px;height:44px}}
+@media(prefers-reduced-motion:reduce){.download-progress{animation:none!important}.download-progress-fill{transition:none!important}}
+html[data-motion='off'] .download-progress{animation:none}html[data-motion='off'] .download-progress-fill{transition:none}
 .download-announcement{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .document-word{display:block;border:0;flex:1;width:100%;height:auto;min-height:0;overflow:auto;background:#eef0f3;overscroll-behavior:contain}
-@keyframes download-confirm{from{stroke-dashoffset:24}to{stroke-dashoffset:0}}
-@media(prefers-reduced-motion:reduce){.download-dots>span,.download-check{animation:none!important}}
-html[data-motion='off'] .download-dots>span,html[data-motion='off'] .download-check{animation:none}
-
-/* Keep file actions usable when the window is resized or the chat scrolls. */
-.deliverable-menu{max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;overscroll-behavior:contain}
-
 /* Unread badges must not consume the space reserved for names and timestamps. */
 .bot-link{position:relative}
 .bot-link>.unread-dot{position:absolute;left:2px;top:50%;width:5px;height:5px;margin:0;transform:translateY(-50%)}

@@ -29,7 +29,7 @@ async function workbook(absolute){
    const card=fileCard({id:'table-preview',name:'Asset tracker.xlsx',kind:'file',size:blob.size},{getBlob:async()=>blob,notice:()=>{}});
    document.querySelector('#content').replaceChildren(card);
   },[...bytes]);
-  await page.getByRole('button',{name:'More file actions'}).click();await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await page.getByRole('button',{name:'Preview',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('.document-grid td')||document.querySelector('.document-status')?.textContent.startsWith('Preview unavailable'));
   const failure=await page.locator('.document-status').allTextContents();assert.equal(failure.length,0,failure.join('; '));
   const grid=page.locator('.document-grid');await grid.getByText('example.test',{exact:true}).waitFor();

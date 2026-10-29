@@ -1,13 +1,15 @@
 //! Save authenticated chat deliverables; reveal/open only receipts issued here.
+#[path = "chat_downloads.rs"]
+mod chat_downloads;
 #[path = "markdown_download.rs"]
 mod markdown_download;
 use crate::{
     desktop::{self, Desktop},
     surface::Surface,
 };
+use chat_downloads::{DownloadIndex, SavedFile};
 use serde_json::{Value, json};
 use std::{
-    collections::HashMap,
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::Mutex,
@@ -15,7 +17,37 @@ use std::{
 };
 use tauri::Manager;
 #[derive(Default)]
-pub struct Downloads(pub Mutex<HashMap<String, (String, PathBuf)>>);
+pub struct Downloads(pub Mutex<Option<DownloadIndex>>);
+fn with_index<T>(
+    window: &Surface,
+    downloads: &Downloads,
+    action: impl FnOnce(&mut DownloadIndex) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut guard = downloads.0.lock().map_err(|e| e.to_string())?;
+    if guard.is_none() {
+        let file = window
+            .app_handle()
+            .path()
+            .app_local_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("chat-downloads.json");
+        *guard = Some(DownloadIndex::load(file));
+    }
+    action(guard.as_mut().unwrap())
+}
+#[tauri::command]
+pub async fn saved_chat_file(
+    window: Surface,
+    state: tauri::State<'_, Desktop>,
+    downloads: tauri::State<'_, Downloads>,
+    id: String,
+) -> Result<Option<String>, String> {
+    desktop::trusted(&window, &state)?;
+    uuid::Uuid::parse_str(&id).map_err(|_| "Invalid chat file")?;
+    with_index(&window, &downloads, |index| {
+        Ok(index.find(&id, &session_scope(&state)))
+    })
+}
 fn session_scope(state: &Desktop) -> String {
     let identity = format!(
         "{}\n{}",
@@ -116,6 +148,25 @@ pub async fn save_chat_file(
     downloads: tauri::State<'_, Downloads>,
     id: String,
 ) -> Result<String, String> {
+    save_file(window, state, downloads, id, None).await
+}
+#[tauri::command]
+pub async fn save_chat_file_progress(
+    window: Surface,
+    state: tauri::State<'_, Desktop>,
+    downloads: tauri::State<'_, Downloads>,
+    id: String,
+    on_progress: tauri::ipc::Channel<Value>,
+) -> Result<String, String> {
+    save_file(window, state, downloads, id, Some(on_progress)).await
+}
+async fn save_file(
+    window: Surface,
+    state: tauri::State<'_, Desktop>,
+    downloads: tauri::State<'_, Downloads>,
+    id: String,
+    on_progress: Option<tauri::ipc::Channel<Value>>,
+) -> Result<String, String> {
     desktop::trusted(&window, &state)?;
     uuid::Uuid::parse_str(&id).map_err(|_| "Invalid chat file")?;
     let token = state.session_token();
@@ -138,7 +189,7 @@ pub async fn save_chat_file(
             .timeout(Duration::from_secs(60))
             .build()
             .map_err(|e| e.to_string())?;
-        let response = client
+        let mut response = client
             .get(url)
             .bearer_auth(token)
             .send()
@@ -156,13 +207,34 @@ pub async fn save_chat_file(
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or(""),
         )?;
-        let mut bytes = Vec::new();
-        response
-            .take(8 * 1024 * 1024 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|e| e.to_string())?;
-        if bytes.len() > 8 * 1024 * 1024 {
+        let total = response.content_length();
+        if total.is_some_and(|n| n > 8 * 1024 * 1024) {
             return Err("File exceeds the chat download limit".into());
+        }
+        let mut bytes = Vec::new();
+        let mut chunk = [0u8; 32 * 1024];
+        let mut last = std::time::Instant::now() - Duration::from_secs(1);
+        loop {
+            let count = response.read(&mut chunk).map_err(|e| e.to_string())?;
+            if count == 0 {
+                break;
+            }
+            if bytes.len() + count > 8 * 1024 * 1024 {
+                return Err("File exceeds the chat download limit".into());
+            }
+            bytes.extend_from_slice(&chunk[..count]);
+            if last.elapsed() >= Duration::from_millis(80) {
+                if let Some(channel) = &on_progress {
+                    let _ = channel.send(json!({"received":bytes.len(),"total":total}));
+                }
+                last = std::time::Instant::now();
+            }
+        }
+        if total.is_some_and(|n| n != bytes.len() as u64) {
+            return Err("The download was incomplete. Try again.".into());
+        }
+        if let Some(channel) = &on_progress {
+            let _ = channel.send(json!({"received":bytes.len(),"total":bytes.len()}));
         }
         save_unique(&directory, &name, &bytes)
     })
@@ -173,11 +245,16 @@ pub async fn save_chat_file(
         return Err("The connected workspace changed while downloading. Download it again from the current chat.".into());
     }
     let receipt = uuid::Uuid::new_v4().to_string();
-    downloads
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(receipt.clone(), (origin, path));
+    with_index(&window, &downloads, |index| {
+        index.insert(
+            receipt.clone(),
+            SavedFile {
+                scope: origin,
+                file_id: id,
+                path,
+            },
+        )
+    })?;
     Ok(receipt)
 }
 #[tauri::command]
@@ -188,16 +265,12 @@ pub async fn reveal_chat_file(
     receipt: String,
 ) -> Result<Value, String> {
     desktop::trusted(&window, &state)?;
-    let (origin, path) = downloads
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&receipt)
-        .cloned()
-        .ok_or("Download this file first")?;
-    if origin != session_scope(&state) {
-        return Err("This download belongs to another workspace session".into());
-    }
+    let path = with_index(&window, &downloads, |index| {
+        index
+            .get(&receipt, &session_scope(&state))
+            .map(|r| r.path.clone())
+            .ok_or_else(|| "This download was moved or removed. Download it again.".into())
+    })?;
     if !path.is_file() {
         return Err("This download was moved or removed. Download it again.".into());
     }
@@ -240,16 +313,12 @@ pub async fn open_chat_file(
     receipt: String,
 ) -> Result<Value, String> {
     desktop::trusted(&window, &state)?;
-    let (origin, path) = downloads
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&receipt)
-        .cloned()
-        .ok_or("Download this file first")?;
-    if origin != session_scope(&state) {
-        return Err("This download belongs to another workspace session".into());
-    }
+    let path = with_index(&window, &downloads, |index| {
+        index
+            .get(&receipt, &session_scope(&state))
+            .map(|r| r.path.clone())
+            .ok_or_else(|| "This download was moved or removed. Download it again.".into())
+    })?;
     let path = markdown_download::checked_path(&path)?;
     open::that_detached(path).map_err(|_| "The file could not be opened. Choose a default app for Markdown files in your computer settings.".to_string())?;
     Ok(json!({"ok":true}))

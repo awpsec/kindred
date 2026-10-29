@@ -39,6 +39,8 @@ fn main() {
             "read_dropped_files",
             "read_clipboard_image",
             "read_clipboard_text",
+            "saved_chat_file",
+            "save_chat_file_progress",
             "save_chat_file",
             "reveal_chat_file",
             "open_chat_file",
