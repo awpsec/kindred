@@ -60,6 +60,7 @@ final class WebSession: NSObject {
     static let accountsHandler = "kindredAccounts"
     static let navigationHandler = "kindredNavigation"
     static let dictationHandler = "kindredDictation"
+    static let voiceHandler = "kindredVoice"
     let loadState = WebLoadState()
     private var edgeBack: EdgeBackGesture?
     private var geometry: String?
@@ -154,6 +155,7 @@ final class WebSession: NSObject {
         controller.add(proxy, contentWorld: .page, name: WebSession.accountsHandler)
         controller.add(proxy, contentWorld: .page, name: WebSession.navigationHandler)
         controller.add(proxy, contentWorld: .page, name: WebSession.dictationHandler)
+        controller.add(proxy, contentWorld: .page, name: WebSession.voiceHandler)
         dictation.emit = { [weak self] payload in self?.emitDictation(payload) }
         dictation.feedback = { [weak self] feedback in self?.haptics.play(feedback) }
         dictation.availabilityChanged = { [weak self] in self?.publishDictationCapability() }
@@ -262,7 +264,7 @@ final class WebSession: NSObject {
         })();
         """
         let textSize = WebTextSize.script(origin: origin, scale: systemTextScale)
-        controller.addUserScript(WKUserScript(source: source + "\n" + textSize + "\n" + WebDictation.bootstrap(origin: origin), injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        controller.addUserScript(WKUserScript(source: source + "\n" + textSize + "\n" + WebDictation.bootstrap(origin: origin) + "\nif(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_VOICE={protocolVersion:1,documentID:window.__KINDRED_IOS_DICTATION.documentID};", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
         // Bundle the presentation layer so an older server still fits an iPhone.
         // The same exact-origin check as the session bootstrap scopes this script.
         if let cssURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "css"),
@@ -477,6 +479,7 @@ final class WebSession: NSObject {
     func tearDown() {
         glassControls.reset()
         glassControls.removeFromSuperview()
+        NativeVoiceCall.shared.end(owner: accountID)
         dictationDocumentGeneration &+= 1
         dictationCommands.invalidate()
         dictation.tearDown()
@@ -548,6 +551,8 @@ final class WebSession: NSObject {
                 }
                 host?.webSession(self, didReceive: parsed)
             }
+        case WebSession.voiceHandler:
+            if let body = message.body as? [String: Any] { receiveVoice(body) }
         case WebSession.dictationHandler:
             if let command = DictationCommand(body: message.body) { receiveDictation(command) }
         case WebSession.navigationHandler:
@@ -700,6 +705,10 @@ final class WebSession: NSObject {
     }
 
     private func invalidateDictationContext(reason: String, preserveVerifiedChat: Bool = false) {
+        // Folding/reparenting a visible host keeps the call. Account changes do not.
+        if reason == "account-changed", !preserveVerifiedChat {
+            NativeVoiceCall.shared.end(owner: accountID)
+        }
         dictationDocumentGeneration &+= 1
         dictationCommands.invalidate()
         dictation.cancel(reason: reason)
@@ -788,6 +797,39 @@ final class WebSession: NSObject {
         webView.callAsyncJavaScript(WebDictation.eventScript(origin: origin), arguments: ["payload": payload], in: nil, in: .page) { _ in }
     }
 
+    private func receiveVoice(_ body: [String: Any]) {
+        guard let action = body["action"] as? String,
+              let id = body["id"] as? String, UUID(uuidString: id) != nil,
+              let document = body["documentID"] as? String, UUID(uuidString: document) != nil else { return }
+        if action == "status", let snapshot = NativeVoiceCall.shared.snapshot(owner: accountID, id: id) {
+            emitVoice(snapshot, document: document); return
+        }
+        if action == "end", NativeVoiceCall.shared.owns(owner: accountID, id: id) {
+            NativeVoiceCall.shared.end(id: id); return
+        }
+        if action == "mute", NativeVoiceCall.shared.owns(owner: accountID, id: id), let muted = body["muted"] as? Bool {
+            NativeVoiceCall.shared.setMuted(id: id, value: muted); return
+        }
+        guard action == "start", !nativeNavigationBlocked, webView.window != nil, !webView.isLoading,
+              let chat = body["chatID"] as? String, chat.hasPrefix("dm-"), chat.count <= 256,
+              let ticket = body["ticket"] as? String else { return }
+        let generation = dictationDocumentGeneration
+        webView.callAsyncJavaScript("return window.__KINDRED_IOS_VOICE?.documentID===documentID", arguments: ["documentID":document], in: nil, in: .page) { [weak self] result in
+            guard let self, generation == self.dictationDocumentGeneration,
+                  self.origin.matches(self.webView.url), case .success(let accepted) = result, accepted as? Bool == true else { return }
+            self.dictation.cancel()
+            NativeVoiceCall.shared.start(id: id, owner: self.accountID, origin: self.origin.rootURL, ticket: ticket,
+                name: body["botName"] as? String ?? "Bot", shape: body["shape"] as? String ?? "round", color: body["color"] as? String ?? "#2475ff") { [weak self] value in
+                    self?.emitVoice(value, document: document)
+                }
+        }
+    }
+    private func emitVoice(_ value: [String: Any], document: String) {
+        guard origin.matches(webView.url) else { return }
+        var payload = value; payload["documentID"] = document
+        webView.callAsyncJavaScript("if(window.__KINDRED_IOS_VOICE?.documentID===payload.documentID)window.dispatchEvent(new CustomEvent('kindred-ios-voice',{detail:payload}))", arguments: ["payload":payload], in: nil, in: .page) { _ in }
+    }
+
     private func isTrusted(_ securityOrigin: WKSecurityOrigin) -> Bool {
         origin.matches(scheme: securityOrigin.protocol, host: securityOrigin.host, port: securityOrigin.port)
     }
@@ -833,6 +875,7 @@ private final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
 extension WebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         glassControls.reset()
+        NativeVoiceCall.shared.end(owner: accountID)
         dictation.cancel(reason: "navigation")
         dictationDocumentGeneration &+= 1
         dictationCommands.invalidate()

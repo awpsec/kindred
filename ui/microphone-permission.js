@@ -28,7 +28,7 @@
   const dialog=document.createElement('dialog');dialog.className='text-dialog microphone-permission';dialog.style.width='min(440px, calc(100vw - 32px))';
   dialog.setAttribute('aria-labelledby','microphone-permission-title');dialog.setAttribute('aria-describedby','microphone-permission-description');
   const title=document.createElement('h2');title.id='microphone-permission-title';title.textContent='Allow microphone access?';
-  const description=document.createElement('p');description.id='microphone-permission-description';description.textContent='Kindred uses your microphone for local dictation. Audio stays on this computer and recording stops when you finish or cancel.';
+  const description=document.createElement('p');description.id='microphone-permission-description';description.textContent='Kindred uses your microphone for dictation and voice calls. Cloud dictation and calls send audio to your selected provider. Recording stops when you finish or cancel.';
   description.style.margin='12px 0';
   const scope=document.createElement('p');scope.className='muted small';scope.textContent='Always allow remembers this account and server on this computer.';
   const actions=document.createElement('div');actions.className='dialog-actions';

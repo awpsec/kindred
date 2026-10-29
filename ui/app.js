@@ -15,6 +15,7 @@ import {createRoutineFlights} from './routine-flight.js';
 import {connectorCatalog} from "./connector-catalog.js";
 import {connectorCard,connectorCardSignature} from "./connector-cards.js";
 installThemedSelects();
+import {createVoiceUI} from "./voice.js";
 import {createDictationUI} from "./dictation.js";
 import {createProfileUI} from "./profiles.js";
 import {createWorkspaceImportUI} from "./workspace-import.js";
@@ -46,7 +47,7 @@ import {
 document.addEventListener('pointerdown',()=>{document.documentElement.dataset.inputModality='pointer';},true);
 document.addEventListener('keydown',e=>{if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','Enter',' '].includes(e.key))document.documentElement.dataset.inputModality='keyboard';},true);
 const UI_VERSION = "0.63.0";
-let commandsUI, dictationUI, composerLists, navigationSearch, botCenter, computerPopout;
+let voiceUI, commandsUI, dictationUI, composerLists, navigationSearch, botCenter, computerPopout;
 function syncBotCenter(){botCenter?.sync();computerPopout?.sync();}
 const CHAT_PAGE_SIZE=50, CHAT_WINDOW_SIZE=150, CHAT_CACHE_SIZE=6;
 const chatHistory=new Map();
@@ -97,7 +98,7 @@ const workspaceUI = createWorkspaceImportUI({api,node,button,field,select,modal,
 const profilesUI = createProfileUI({
   getServerVersion:()=>state.status.version,
   workingBots:()=>new Set(state.allRuns.filter(r=>active(r)||delegationContext(r)?.waiting||(r.status==='queued'&&r.delegation?.resuming)).map(r=>r.bot_id)).size,
-  getServerAddress:()=>state.status?.public_url||location.origin, getToken:()=>state.token, setToken:token=>{if(state.token!==token)resetChatMedia();state.token=token;computerPopout?.sync();}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
+  getServerAddress:()=>state.status?.public_url||location.origin, getToken:()=>state.token, setToken:token=>{if(state.token!==token){resetChatMedia();voiceUI?.reset();}state.token=token;computerPopout?.sync();}, connect, nativeInvoke:(...args)=>nativeInvoke(...args), notice,
   restoreAfterSwitch:async()=>{
     if(window.__KINDRED_DESKTOP)await nativeInvoke('start_desktop',{token:state.token});
     if(!$('computer-panel').hidden)await connectDesktop();
@@ -107,6 +108,7 @@ const profilesUI = createProfileUI({
     if(artifactWorkspace&&!await artifactWorkspace.prepareLeave())throw new Error("Save or discard your artifact edits before switching profiles.");
     if(window.__KINDRED_PROFILE_HOST)await nativeInvoke('prepare_profile_switch',{});
     workspaceUI.close();
+    voiceUI?.reset();
     dictationUI?.cancel();
     saveDraft();
     if(previous)sessionStorage.setItem('kindred-profile-draft-'+previous,JSON.stringify(conversationSnapshot()));
@@ -527,6 +529,7 @@ async function connect() {
   }
   applyGeneral();
   void dictationUI?.init();
+  void voiceUI?.init();
   $("connect").hidden = true;
   $("app").hidden = false;
   await refresh(true);
@@ -537,6 +540,7 @@ async function connect() {
   else void pollBrowserNotifications();
 }
 async function chooseBot(b) {
+  if(voiceUI&&!voiceUI.canNavigate(`dm-${b.id}`))return;
   if(state.teaching && b.id!==state.teaching.botId){notice("Finish teaching before switching bots.");return;}
   if(!state.chat && state.bot?.id===b.id){captureUnreadBoundary(`dm-${b.id}`);$('app').classList.remove('sidebar-open');await renderChat(true,'cached');return;}
   dictationUI?.cancel();
@@ -2493,7 +2497,7 @@ async function settingsGeneral(revision) {
   const dictation=dictationUI.settingsSection();dictation.dataset.devicePreference='true';
   const speechPane=dictation.querySelector('.settings-pane');speechPane.insertBefore(dictationUI.microphoneControl(),speechPane.querySelector('.dictation-model-row'));
   system.root.hidden=!system.body.children.length;
-  form.append(identity.root,appearance.root,conversations.root,dictation,system.root,bots.root,versions.root);
+  form.append(identity.root,appearance.root,conversations.root,dictation,voiceUI.settingsSection(),system.root,bots.root,versions.root);
   const serverControls=[...progress.inputs,name.input,prefs.input,theme,accent,motion.input,activity.input,separateBots.input,timezone,approval.input,notifications];
   serverControls.forEach(control=>control.disabled=true);
   root.append(form);renderVersions();
@@ -2675,6 +2679,7 @@ async function settingsConnections(revision) {
   if(settingsRevision!==revision||state.settings!=='connections'||!$('settings-dialog').open)return;
   state.connections=connections;
   const root=$('settings-content');root.replaceChildren();const ai=section('AI accounts');root.append(ai);
+  ai.append(await decisionsConnection());
   const openCodePlans=providers.filter(provider=>['opencode','opencode-go'].includes(provider.id));
   for(const provider of providers) {
     if(openCodePlans.includes(provider)){
@@ -2743,7 +2748,7 @@ async function settingsConnections(revision) {
         if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Verified connections follow your bot’s access settings; provider restrictions and email-send reviews still apply.'));
         else{const manage=node('a','outline-button','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';inherited.append(manage);}
         row.body.append(inherited);
-        if(codex)row.body.append(await decisionsConnection());
+
       }
       void check(false);
     } else if(provider.id==='openrouter') {
@@ -4267,7 +4272,7 @@ function resizeComposer() {
   const editor=$('prompt'),form=$('composer');
   const text=composerText(editor).replace(/\u200b/g,'');
   editor.dataset.empty=String(!text.trim());
-  editor.style.height='auto';dictationUI?.render();syncQuestionComposer();
+  editor.style.height='auto';dictationUI?.render();voiceUI?.render();syncQuestionComposer();
   // Desktop expansion is sticky for this draft; IME owns layout until commit.
   // Native adapters retain their existing compact/expanded policy.
   if(!document.documentElement.hasAttribute('data-mobile')){
@@ -4297,7 +4302,7 @@ $('prompt').addEventListener('compositionend',()=>{delete $('prompt').dataset.co
 let composerWidth=0,composerFont='',composerMode='';
 function updateComposerLayout(){
   const form=$('composer'),width=form.clientWidth,font=getComputedStyle($('prompt')).fontSize,
-    mode=['is-replying','has-files','is-dictating','dictation-enabled','dictation-empty'].filter(c=>form.classList.contains(c)).join(' ');
+    mode=['is-replying','has-files','is-dictating','dictation-enabled','dictation-empty','is-voice-calling'].filter(c=>form.classList.contains(c)).join(' ');
   if(width===composerWidth&&font===composerFont&&mode===composerMode)return;
   composerWidth=width;composerFont=font;composerMode=mode;resizeComposer();
 }
@@ -4530,6 +4535,7 @@ void openInitialWorkspace();
 
 // Shared conversations and typed mentions.
 async function chooseChat(chat) {
+  if(voiceUI&&!voiceUI.canNavigate(chat.id))return;
   if(state.teaching){notice("Finish teaching before switching conversations.");return;}
   if(state.chat?.id===chat.id){captureUnreadBoundary(chat.id);$('app').classList.remove('sidebar-open');await renderChat(true,'cached');return;}
   dictationUI?.cancel();
@@ -6223,6 +6229,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   for(const m of transcript){const key=m.progress?.group_id;if(!anchoredTasks.has(key)&&summaries.get(key)?.includes(m)){trackerAnchors.set(m.seq,taskTrackers.get(key));anchoredTasks.add(key);}}
   for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
   for (const m of transcript) {
+    if(m.kind==='voice_call'){const receipt=node('div','voice-call-receipt');receipt.dataset.message=String(m.seq);receipt.append(icon('phone',14),node('span','',m.text));area.append(receipt);previousSender=null;continue;}
     if(m.kind==='shared_attachment'){
       const {file,run,created}=m.attachment,group=node('article','message-group shared-attachment-message');
       appendTranscriptTimestamp(created);
@@ -9643,6 +9650,8 @@ initPaneResizing();
 
 new MutationObserver(()=>{if(questionComposerMode())syncQuestionComposer();}).observe($('send'),{attributes:true,attributeFilter:['disabled']});
 dictationUI=createDictationUI({editor:$("prompt"),send:$("send"),composer:$("composer"),api,nativeInvoke,chatId:composerChatId,hasFiles:()=>!!pendingFiles.get(composerChatId())?.length,notice,icon,openrouterConfigured:()=>state.connections?.openrouter_configured===true,accountId:()=>{try{return JSON.parse(sessionStorage.getItem('kindred-signin-identity')||'{}').profileId||window.__KINDRED_INITIAL_PROFILE||'legacy';}catch{return 'legacy';}}});
+voiceUI=createVoiceUI({api,composer:$("composer"),editor:$("prompt"),send:$("send"),bot:()=>state.bot,chatId:composerChatId,icon,avatar:b=>character(b.profile,36),notice,openSettings,cancelDictation:()=>dictationUI.cancel(),onEnded:()=>void refresh(true)});
+$("composer").addEventListener("kindred-voice-layout",()=>updateComposerLayout());
 
 function workflowOptions(chatId,panel){return {
  onReady:animateWorkflowDetails,
@@ -9657,22 +9666,22 @@ function animateWorkflowDetails(root){for(const details of root.querySelectorAll
 
 async function decisionsConnection() {
   const root=node('div','provider-catalog connection-section decisions-connection'),heading=node('div','connection-section-heading');
-  heading.append(node('strong','','Decisions API'),node('span','muted small','Optional'));root.append(heading);
+  heading.append(node('strong','','OpenAI API'),node('span','muted small','Optional'));root.append(heading);
   const status=node('p','muted small');status.setAttribute('role','status');
   const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'Paste your OpenAI API key'}),actions=node('div','row-actions');
   key.input.spellcheck=false;key.input.autocapitalize='off';
-  const paint=result=>{status.textContent=result.last_error?('Last browser task failed: '+result.last_error):result.configured?(result.source==='environment'?'Provided by this server':'Key saved · checked when a browser task runs'):'Not set up';key.input.placeholder=result.source==='environment'?'Paste your own key to use it instead':result.configured?'Saved · paste a replacement key':'Paste your OpenAI API key';remove.hidden=!result.configured||result.source==='environment';};
+  const paint=result=>{status.textContent=result.last_error?('Last browser task failed: '+result.last_error):result.configured?(result.source==='environment'?'Provided by this server':'Key saved · available for voice and browser tasks'):'Not set up';key.input.placeholder=result.source==='environment'?'Paste your own key to use it instead':result.configured?'Saved · paste a replacement key':'Paste your OpenAI API key';remove.hidden=!result.configured||result.source==='environment';};
   const save=button('Save key',async()=>{
     if(!key.input.value.trim()){status.textContent='Paste your API key first.';return;}
     const value=key.input.value;key.input.value='';save.disabled=true;remove.disabled=true;
-    try{paint(await api('/connections/decisions','POST',{key:value}));}
+    try{paint(await api('/connections/decisions','POST',{key:value}));void voiceUI.init();}
     catch(e){status.textContent=e.message;}
     finally{save.disabled=false;remove.disabled=false;}
   },'outline-button');
   const remove=button('Disconnect',async()=>{
-    if(!confirm('Remove the Decisions API key? Codex will keep using its normal computer tools.'))return;
+    if(!confirm('Remove the OpenAI API key? Voice calls and Decisions browser tasks will stop using it.'))return;
     save.disabled=true;remove.disabled=true;
-    try{paint(await api('/connections/decisions','DELETE'));}catch(e){status.textContent=e.message;}
+    try{paint(await api('/connections/decisions','DELETE'));void voiceUI.init();}catch(e){status.textContent=e.message;}
     finally{save.disabled=false;remove.disabled=false;}
   },'subtle-button');remove.hidden=true;
   actions.append(save,remove);root.append(status,key.label,actions);
