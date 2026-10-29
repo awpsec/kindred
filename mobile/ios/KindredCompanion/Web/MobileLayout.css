@@ -398,6 +398,11 @@ html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=true] .conversation
 html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=true] .conversation-header>:not(.bot-heading) { display:none; }
 /* A horizontal native bar owns the identity on the open portrait display. */
 html[data-kindred-ios][data-ios-duo=true][data-ios-toolbar-identity=true] .conversation-header { display:none; }
+/* Its transparent navigation bar still owns touches across the top edge.
+   Inset the list container so rows, pinned bots and search stay below it even
+   after scrolling. The side-rail poses keep their existing full-height list. */
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=true][data-ios-rail-side=none] .shell>.sidebar { box-sizing:border-box; padding-top:var(--ios-safe-top,0px); }
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=true][data-ios-rail-side=none] .sidebar>.search { margin-top:8px; }
 html[data-kindred-ios][data-ios-identity-handoff] .conversation-header .bot-heading { visibility:hidden; }
 html[data-kindred-ios][data-ios-duo-inner=true][data-ios-toolbar-identity=true] .bot-center-heading { padding-top:calc(8px + var(--ios-safe-top,0px)); }
 
