@@ -1,5 +1,5 @@
 // Device-local preferences. Recording begins only after an explicit microphone click.
-export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasFiles,notice,icon}) {
+export function createDictationUI({editor,send,composer,nativeInvoke,api,chatId,hasFiles,notice,icon,openrouterConfigured=()=>false,accountId=()=> 'legacy'}) {
   const nativeAvailable=()=>window.__KINDRED_NATIVE_DICTATION===true&&window.__KINDRED_DESKTOP?.platform==='macos';
   const iosCapability=()=>window.__KINDRED_IOS_DICTATION;
   const iosAvailable=()=>iosCapability()?.supported===true&&iosCapability()?.protocolVersion===1&&iosCapability()?.engine==='apple-on-device'&&iosCapability()?.onDeviceOnly===true&&typeof iosCapability()?.documentID==='string'&&iosCapability().documentID.length>0&&iosCapability().documentID.length<=128&&!!window.webkit?.messageHandlers?.kindredDictation;
@@ -8,8 +8,31 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   if(iosAvailable())preferences.model='ios';
   if(typeof preferences.microphone!=='string'||preferences.microphone.length>512)preferences.microphone='default';
   if(preferences.model && !preferences.model.startsWith('local:') && !(preferences.model==='native'&&nativeAvailable()) && !(preferences.model==='ios'&&iosAvailable())){preferences.enabled=false;preferences.model='';}
-  const usesIOS=()=>preferences.model==='ios'&&iosAvailable();
-  const usesNative=()=>preferences.model==='native'&&nativeAvailable();
+  let cloud={selected:false,enabled:false,model:''},cloudScope='',cloudModels=[],cloudLoading=false,cloudError='',cloudRevision=0,cloudRequest=null;
+  const usesCloud=()=>cloud.selected;
+  const isEnabled=()=>usesCloud()?cloud.enabled:preferences.enabled;
+  const usesIOS=()=>!usesCloud()&&preferences.model==='ios'&&iosAvailable();
+  const usesNative=()=>!usesCloud()&&preferences.model==='native'&&nativeAvailable();
+  const cloudKey=()=>`kindred-openrouter-dictation-v1:${accountId()}`;
+  function loadCloud(){
+    if(cloudScope===cloudKey())return;
+    cloudScope=cloudKey();cloudRevision++;cloudModels=[];cloudError='';cloudLoading=false;
+    cloud={selected:false,enabled:false,model:''};
+    try{const value=JSON.parse(localStorage.getItem(cloudScope)||'null');if(value&&typeof value.selected==='boolean'&&typeof value.enabled==='boolean'&&typeof value.model==='string'&&value.model.length<=256)cloud=value;}catch{}
+  }
+  const saveCloud=()=>localStorage.setItem(cloudScope,JSON.stringify(cloud));
+  async function loadCloudModels(){
+    if(cloudLoading||!openrouterConfigured()||!api)return;
+    const revision=cloudRevision;cloudLoading=true;cloudError='';render();
+    try{
+      const value=await api('/dictation/openrouter/models');
+      if(revision!==cloudRevision)return;
+      cloudModels=(Array.isArray(value.data)?value.data:[]).filter(m=>typeof m?.id==='string'&&typeof m?.name==='string');
+      if(value.configured===false)cloudError='Connect your OpenRouter key in Connections.';
+      else if(!cloudModels.length)cloudError='No transcription models are available. Try refreshing.';
+    }catch(error){if(revision===cloudRevision)cloudError=error.status===404?'Update your Kindred server to use OpenRouter dictation.':error.message||'Could not load dictation models.';}
+    finally{if(revision===cloudRevision){cloudLoading=false;render();}}
+  }
   const available=()=>window.__KINDRED_DICTATION_MODELS===true;
   const modelCatalogue=[['whistle','Whistle',16919407],['base','Base',59707625],['small','Small',190085487],['medium','Medium',539212467],['large-v3-turbo','Large v3 Turbo',574041195],['large-v3','Large v3',1081140203]];
   let settingsEvents=null,renderedStop=null;
@@ -89,7 +112,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   function render(){
     if(iosOperation&&iosOperation.chat!==chatId())endIOS('cancel',true);
     if(usesIOS()&&iosChat!==chatId()){iosChat=chatId();iosMessage('context');}
-    const active=phase!=='idle',text=!!editor.value?.trim()||hasFiles(),enabled=preferences.enabled&&(preferences.model!=='ios'||iosAvailable()&&iosCapability().onDeviceAvailable===true),primary=enabled&&!(iosOperation?iosOperation.content:text);
+    const active=phase!=='idle',text=!!editor.value?.trim()||hasFiles(),enabled=isEnabled()&&(usesCloud()?openrouterConfigured()&&!!cloud.model:preferences.model!=='ios'||iosAvailable()&&iosCapability().onDeviceAvailable===true),primary=enabled&&!(iosOperation?iosOperation.content:text);
     const renderKey=JSON.stringify([enabled,text,phase,!!inflight,!!iosOperation?.content]);
     if(renderKey===renderedComposerState){if(settings?.isConnected)renderSettingsStatus();return;}
     renderedComposerState=renderKey;
@@ -100,7 +123,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     const stopping=phase==='recording'||!!iosOperation&&phase==='finishing';
     // Status polling must not replace the SVG between pointer-down and pointer-up.
     if(renderedStop!==stopping){mic.replaceChildren(microphone(stopping));renderedStop=stopping;}
-    status.hidden=!active;statusLabel.textContent=phase==='recording'?(usesIOS()?'Listening':inflight?'Listening · transcribing speech…':'Listening · live dictation'):phase==='starting'?'Opening microphone…':phase==='finishing'?(usesIOS()?'Finishing…':'Finishing transcription…'):'';elapsed.hidden=!iosOperation||phase!=='recording';cancelButton.hidden=!active;
+    status.hidden=!active;statusLabel.textContent=phase==='recording'?(usesIOS()||usesCloud()?'Listening':inflight?'Listening · transcribing speech…':'Listening · live dictation'):phase==='starting'?'Opening microphone…':phase==='finishing'?(usesIOS()?'Finishing…':'Finishing transcription…'):'';elapsed.hidden=!iosOperation||phase!=='recording';cancelButton.hidden=!active;
     if(settings?.isConnected)renderSettingsStatus();
   }
   function microphone(stop=false){
@@ -112,6 +135,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     const closing=context;context=null;if(closing&&closing.state!=='closed')await deviceReply(closing.close(),'Audio cleanup timed out.',1500).catch(()=>{});
   }
   async function cancel(){
+    cloudRequest?.abort();cloudRequest=null;
     if(iosOperation){endIOS('cancel',true);return;}
     generation++;phase='idle';chunks=[];samples=0;clearTimeout(liveTimer);liveTimer=null;
     if(session?.span?.isConnected){session.span.remove();editor.dispatchEvent(new Event('input',{bubbles:true}));}
@@ -131,7 +155,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     session={generation:thisGeneration,conversation,span,leading:before.toString()&&!/\s$/.test(before.toString())?' ':'',trailing:after.toString()&&!/^\s/.test(after.toString())?' ':'',committed:'',current:'',text:''};
   }
   function showTranscript(text,thisGeneration){
-    if(thisGeneration!==generation||session?.generation!==thisGeneration||session.conversation!==chatId()||!preferences.enabled||!session.span.isConnected)return;
+    if(thisGeneration!==generation||session?.generation!==thisGeneration||session.conversation!==chatId()||!isEnabled()||!session.span.isConnected)return;
     text=(text||'').trim();if(!text||text===session.current)return;
     session.current=text;text=session.text=[session.committed,text].filter(Boolean).join(' ');writingTranscript=true;session.span.textContent=session.leading+text+session.trailing;editor.dispatchEvent(new Event('input',{bubbles:true}));writingTranscript=false;
     // Follow the dictated words inside the editor, including WebKit's scrollable
@@ -212,18 +236,18 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
   }
   function watchNative(){
     clearInterval(poll);poll=null;
-    if(preferences.enabled&&available()&&!usesNative()){
+    if(preferences.enabled&&available()&&!usesNative()&&!usesCloud()){
       let busy=false;poll=setInterval(async()=>{if(busy)return;busy=true;try{await refreshNative();}catch{}finally{busy=false;}},700);
     }
   }
   async function configure(){
     if(usesIOS()){await cancel();iosMessage('context');iosMessage('status');render();return;}
     await cancel();
-    if(available())native=await nativeInvoke('configure_dictation',{enabled:preferences.enabled&&!usesNative(),modelName:usesNative()?'':preferences.model.replace(/^local:/,'')});
+    if(available())native=await nativeInvoke('configure_dictation',{enabled:preferences.enabled&&!usesNative()&&!usesCloud(),modelName:usesNative()||usesCloud()?'':preferences.model.replace(/^local:/,'')});
     watchNative();render();
   }
   async function start(){
-    if(!preferences.enabled||!chatId()||phase!=='idle')return;
+    if(!isEnabled()||!chatId()||phase!=='idle')return;
     const thisGeneration=++generation;phase='starting';if(!usesIOS())render();let stage='model';
     try {
       if(usesIOS()){
@@ -239,10 +263,15 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
         if(thisGeneration===generation){phase='idle';render();}
         return;
       }
-      if(!available())throw new Error('Update the desktop app to use local dictation.');
-      native=await deviceReply(nativeInvoke('dictation_status'),'The speech worker did not respond. Try again.',5000);
-      if(thisGeneration!==generation||!preferences.enabled)return;
-      if(native.phase!=='ready')throw new Error(native.error||(native.phase==='loading'?'Your dictation model is loading.':'Download and load a dictation model in General settings.'));
+      if(usesCloud()){
+        if(!openrouterConfigured())throw new Error('Connect your OpenRouter key in Connections.');
+        if(!cloud.model)throw new Error('Choose an OpenRouter dictation model in General settings.');
+      }else{
+        if(!available())throw new Error('Update the desktop app to use local dictation.');
+        native=await deviceReply(nativeInvoke('dictation_status'),'The speech worker did not respond. Try again.',5000);
+        if(thisGeneration!==generation||!preferences.enabled)return;
+        if(native.phase!=='ready')throw new Error(native.error||(native.phase==='loading'?'Your dictation model is loading.':'Download and load a dictation model in General settings.'));
+      }
       if(!navigator.mediaDevices?.getUserMedia)throw new Error(window.__KINDRED_DESKTOP
         ? 'This desktop build cannot access the microphone. Update Kindred to a build with microphone capture support. Your downloaded Whisper models will be kept.'
         : !window.isSecureContext?'Microphone access requires a secure connection. Open Kindred over HTTPS or localhost.'
@@ -263,7 +292,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
         for(let i=0;i<chunk.length;i+=frame){const end=Math.min(chunk.length,i+frame);let energy=0;for(let j=i;j<end;j++)energy+=chunk[j]*chunk[j];if(energy/(end-i)>=0.0000004){if(lastAudibleSample&&samples+i-lastAudibleSample>=rate*pauseSeconds)pauses.push(lastAudibleSample);lastAudibleSample=samples+end;}}
         chunks.push(chunk);samples+=chunk.length;if(remaining<=data.length)void stop().catch(fail);
       };
-      source.connect(processor);processor.connect(mute);mute.connect(context.destination);lastDecodedSpeech=0;lastAudibleSample=0;resetSegments();decodeDuration=0;lastRequestAt=performance.now();beginTranscript(chatId(),thisGeneration);phase='recording';render();scheduleLive(thisGeneration);timer=setTimeout(()=>void stop().catch(fail),60000);
+      source.connect(processor);processor.connect(mute);mute.connect(context.destination);lastDecodedSpeech=0;lastAudibleSample=0;resetSegments();decodeDuration=0;lastRequestAt=performance.now();beginTranscript(chatId(),thisGeneration);phase='recording';render();if(!usesCloud())scheduleLive(thisGeneration);timer=setTimeout(()=>void stop().catch(fail),60000);
     }catch(e){if(thisGeneration===generation){await cancel();throw new Error(e.name==='NotAllowedError'?'Microphone access was not allowed. Try again and allow it when prompted, or check microphone permissions in your device or browser settings.':['NotFoundError','OverconstrainedError'].includes(e.name)?'The selected microphone is unavailable. Choose another microphone or System Default in General settings.':stage==='audio'?'Microphone access was allowed, but the audio engine could not start. '+(window.__KINDRED_DESKTOP?.platform==='linux'?'Check the Linux GStreamer audio plugins and your output device. ':'Check your input and output devices. ')+(e.message?'Details: '+e.message.slice(0,200):'Then retry.'):e.message||'The microphone could not start.');}}
   }
   async function stop(){
@@ -276,6 +305,21 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     // committed an utterance and moved the boundary.
     const pending=inflight;
     phase='finishing';void release();render();
+    if(usesCloud()){
+      // One paid transcription per recording, after Stop. No repeated previews,
+      // automatic retries, or intermediate phrases replacing earlier speech.
+      const controller=new AbortController();cloudRequest=controller;
+      try{
+        if(lastAudibleSample){
+          const audio=encodeWav(chunks,rate);
+          const result=await api('/dictation/openrouter/transcribe','POST',{model:cloud.model,audio},{signal:controller.signal,timeoutMs:90000});
+          if(thisGeneration===generation)showTranscript(result.text,thisGeneration);
+        }
+        if(thisGeneration===generation)finishTranscript();
+      }catch(error){if(thisGeneration===generation){finishTranscript(false);notice(error.status===404?'Update your Kindred server to use OpenRouter dictation.':error.message||'Transcription failed. Your draft was kept.',true);}}
+      finally{if(thisGeneration===generation)await cancel();}
+      return;
+    }
     try{
       await deviceReply((async()=>{
         // A failed live preview must not skip the final captured words. The final
@@ -306,10 +350,31 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     const range=selection.getRangeAt(0);if(session?.span?.isConnected&&range.intersectsNode(session.span))endIOS('cancel',false,false);
   });
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&iosOperation){endIOS('cancel');notice('Dictation stopped. The words so far were kept.');}});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&usesCloud()&&phase!=='idle')void cancel();});
   composer.addEventListener('submit',event=>{if(phase!=='idle'){event.preventDefault();event.stopImmediatePropagation();}},true);
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&phase!=='idle'){event.preventDefault();void cancel();}});
   window.addEventListener('pagehide',()=>{void cancel();clearInterval(poll);if(available())void nativeInvoke('configure_dictation',{enabled:false,modelName:''}).catch(()=>{});});
   function renderSettingsStatus(){
+    const sourceRow=settings.querySelector('.dictation-source-row'),sourcePicker=settings.querySelector('.dictation-source');
+    sourceRow.hidden=!openrouterConfigured()&&!usesCloud();sourcePicker.value=usesCloud()?'openrouter':'local';sourcePicker.options[1].disabled=!openrouterConfigured();
+    const cloudRow=settings.querySelector('.dictation-cloud-row'),cloudPicker=settings.querySelector('.dictation-cloud-model');
+    cloudRow.hidden=!usesCloud()||!cloud.enabled;
+    settings.querySelector('input[role=switch]').disabled=false;
+    settings.querySelector('input[role=switch]').checked=isEnabled();
+    if(usesCloud()){
+      settings.querySelector('.dictation-model-row').hidden=true;settings.querySelector('.dictation-progress').hidden=true;
+      const fingerprint=JSON.stringify([cloud.model,cloudLoading,cloudModels]);
+      if(cloudPicker.dataset.catalog!==fingerprint){
+        cloudPicker.dataset.catalog=fingerprint;cloudPicker.replaceChildren(new Option(cloudLoading?'Loading models…':'Choose a model',''));
+        for(const model of cloudModels)cloudPicker.append(new Option(model.name,model.id));
+        if(cloud.model&&!cloudModels.some(m=>m.id===cloud.model))cloudPicker.append(new Option(cloud.model+(cloudLoading?'':' · unavailable'),cloud.model));
+        cloudPicker.value=cloud.model;
+      }
+      cloudPicker.disabled=cloudLoading||!openrouterConfigured();settings.querySelector('.dictation-cloud-refresh').disabled=cloudLoading||!openrouterConfigured();
+      const detail=settings.querySelector('.dictation-detail');detail.hidden=false;
+      detail.textContent=!openrouterConfigured()?'Connect your OpenRouter key in Connections.':cloudError||'Audio is sent to OpenRouter when you stop. Uses your API credits.';
+      return;
+    }
     if(preferences.model==='ios'){
       settings.querySelector('.dictation-model-row').hidden=true;settings.querySelector('.dictation-progress').hidden=true;
       const detail=settings.querySelector('.dictation-detail');detail.hidden=!preferences.enabled;
@@ -383,7 +448,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
         const options=[new Option('System Default','default')],inputs=devices.filter(d=>d.kind==='audioinput'&&d.deviceId&&d.deviceId!=='default');
         for(const [index,device] of inputs.entries())options.push(new Option(device.label||'Microphone '+(index+1),device.deviceId));
         if(preferences.microphone!=='default'&&!inputs.some(d=>d.deviceId===preferences.microphone))options.push(new Option('Saved microphone · unavailable',preferences.microphone));
-        if(preferences.enabled&&navigator.mediaDevices?.getUserMedia&&!inputs.some(d=>d.label))options.push(new Option('Choose a microphone…','__permission__'));
+        if(isEnabled()&&navigator.mediaDevices?.getUserMedia&&!inputs.some(d=>d.label))options.push(new Option('Choose a microphone…','__permission__'));
         input.replaceChildren(...options);input.value=preferences.microphone;input.disabled=!navigator.mediaDevices?.getUserMedia;hint.hidden=true;
       }catch(e){if(row.isConnected){hint.textContent=e.message;hint.hidden=false;retry.hidden=false;}}
       finally{refreshing=false;retry.disabled=false;}
@@ -391,7 +456,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     retry.onclick=()=>void refresh();
     input.onchange=async()=>{
       if(input.value==='__permission__'){
-        if(!preferences.enabled){await refresh();return;}
+        if(!isEnabled()){await refresh();return;}
         input.disabled=true;try{const permission=await navigator.mediaDevices.getUserMedia({audio:true,video:false});permission.getTracks().forEach(t=>t.stop());}catch(e){notice(e.name==='NotAllowedError'?'Microphone permission was denied. You can still use System Default after allowing access.':e.message,true);}finally{input.disabled=false;await refresh();}return;
       }
       preferences.microphone=input.value;save();await cancel();
@@ -401,6 +466,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     return row;
   }
   function settingsSection(){
+    loadCloud();
     settingsEvents?.abort();settingsEvents=new AbortController();
     const root=document.createElement('section');root.className='settings-section organized-settings dictation-settings';settings=root;const pane=document.createElement('div');pane.className='settings-pane';
     const heading=document.createElement('h3');heading.textContent='Dictation';
@@ -444,17 +510,27 @@ export function createDictationUI({editor,send,composer,nativeInvoke,chatId,hasF
     control.append(picker,menu,engine);modelRow.append(modelLabel,control);
     const detail=document.createElement('p');detail.className='muted small dictation-detail';
     const progress=document.createElement('progress');progress.className='dictation-progress';progress.max=100;progress.hidden=true;progress.setAttribute('aria-label','Dictation model download');
-    pane.append(label,modelRow,detail,progress);root.append(heading,pane);
-    toggle.onchange=async()=>{preferences.enabled=toggle.checked;save();close();try{await configure();}catch(e){fail(e);}renderSettingsStatus();};
+    const sourceRow=document.createElement('label');sourceRow.className='setting-row dictation-source-row';sourceRow.append(document.createTextNode('Transcription'));
+    const sourcePicker=document.createElement('select');sourcePicker.className='dictation-source';sourcePicker.setAttribute('aria-label','Transcription provider');
+    sourcePicker.append(new Option(iosAvailable()?'On this iPhone':'On device','local'),new Option('OpenRouter','openrouter'));sourceRow.append(sourcePicker);
+    sourcePicker.onchange=async()=>{const wasEnabled=isEnabled();cloud.selected=sourcePicker.value==='openrouter';if(cloud.selected)cloud.enabled=wasEnabled;saveCloud();close();try{await configure();}catch(e){fail(e);}if(usesCloud()&&!cloudModels.length)void loadCloudModels();};
+    const cloudRow=document.createElement('div');cloudRow.className='setting-row dictation-cloud-row';cloudRow.append(document.createTextNode('Model'));
+    const cloudControl=document.createElement('div');cloudControl.className='microphone-picker';
+    const cloudPicker=document.createElement('select');cloudPicker.className='dictation-cloud-model';cloudPicker.setAttribute('aria-label','OpenRouter dictation model');
+    cloudPicker.onchange=async()=>{cloud.model=cloudPicker.value;saveCloud();try{await configure();}catch(e){fail(e);}};
+    const cloudRefresh=document.createElement('button');cloudRefresh.type='button';cloudRefresh.className='icon-button dictation-cloud-refresh';cloudRefresh.setAttribute('aria-label','Refresh dictation models');cloudRefresh.append(icon('refresh'));cloudRefresh.onclick=()=>void loadCloudModels();
+    cloudControl.append(cloudRefresh,cloudPicker);cloudRow.append(cloudControl);
+    pane.append(label,sourceRow,modelRow,cloudRow,detail,progress);root.append(heading,pane);
+    toggle.onchange=async()=>{if(usesCloud()){cloud.enabled=toggle.checked;saveCloud();}else{preferences.enabled=toggle.checked;save();}close();try{await configure();}catch(e){fail(e);}renderSettingsStatus();};
     const statusMessage=document.createElement('p');statusMessage.className='muted small';statusMessage.hidden=true;
     const retry=document.createElement('button');retry.type='button';retry.className='subtle-button';retry.textContent='Retry dictation status';retry.hidden=true;pane.append(statusMessage,retry);
     const check=async()=>{retry.hidden=true;try{
       const value=await deviceReply(nativeInvoke('dictation_status'),'Dictation did not respond. Other settings are still available.');
       if(settings!==root||!root.isConnected)return;native=value;statusMessage.hidden=true;renderSettingsStatus();
     }catch(e){if(settings===root&&root.isConnected){statusMessage.textContent=e.message;statusMessage.hidden=false;retry.hidden=false;}}};
-    retry.onclick=()=>void check();renderSettingsStatus();if(available())void check();return root;
+    retry.onclick=()=>void check();renderSettingsStatus();if(available()&&!usesCloud())void check();if(usesCloud())void loadCloudModels();return root;
   }
-  render();return {init:()=>configure().catch(fail),cancel,render,settingsSection,microphoneControl};
+  render();return {init:()=>{loadCloud();return configure().catch(fail);},cancel,render,settingsSection,microphoneControl};
 }
 
 export function encodeWav(chunks,rate){

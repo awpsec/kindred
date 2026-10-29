@@ -9631,7 +9631,7 @@ initDesktopChrome();
 initPaneResizing();
 
 new MutationObserver(()=>{if(questionComposerMode())syncQuestionComposer();}).observe($('send'),{attributes:true,attributeFilter:['disabled']});
-dictationUI=createDictationUI({editor:$("prompt"),send:$("send"),composer:$("composer"),api,nativeInvoke,chatId:composerChatId,hasFiles:()=>!!pendingFiles.get(composerChatId())?.length,notice,icon});
+dictationUI=createDictationUI({editor:$("prompt"),send:$("send"),composer:$("composer"),api,nativeInvoke,chatId:composerChatId,hasFiles:()=>!!pendingFiles.get(composerChatId())?.length,notice,icon,openrouterConfigured:()=>state.connections?.openrouter_configured===true,accountId:()=>{try{return JSON.parse(sessionStorage.getItem('kindred-signin-identity')||'{}').profileId||window.__KINDRED_INITIAL_PROFILE||'legacy';}catch{return 'legacy';}}});
 
 function workflowOptions(chatId,panel){return {
  onReady:animateWorkflowDetails,
