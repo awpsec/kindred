@@ -9,7 +9,7 @@ class ComposerEvidenceTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.exports = dict(summary=0, tests=0, attachments=0)
-        self.summary = dict(totalTestCount=8, passedTests=8, failedTests=0)
+        self.summary = dict(totalTestCount=9, passedTests=9, failedTests=0)
         self.tree = {'testNodes': [{'nodeType':'Test Case', 'nodeIdentifier': key, 'result':'Passed'} for key in set(m.COMPOSER_PHASES) | m.DICTATION_METHODS]}
         self.manifest = []
         for key, phases in m.COMPOSER_PHASES.items():
@@ -33,7 +33,7 @@ class ComposerEvidenceTests(unittest.TestCase):
         self.decoder = patch.object(m.subprocess,'check_output',return_value='pixelWidth: 400\npixelHeight: 900\n'); self.decoder.start(); self.addCleanup(self.decoder.stop)
     def save(self): (self.root/'manifest.json').write_text(json.dumps(self.manifest))
     def validate(self): return m.validate_composer_evidence(self.exports,self.summary,self.tree,self.root)
-    def test_complete_synthetic_evidence(self): self.assertEqual(self.validate(),8)
+    def test_complete_synthetic_evidence(self): self.assertEqual(self.validate(),9)
     def test_missing_send_matrix_metadata(self):
         self.manifest[0]['attachments'] = [r for r in self.manifest[0]['attachments'] if not r['suggestedHumanReadableName'].startswith('send-')];self.save()
         with self.assertRaises(AssertionError):self.validate()

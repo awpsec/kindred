@@ -39,6 +39,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
         var speechPermission: () async -> SFSpeechRecognizerAuthorizationStatus? = { .authorized }
         var microphonePermission: () async -> Bool? = { true }
         var foreground: () -> Bool = { true }
+        var voiceCallActive: () -> Bool = { false }
         var support: Bool = true
         var available: Bool = true
         var capture: ((DictationOperation) throws -> Void)?
@@ -50,6 +51,12 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
         if let testHooks { return testHooks.foreground() }
         #endif
         return UIApplication.shared.applicationState == .active
+    }
+    private var voiceCallActive: Bool {
+        #if DEBUG
+        if let testHooks { return testHooks.voiceCallActive() }
+        #endif
+        return NativeVoiceCall.shared.isActive
     }
     private func authorizeSpeech() async -> SFSpeechRecognizerAuthorizationStatus? {
         #if DEBUG
@@ -114,6 +121,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
         #if DEBUG
         captureStatistics.withLock { $0 = CaptureStatistics() }
         #endif
+        guard !voiceCallActive else { fail("voice-call-active", operation); return }
         guard onDeviceAvailable else { fail("on-device-unavailable", operation); return }
         guard recognizerAvailable else { fail("recognizer-unavailable", operation); return }
         phase = "authorizing"; send("authorizing", operation)
@@ -142,6 +150,7 @@ final class NativeDictation: NSObject, SFSpeechRecognizerDelegate {
             guard self.foreground else { self.fail("not-foreground", operation); return }
             guard self.onDeviceAvailable else { self.fail("on-device-unavailable", operation); return }
             guard self.recognizerAvailable else { self.fail("recognizer-unavailable", operation); return }
+            guard !self.voiceCallActive else { self.fail("voice-call-active", operation); return }
             do { try self.capture(operation) } catch { self.fail("audio-start-failed", operation) }
         }
     }

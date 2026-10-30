@@ -157,6 +157,68 @@ final class NativeDictationTests: XCTestCase {
         service.acceptRecognition(text: "old result", final: true, failed: false, operation: old)
         XCTAssertTrue(events.isEmpty); XCTAssertEqual(service.operation?.chatID, "other-chat")
     }
+    func testVoiceCallOwnsCaptureAcrossPermissionAndCancellation() async throws {
+        let call = NativeVoiceCall(), service = NativeDictation(), owner = UUID()
+        let origin = URL(string: "https://voice-fixture.invalid")!
+        var permissions: [Int: CheckedContinuation<Bool, Never>] = [:]
+        var requests = 0, captures = 0, dictationPermissions = 0
+        var speechPermission: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus?, Never>?
+        defer {
+            call.end(owner: owner); service.tearDown()
+            for continuation in permissions.values { continuation.resume(returning: false) }
+            speechPermission?.resume(returning: .denied)
+        }
+        var callHooks = NativeVoiceCall.TestHooks()
+        callHooks.microphonePermission = {
+            requests += 1
+            let request = requests
+            return await withCheckedContinuation { permissions[request] = $0 }
+        }
+        call.testHooks = callHooks
+        var hooks = NativeDictation.TestHooks()
+        hooks.voiceCallActive = { call.isActive }
+        hooks.microphonePermission = { dictationPermissions += 1; return true }
+        hooks.capture = { _ in captures += 1 }
+        service.testHooks = hooks
+        var events: [[String: Any]] = []; service.emit = { events.append($0) }
+        let old = UUID().uuidString, current = UUID().uuidString
+        func startCall(_ id: String) {
+            call.start(id: id, owner: owner, origin: origin, ticket: String(repeating: "a", count: 64),
+                       name: "Piper", shape: "round", color: "#2475ff", emit: { _ in })
+        }
+        startCall(old)
+        try await wait { permissions[1] != nil }
+        XCTAssertTrue(call.isActive, "A connecting call reserves capture before permission returns")
+        start(service)
+        XCTAssertEqual(events.last?["errorCode"] as? String, "voice-call-active")
+        XCTAssertEqual(dictationPermissions, 0); XCTAssertEqual(captures, 0)
+        XCTAssertNil(service.operation)
+        call.end(id: old)
+        XCTAssertFalse(call.isActive)
+        XCTAssertEqual(call.snapshot(owner: owner, id: old)?["type"] as? String, "ended")
+        XCTAssertNil(call.snapshot(owner: UUID(), id: old), "Call state stays with its account")
+
+        // A previously queued dictation permission may finish after voice starts.
+        hooks.speechPermission = { await withCheckedContinuation { speechPermission = $0 } }
+        service.testHooks = hooks
+        start(service); try await wait { speechPermission != nil }
+        startCall(current); try await wait { permissions[2] != nil }
+        permissions.removeValue(forKey: 1)?.resume(returning: true)
+        speechPermission?.resume(returning: .authorized); speechPermission = nil
+        try await wait { service.operation == nil }
+        XCTAssertEqual(events.last?["errorCode"] as? String, "voice-call-active")
+        XCTAssertEqual(captures, 0, "Late dictation authorization cannot take the call's microphone")
+        call.end(id: old); call.setMuted(id: old, value: true)
+        XCTAssertTrue(call.owns(owner: owner, id: current), "Old permission and activity actions cannot affect the new call")
+        XCTAssertNil(call.snapshot(owner: owner, id: current), "Still authorizing; the cancelled call did not open a socket")
+        permissions.removeValue(forKey: 2)?.resume(returning: false)
+        try await wait { !call.isActive }
+        XCTAssertEqual(call.snapshot(owner: owner, id: current)?["type"] as? String, "error")
+
+        hooks.speechPermission = { .authorized }; service.testHooks = hooks
+        start(service); try await wait { service.phase == "recording" }
+        XCTAssertEqual(captures, 1, "Permission denial releases the reservation for the next dictation")
+    }
     func testStopFallbackAndBackgroundPreserveLastPreview() async throws {
         let service = NativeDictation(); defer { service.tearDown() }
         service.testHooks = NativeDictation.TestHooks()

@@ -89,6 +89,7 @@ DICTATION_METHODS = {
         'testCumulativePartialsFinalAndDuplicateFinal',
         'testPermissionDenialAndUnsupportedDoNotCapture',
         'testCancelledPermissionCannotStartOrEnterNewChat',
+        'testVoiceCallOwnsCaptureAcrossPermissionAndCancellation',
         'testStopFallbackAndBackgroundPreserveLastPreview',
         'testErrorLimitAndAudioFailureNeverReplay')
 

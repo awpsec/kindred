@@ -25,6 +25,30 @@ final class NativeVoiceCall: NSObject {
     private var serialSend: Task<Void, Never>?
     private var lastSpeakingNotice = Date.distantPast
     private var lastEvent: (owner: UUID, id: String, payload: [String: Any])?
+    // Reserve capture before asking permission. A queued dictation Start must
+    // not open another audio engine while the call is connecting or draining.
+    var isActive: Bool { id != nil }
+    #if DEBUG
+    struct TestHooks {
+        var microphonePermission: () async -> Bool = { false }
+        var foreground: () -> Bool = { true }
+    }
+    var testHooks: TestHooks?
+    #endif
+    private var foreground: Bool {
+        #if DEBUG
+        if let testHooks { return testHooks.foreground() }
+        #endif
+        return UIApplication.shared.applicationState == .active
+    }
+    private func authorizeMicrophone() async -> Bool {
+        #if DEBUG
+        if let testHooks { return await testHooks.microphonePermission() }
+        #endif
+        return await withCheckedContinuation { continuation in
+            AVAudioSession.sharedInstance().requestRecordPermission { continuation.resume(returning: $0) }
+        }
+    }
 
     override init() {
         super.init()
@@ -37,7 +61,7 @@ final class NativeVoiceCall: NSObject {
     func start(id: String, owner: UUID, origin: URL, ticket: String, name: String, shape: String, color: String, emit: @escaping ([String: Any]) -> Void) {
         guard self.id == nil, UUID(uuidString: id) != nil,
               ticket.count == 64, ticket.allSatisfy({ $0.isHexDigit }),
-              UIApplication.shared.applicationState == .active else { return }
+              foreground else { return }
         self.id = id; self.owner = owner; self.emit = emit; ending = false; ready = false; muted = false; lastSpeakingNotice = .distantPast
         deadline = Task { [weak self] in
             try? await Task.sleep(for: .seconds(25))
@@ -45,9 +69,7 @@ final class NativeVoiceCall: NSObject {
             self?.fail(id: id, message: "The call did not connect. Try again.")
         }
         receiveTask = Task { [weak self] in
-            let allowed = await withCheckedContinuation { continuation in
-                AVAudioSession.sharedInstance().requestRecordPermission { continuation.resume(returning: $0) }
-            }
+            let allowed = await self?.authorizeMicrophone() ?? false
             guard let self, self.id == id, !self.ending else { return }
             guard allowed else { self.fail(id: id, message: "Allow microphone access in Settings to make a call."); return }
             do {

@@ -7,7 +7,7 @@ class AppearanceEvidenceTests(unittest.TestCase):
  def setUp(self):
   self.fixture=composer_fixture.ComposerEvidenceTests();self.fixture.setUp();self.addCleanup(self.fixture.doCleanups)
   self.root=self.fixture.root;self.manifest=self.fixture.manifest
-  self.summary=dict(totalTestCount=10,passedTests=10,failedTests=0)
+  self.summary=dict(totalTestCount=11,passedTests=11,failedTests=0)
   self.tree=copy.deepcopy(self.fixture.tree)
   for method,phases in m.APPEARANCE_PHASES.items():
    self.tree['testNodes'].append(dict(nodeType='Test Case',nodeIdentifier=method,result='Passed'));rows=[]
@@ -85,7 +85,7 @@ class AppearanceEvidenceTests(unittest.TestCase):
  def test_wrong_forbidden_query_source(self):
   self.mutate('forbiddenAdministratorQuery',dict(predicate="label CONTAINS[c] 'administrator'",source='expected test labels',count=0),'accounts-light-default-signedOut')
   with self.assertRaises(AssertionError):self.validate()
- def test_complete_77pairs_10methods(self):self.assertEqual(self.validate(),10)
+ def test_complete_77pairs_11methods(self):self.assertEqual(self.validate(),11)
  def test_missing_method(self):
   self.tree['testNodes'].pop()
   with self.assertRaises(AssertionError):self.validate()
@@ -142,7 +142,7 @@ class AppearanceEvidenceTests(unittest.TestCase):
  def test_wrong_observed_role(self):
   self.mutate('role','owner')
   with self.assertRaises(AssertionError):self.validate()
- def test_release_ui_main_selects10methods_and_fails_without_xcresult(self):self.check_main_scope('release-ui')
+ def test_release_ui_main_selects11methods_and_fails_without_xcresult(self):self.check_main_scope('release-ui')
  def test_keyboard_diagnostic_main_selects_only4_and480(self):self.check_main_scope('keyboard-ownership')
  def check_main_scope(self,scope):
   self.device={'udid':'selected-only','state':'Booted'}; root=self.root/'repo';(root/'mobile/ios/KindredCompanionTests').mkdir(parents=True)
@@ -183,7 +183,7 @@ class AppearanceEvidenceTests(unittest.TestCase):
   row=json.loads((out/'test-receipt.json').read_text());self.assertFalse(row['passed']);self.assertNotIn('native_test_count',row)
   if scope=='keyboard-ownership':
    self.assertTrue(row['diagnostic_only']);self.assertFalse(row['release_passed']);self.assertEqual(row['required_native_phases'],4);self.assertEqual(len(row['required_methods']),4);self.assertEqual(len([x for x in captured[-1] if x.startswith('-only-testing:')]),4);return
-  self.assertFalse(row['real_Apple_recognition_selected']);self.assertEqual(row['required_native_phases'],77);self.assertEqual(len(row['required_methods']),10);self.assertEqual(row['required_appearance_pairs'],24)
+  self.assertFalse(row['real_Apple_recognition_selected']);self.assertEqual(row['required_native_phases'],77);self.assertEqual(len(row['required_methods']),11);self.assertEqual(row['required_appearance_pairs'],24)
   self.assertIn('-only-testing:KindredCompanionUITests/AccountsAppearanceUIKitTests',captured[-1])
 
 if __name__=='__main__':unittest.main()
