@@ -11,7 +11,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [full, composer, release-ui, keyboard-ownership]
+        options: [full, composer, release-ui, keyboard-ownership, host-diagnostics]
       approve_runner_usage:
         description: 'Approve this one unsigned simulator job, maximum 20 minutes; no automatic retry.'
         required: true
@@ -76,7 +76,13 @@ jobs:
           result.update(xcode=subprocess.check_output(['xcodebuild','-version'],text=True),developer_directory=developer,sdk_identity=subprocess.check_output(['xcodebuild','-showsdks'],text=True),selected_sdk='.'.join(map(str,version)))
           Path('ios-validation/environment.json').write_text(json.dumps(result,indent=2)+'\n')
           PY
+      - name: Discover simulator host applications and resolved tools
+        if: ${{ inputs.validation_scope == 'host-diagnostics' }}
+        timeout-minutes: 3
+        shell: bash
+        run: python3 .ios-release-tools/scripts/release/diagnose-ios-host.py
       - name: Generate the existing iOS project
+        if: ${{ inputs.validation_scope != 'host-diagnostics' }}
         shell: bash
         run: |
           command -v xcodegen || brew install xcodegen
@@ -84,6 +90,7 @@ jobs:
           cd mobile/ios
           xcodegen generate
       - name: Compile the app, ActivityKit extension and native tests
+        if: ${{ inputs.validation_scope != 'host-diagnostics' }}
         timeout-minutes: 5
         shell: bash
         env:
@@ -98,6 +105,7 @@ jobs:
         with:
           node-version: '22'
       - name: Run real UIKit app-hosted simulator tests once
+        if: ${{ inputs.validation_scope != 'host-diagnostics' }}
         shell: bash
         env:
           EXPECTED_SOURCE: ${{ inputs.source_commit }}
