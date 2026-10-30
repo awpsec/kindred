@@ -247,6 +247,19 @@ html[data-kindred-ios] .artifact-studio :is(.artifact-new-dialog,.artifact-metad
    choose the panes. A keyboard alone never changes that navigation choice. */
 html[data-kindred-ios] .shell { box-sizing:border-box; padding-left:var(--ios-safe-left,0px); padding-right:var(--ios-safe-right,0px); }
 html[data-kindred-ios][data-ios-duo=true] .sidebar-top { visibility:hidden; height:0; min-height:0; padding:0; overflow:hidden; }
+/* The shared safe rectangle may start below the camera. The native cover list
+   uses the full display and avoids that corner per row, so it must also release
+   the shared rectangle's explicit height (not just its top/left origin). */
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=false] .shell>.sidebar { inset:0; width:100%; height:100%; min-height:0; box-sizing:border-box; }
+html[data-kindred-ios] .sidebar #bots { min-height:0; overscroll-behavior-y:contain; }
+/* There is no centered header above the cover's call pill. Use the top lane
+   beside the camera; the retained call renderer still projects its side edges. */
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=false] .voice-call-overlay { top:max(12px,var(--ios-safe-top,0px))!important; }
+html[data-kindred-ios][data-ios-duo=true][data-ios-duo-inner=false] .conversation:has(>.voice-call-overlay>.voice-call-tray:not([hidden])) { --voice-clearance:calc(max(12px,var(--ios-safe-top,0px)) + var(--ios-voice-height,64px) + 10px)!important; }
+/* Only acknowledged UIKit controls replace the web foreground. Keep the web
+   tray's layout and call state, with no opaque backing pane beneath the glass. */
+html[data-kindred-ios] .voice-call-tray[data-ios-native-voice] { background:transparent!important; box-shadow:none!important; pointer-events:none!important; }
+html[data-kindred-ios] .voice-call-tray[data-ios-native-voice]>* { visibility:hidden!important; }
 html[data-kindred-ios][data-ios-duo=true] :is(#mobile-menu,#show-computer,#ios-computer-back,#computer-close,#details-close) { visibility:hidden; pointer-events:none; }
 html[data-kindred-ios][data-ios-duo=true] .conversation-header { position:absolute; inset:0 0 auto; height:64px; min-height:64px; padding:10px 12px; border:0; background:transparent; pointer-events:none; z-index:4; }
 html[data-kindred-ios][data-ios-duo=true] .bot-heading { position:absolute; left:50%; top:10px; transform:translateX(-50%); display:flex; flex-direction:row; align-items:center; gap:8px; min-height:44px; height:auto; padding:5px 12px 5px 8px; max-width:calc(100% - 24px); border-radius:24px; pointer-events:auto; }

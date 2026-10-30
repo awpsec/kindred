@@ -140,6 +140,12 @@ final class WebSession: NSObject {
             self.webView.callAsyncJavaScript("window.__kindredGlassControls?.perform(id, document)",
                 arguments: ["id": id, "document": document], in: nil, in: .page) { _ in }
         }
+        glassControls.activateVoice = { [weak self] action, key, document in
+            guard let self, !self.nativeNavigationBlocked, self.origin.matches(self.webView.url),
+                  self.glassControls.document == document else { return }
+            self.webView.callAsyncJavaScript("window.__kindredGlassControls?.performVoice(action, key, document)",
+                arguments: ["action": action, "key": key, "document": document], in: nil, in: .page) { _ in }
+        }
         glassControls.composer.command = { [weak self] command in
             guard let self, self.origin.matches(self.webView.url),
                   !self.nativeNavigationBlocked || (command["action"] as? String == "focus" && command["focused"] as? Bool == false),
@@ -578,6 +584,10 @@ final class WebSession: NSObject {
                !nativeNavigationBlocked,origin.matches(webView.url) {
                 if body["focused"] as? Bool == true { glassControls.composer.focus(document:document,context:context) }
                 else { glassControls.composer.blur() }
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "voice-meter" {
+                glassControls.updateVoiceMeter(body)
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "glass-controls",

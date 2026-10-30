@@ -1,0 +1,77 @@
+import XCTest
+import WebKit
+@testable import Kindred
+
+@MainActor
+final class NativeVoiceTrayTests: XCTestCase {
+    private func model(key: String = UUID().uuidString) -> [String: Any] {
+        ["key": key, "rect": [12.0,12,358,64], "avatar": [12.0,14,36,36], "activity": [58.0,18,134,28],
+         "shape": "cloud", "color": "#2475ff", "label": "Piper · 0:12", "status": "Listening…", "font": 12.0,
+         "opacity": 1.0, "dark": true, "muted": false, "showingStatus": false, "interactive": true,
+         "input": [0.0,0.4,0.7], "output": [0.1,0.3,0.1],
+         "items": ["settings","mute","end"].enumerated().map { i, id in
+             ["id": id, "label": id, "enabled": true, "rect": [Double(200+i*48),10,44,44]] as [String: Any]
+         }]
+    }
+
+    func testRejectsInvalidMeterGeometryAndActions() {
+        XCTAssertNotNil(NativeVoiceTray.Model(model()))
+        for (key, value) in [("input", [Double.nan]), ("output", [1.1]), ("input", Array(repeating: 0.2, count: 41)),
+                             ("rect", [0.0,0,Double.infinity,64]), ("avatar", [0.0,0,-1,36])] {
+            var row = model(); row[key] = value; XCTAssertNil(NativeVoiceTray.Model(row), key)
+        }
+        var row = model(); row["key"] = "stale"; XCTAssertNil(NativeVoiceTray.Model(row))
+        row = model(); var items = row["items"] as! [[String: Any]]; items[0]["id"] = "end"; row["items"] = items
+        XCTAssertNil(NativeVoiceTray.Model(row), "duplicate and unknown actions cannot reach native controls")
+    }
+
+    func testRealGlassRetainsCallAcrossResizesAndBlocksStaleTouches() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Liquid Glass requires iOS 26") }
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 951, height: 669))
+        let web = WKWebView(frame: host.bounds), chrome = NativeGlassControls(frame: host.bounds)
+        host.addSubview(web); host.addSubview(chrome)
+        let document = UUID().uuidString, key = UUID().uuidString
+        var row = model(key: key)
+        XCTAssertEqual(chrome.update(["document": document, "controls": [], "voice": row], in: web), ["voice"])
+        let tray = try XCTUnwrap(chrome.voiceTray)
+        XCTAssertEqual(tray.alpha, 0, "wait for the web foreground handoff before revealing UIKit")
+        chrome.reveal(document: document)
+        XCTAssertTrue(tray.material.effect is UIGlassEffect)
+        XCTAssertEqual(tray.backgroundColor, .clear)
+        XCTAssertEqual(tray.material.backgroundColor, .clear)
+        XCTAssertTrue(tray.buttons.values.allSatisfy { $0.superview === tray.material.contentView })
+        XCTAssertNil(chrome.hitTest(CGPoint(x: 800, y: 600), with: nil))
+        var actions: [String] = []
+        chrome.activateVoice = { action, receivedKey, doc in
+            XCTAssertEqual(doc, document); XCTAssertEqual(receivedKey, key); actions.append(action)
+        }
+        tray.buttons["mute"]?.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(actions, ["mute"])
+        row["rect"] = [40.0,90,358,64]; row["muted"] = true
+        _ = chrome.update(["document": document, "controls": [], "voice": row], in: web)
+        XCTAssertTrue(chrome.voiceTray === tray, "rotation moves the same glass surface")
+        XCTAssertEqual(tray.frame.minY, 90)
+        XCTAssertEqual(tray.buttons["mute"]?.accessibilityValue, "Muted")
+        let oldEnd = try XCTUnwrap(tray.buttons["end"])
+        _ = chrome.update(["document": document, "controls": [], "voice": model()], in: web)
+        oldEnd.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(actions, ["mute"], "an earlier call's native End touch cannot target the next call")
+        let nextTray = try XCTUnwrap(chrome.voiceTray)
+        chrome.reset(); nextTray.buttons["end"]?.sendActions(for: .primaryActionTriggered)
+        XCTAssertEqual(actions, ["mute"]); XCTAssertNil(chrome.voiceTray); XCTAssertTrue(chrome.subviews.isEmpty)
+    }
+
+    func testConnectingAndEndingStatesDisableUnavailableActions() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Liquid Glass requires iOS 26") }
+        let tray = NativeVoiceTray(); var row = model()
+        row["showingStatus"] = true; row["status"] = "Connecting…"
+        var items = row["items"] as! [[String: Any]]; items[1]["enabled"] = false; row["items"] = items
+        tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
+        var actions: [String] = []; tray.activate = { actions.append($0) }
+        tray.buttons["mute"]?.sendActions(for: .primaryActionTriggered); XCTAssertTrue(actions.isEmpty)
+        tray.buttons["end"]?.sendActions(for: .primaryActionTriggered); XCTAssertEqual(actions, ["end"])
+        row["interactive"] = false; tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
+        tray.buttons["end"]?.sendActions(for: .primaryActionTriggered); XCTAssertEqual(actions, ["end"])
+        XCTAssertTrue(tray.accessibilityElementsHidden)
+    }
+}

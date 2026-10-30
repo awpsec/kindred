@@ -95,12 +95,15 @@ struct NativeGlassControl {
 @MainActor
 final class NativeGlassControls: UIView {
     let composer = NativeComposer()
+    private(set) var voiceTray: NativeVoiceTray?
+    private var voiceReady = false
     private var buttons: [String: UIButton] = [:]
     private var contentKeys: [String: [String]] = [:]
     private var opacities: [String: CGFloat] = [:]
     private var ready: Set<String> = []
     private(set) var document: String?
     var activate: ((String, String) -> Void)?
+    var activateVoice: ((String, String, String) -> Void)?
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -108,6 +111,7 @@ final class NativeGlassControls: UIView {
         // A retained page can publish its chrome before SwiftUI attaches this
         // host at its final size. Reveal it once the host gains real bounds.
         for button in buttons.values { button.isHidden = !button.frame.intersects(bounds) }
+        if let voiceTray { voiceTray.isHidden = !voiceTray.frame.intersects(bounds) }
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -117,6 +121,7 @@ final class NativeGlassControls: UIView {
 
     func reset() {
         composer.reset()
+        voiceTray?.removeFromSuperview(); voiceTray = nil; voiceReady = false
         document = nil
         buttons.values.forEach { $0.removeFromSuperview() }; buttons.removeAll()
         contentKeys.removeAll(); opacities.removeAll(); ready.removeAll()
@@ -125,6 +130,8 @@ final class NativeGlassControls: UIView {
     func reveal(document: String) {
         guard self.document == document else { return }
         composer.reveal(document: document)
+        voiceReady = true
+        voiceTray?.alpha = voiceTray?.model?.opacity ?? 0
         ready = Set(buttons.keys)
         for (id,button) in buttons { button.alpha = opacities[id] ?? 0 }
     }
@@ -139,9 +146,28 @@ final class NativeGlassControls: UIView {
         let composerModel: NativeComposer.Model?
         if let row=body["composer"] { guard let row=row as? [String:Any],let model=NativeComposer.Model(row) else { return nil };composerModel=model }
         else { composerModel=nil }
+        let voiceModel: NativeVoiceTray.Model?
+        if let row = body["voice"] { guard let row = row as? [String: Any], let model = NativeVoiceTray.Model(row) else { return nil }; voiceModel = model }
+        else { voiceModel = nil }
         if self.document != document { reset(); self.document = document }
         if composerModel != nil, composer.superview !== self { insertSubview(composer,at:0) }
         composer.prepare(composerModel,document:document,in:webView)
+        if let model = voiceModel {
+            if voiceTray?.model?.key != model.key {
+                voiceTray?.removeFromSuperview(); voiceReady = false
+                let tray = NativeVoiceTray()
+                tray.activate = { [weak self, weak tray] action in
+                    guard let self, self.document == document, self.voiceTray === tray,
+                          self.voiceReady, tray?.model?.key == model.key else { return }
+                    self.activateVoice?(action, model.key, document)
+                }
+                voiceTray = tray; addSubview(tray)
+            }
+            voiceTray?.frame = convert(model.frame, from: webView)
+            voiceTray?.apply(model)
+            voiceTray?.alpha = voiceReady ? model.opacity : 0
+            voiceTray?.isHidden = !convert(model.frame, from: webView).intersects(bounds)
+        } else { voiceTray?.removeFromSuperview(); voiceTray = nil; voiceReady = false }
         let ids = Set(controls.map(\.id))
         for id in Set(buttons.keys).subtracting(ids) {
             buttons.removeValue(forKey: id)?.removeFromSuperview(); contentKeys[id] = nil; opacities[id] = nil; ready.remove(id)
@@ -202,6 +228,14 @@ final class NativeGlassControls: UIView {
             button.layoutIfNeeded()
             button.titleLabel?.alpha = item.titleOpacity
         }
-        return controls.map(\.id) + (composerModel == nil ? [] : ["composer"])
+        return controls.map(\.id) + (composerModel == nil ? [] : ["composer"]) + (voiceModel == nil ? [] : ["voice"])
+    }
+
+    func updateVoiceMeter(_ body: [String: Any]) {
+        guard body["document"] as? String == document, voiceReady, let tray = voiceTray,
+              body["key"] as? String == tray.model?.key,
+              let input = NativeVoiceTray.Model.levels(body["input"]),
+              let output = NativeVoiceTray.Model.levels(body["output"]) else { return }
+        tray.updateMeter(input: input, output: output)
     }
 }

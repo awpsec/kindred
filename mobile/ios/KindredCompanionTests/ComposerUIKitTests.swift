@@ -163,6 +163,52 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         window = nil
     }
 
+    func testNativeCallGlassProjectsRetainedControlsAndRestoresFallback() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Liquid Glass requires iOS 26") }
+        // Visible call foreground only: no provider request, microphone or
+        // transcript. Browser integration separately exercises the call owner.
+        try await waitFor("retained call tray") { try await self.boolean("!!document.querySelector('.voice-call-tray')") }
+        _ = try await js("""
+        (()=>{const t=document.querySelector('.voice-call-tray');window.__callFixtureActions=[];
+          t.querySelector('.voice-avatar').replaceChildren(document.querySelector('#header-avatar .character').cloneNode(true));
+          t.querySelector('.voice-avatar').title='Piper · sample call';
+          t.querySelector('.voice-call-state').textContent='Connecting…';t.dataset.status='true';
+          for(const part of t.querySelectorAll('.voice-wave>span'))part.replaceChildren(...Array.from({length:20},(_,i)=>{const bar=document.createElement('i');bar.dataset.level=String((i%7)/8);return bar}));
+          for(const [action,selector] of Object.entries({settings:'.voice-settings-button',mute:'.voice-mute',end:'.voice-end'})){
+            const button=t.querySelector(selector);button.disabled=false;
+            button.onclick=()=>{__callFixtureActions.push(action);if(action==='mute'){button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','Unmute microphone')}if(action==='end')t.hidden=true};
+          }
+          t.hidden=false;t.inert=false;return true;
+        })()
+        """)
+        try await waitFor("native call glass acknowledged") {
+            guard (self.session.glassControls.voiceTray?.alpha ?? 0) > 0.9 else { return false }
+            return try await self.boolean("document.querySelector('.voice-call-tray').hasAttribute('data-ios-native-voice')")
+        }
+        let tray = try XCTUnwrap(session.glassControls.voiceTray)
+        XCTAssertTrue(tray.material.effect is UIGlassEffect)
+        XCTAssertGreaterThan(tray.frame.width, 200)
+        XCTAssertTrue(tray.buttons.values.allSatisfy { $0.bounds.width >= 44 && $0.bounds.height >= 44 })
+        let transparent = try await boolean("getComputedStyle(document.querySelector('.voice-call-tray')).backgroundColor==='rgba(0, 0, 0, 0)'")
+        XCTAssertTrue(transparent)
+        tray.buttons["mute"]?.sendActions(for: .primaryActionTriggered)
+        try await waitFor("native mute routes to retained handler") { try await self.boolean("__callFixtureActions.join(',')==='mute'") }
+        try await waitFor("native mute state refreshed") { self.session.glassControls.voiceTray?.model?.muted == true }
+        _ = try await js("document.querySelector('.voice-call-tray').dataset.status='false';true")
+        try await waitFor("live waveform foreground") { self.session.glassControls.voiceTray?.model?.showingStatus == false }
+        _ = try await js("document.querySelectorAll('.voice-wave i').forEach((bar,i)=>bar.dataset.level=String((i%7+1)/8));true")
+        try await waitFor("meter bridge paints native waveform ink") {
+            tray.material.contentView.subviews.flatMap { $0.layer.sublayers ?? [] }
+                .compactMap { $0 as? CAShapeLayer }.contains { ($0.path?.boundingBox.height ?? 0) > 4 }
+        }
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+        let attachment = XCTAttachment(image: image); attachment.name = "Native call Liquid Glass over retained chat"; attachment.lifetime = .keepAlways; add(attachment)
+        tray.buttons["end"]?.sendActions(for: .primaryActionTriggered)
+        try await waitFor("native End removes foreground") { self.session.glassControls.voiceTray == nil }
+        let restored = try await boolean("!document.querySelector('.voice-call-tray').hasAttribute('data-ios-native-voice')")
+        XCTAssertTrue(restored)
+    }
+
     func testNativeComposerPrimaryGlyphPaintsInBothThemes() async throws {
         guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
         for theme in ["dark","light"] {

@@ -2180,7 +2180,53 @@
       if (['identity','latest','chats','computer'].includes(id)) return route === 'bot-chat' || route === 'chat-list';
       return true;
     };
-    let nativeComposer;
+    let nativeComposer, voiceSource, voiceKey, voiceActive = false, voiceAria, meterFrame = 0, lastMeter = '';
+    const voiceActions = {settings:'.voice-settings-button',mute:'.voice-mute',end:'.voice-end'};
+    const voiceVisible = () => voiceSource?.isConnected && !voiceSource.hidden && !voiceSource.closest('.conversation[hidden]') && getComputedStyle(voiceSource).visibility === 'visible';
+    const voiceLevels = part => [...(voiceSource?.querySelectorAll('.voice-wave-'+part+' i') || [])].slice(0,40).map(node=>Math.max(0,Math.min(1,Number(node.dataset.level)||0)));
+    // Meter ink has a separate, bounded bridge. Ten audio samples per second
+    // must never trigger composer/chrome geometry scans or page-wide layouts.
+    const sendMeter = () => {
+      meterFrame = 0;
+      if (stopped || !voiceActive || !voiceVisible()) return;
+      const value = JSON.stringify({action:'voice-meter',document:glassDocument,key:voiceKey,input:voiceLevels('input'),output:voiceLevels('output')});
+      if (value !== lastMeter) {lastMeter=value;window.webkit?.messageHandlers?.kindredAccounts?.postMessage(JSON.parse(value));}
+    };
+    const scheduleMeter = () => {if(!stopped&&!meterFrame)meterFrame=requestAnimationFrame(sendMeter);};
+    const meterObserver = new MutationObserver(scheduleMeter);
+    const voiceVisibility = new MutationObserver(records=>{
+      // The HTML tray is retained between calls. Rotate its identity even for
+      // hide/show in one task so a delayed native touch cannot end the next call.
+      if(records.some(r=>r.attributeName==='hidden'&&r.oldValue!==null))voiceKey=crypto.randomUUID();
+      schedule();
+    });
+    const setVoiceActive = active => {
+      active = active && voiceVisible();
+      if (active && !voiceActive) {voiceAria=voiceSource.getAttribute('aria-hidden');voiceSource.setAttribute('data-ios-native-voice','');voiceSource.setAttribute('aria-hidden','true');}
+      if (!active && voiceActive && voiceSource) {voiceSource.removeAttribute('data-ios-native-voice');voiceAria===null?voiceSource.removeAttribute('aria-hidden'):voiceSource.setAttribute('aria-hidden',voiceAria);}
+      voiceActive=!!active;if(voiceActive)scheduleMeter();
+    };
+    const voiceSnapshot = covered => {
+      const node=document.querySelector('.conversation>.voice-call-overlay>.voice-call-tray');
+      if(node!==voiceSource){setVoiceActive(false);meterObserver.disconnect();voiceVisibility.disconnect();voiceSource=node;voiceKey=crypto.randomUUID();lastMeter='';
+        if(node){voiceVisibility.observe(node,{attributes:true,attributeOldValue:true,attributeFilter:['hidden']});const wave=node.querySelector('.voice-wave');if(wave)meterObserver.observe(wave,{subtree:true,childList:true,attributes:true,attributeFilter:['data-level']});}}
+      if(covered||duoRoute()!=='bot-chat'||!voiceVisible())return null;
+      const rect=node.getBoundingClientRect(),alpha=opacity(node);
+      if(rect.width<=0||rect.height<=0||rect.bottom<=0||rect.top>=(nativeHeight||innerHeight)||alpha<.005)return null;
+      const height=node.offsetHeight+'px';if(conversation.style.getPropertyValue('--ios-voice-height')!==height)conversation.style.setProperty('--ios-voice-height',height);
+      const round=n=>Math.round(n*100)/100;
+      const slot=child=>{if(!child||getComputedStyle(child).display==='none')return [0,0,0,0];const r=child.getBoundingClientRect();return [r.x-rect.x,r.y-rect.y,r.width,r.height].map(round);};
+      const avatar=node.querySelector('.voice-avatar .character'),showingStatus=node.dataset.status==='true';
+      const color=avatar?.dataset.avatarColor||getComputedStyle(node).getPropertyValue('--voice-color').trim();
+      return {key:voiceKey,rect:[rect.x,rect.y,rect.width,rect.height].map(round),opacity:alpha,
+        shape:avatar?.dataset.avatarBody||avatar?.dataset.shape||'cloud',color:/^#[0-9a-f]{6}$/i.test(color)?color:'#2475ff',
+        label:node.querySelector('.voice-avatar')?.title||'Voice call',status:node.querySelector('.voice-call-state')?.textContent.trim().slice(0,512)||'',
+        avatar:slot(node.querySelector('.voice-avatar')),activity:slot(node.querySelector(showingStatus?'.voice-call-activity':'.voice-wave')),
+        showingStatus,dark:html.dataset.theme==='dark',muted:node.querySelector('.voice-mute')?.getAttribute('aria-pressed')==='true',
+        interactive:!node.inert,font:parseFloat(getComputedStyle(node.querySelector('.voice-call-state')).fontSize)||12,
+        items:Object.entries(voiceActions).map(([id,selector])=>{const button=node.querySelector(selector);return {id,label:button?.getAttribute('aria-label')||id,rect:slot(button),enabled:!!button&&!button.disabled&&!node.inert};}),
+        input:voiceLevels('input'),output:voiceLevels('output')};
+    };
     const scan = () => {
       glassFrame = 0; current.clear(); const controls = [];
       const covered = document.hidden || !!document.querySelector('dialog[open]');
@@ -2218,7 +2264,8 @@
           opacity:alpha,titleOpacity:ghost ? Number(getComputedStyle(ghost.lastElementChild).opacity) : 1,interactive:!ghost});
       }
       const composer=nativeComposer?.snapshot(covered);
-      const payload = JSON.stringify({action:'glass-controls',document:glassDocument,controls,...(composer?{composer}:{})});
+      const voice=voiceSnapshot(covered);
+      const payload = JSON.stringify({action:'glass-controls',document:glassDocument,controls,...(composer?{composer}:{}),...(voice?{voice}:{})});
       if (payload !== glassLast) {glassLast=payload;window.webkit?.messageHandlers?.kindredAccounts?.postMessage({...JSON.parse(payload),sequence:++glassSerial});}
       if (!stopped && document.getAnimations().some(a=>!a.effect?.target?.closest?.('.voice-wave')&&a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))) schedule();
     };
@@ -2228,6 +2275,7 @@
       setActive(document,ids,sequence) {
         if (document !== glassDocument || sequence !== glassSerial || !Array.isArray(ids)) return false;
         nativeComposer?.setActive(ids.includes('composer'));
+        setVoiceActive(ids.includes('voice'));
         const nodes = new Set(ids.filter(id=>id!=='composer').map(id=>current.get(id)?.node).filter(Boolean));
         for (const node of replaced.keys()) if(!nodes.has(node))restore(node);
         for (const node of nodes) {
@@ -2241,6 +2289,12 @@
         const control=current.get(id);if(!glassRouteAllows(id)||!control?.interactive||!visible(control.source))return;
         lastMenuSource=control.source;control.source.click();schedule();
       },
+      performVoice(action,key,document) {
+        if(document!==glassDocument||key!==voiceKey||!voiceActive||!voiceVisible()||voiceSource.inert||duoRoute()!=='bot-chat'||window.document.querySelector('dialog[open]'))return false;
+        const selector=voiceActions[action],button=selector&&voiceSource.querySelector(selector);
+        if(!button||button.disabled)return false;
+        button.click();schedule();return true;
+      },
     };
     observeUI(schedule).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style','hidden','inert','disabled','open','aria-label','aria-disabled','data-ios-artifact-view','data-ios-artifact-layout','data-shape','data-avatar-body','data-avatar-color']});
     observeUI(schedule).observe(html,{attributes:true,attributeFilter:['style','class','data-theme','data-motion']});
@@ -2248,7 +2302,7 @@
     for(const node of [shell,sidebar,conversation,composerArea,header])if(node)resize.observe(node);
     for(const name of ['resize','kindred-ios-layout','kindred-native-geometry','kindred-ios-toolbar','pageshow'])window.addEventListener(name,()=>{stopped=false;schedule();});
     document.addEventListener('scroll',schedule,true);
-    window.addEventListener('pagehide',()=>{nativeComposer?.setActive(false);stopped=true;cancelAnimationFrame(glassFrame);glassFrame=0;current.clear();for(const node of replaced.keys())restore(node);glassLast='';window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'glass-controls',document:glassDocument,sequence:++glassSerial,controls:[]});});
+    window.addEventListener('pagehide',()=>{nativeComposer?.setActive(false);setVoiceActive(false);stopped=true;cancelAnimationFrame(glassFrame);cancelAnimationFrame(meterFrame);glassFrame=meterFrame=0;current.clear();for(const node of replaced.keys())restore(node);glassLast='';window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'glass-controls',document:glassDocument,sequence:++glassSerial,controls:[]});});
     schedule();
   }
   // Hand navigation to the page before slow fonts/images finish loading.
