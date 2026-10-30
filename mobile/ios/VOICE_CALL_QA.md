@@ -70,6 +70,32 @@ the Duo-specific API. Do not replace account data or change the bundle ID.
 
 Browser tests cover UI and bridge behavior, not ActivityKit or native audio:
 
+### Physical startup configuration regression
+
+The physical Duo test on source `51a4c08` reproduced a startup failure twice,
+including with Device Hub fully quit: permission and foreground state were
+correct, but the engine was stopped before its first PCM buffer. The route
+changed during startup, with a 48 kHz input and a 44.1 kHz output snapshot.
+Simulator passes did not reproduce this failure.
+
+The startup repair handles one configuration-change notification before the
+first converted PCM buffer. It rebuilds the input tap and converter using the
+current format, then restarts the engine. It leaves the output connection format
+automatic and keeps the existing capture deadline. Ending the call cancels any
+queued recovery. Recovery does not restart an established call or reconnect a
+provider session.
+
+For acceptance, run `NativeVoiceCallTests` on both phone simulators, including
+the startup recovery, cancellation and conversion tests. Then run
+`NativeVoiceCallTests/testPhysicalVoiceCaptureProducesPCMBeforeFakeProviderConnects`
+through the opt-in `KindredVoiceCaptureTests` scheme on the physical Duo with
+Device Hub fully quit. Use three independent app launches. Each run must deliver
+real PCM before the fake transport opens, continue capture beyond the four-second
+watchdog, and close cleanly. Retain each result bundle and the
+`voice-capture-metadata-no-audio` attachment; do not substitute simulated capture.
+A silent buffer passes this probe. Audible two-way speech still needs a separate
+explicitly started provider call before claiming that end-to-end calls work.
+
 `KindredVoiceActivityTests` is an opt-in app-hosted scheme that requests the
 production system Live Activity, updates its mute state and ends it. It does
 not open the microphone or a provider session. For a simulator visual check,

@@ -144,6 +144,12 @@ final class NativeVoiceCall: NSObject {
                         Task { @MainActor in self?.capture(data, id: id) }
                     }, playbackLevel: { [weak self] level in
                         Task { @MainActor in self?.renderedOutput(level, id: id) }
+                    }, failure: { [weak self] failure in
+                        Task { @MainActor in
+                            guard let self, self.id == id, !self.ending else { return }
+                            self.diagnostics.record(failure.stage, error: failure.reason)
+                            self.fail(id: id, message: failure.userMessage)
+                        }
                     })
                 } catch {
                     let failure = (error as? VoiceCaptureStartupError) ?? VoiceCaptureStartupError(stage: .audioFactory, error: error)
@@ -383,7 +389,8 @@ private final class VoiceCallSocket: VoiceCallConnection {
 }
 
 protocol VoiceCallAudio: AnyObject {
-    func start(capture: @escaping (Data) -> Void, playbackLevel: @escaping (Double) -> Void) throws
+    func start(capture: @escaping (Data) -> Void, playbackLevel: @escaping (Double) -> Void,
+               failure: @escaping (VoiceCaptureStartupError) -> Void) throws
     func play(_ bytes: Data) throws
     func playCue(_ cue: VoiceCallCue) -> TimeInterval
     func stopCapture()
@@ -392,6 +399,29 @@ protocol VoiceCallAudio: AnyObject {
 }
 
 extension VoiceCallAudio { func refreshDiagnostics() {} }
+
+/// Main-queue coordinator for the one demonstrated startup transition: iOS can
+/// stop the engine as voice processing changes the hardware route, before any
+/// PCM arrives. No timer, session toggle, watchdog reset, or live-call retry.
+final class VoiceCaptureStartupRecovery {
+    private var generation: UInt64 = 0
+    private var requested = false
+    private var attempted = false
+    func begin() { generation &+= 1; requested = true; attempted = false }
+    func cancel() { generation &+= 1; requested = false }
+    func configurationChanged(isRunning: @escaping () -> Bool, hasPCM: @escaping () -> Bool,
+                              rebuild: @escaping () throws -> Void, failed: @escaping (Error) -> Void) {
+        let expected = generation
+        // The extra queue turn coalesces pending route/configuration delivery;
+        // inspect current state, never the stale notification's format snapshot.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.requested, self.generation == expected,
+                  !self.attempted, !isRunning(), !hasPCM() else { return }
+            self.attempted = true
+            do { try rebuild() } catch { failed(error) }
+        }
+    }
+}
 
 enum VoiceCallCue: Hashable, CaseIterable {
     case connecting, connected, ended, error
@@ -429,6 +459,10 @@ final class VoiceAudioPipe: VoiceCallAudio {
     private var queuedSeconds: Double = 0
     private let diagnostics: VoiceCaptureDiagnostics
     private var configurationObserver: NSObjectProtocol?
+    private let startupRecovery = VoiceCaptureStartupRecovery()
+    private var capture: ((Data) -> Void)?
+    private var captureFailure: ((VoiceCaptureStartupError) -> Void)?
+    private var pendingConnectingCue = false
     private let pcm = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: true)!
     private let playback = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
     init(diagnostics: VoiceCaptureDiagnostics = VoiceCaptureDiagnostics()) {
@@ -436,18 +470,21 @@ final class VoiceAudioPipe: VoiceCallAudio {
         configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
             object: engine, queue: nil) { [weak self] _ in
                 // Apple's audio callback queue must never synchronously wait for
-                // engine inspection or teardown. Record evidence only; no retry.
+                // engine inspection, reconfiguration or teardown.
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.active else { return }
                     self.refreshDiagnostics()
                     self.diagnostics.record(.configurationChanged)
+                    self.recoverStartupConfiguration()
                 }
             }
     }
-    func start(capture: @escaping (Data) -> Void, playbackLevel: @escaping (Double) -> Void) throws {
+    func start(capture: @escaping (Data) -> Void, playbackLevel: @escaping (Double) -> Void,
+               failure: @escaping (VoiceCaptureStartupError) -> Void) throws {
         let session = AVAudioSession.sharedInstance()
         var stage = VoiceCaptureStage.category
         do {
+            self.capture = capture; captureFailure = failure; startupRecovery.begin()
             diagnostics.record(stage)
             try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
             stage = .activation; diagnostics.record(stage)
@@ -455,14 +492,6 @@ final class VoiceAudioPipe: VoiceCallAudio {
             active = true
             stage = .voiceProcessing; diagnostics.record(stage)
             try engine.inputNode.setVoiceProcessingEnabled(true)
-            stage = .inputFormat
-            let input = engine.inputNode.outputFormat(forBus: 0)
-            diagnostics.refresh(session: session, engine: engine, input: input); diagnostics.record(stage)
-            guard input.sampleRate.isFinite, input.sampleRate > 0, input.channelCount > 0 else {
-                throw NSError(domain: "KindredVoiceCapture", code: 1)
-            }
-            stage = .converter
-            guard let converter = AVAudioConverter(from: input, to: pcm) else { throw NSError(domain: "KindredVoiceCapture", code: 2) }
             stage = .graph
             engine.attach(player); engine.connect(player, to: engine.mainMixerNode, format: playback)
             engine.attach(cuePlayer); engine.connect(cuePlayer, to: engine.mainMixerNode, format: playback)
@@ -470,19 +499,63 @@ final class VoiceAudioPipe: VoiceCallAudio {
             // follows long/queued buffers and excludes the local call chimes.
             Self.installPlaybackMeter(on: player, format: playback, emit: playbackLevel)
             playbackTapped = true
-            engine.inputNode.installTap(onBus: 0, bufferSize: 2048, format: input) { [pcm, diagnostics] buffer, _ in
-                let bytes = Self.convertCapture(buffer, using: converter, to: pcm, onError: { diagnostics.conversionFailed($0) })
-                diagnostics.capture(rawFrames: Int(buffer.frameLength), convertedFrames: (bytes?.count ?? 0) / 2)
-                if let bytes { capture(bytes) }
-            }
-            tapped = true; stage = .engineStart; diagnostics.record(stage)
+            try installInputTap(capture: capture)
+            stage = .engineStart; diagnostics.record(stage)
             engine.prepare(); try engine.start(); player.play(); cuePlayer.play()
             refreshDiagnostics(); diagnostics.record(.capturing)
         } catch {
-            let failure = VoiceCaptureStartupError(stage: stage, error: error)
-            refreshDiagnostics(); diagnostics.record(stage, error: failure.reason)
+            let failure = (error as? VoiceCaptureStartupError) ?? VoiceCaptureStartupError(stage: stage, error: error)
+            refreshDiagnostics(); diagnostics.record(failure.stage, error: failure.reason)
             stop(); throw failure
         }
+    }
+    private func installInputTap(capture: @escaping (Data) -> Void) throws {
+        if tapped { engine.inputNode.removeTap(onBus: 0); tapped = false }
+        let input = engine.inputNode.outputFormat(forBus: 0)
+        diagnostics.refresh(session: .sharedInstance(), engine: engine, input: input)
+        diagnostics.record(.inputFormat)
+        // A new processor owns a new converter for this exact current format.
+        // Reusing the old converter after a route change can silently lose PCM.
+        let process = try Self.captureProcessor(input: input, pcm: pcm, diagnostics: diagnostics, capture: capture)
+        engine.inputNode.installTap(onBus: 0, bufferSize: 2048, format: input) { buffer, _ in process(buffer) }
+        tapped = true
+    }
+    static func captureProcessor(input: AVAudioFormat, pcm: AVAudioFormat, diagnostics: VoiceCaptureDiagnostics,
+                                 capture: @escaping (Data) -> Void) throws -> (AVAudioPCMBuffer) -> Void {
+        guard input.sampleRate.isFinite, input.sampleRate > 0, input.channelCount > 0 else {
+            throw VoiceCaptureStartupError(stage: .inputFormat, error: NSError(domain: "KindredVoiceCapture", code: 1))
+        }
+        guard let converter = AVAudioConverter(from: input, to: pcm) else {
+            throw VoiceCaptureStartupError(stage: .converter, error: NSError(domain: "KindredVoiceCapture", code: 2))
+        }
+        return { buffer in
+            let bytes = Self.convertCapture(buffer, using: converter, to: pcm, onError: { diagnostics.conversionFailed($0) })
+            diagnostics.capture(rawFrames: Int(buffer.frameLength), convertedFrames: (bytes?.count ?? 0) / 2)
+            if let bytes { capture(bytes) }
+        }
+    }
+    private func recoverStartupConfiguration() {
+        startupRecovery.configurationChanged(isRunning: { [weak self] in self?.engine.isRunning ?? true },
+            hasPCM: { [weak self] in (self?.diagnostics.snapshot.convertedFrames ?? 1) > 0 },
+            rebuild: { [weak self] in
+                guard let self, self.active, let capture = self.capture else { return }
+                self.diagnostics.record(.configurationRecovery)
+                self.player.stop(); self.cuePlayer.stop()
+                try self.installInputTap(capture: capture)
+                // Leave the main mixer -> output connection automatic. Apple
+                // updates that format to the hardware on restart; pinning the
+                // earlier 44.1kHz connection here would retain the bad format.
+                self.engine.prepare(); try self.engine.start(); self.player.play(); self.cuePlayer.play()
+                self.refreshDiagnostics(); self.diagnostics.record(.capturing)
+                if self.pendingConnectingCue { _ = self.playCue(.connecting) }
+            }, failed: { [weak self] error in
+                guard let self, self.active, self.capture != nil else { return }
+                let failure = (error as? VoiceCaptureStartupError)
+                    ?? VoiceCaptureStartupError(stage: .configurationRecovery, error: error)
+                self.refreshDiagnostics(); self.diagnostics.record(failure.stage, error: failure.reason)
+                let notify = self.captureFailure
+                self.stop(); notify?(failure)
+            })
     }
     func refreshDiagnostics() {
         diagnostics.refresh(session: .sharedInstance(), engine: engine,
@@ -550,7 +623,14 @@ final class VoiceAudioPipe: VoiceCallAudio {
         }
     }
     func playCue(_ cue: VoiceCallCue) -> TimeInterval {
-        guard active, engine.isRunning else { return 0 }
+        guard active else { return 0 }
+        guard engine.isRunning else {
+            // Only defer a connecting cue that was never scheduled. A played
+            // or partially played cue must not repeat after reconfiguration.
+            if cue == .connecting, capture != nil { pendingConnectingCue = true }
+            return 0
+        }
+        if cue == .connecting { pendingConnectingCue = false }
         let samples = cue.samples()
         guard let buffer = AVAudioPCMBuffer(pcmFormat: playback, frameCapacity: AVAudioFrameCount(samples.count)) else { return 0 }
         buffer.frameLength = AVAudioFrameCount(samples.count)
@@ -559,6 +639,9 @@ final class VoiceAudioPipe: VoiceCallAudio {
         return Double(samples.count) / playback.sampleRate
     }
     func stopCapture() {
+        // Also covers End call's final cue: a queued configuration notification
+        // may never recreate the microphone after capture has been released.
+        startupRecovery.cancel(); capture = nil; captureFailure = nil; pendingConnectingCue = false
         if tapped { engine.inputNode.removeTap(onBus: 0); tapped = false }
         if playbackTapped { player.removeTap(onBus: 0); playbackTapped = false }
         player.stop()

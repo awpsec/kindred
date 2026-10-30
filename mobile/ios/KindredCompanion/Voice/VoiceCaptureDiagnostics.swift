@@ -5,7 +5,7 @@ import OSLog
 enum VoiceCaptureStage: String {
     case permission, foregroundWait, foregroundReady, foregroundTimeout, audioFactory
     case category, activation, voiceProcessing, inputFormat, converter, graph, engineStart
-    case capturing, firstPCM, captureStalled, configurationChanged, routeChanged, interruption, stopped
+    case capturing, firstPCM, captureStalled, configurationChanged, configurationRecovery, routeChanged, interruption, stopped
 }
 
 /// Never retain an NSError's description, userInfo, or underlying errors. Even
@@ -63,6 +63,7 @@ struct VoiceCaptureSnapshot {
     var conversionFailures = 0
     var conversionError: VoiceCaptureError?
     var configurationChanges = 0
+    var configurationRecoveries = 0
     var reasonCode: UInt?
 
     /// Only fixed labels, normalized route types and numeric metadata. No call,
@@ -81,6 +82,7 @@ struct VoiceCaptureSnapshot {
             "converted_buffers": convertedBuffers, "converted_frames": convertedFrames,
             "conversion_failures": conversionFailures, "conversion_error_domain": conversionError?.domain ?? "none",
             "conversion_error_code": conversionError?.code ?? 0, "configuration_changes": configurationChanges,
+            "configuration_recoveries": configurationRecoveries,
             "reason_code": reasonCode ?? 0
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: values, options: .sortedKeys),
@@ -110,6 +112,7 @@ final class VoiceCaptureDiagnostics {
         if let foreground { value.foreground = foreground }
         if let reason { value.reasonCode = reason }
         if stage == .configurationChanged { value.configurationChanges = min(1_000_000, value.configurationChanges + 1) }
+        if stage == .configurationRecovery, error == nil { value.configurationRecoveries = min(1_000_000, value.configurationRecoveries + 1) }
         // Always retain the latest counters, but bound persistent event output.
         // Reserve final snapshots even if a noisy route emits many changes.
         let final = stage == .captureStalled || stage == .stopped
