@@ -7,11 +7,11 @@ on:
         required: true
         type: string
       validation_scope:
-        description: 'Full existing hosted suite or scoped real UIKit composer keyboard/safe-area validation.'
+        description: 'Hosted UIKit tests or a voice-audio Apple SDK compile check without simulator boot.'
         required: true
         default: full
         type: choice
-        options: [full, composer, release-ui, keyboard-ownership]
+        options: [full, composer, release-ui, keyboard-ownership, voice-compile]
       approve_runner_usage:
         description: 'Approve this one unsigned simulator job, maximum 20 minutes; no automatic retry.'
         required: true
@@ -26,7 +26,7 @@ jobs:
   simulator:
     if: ${{ inputs.approve_runner_usage }}
     runs-on: xcode-27
-    timeout-minutes: 20
+    timeout-minutes: ${{ inputs.validation_scope == 'voice-compile' && 10 || 20 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -77,12 +77,36 @@ jobs:
         with:
           node-version: '22'
       - name: Run real UIKit app-hosted simulator tests once
+        if: ${{ inputs.validation_scope != 'voice-compile' }}
         shell: bash
         env:
           EXPECTED_SOURCE: ${{ inputs.source_commit }}
           VALIDATION_SCOPE: ${{ inputs.validation_scope }}
         run: |
           python3 scripts/release/test-ios-simulator.py --scope "$VALIDATION_SCOPE"
+      - name: Compile app, widget, and native voice tests without simulator boot
+        if: ${{ inputs.validation_scope == 'voice-compile' }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,subprocess
+          from pathlib import Path
+          out=Path('ios-validation').resolve()
+          files=['mobile/ios/KindredCompanion/Voice/NativeVoiceCall.swift','mobile/ios/KindredCompanionTests/NativeVoiceCallTests.swift','ui/voice.js','ui/voice-audio-worklet.js','ui/style.css']
+          command=['xcodebuild','-project','mobile/ios/KindredCompanion.xcodeproj','-scheme','KindredCompanion','-configuration','Debug','-destination','generic/platform=iOS Simulator','-derivedDataPath',str(out/'DerivedData'),'-only-testing:KindredCompanionTests/NativeVoiceCallTests','CODE_SIGNING_ALLOWED=NO','CODE_SIGNING_REQUIRED=NO','build-for-testing']
+          result={'command':command,'runtime_tests_executed':False,'signed':False,'sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files}}
+          with (out/'voice-build.log').open('w') as log:
+              try:
+                  completed=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,timeout=420)
+                  result['exit_code']=completed.returncode
+              except subprocess.TimeoutExpired:
+                  result['timed_out']=True;result['exit_code']=124
+          result['passed']=result['exit_code']==0
+          (out/'voice-compile.json').write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result))
+          raise SystemExit(result['exit_code'])
+          PY
+          # Keep compiler evidence. Simulator products are not a signed app.
+          rm -rf ios-validation/DerivedData
       - name: Preserve exact results including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
