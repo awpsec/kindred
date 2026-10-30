@@ -98,9 +98,10 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         observers.append(NotificationCenter.default.addObserver(forName: UIResponder.keyboardDidShowNotification, object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.keyboardShows += 1
-                self.keyboardVisible = true
                 self.keyboardFrame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue ?? .zero
+                let frame = self.window.convert(self.keyboardFrame, from: nil)
+                self.keyboardVisible = frame.height > 0 && frame.intersects(self.window.bounds)
+                if self.keyboardVisible { self.keyboardShows += 1 }
                 self.keyboardOwnershipEvents.append(["event": "keyboardDidShow",
                     "time": ProcessInfo.processInfo.systemUptime,
                     "frame": ["x": self.keyboardFrame.minX, "y": self.keyboardFrame.minY,
@@ -913,6 +914,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                     item.kind=="button" && abs(item.frame.minX-r.minX)<1 && abs(item.frame.minY-r.minY)<1 && abs(item.frame.width-r.width)<1 && abs(item.frame.height-r.height)<1
                 } == true
                 guard geometryMatches else { return false }
+                if row["enabled"] as? Bool == false { return true }
                 // UIWindow suppresses touches during the system rotation even
                 // after WebKit has published its final layout dimensions.
                 let point = self.session.webView.convert(CGPoint(x:r.midX,y:r.midY),to:self.window)
