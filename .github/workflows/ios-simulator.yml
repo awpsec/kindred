@@ -88,7 +88,7 @@ jobs:
         if: ${{ inputs.validation_scope == 'voice-compile' }}
         run: |
           python3 - <<'PY'
-          import hashlib,json,subprocess
+          import hashlib,json,shutil,subprocess
           from pathlib import Path
           out=Path('ios-validation').resolve()
           files=['mobile/ios/KindredCompanion/Voice/NativeVoiceCall.swift','mobile/ios/KindredCompanionTests/NativeVoiceCallTests.swift','ui/voice.js','ui/voice-audio-worklet.js','ui/style.css']
@@ -103,10 +103,10 @@ jobs:
           result['passed']=result['exit_code']==0
           (out/'voice-compile.json').write_text(json.dumps(result,indent=2)+'\n')
           print(json.dumps(result))
+          # Preserve compiler evidence; these products are not a signed app.
+          shutil.rmtree(out/'DerivedData',ignore_errors=True)
           raise SystemExit(result['exit_code'])
           PY
-          # Keep compiler evidence. Simulator products are not a signed app.
-          rm -rf ios-validation/DerivedData
       - name: Preserve exact results including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
