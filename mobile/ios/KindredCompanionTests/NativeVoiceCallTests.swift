@@ -113,10 +113,15 @@ final class NativeVoiceCallTests: XCTestCase {
         socket.push(["type": "audio", "data": Data(count: 1920).base64EncodedString()])
         try await wait { audio.played.count == 1 }
         XCTAssertFalse(events.contains { $0["type"] as? String == "speaking" })
+        audio.playbackLevel?(0)
+        try await wait { events.last?["type"] as? String == "levels" }
         XCTAssertEqual(events.last?["output"] as? Double, 0)
         let audible = Data(repeating: 32, count: 1920)
         instant = instant.addingTimeInterval(0.2)
         socket.push(["type": "audio", "data": audible.base64EncodedString()])
+        try await wait { audio.played.count == 2 }
+        XCTAssertFalse(events.contains { $0["type"] as? String == "speaking" }, "Receipt does not mean the queued audio played")
+        audio.playbackLevel?(VoiceAudioPipe.level(audible))
         try await wait { events.contains { $0["type"] as? String == "speaking" } }
         XCTAssertGreaterThan(events.last(where: { $0["type"] as? String == "levels" })?["output"] as? Double ?? 0, 0.006)
         call.setMuted(id: id, value: true)
@@ -135,6 +140,86 @@ final class NativeVoiceCallTests: XCTestCase {
         XCTAssertTrue(call.isActive, "Valid muted PCM keeps the capture health check alive")
         socket.push(["type": "ended", "saved": true])
         try await wait { !call.isActive }
+    }
+
+    func testOutputLevelsFollowDelayedRenderAcrossLongQueuedPackets() async throws {
+        let call = NativeVoiceCall(), audio = VoiceAudioFixture(), socket = VoiceSocketFixture(), id = UUID().uuidString
+        defer { call.end(owner: owner) }
+        var instant = Date(), events: [[String: Any]] = []
+        var fixture = hooks(audio: audio, socket: socket); fixture.now = { instant }; call.testHooks = fixture
+        try await connect(call, audio: audio, socket: socket, id: id) { events.append($0) }
+        // The provider can deliver several seconds before the player reaches it.
+        socket.push(["type": "audio", "data": Data(count: 96000).base64EncodedString()])
+        socket.push(["type": "audio", "data": Data(repeating: 32, count: 96000).base64EncodedString()])
+        try await wait { audio.played.count == 2 }
+        XCTAssertFalse(events.contains { $0["type"] as? String == "speaking" })
+        XCTAssertFalse(events.contains { ($0["output"] as? Double ?? 0) > 0 })
+        for _ in 0..<18 {
+            let before = events.filter { $0["type"] as? String == "levels" }.count
+            instant = instant.addingTimeInterval(0.12)
+            audio.playbackLevel?(0)
+            try await wait { events.filter { $0["type"] as? String == "levels" }.count > before }
+            audio.capture?(Data(count: 1920))
+            XCTAssertEqual(events.last(where: { $0["type"] as? String == "levels" })?["output"] as? Double, 0)
+        }
+        XCTAssertFalse(events.contains { $0["type"] as? String == "speaking" }, "Queued speech must not animate over earlier silence")
+        for _ in 0..<18 {
+            let before = events.filter { $0["type"] as? String == "levels" }.count
+            instant = instant.addingTimeInterval(0.12)
+            audio.playbackLevel?(0.25)
+            try await wait { events.filter { $0["type"] as? String == "levels" }.count > before }
+            audio.capture?(Data(count: 1920))
+            XCTAssertEqual(events.last(where: { $0["type"] as? String == "levels" })?["output"] as? Double, 0.25)
+        }
+        XCTAssertGreaterThan(events.filter { $0["type"] as? String == "speaking" }.count, 2,
+                             "Long rendered speech keeps its speaking state after the original packet is old")
+        instant = instant.addingTimeInterval(0.2); audio.playbackLevel?(0)
+        try await wait { events.last(where: { $0["type"] as? String == "levels" })?["output"] as? Double == 0 }
+        socket.push(["type": "ended", "saved": true]); try await wait { !call.isActive }
+        let before = events.count
+        audio.playbackLevel?(0.9); try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(events.count, before, "Late render callbacks cannot revive a completed call")
+    }
+
+    func testActualPlayerTapMetersRenderedSilenceAndLongSpeechInsteadOfScheduling() async throws {
+        let engine = AVAudioEngine(), player = AVAudioPlayerNode(), meter = VoiceMeterFixture()
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1))
+        engine.attach(player); engine.connect(player, to: engine.mainMixerNode, format: format)
+        try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 960)
+        VoiceAudioPipe.installPlaybackMeter(on: player, format: format) { meter.append($0) }
+        defer { player.removeTap(onBus: 0); player.stop(); engine.stop() }
+        try engine.start(); player.play()
+        func buffer(_ frames: AVAudioFrameCount, audible: Bool) throws -> AVAudioPCMBuffer {
+            let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
+            buffer.frameLength = frames
+            for frame in 0..<Int(frames) {
+                buffer.floatChannelData![0][frame] = audible ? Float(sin(2 * .pi * 440 * Double(frame) / 24000) * 0.2) : 0
+            }
+            return buffer
+        }
+        player.scheduleBuffer(try buffer(9600, audible: false))
+        player.scheduleBuffer(try buffer(48000, audible: true))
+        player.scheduleBuffer(try buffer(9600, audible: false))
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertFalse(meter.values.contains { $0 > 0.006 }, "Scheduling a two-second packet must not move the meter")
+        let output = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 960))
+        func render(_ count: Int) async throws {
+            for _ in 0..<count {
+                XCTAssertEqual(try engine.renderOffline(960, to: output), .success)
+                try await Task.sleep(for: .milliseconds(2))
+            }
+        }
+        try await render(10)
+        XCTAssertFalse(meter.values.contains { $0 > 0.006 }, "The first queued silence stays silent")
+        try await render(25)
+        try await wait { meter.values.contains { $0 > 0.006 } }
+        let midpoint = meter.values.count
+        try await render(25)
+        try await wait { meter.values.count > midpoint }
+        XCTAssertTrue(meter.values.dropFirst(midpoint).contains { $0 > 0.006 }, "The second second of the same packet remains audible")
+        try await render(10)
+        try await wait { meter.values.last == 0 }
+        XCTAssertTrue(meter.values.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 1 })
     }
 
     func testCancelledCaptureCannotOpenSocketOrAffectNextCall() async throws {
@@ -232,16 +317,26 @@ final class NativeVoiceCallTests: XCTestCase {
 
 private final class VoiceAudioFixture: VoiceCallAudio {
     var capture: ((Data) -> Void)?
+    var playbackLevel: ((Double) -> Void)?
     var cues: [VoiceCallCue] = []
     var played: [Data] = []
     var captureStopped = false
     var stopped = false
     var cueDuration: TimeInterval = 0
-    func start(capture: @escaping (Data) -> Void) throws { self.capture = capture }
+    func start(capture: @escaping (Data) -> Void, playbackLevel: @escaping (Double) -> Void) throws {
+        self.capture = capture; self.playbackLevel = playbackLevel
+    }
     func play(_ bytes: Data) throws { played.append(bytes) }
     func playCue(_ cue: VoiceCallCue) -> TimeInterval { cues.append(cue); return cueDuration }
     func stopCapture() { captureStopped = true }
     func stop() { stopCapture(); stopped = true }
+}
+
+private final class VoiceMeterFixture {
+    private let lock = NSLock()
+    private var levels: [Double] = []
+    var values: [Double] { lock.lock(); defer { lock.unlock() }; return levels }
+    func append(_ value: Double) { lock.lock(); levels.append(value); lock.unlock() }
 }
 
 private final class VoiceSocketFixture: VoiceCallConnection {

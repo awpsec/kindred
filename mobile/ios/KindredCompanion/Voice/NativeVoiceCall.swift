@@ -118,9 +118,11 @@ final class NativeVoiceCall: NSObject {
                 do {
                     let audio = try self.makeAudio()
                     self.audio = audio; self.captureStarted = self.now
-                    try audio.start { [weak self] data in
+                    try audio.start(capture: { [weak self] data in
                         Task { @MainActor in self?.capture(data, id: id) }
-                    }
+                    }, playbackLevel: { [weak self] level in
+                        Task { @MainActor in self?.renderedOutput(level, id: id) }
+                    })
                 } catch {
                     self.fail(id: id, message: "The microphone could not start. Check its permission and audio device, then try again.")
                     return
@@ -169,13 +171,6 @@ final class NativeVoiceCall: NSObject {
                     case "audio":
                         if !self.ending, let text = value["data"] as? String, let bytes = Data(base64Encoded: text), bytes.count <= 96000 {
                             try self.audio?.play(bytes)
-                            self.outputLevel = VoiceAudioPipe.level(bytes); self.outputLevelAt = self.now
-                            self.emitLevels()
-                            // GPT-Live streams silent output PCM between speech too.
-                            if self.outputLevel > 0.006, Date().timeIntervalSince(self.lastSpeakingNotice) >= 0.5 {
-                                self.lastSpeakingNotice = Date()
-                                self.emit?(["type": "speaking", "id": id])
-                            }
                         }
                     case "ended":
                         self.finishAudio(cue: .ended)
@@ -204,6 +199,17 @@ final class NativeVoiceCall: NSObject {
         emitLevels()
         guard pendingFrames < 20 else { fail(id: id, message: "The call connection is too slow. Try again."); return }
         send(["type": "audio", "data": (muted ? Data(count: bytes.count) : bytes).base64EncodedString()], id: id)
+    }
+    private func renderedOutput(_ level: Double, id: String) {
+        guard self.id == id, ready, !ending, level.isFinite else { return }
+        outputLevel = min(1, max(0, level)); outputLevelAt = now
+        emitLevels()
+        // Meter rendered player output, not packet arrival. A packet can contain
+        // seconds of queued speech or continuous silence between spoken turns.
+        if outputLevel > 0.006, now.timeIntervalSince(lastSpeakingNotice) >= 0.5 {
+            lastSpeakingNotice = now
+            emit?(["type": "speaking", "id": id])
+        }
     }
     private func send(_ value: [String: Any], id: String) {
         guard self.id == id, let socket else { return }
@@ -343,7 +349,7 @@ private final class VoiceCallSocket: VoiceCallConnection {
 }
 
 protocol VoiceCallAudio: AnyObject {
-    func start(capture: @escaping (Data) -> Void) throws
+    func start(capture: @escaping (Data) -> Void, playbackLevel: @escaping (Double) -> Void) throws
     func play(_ bytes: Data) throws
     func playCue(_ cue: VoiceCallCue) -> TimeInterval
     func stopCapture()
@@ -380,12 +386,13 @@ final class VoiceAudioPipe: VoiceCallAudio {
     private let player = AVAudioPlayerNode()
     private let cuePlayer = AVAudioPlayerNode()
     private var tapped = false
+    private var playbackTapped = false
     private var active = false
     private let lock = NSLock()
     private var queuedSeconds: Double = 0
     private let pcm = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: true)!
     private let playback = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
-    func start(capture: @escaping (Data) -> Void) throws {
+    func start(capture: @escaping (Data) -> Void, playbackLevel: @escaping (Double) -> Void) throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
         try session.setActive(true)
@@ -397,6 +404,10 @@ final class VoiceAudioPipe: VoiceCallAudio {
             guard let converter = AVAudioConverter(from: input, to: pcm) else { throw URLError(.cannotDecodeContentData) }
             engine.attach(player); engine.connect(player, to: engine.mainMixerNode, format: playback)
             engine.attach(cuePlayer); engine.connect(cuePlayer, to: engine.mainMixerNode, format: playback)
+            // This node contains bot speech only. Observing its rendered output
+            // follows long/queued buffers and excludes the local call chimes.
+            Self.installPlaybackMeter(on: player, format: playback, emit: playbackLevel)
+            playbackTapped = true
             engine.inputNode.installTap(onBus: 0, bufferSize: 2048, format: input) { [pcm] buffer, _ in
                 if let bytes = Self.convertCapture(buffer, using: converter, to: pcm) { capture(bytes) }
             }
@@ -441,6 +452,23 @@ final class VoiceAudioPipe: VoiceCallAudio {
             return min(1, sqrt(squares / Double(raw.count / 2)))
         }
     }
+    static func renderedLevel(_ buffer: AVAudioPCMBuffer) -> Double {
+        guard buffer.frameLength > 0, buffer.format.channelCount > 0, let channels = buffer.floatChannelData else { return 0 }
+        var squares: Double = 0
+        for channel in 0..<Int(buffer.format.channelCount) {
+            for frame in 0..<Int(buffer.frameLength) {
+                let sample = Double(channels[channel][frame])
+                guard sample.isFinite else { return 0 }
+                squares += sample * sample
+            }
+        }
+        return min(1, sqrt(squares / Double(buffer.frameLength) / Double(buffer.format.channelCount)))
+    }
+    static func installPlaybackMeter(on player: AVAudioPlayerNode, format: AVAudioFormat, emit: @escaping (Double) -> Void) {
+        player.installTap(onBus: 0, bufferSize: 960, format: format) { buffer, _ in
+            emit(Self.renderedLevel(buffer))
+        }
+    }
     func playCue(_ cue: VoiceCallCue) -> TimeInterval {
         guard active, engine.isRunning else { return 0 }
         let samples = cue.samples()
@@ -452,6 +480,7 @@ final class VoiceAudioPipe: VoiceCallAudio {
     }
     func stopCapture() {
         if tapped { engine.inputNode.removeTap(onBus: 0); tapped = false }
+        if playbackTapped { player.removeTap(onBus: 0); playbackTapped = false }
         player.stop()
     }
     func stop() {
