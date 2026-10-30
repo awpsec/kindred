@@ -4,7 +4,7 @@ const {server,token}=require('./fixtures/desktop.cjs');
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await(process.env.WEBKIT?webkit:chromium).launch({headless:true});
 const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve('test-results/avatar');fs.mkdirSync(out,{recursive:true});
 try{const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
-await page.route('**/avatar-fixture',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><html data-theme="light"><body style="margin:0;background:white"><div id="test"></div></body></html>'}));
+await page.route('**/avatar-fixture',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><html data-theme="light"><head><link rel="stylesheet" href="/style.css"></head><body style="margin:0;background:white"><div id="test"></div></body></html>'}));
 await page.addInitScript(()=>{window.avatarFrames=0;const raf=requestAnimationFrame;window.requestAnimationFrame=fn=>raf(t=>{window.avatarFrames++;fn(t)});window.testHidden=false;Object.defineProperty(document,'hidden',{get:()=>window.testHidden,configurable:true});});
 const base='http://127.0.0.1:'+server.address().port;await page.goto(base+'/avatar-fixture');
 const result=await page.evaluate(async()=>{
