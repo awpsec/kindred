@@ -579,7 +579,9 @@ def launch_simulator_host(device):
     # toolchain's host before waiting on simulator services, not afterward.
     developer = Path(os.environ['DEVELOPER_DIR'])
     choices = []
-    for app in (developer / 'Applications').glob('*.app'):
+    applications = list((developer / 'Applications').glob('*.app'))
+    applications += list((developer.parent / 'Applications').glob('*.app'))
+    for app in applications:
         try:
             info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
         except (OSError, plistlib.InvalidFileException):
@@ -628,7 +630,12 @@ def main(scope):
     if prebuilt:
         assert os.environ.get('KINDRED_IOS_DERIVED_DATA'), 'Prebuilt native test products need an explicit derived-data directory'
         command[1] = 'test-without-building'
-        command += ['-derivedDataPath', os.environ['KINDRED_IOS_DERIVED_DATA']]
+        test_run = os.environ.get('KINDRED_IOS_XCTESTRUN')
+        if test_run:
+            assert Path(test_run).is_file(), 'Retained native test manifest missing'
+            command[2:6] = ['-xctestrun', test_run]
+        else:
+            command += ['-derivedDataPath', os.environ['KINDRED_IOS_DERIVED_DATA']]
     if scope in ('composer', 'release-ui'):
         assert (ROOT / 'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').is_file(), 'Reviewed composer tests missing'
         command += [

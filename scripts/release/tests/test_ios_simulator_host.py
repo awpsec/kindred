@@ -37,6 +37,16 @@ class SimulatorHostTests(unittest.TestCase):
         hub = self.app('Device Hub')
         self.assertEqual(self.launch(), ['open', '-a', str(hub)])
 
+    def test_xcode_27_device_hub_is_in_contents_applications(self):
+        developer = self.root / 'Contents/Developer'
+        developer.mkdir(parents=True)
+        hub = self.root / 'Contents/Applications/DeviceHub.app'
+        (hub / 'Contents').mkdir(parents=True)
+        (hub / 'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleName': 'DeviceHub'}))
+        with patch.dict(os.environ, DEVELOPER_DIR=str(developer)), patch.object(m, 'OUT', self.root), patch.object(m, 'run') as run:
+            m.launch_simulator_host({'udid': 'selected-only'})
+        self.assertEqual(run.call_args.args[0], ['open', '-a', str(hub)])
+
     def test_older_toolchain_uses_exact_simulator_path_and_device(self):
         simulator = self.app('Simulator')
         self.assertEqual(self.launch(), ['open', '-a', str(simulator), '--args', '-CurrentDeviceUDID', 'selected-only'])

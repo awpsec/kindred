@@ -17,8 +17,14 @@ on:
         required: true
         default: false
         type: boolean
+      reuse_native_run:
+        description: 'Optional prior run with exact-source Native-test-products.zip; avoids recompiling.'
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: kindred-ios-simulator-manual
   cancel-in-progress: false
@@ -90,7 +96,7 @@ jobs:
           cd mobile/ios
           xcodegen generate
       - name: Compile the app, ActivityKit extension and native tests
-        if: ${{ inputs.validation_scope != 'host-diagnostics' }}
+        if: ${{ inputs.validation_scope != 'host-diagnostics' && inputs.reuse_native_run == '' }}
         timeout-minutes: 5
         shell: bash
         env:
@@ -100,6 +106,50 @@ jobs:
           python3 .ios-release-tools/scripts/release/record-ios-build.py "$KINDRED_IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/Kindred.app" --source "$EXPECTED_SOURCE" --version "$KINDRED_IOS_RELEASE_VERSION" --output ios-validation/native-build-receipt.json
           ditto -c -k --keepParent "$KINDRED_IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/Kindred.app" ios-validation/Kindred-unsigned-simulator.app.zip
           ditto -c -k --keepParent "$KINDRED_IOS_DERIVED_DATA/Build/Products" ios-validation/Native-test-products.zip
+      - name: Retrieve retained native test products
+        if: ${{ inputs.validation_scope != 'host-diagnostics' && inputs.reuse_native_run != '' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.reuse_native_run }}
+          name: ios-simulator-validation-${{ inputs.source_commit }}
+          path: .ios-retained-products
+      - name: Restore and verify exact native test products without rebuilding
+        if: ${{ inputs.validation_scope != 'host-diagnostics' && inputs.reuse_native_run != '' }}
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ inputs.source_commit }}
+          REUSED_NATIVE_RUN: ${{ inputs.reuse_native_run }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,importlib.util,json,os,plistlib,re,subprocess
+          from pathlib import Path
+          source=os.environ['EXPECTED_SOURCE']
+          run=os.environ['REUSED_NATIVE_RUN']
+          assert re.fullmatch(r'[0-9]+',run)
+          retained=Path('.ios-retained-products')
+          prior=json.loads((retained/'native-build-receipt.json').read_text())
+          assert prior['source_commit']==source and prior['version']==os.environ['KINDRED_IOS_RELEASE_VERSION']
+          assert prior['compiled_app_and_voice_extension'] is True
+          archive=retained/'Native-test-products.zip'
+          build=Path(os.environ['KINDRED_IOS_DERIVED_DATA'])/'Build'
+          build.mkdir(parents=True,exist_ok=True)
+          subprocess.run(['ditto','-x','-k',str(archive),str(build)],check=True,timeout=30)
+          products=build/'Products'
+          manifests=list(products.glob('*.xctestrun'))
+          assert len(manifests)==1, 'Expected one retained native test manifest'
+          manifest=plistlib.loads(manifests[0].read_bytes())
+          assert 'KindredCompanionTests' in manifest and 'KindredCompanionUITests' in manifest
+          assert (products/'Debug-iphonesimulator/KindredCompanionUITests-Runner.app/PlugIns/KindredCompanionUITests.xctest').is_dir()
+          spec=importlib.util.spec_from_file_location('native_receipt','.ios-release-tools/scripts/release/record-ios-build.py')
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          actual=module.receipt(products/'Debug-iphonesimulator/Kindred.app',source,prior['version'])
+          assert actual['products']==prior['products'], 'Restored native product differs from compiled receipt'
+          Path('ios-validation/native-build-receipt.json').write_text(json.dumps(actual,indent=2)+'\n')
+          reuse={'source_commit':source,'run_id':run,'archive_sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),'xctestrun':str(manifests[0]),'compiled_again':False,'passed':True}
+          Path('ios-validation/native-reuse-receipt.json').write_text(json.dumps(reuse,indent=2)+'\n')
+          with open(os.environ['GITHUB_ENV'],'a') as env:env.write('KINDRED_IOS_XCTESTRUN='+str(manifests[0])+'\n')
+          PY
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         if: ${{ inputs.validation_scope == 'composer' || inputs.validation_scope == 'release-ui' || inputs.validation_scope == 'keyboard-ownership' }}
         with:

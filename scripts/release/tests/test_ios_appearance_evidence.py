@@ -143,13 +143,18 @@ class AppearanceEvidenceTests(unittest.TestCase):
   self.mutate('role','owner')
   with self.assertRaises(AssertionError):self.validate()
  def test_release_ui_main_selects11methods_and_fails_without_xcresult(self):self.check_main_scope('release-ui')
+ def test_retained_xctestrun_runs_same11methods_without_rebuilding(self):self.check_main_scope('release-ui',reuse=True)
  def test_keyboard_diagnostic_main_selects_only4_and480(self):self.check_main_scope('keyboard-ownership')
- def check_main_scope(self,scope):
+ def check_main_scope(self,scope,reuse=False):
   self.device={'udid':'selected-only','state':'Booted'}; root=self.root/'repo';(root/'mobile/ios/KindredCompanionTests').mkdir(parents=True)
   (root/'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').write_text('test fixture')
   (root/'mobile/ios/KindredCompanionUITests').mkdir()
   (root/'mobile/ios/KindredCompanionUITests/AccountsAppearanceUIKitTests.swift').write_text('test fixture')
   out=root/'ios-validation';source='0'*40
+  env=dict(EXPECTED_SOURCE=source,KINDRED_IOS_PREBUILT='1' if reuse else '0')
+  if reuse:
+   retained=root/'retained.xctestrun';retained.write_text('fixture manifest')
+   env.update(KINDRED_IOS_DERIVED_DATA=str(root/'derived'),KINDRED_IOS_XCTESTRUN=str(retained))
   fixture=MagicMock();fixture.poll.return_value=None
   native=MagicMock();native.wait.return_value=0
   captured=[];setup_processes=[]
@@ -167,7 +172,7 @@ class AppearanceEvidenceTests(unittest.TestCase):
   def run(command,**kwargs):
    if command[0]=='openssl':Path(command[command.index('-keyout')+1]).write_text('test-only')
    return subprocess.CompletedProcess([],0,'1' if 'ReduceMotionEnabled' in command and 'read' in command else '0','')
-  with patch.object(m,'launch_simulator_host'),patch.object(m,'ROOT',root),patch.object(m,'OUT',out),patch.dict(m.os.environ,EXPECTED_SOURCE=source),patch.object(m.subprocess,'run',side_effect=run),patch.object(m.subprocess,'check_output',side_effect=output),patch.object(m.subprocess,'Popen',side_effect=popen),patch.object(m.ssl,'create_default_context'),patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps({'origin':'https://localhost:8765','ui_sha256':{}}).encode())):
+  with patch.object(m,'launch_simulator_host'),patch.object(m,'ROOT',root),patch.object(m,'OUT',out),patch.dict(m.os.environ,env),patch.object(m.subprocess,'run',side_effect=run),patch.object(m.subprocess,'check_output',side_effect=output),patch.object(m.subprocess,'Popen',side_effect=popen),patch.object(m.ssl,'create_default_context'),patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps({'origin':'https://localhost:8765','ui_sha256':{}}).encode())):
    with self.assertRaises(SystemExit):m.main(scope)
   if hasattr(m,'_simulator_command'):
    self.assertEqual(len(setup_processes),3)
@@ -177,6 +182,10 @@ class AppearanceEvidenceTests(unittest.TestCase):
    self.assertEqual([command[5] for command,process in setup_processes[1:]],['write','read'])
    self.assertTrue(all(0 < process.wait.call_args.kwargs['timeout'] <= 10 for command,process in setup_processes[1:]))
   self.assertEqual(len(captured),2);self.assertEqual(captured[-1][0],'xcodebuild')
+  if reuse:
+   self.assertEqual(captured[-1][:4],['xcodebuild','test-without-building','-xctestrun',str(retained)])
+   self.assertNotIn('-project',captured[-1]);self.assertNotIn('-scheme',captured[-1])
+   self.assertNotIn('-derivedDataPath',captured[-1])
   self.assertIn('CODE_SIGNING_ALLOWED=NO',captured[-1]);self.assertNotIn('-only-testing:KindredCompanionTests/ComposerUIKitTests',captured[-1])
   self.assertEqual(sorted(x for x in captured[-1] if x.startswith('-only-testing:KindredCompanionTests/ComposerUIKitTests/')), sorted('-only-testing:KindredCompanionTests/'+name.removesuffix('()') for name in (m.KEYBOARD_OWNERSHIP_CASES if scope=='keyboard-ownership' else m.COMPOSER_PHASES)))
   self.assertEqual(native.wait.call_args.kwargs['timeout'],480 if scope=='keyboard-ownership' else 720)
