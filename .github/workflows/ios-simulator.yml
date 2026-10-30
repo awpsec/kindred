@@ -7,7 +7,7 @@ on:
         required: true
         type: string
       validation_scope:
-        description: 'Hosted UIKit tests or a voice-audio Apple SDK compile check without simulator boot.'
+        description: 'Hosted UIKit tests (composer includes startup/recovery and lifecycle) or a voice-audio Apple SDK compile check.'
         required: true
         default: full
         type: choice

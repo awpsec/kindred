@@ -9,8 +9,8 @@ class ComposerEvidenceTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.exports = dict(summary=0, tests=0, attachments=0)
-        self.summary = dict(totalTestCount=9, passedTests=9, failedTests=0)
-        self.tree = {'testNodes': [{'nodeType':'Test Case', 'nodeIdentifier': key, 'result':'Passed'} for key in set(m.COMPOSER_PHASES) | m.DICTATION_METHODS]}
+        self.summary = dict(totalTestCount=13, passedTests=13, failedTests=0)
+        self.tree = {'testNodes': [{'nodeType':'Test Case', 'nodeIdentifier': key, 'result':'Passed'} for key in sorted(m.COMPOSER_METHODS)]}
         self.manifest = []
         for key, phases in m.COMPOSER_PHASES.items():
             rows = []
@@ -33,7 +33,24 @@ class ComposerEvidenceTests(unittest.TestCase):
         self.decoder = patch.object(m.subprocess,'check_output',return_value='pixelWidth: 400\npixelHeight: 900\n'); self.decoder.start(); self.addCleanup(self.decoder.stop)
     def save(self): (self.root/'manifest.json').write_text(json.dumps(self.manifest))
     def validate(self): return m.validate_composer_evidence(self.exports,self.summary,self.tree,self.root)
-    def test_complete_synthetic_evidence(self): self.assertEqual(self.validate(),9)
+    def test_complete_synthetic_evidence(self): self.assertEqual(self.validate(),13)
+    def test_missing_each_workspace_method_cannot_pass(self):
+        for method in m.WORKSPACE_METHODS:
+            with self.subTest(method=method):
+                tree=copy.deepcopy(self.tree)
+                tree['testNodes']=[n for n in tree['testNodes'] if n['nodeIdentifier']!=method]
+                with self.assertRaises(AssertionError):m.validate_composer_evidence(self.exports,self.summary,tree,self.root)
+    def test_failed_or_skipped_workspace_method_cannot_pass(self):
+        for method in m.WORKSPACE_METHODS:
+            for result in ['Failed','Skipped']:
+                with self.subTest(method=method,result=result):
+                    tree=copy.deepcopy(self.tree)
+                    next(n for n in tree['testNodes'] if n['nodeIdentifier']==method)['result']=result
+                    with self.assertRaises(AssertionError):m.validate_composer_evidence(self.exports,self.summary,tree,self.root)
+    def test_old_nine_test_receipt_cannot_pass(self):
+        legacy=set(m.COMPOSER_PHASES)|m.DICTATION_METHODS
+        tree={'testNodes':[n for n in self.tree['testNodes'] if n['nodeIdentifier'] in legacy]}
+        with self.assertRaises(AssertionError):m.validate_composer_evidence(self.exports,dict(totalTestCount=9,passedTests=9,failedTests=0),tree,self.root)
     def test_missing_send_matrix_metadata(self):
         self.manifest[0]['attachments'] = [r for r in self.manifest[0]['attachments'] if not r['suggestedHumanReadableName'].startswith('send-')];self.save()
         with self.assertRaises(AssertionError):self.validate()

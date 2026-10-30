@@ -96,6 +96,16 @@ DICTATION_METHODS = {
 }
 
 
+WORKSPACE_METHODS = {
+    'ComposerUIKitTests/testStartupFailureRestoresRecoveryNavigationAndRetries()',
+    'WebHostLifecycleTests/testInactiveAndBackgroundScenesKeepContentUncovered()',
+    'WebHostLifecycleTests/testDisplayReparentingRetainsWebViewAndNativeComposerWithoutAWindowCover()',
+    'WebHostLifecycleTests/testLoadingAndRecoveryFitPhoneAndDuoInBothThemes()',
+}
+
+COMPOSER_METHODS = set(COMPOSER_PHASES) | DICTATION_METHODS | WORKSPACE_METHODS
+
+
 APPEARANCE_PHASES = {
     'AccountsAppearanceUIKitTests/' + method + '()': tuple(
         'accounts-' + theme + '-' + scale + '-' + state
@@ -115,7 +125,7 @@ KEYBOARD_OWNERSHIP_CASES = {
 
 def validate_composer_evidence(exports, summary, tree, attachments, additional_methods=()):
     assert all(exports[k] == 0 for k in ('summary', 'tests', 'attachments')), 'Native result/attachment export failed'
-    required_methods = set(COMPOSER_PHASES) | DICTATION_METHODS | set(additional_methods)
+    required_methods = COMPOSER_METHODS | set(additional_methods)
     assert summary['totalTestCount'] == len(required_methods) and summary['passedTests'] == len(required_methods) and summary['failedTests'] == 0, 'All exact composer and injected lifecycle tests must execute and pass'
     tree = json.loads(tree) if isinstance(tree, str) else tree
     cases = []
@@ -588,9 +598,10 @@ def main(scope):
     command = ['xcodebuild', 'test', '-project', 'KindredCompanion.xcodeproj', '-scheme', 'KindredCompanion', '-destination', destination, '-destination-timeout', '90', '-parallel-testing-enabled', 'NO', '-maximum-concurrent-test-simulator-destinations', '1', '-resultBundlePath', str(bundle), 'CODE_SIGNING_ALLOWED=NO']
     if scope in ('composer', 'release-ui'):
         assert (ROOT / 'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').is_file(), 'Reviewed composer tests missing'
+        assert (ROOT / 'mobile/ios/KindredCompanionTests/WebHostLifecycleTests.swift').is_file(), 'Reviewed workspace lifecycle tests missing'
         command += [
             '-only-testing:KindredCompanionTests/' + name.removesuffix('()')
-            for name in sorted(set(COMPOSER_PHASES) | DICTATION_METHODS)]
+            for name in sorted(COMPOSER_METHODS)]
     if scope == 'release-ui':
         assert (ROOT / 'mobile/ios/KindredCompanionUITests/AccountsAppearanceUIKitTests.swift').is_file(), 'Reviewed native appearance tests missing'
         command += ['-only-testing:KindredCompanionUITests/AccountsAppearanceUIKitTests']
@@ -599,9 +610,9 @@ def main(scope):
         command += ['-only-testing:KindredCompanionTests/' + name.removesuffix('()') for name in sorted(KEYBOARD_OWNERSHIP_CASES)]
     receipt = {'source_commit': source, 'scope': scope, 'runtime': runtime, 'device': device, 'destination': destination, 'command': command, 'full_scheme_includes_AppModelSignInTests': scope == 'full', 'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'automatic_retry': False, 'passed': False}
     if scope in ('composer', 'release-ui'):
-        receipt.update(required_methods=sorted(set(COMPOSER_PHASES) | DICTATION_METHODS), required_native_phases=53, real_Apple_recognition_selected=False, real_audio_test_excluded=True, injectable_lifecycle_is_recognition_proof=False)
+        receipt.update(required_methods=sorted(COMPOSER_METHODS), required_workspace_methods=sorted(WORKSPACE_METHODS), required_native_phases=53, real_Apple_recognition_selected=False, real_audio_test_excluded=True, injectable_lifecycle_is_recognition_proof=False)
     if scope == 'release-ui':
-        receipt.update(required_methods=sorted(set(COMPOSER_PHASES) | DICTATION_METHODS | set(APPEARANCE_PHASES)), required_native_phases=77, required_appearance_pairs=24, visual_bitmap_acceptance_requires_independent_review=True)
+        receipt.update(required_methods=sorted(COMPOSER_METHODS | set(APPEARANCE_PHASES)), required_native_phases=77, required_appearance_pairs=24, visual_bitmap_acceptance_requires_independent_review=True)
     if scope == 'keyboard-ownership':
         receipt.update(diagnostic_only=True, release_passed=False, required_methods=sorted(KEYBOARD_OWNERSHIP_CASES), required_native_phases=4, native_command_seconds=480, real_Apple_recognition_selected=False)
     record('test-receipt.json', receipt)
