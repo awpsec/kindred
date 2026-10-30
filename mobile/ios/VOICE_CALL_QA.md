@@ -86,11 +86,10 @@ cargo test --bin kindred -j1 voice:: -- --test-threads=1
 
 Both browser engines passed the component and full native-adapter fixtures,
 including all three Duo poses. PCM capture checks passed at 24, 44.1 and 48 kHz.
-No real OpenAI call or native build has been verified by the Linux preparation
-task. The production server code passed `cargo check`; compiling the full Rust
-test harness exceeded the preparation machine's available memory. Eleven isolated
-tests using the production delegation/transcript code and an in-memory database
-fixture passed, covering durability, corrections, public results, approval
-preservation, context, Unicode and new card-copy limits. These do not replace
-the full server integration suite or a real provider call. Do not treat
-this branch as a published or device-verified release.
+The server test harness compiled and all 15 `voice::` tests passed during release
+preparation on 2026-10-30, including the local WebSocket relay, corrections,
+public results, pending approvals, context and restart deduplication. Fixtures
+now create the bot and its direct conversation through the production path.
+No real OpenAI call or native build was verified by the Linux preparation task.
+The native and real-provider checks above still require their own receipts;
+browser and local provider fixtures do not establish device verification.

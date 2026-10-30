@@ -35,7 +35,9 @@ function refreshTributes(){cancelAnimationFrame(tributeFrame);tributeFrame=0;for
 function startTribute(box){if(!box.isConnected)return;if(!tributeObserver){tributeObserver=new IntersectionObserver(es=>{for(const e of es)e.target._tributeVisible=e.isIntersecting;refreshTributes();});tributeRemoval=new MutationObserver(()=>{for(const b of tributes)if(!b.isConnected||!b._character?.tribute)releaseTribute(b);});tributeRemoval.observe(document.documentElement,{childList:true,subtree:true});tributeMotion=new MutationObserver(refreshTributes);tributeMotion.observe(document.documentElement,{attributes:true,attributeFilter:['data-motion']});document.addEventListener('visibilitychange',refreshTributes);tributePreference.addEventListener('change',refreshTributes);}if(!tributes.has(box)){tributes.add(box);tributeObserver.observe(box);}queueTributes();}
 
 export function character(profile={},size=44,busy=false){
- const p={...defaultProfile,...profile},box=document.createElement('span');box.className='character artwork-character';box.setAttribute('aria-hidden','true');box.style.display='inline-block';box.style.position='relative';box.style.width=size+'px';box.style.height=size+'px';box.dataset.shape=p.avatar?.body||p.shape;
+ // The .character class supplies the positioning context; surfaces such as
+ // group-message gutters must be able to override it without inline styles.
+ const p={...defaultProfile,...profile},box=document.createElement('span');box.className='character artwork-character';box.setAttribute('aria-hidden','true');box.style.display='inline-block';box.style.width=size+'px';box.style.height=size+'px';box.dataset.shape=p.avatar?.body||p.shape;
  if(p.bot_id)box.dataset.botId=p.bot_id;
  box.style.setProperty('--bot-fill',p.color);const tribute=tributeIdentity(p);
  if(tribute){box.classList.add('animated');createTribute(box,p,tribute,busy);renderTribute(box,Date.now(),reducedMotion());queueMicrotask(()=>startTribute(box));return box;}
