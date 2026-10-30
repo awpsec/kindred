@@ -506,6 +506,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         _ = try await js("window.webkit.messageHandlers.kindredAccounts.postMessage({action:'startup-failed'});true")
         try await waitFor("native startup recovery") { self.session.loadState.failure != nil }
         XCTAssertFalse(session.presentation.hasChatInterface, "A failed startup restores the native Accounts recovery controls")
+        XCTAssertFalse(session.presentation.hasLoadedChats, "Retry must await the new document’s readiness")
         session.reload()
         try await waitFor("retry opens the same workspace") {
             self.session.loadState.failure == nil && self.session.presentation.hasLoadedChats
