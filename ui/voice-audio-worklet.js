@@ -1,7 +1,9 @@
 // Mono PCM16/24 kHz in bounded 40 ms frames. No per-sample work on the UI thread.
 class KindredVoiceCapture extends AudioWorkletProcessor {
-  constructor(){super();this.samples=new Int16Array(960);this.used=0;this.position=0;this.muted=false;this.port.onmessage=e=>{this.muted=e.data?.muted===true;};}
-  process(inputs){
+  constructor(){super();this.samples=new Int16Array(960);this.used=0;this.position=0;this.muted=false;this.port.onmessage=e=>{const muted=e.data?.muted===true;if(muted!==this.muted){this.samples.fill(0);this.used=0;}this.muted=muted;};}
+  process(inputs,outputs){
+    // Keep a real output connected to the destination, without microphone echo.
+    for(const channel of outputs?.[0]||[])channel.fill(0);
     const input=inputs[0]?.[0];if(!input)return true;
     const step=sampleRate/24000;
     for(;this.position<input.length;this.position+=step){
