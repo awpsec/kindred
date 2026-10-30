@@ -3422,7 +3422,7 @@ html[data-motion='off'] .color-option {transition:none;scale:1;}
 .question-letter {flex:none;display:grid;place-items:center;background:var(--hover);color:var(--muted);border-radius:4px;width:19px;height:21px;font-size:calc(10px * var(--text-scale, 1));}
 .question-receipt > span:not(.question-letter) {flex:1;overflow-wrap:anywhere;white-space:pre-wrap;}
 .question-receipt > svg {flex:none;color:var(--soft);}
-.question-custom {display:block;padding:12px 2px 0;font-size:calc(12px * var(--text-scale, 1));color:var(--soft);text-align:left;}
+
 .question-response {margin-top:12px;display:flex;flex-direction:column;gap:8px;}
 .question-response textarea {display:block;box-sizing:border-box;width:100%;min-height:68px;max-height:240px;resize:none;overflow-y:auto;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);font:inherit;font-size:calc(13px * var(--text-scale, 1));line-height:1.5;}
 .question-response textarea:focus {outline:2px solid var(--muted);outline-offset:2px;}
@@ -5340,9 +5340,10 @@ html[data-mobile] .conversation-header { -webkit-app-region:no-drag; }
 .server-admin-page .vm-resource-form > .row-actions{margin:8px 0 0}
 .server-admin-page .server-update-settings{margin-bottom:24px}
 
-.question-actions {display:flex;align-items:baseline;justify-content:space-between;gap:16px;}
-.question-dismiss {margin-left:auto;padding:12px 2px 0;color:var(--soft);font-size:calc(12px * var(--text-scale, 1));}
-.question-dismiss:hover,.question-custom:hover {color:var(--fg);}
+.question-heading{display:flex;align-items:flex-start;gap:8px;margin-bottom:12px}
+.question-heading>.question-title{flex:1;min-width:0;margin:3px 0}
+.question-dismiss{flex:none;width:32px;height:32px;padding:7px;border-radius:6px;color:var(--muted)}
+.question-dismiss:hover{background:var(--hover);color:var(--fg)}
 
 .mobile-pairing-dialog {width:min(420px,calc(100vw - 32px));}
 .mobile-pairing-body {display:flex;flex-direction:column;gap:16px;min-width:0;}
@@ -5558,8 +5559,10 @@ html[data-ios-short=true] .control-notice-copy strong {display:inline-block;max-
 .request-tray .question-choices{gap:8px}
 .request-tray .question-option{border-color:transparent;background:color-mix(in srgb,var(--fg) 3%,transparent);border-radius:7px;transition:background .14s ease,border-color .14s ease}
 .request-tray .question-option:is(:hover,:focus-visible){background:var(--hover);border-color:var(--line)}
-.request-tray .question-actions{align-items:center;margin-top:8px}
-.request-tray :is(.question-custom,.question-dismiss){padding:6px 0;min-height:30px}
+.request-tray:has(>.question-card):not([hidden]){display:flex;flex-direction:column;overflow:hidden}
+.request-tray:has(>.question-card)>.request-tray-header{flex:none}
+.request-tray>.question-card{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.request-tray-bar>.question-dismiss{width:32px;height:32px;padding:7px}
 .request-tray .question-response textarea{width:100%;min-height:44px;max-height:240px;resize:none}
 .request-tray .question-response{margin-top:8px;background:var(--bg)}
 .request-tray.is-minimized{padding:0;overflow:hidden}
@@ -5569,7 +5572,7 @@ html[data-ios-short=true] .control-notice-copy strong {display:inline-block;max-
 .request-tray-preview{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--text-scale,1));font-weight:500}
 .request-tray-count{flex:none;font-size:calc(11px * var(--text-scale,1));color:var(--soft);font-variant-numeric:tabular-nums}
 .request-tray-expand>svg{flex:none;color:var(--muted);transform:rotate(-90deg)}
-@media(hover:none),(pointer:coarse){.request-tray-bar .icon-button{width:36px;height:36px}.request-tray :is(.question-custom,.question-dismiss){min-height:44px}}
+@media(hover:none),(pointer:coarse){.request-tray-bar .icon-button{width:36px;height:36px}.question-dismiss,.request-tray-bar>.question-dismiss{width:44px;height:44px}.question-option{min-height:44px}}
 @media(max-width:600px){.request-tray{padding:12px}.request-tray-header{gap:8px}.request-tray-bar{gap:0}.request-tray-minimize{margin-left:2px}.request-tray-expand{gap:8px}}
 @media(prefers-reduced-motion:reduce){.request-tray .question-choices{gap:8px}
 .request-tray .question-option{transition:none}}
@@ -5993,7 +5996,7 @@ html[data-system-text-size]{--conversation-reading-size:calc(16px * var(--text-s
 html[data-system-text-size] .message-row:not(.summary-progress-update)>.message-bubble,
 html[data-system-text-size] .request-tray :is(.request-tray-heading,.request-tray-preview,.question-title,.question-option,.question-receipt),
 html[data-system-text-size] #composer #prompt{font-size:var(--conversation-reading-size)}
-html[data-system-text-size] .request-tray :is(.question-context,.question-details,.question-custom,.question-dismiss){font-size:var(--conversation-secondary-size)}
+html[data-system-text-size] .request-tray :is(.question-context,.question-details){font-size:var(--conversation-secondary-size)}
 html[data-system-text-size] .request-tray .question-response textarea{font-size:var(--conversation-reading-size)}
 html[data-system-text-size] .summary-progress-body .message-bubble{font-size:inherit}
 

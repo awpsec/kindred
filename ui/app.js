@@ -5557,9 +5557,17 @@ function finishQuestionComposer(q,external){
   if(chatId===composerChatId()){restoreDraft();renderPendingFiles();$('prompt').focus({preventScroll:true});}
   if(external&&text.trim()){questionDrafts.set(q.id,text);notice('This question was resolved. Your response was kept.',false,{label:'Copy response',run:()=>copyText(text)});}
 }
+function setQuestionControlsPending(id,pending){
+  for(const card of document.querySelectorAll('[data-question-id]'))if(card.dataset.questionId===id){
+    if(pending)card.setAttribute('aria-busy','true');else card.removeAttribute('aria-busy');
+    for(const control of card.querySelectorAll('button'))control.disabled=pending;
+  }
+  // The dismiss control lives in the tray header, outside the scrolling card.
+  for(const control of document.querySelectorAll('[data-question-dismiss]'))if(control.dataset.questionDismiss===id)control.disabled=pending;
+}
 async function submitQuestion(q,body){
     const token=state.token;
-    if(questionPending.has(q.id))return;questionPending.add(q.id);syncQuestionComposer();for(const card of document.querySelectorAll('[data-question-id]'))if(card.dataset.questionId===q.id){card.setAttribute('aria-busy','true');for(const control of card.querySelectorAll('button'))control.disabled=true;}
+    if(questionPending.has(q.id))return;questionPending.add(q.id);syncQuestionComposer();setQuestionControlsPending(q.id,true);
     try{
       const saved=await api(q.shared_seq?'/server-chats/'+q.chat_id+'/questions/'+q.shared_seq+'/answer':'/questions/'+q.id+(body.dismiss?'/dismiss':'/answer'),'POST',body);if(state.token!==token)return;questionDrafts.delete(q.id);finishQuestionComposer(q,false);
       for(const entry of chatHistory.values())for(const m of entry.messages)if(m.question?.id===q.id)m.question=saved;
@@ -5573,7 +5581,7 @@ async function submitQuestion(q,body){
         if(resolved){finishQuestionComposer(q,true);return;}
       }
       throw error;
-    }finally{questionPending.delete(q.id);if(state.token===token){state.chatKey='';await renderChat(true,'cached');syncQuestionComposer();}}
+    }finally{questionPending.delete(q.id);if(state.token===token){setQuestionControlsPending(q.id,false);state.chatKey='';await renderChat(true,'cached');syncQuestionComposer();}}
 }
 
 function questionCard(q){
@@ -5592,7 +5600,7 @@ function questionCard(q){
       if(q.selected!==null && q.selected!==undefined)receipt.append(node('span','question-letter',String.fromCharCode(65+q.selected)));
       receipt.append(node('span','',q.answer),icon('check',16));
     }else receipt.append(node('span','muted',q.status==='dismissed'?'Dismissed without an answer.':'This question was cancelled.'));
-    card.append(receipt);return decisionReceipt(card,{key:'question:'+q.id,title:q.question,outcome:q.status==='answered'?'Answered':q.status==='dismissed'?'Skipped':'Cancelled',terminal:true,compact:true});
+    card.append(receipt);return decisionReceipt(card,{key:'question:'+q.id,title:q.question,outcome:q.status==='answered'?'Answered':q.status==='dismissed'?'Dismissed':'Cancelled',terminal:true,compact:true});
   }
   const choices=node('div','question-choices');
   const submit=body=>submitQuestion(q,body);
@@ -5600,9 +5608,10 @@ function questionCard(q){
     const option=button('',()=>submit({selected:i}),'question-option');option.dataset.questionFocus='option-'+i;
     option.append(node('span','question-letter',String.fromCharCode(65+i)),node('span','',label));choices.append(option);
   });
-  const custom=button('Write my own response',()=>beginQuestionComposer(q),'question-custom');custom.dataset.questionFocus='custom';
-  const dismiss=button('Dismiss',()=>submit({dismiss:true}),'question-dismiss');dismiss.dataset.questionFocus='dismiss';dismiss.title='Dismiss without answering';
-  const actions=node('div','question-actions');actions.append(custom,dismiss);card.append(choices,actions);
+  const custom=button('',()=>beginQuestionComposer(q),'question-option question-custom');custom.dataset.questionFocus='custom';
+  custom.append(node('span','question-letter',String.fromCharCode(65+q.options.length)),node('span','','Write my own response'));choices.append(custom);
+  const dismiss=iconButton('close','Dismiss question',()=>submit({dismiss:true}));dismiss.classList.add('question-dismiss');dismiss.dataset.questionFocus='dismiss';dismiss.dataset.questionDismiss=q.id;dismiss.title='Dismiss without answering or restarting the bot';
+  const heading=node('div','question-heading');heading.append(title,dismiss);card.prepend(heading);card.append(choices);
   if(questionPending.has(q.id)){card.setAttribute('aria-busy','true');for(const control of card.querySelectorAll('button,textarea'))control.disabled=true;}
   return decisionReceipt(card,{key:'question:'+q.id,title:q.question,terminal:false});
 }
@@ -5969,8 +5978,10 @@ function renderRequestTray(chat,entry){
   }
   const minimize=iconButton('chevron','Minimize pending requests',()=>{model.minimized=true;renderRequestTray(chat,entry);state.chatKey='';void renderChat(true,'cached');if(entry.questionReturn){focusTaskQuestion(entry.questionReturn);}});
   minimize.classList.add('request-tray-minimize');minimize.dataset.questionFocus='minimize';minimize.setAttribute('aria-expanded','true');if(!isAnswering)bar.append(minimize);
+  const dismiss=card.querySelector('.question-dismiss');if(dismiss)bar.append(dismiss);
+  card.querySelector('.question-heading')?.remove();
   header.append(bar);
-  const details=card.querySelector('.task-details>summary');if(details)details.textContent='Details';card.querySelector('.question-dismiss')?.replaceChildren(document.createTextNode('Skip'));
+  const details=card.querySelector('.task-details>summary');if(details)details.textContent='Details';
   tray.append(header,card);
   if(isAnswering){
     card.inert=true;const height=card.getBoundingClientRect().height;
