@@ -7,8 +7,8 @@
   // SVG animation frames cannot change navigation, menus or pane geometry.
   // Keep them out of native-wide observers while retaining identity changes.
   const observeUI = callback => new MutationObserver((records, observer) => {
-    const structural = records.filter(record => !record.target.closest?.('.character') ||
-      (record.type === 'attributes' && ['data-shape','data-avatar-body','data-avatar-color'].includes(record.attributeName)));
+    const structural = records.filter(record => !record.target.closest?.('.voice-wave') && (!record.target.closest?.('.character') ||
+      (record.type === 'attributes' && ['data-shape','data-avatar-body','data-avatar-color'].includes(record.attributeName))));
     if (structural.length) callback(structural, observer);
   });
   // UIKit supplies system text size separately. Respect fixed
@@ -2211,7 +2211,7 @@
       const composer=nativeComposer?.snapshot(covered);
       const payload = JSON.stringify({action:'glass-controls',document:glassDocument,controls,...(composer?{composer}:{})});
       if (payload !== glassLast) {glassLast=payload;window.webkit?.messageHandlers?.kindredAccounts?.postMessage({...JSON.parse(payload),sequence:++glassSerial});}
-      if (!stopped && document.getAnimations().some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))) schedule();
+      if (!stopped && document.getAnimations().some(a=>!a.effect?.target?.closest?.('.voice-wave')&&a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))) schedule();
     };
     const schedule = () => {if(!stopped&&!glassFrame)glassFrame=requestAnimationFrame(scan);};
     nativeComposer=window.__kindredCreateNativeComposer?.({documentID:glassDocument,schedule,allowed:()=>duoRoute()==='bot-chat'});

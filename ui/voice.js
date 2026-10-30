@@ -4,29 +4,98 @@ const callTones={connecting:[[392,0,.09],[494,.12,.09]],connected:[[523,0,.11],[
 export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,notice,openSettings,cancelDictation,onEnded=()=>{}}){
   const node=(tag,cls='',text='')=>{const n=document.createElement(tag);n.className=cls;n.textContent=text;return n;};
   const button=(label,symbol,run,cls='')=>{const b=node('button','voice-control '+cls);b.type='button';b.title=label;b.setAttribute('aria-label',label);b.append(icon(symbol,18));b.onclick=run;return b;};
-  let config=null,settings=null,revision=0,operation=null,clock=null,preview=null,effects=null,effectsIdle=null,cueRevision=0;
+  let config=null,settings=null,revision=0,operation=null,clock=null,preview=null,effects=null,effectsIdle=null,cueRevision=0,trayMotion=null,trayClosing=false,positionFrame=0,waveCount=0;
   const cueNodes=new Map();
   const startButton=button('Start voice call','voice',()=>void start(),'voice-start');startButton.hidden=true;send.before(startButton);
   const tray=node('div','voice-call-tray');tray.hidden=true;tray.setAttribute('role','group');tray.setAttribute('aria-label','Voice call');
-  const portrait=node('span','voice-avatar'),copy=node('div','voice-call-copy'),status=node('div','voice-call-state'),time=node('div','voice-call-time','0:00');status.setAttribute('role','status');copy.append(status,time);
+  const conversation=composer.closest('.conversation')||composer.parentElement,header=conversation.querySelector('.conversation-header');
+  const layer=node('div','voice-call-overlay'),portrait=node('span','voice-avatar'),activity=node('div','voice-call-activity'),copy=node('div','voice-call-copy'),status=node('div','voice-call-state'),time=node('div','voice-call-time','0:00');status.setAttribute('role','status');copy.append(status,time);
   const wave=node('span','voice-wave');wave.setAttribute('aria-hidden','true');
-  const outputWave=node('span','voice-wave-output'),inputWave=node('span','voice-wave-input');for(let i=0;i<9;i++){outputWave.append(node('i'));inputWave.append(node('i'));}wave.append(outputWave,inputWave);
-  const mute=button('Mute microphone','mic',()=>setMuted(!operation?.muted),'voice-mute'),end=button('End call','phone-off',()=>void endCall(),'voice-end');tray.append(portrait,copy,wave,mute,end);composer.append(tray);
+  const outputWave=node('span','voice-wave-output'),inputWave=node('span','voice-wave-input');wave.append(outputWave,inputWave);activity.append(wave,copy);
+  const gear=button('Voice settings','settings',()=>void showSettings(),'voice-settings-button'),mute=button('Mute microphone','mic',()=>setMuted(!operation?.muted),'voice-mute'),end=button('End call','close',()=>void endCall(),'voice-end');tray.append(portrait,activity,gear,mute,end);layer.append(tray);conversation.append(layer);
   const stamp=n=>Math.floor(n/60)+':'+String(n%60).padStart(2,'0');
   const native=()=>window.__KINDRED_IOS_VOICE?.protocolVersion===1&&window.webkit?.messageHandlers?.kindredVoice;
   const postNative=(action,extra={})=>native()?.postMessage({action,documentID:window.__KINDRED_IOS_VOICE.documentID,...extra});
   const reducedMotion=()=>document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches;
+  async function showSettings(){
+    try{await openSettings('general');const details=settings?.querySelector('details');if(details?.isConnected){details.open=true;details.scrollIntoView({block:'center',behavior:'instant'});details.querySelector('summary')?.focus({preventScroll:true});}}
+    catch{notice('Voice settings could not open. Try Settings → General.',true);}
+  }
+  function resizeWave(){
+    const count=Math.max(8,Math.min(35,Math.floor((wave.clientWidth+4)/7)));if(count===waveCount)return;waveCount=count;
+    for(const part of [inputWave,outputWave])part.replaceChildren(...Array.from({length:count},()=>node('i')));
+    if(operation)paintWave(operation);
+  }
+  function paintWave(op){
+    // One baseline, two real PCM histories. The mic is bright and mirrored;
+    // quieter bot ink stays underneath it, matching the call's two speakers.
+    for(const [part,history,baseline] of [[outputWave,op.outputHistory,.107],[inputWave,op.inputHistory,0]]){
+      const values=history.slice(-waveCount);for(let i=0;i<part.children.length;i++){
+        const rms=values[i]||0,scale=Math.max(baseline,rms>.006?Math.min(1,Math.sqrt(rms)*2.7):0).toFixed(3),bar=part.children[i];
+        if(bar.dataset.level!==scale){bar.dataset.level=scale;bar.style.transform='scaleY('+scale+')';}
+      }
+    }
+  }
+  function preserveReading(change){
+    const history=conversation.querySelector('.messages'),height=history?.scrollHeight,offset=history?.scrollTop,bottom=history&&height-history.clientHeight-offset<4;
+    change();
+    if(history&&history.scrollHeight!==height)history.scrollTo({top:bottom?history.scrollHeight:Math.max(0,offset+history.scrollHeight-height),behavior:'instant'});
+  }
+  function positionTray(){
+    positionFrame=0;if(tray.hidden||!conversation.isConnected)return;
+    const base=conversation.getBoundingClientRect(),head=header?.getBoundingClientRect(),layout=window.__KINDRED_IOS_LAYOUT||{};
+    let left=base.left+12,right=base.right-12,top=head?.height?head.bottom+6:base.top+Math.max(64,Number(layout.topInset)||0);
+    const reserved=(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions||[]).filter(r=>r&&r.active!==false&&['x','y','width','height'].every(k=>Number.isFinite(r[k]))&&r.width>0&&r.height>0);
+    // The front display's camera, not the toolbar's union of buttons, defines
+    // its optical center. Keep the same 12px gap at both usable screen edges.
+    if(layout.isDuo&&!layout.isDuoInner)for(const r of reserved){if(r.kind==='occlusion'&&r.x>base.left+base.width/2&&r.x<base.right)right=Math.min(right,r.x-12);}
+    // Duo's rail is localized, so a bottom composer inset cannot place a top
+    // call pill. Project the actual rail/camera/division rectangles instead.
+    const panes=[...(conversation.parentElement?.querySelectorAll(':scope > .details-panel:not([hidden]),:scope > .computer-panel:not([hidden])')||[])].filter(p=>['absolute','fixed'].includes(getComputedStyle(p).position)).map(p=>{
+      // The pane's finite entry motion must not leave call controls underneath
+      // it between layout ticks. Reserve its final fixed frame immediately.
+      const style=p.style,r=p.getBoundingClientRect();return p.classList.contains('pane-layout-frame')?{x:parseFloat(style.left),y:parseFloat(style.top),width:parseFloat(style.width),height:parseFloat(style.height),pane:true}:{...r.toJSON(),pane:true};
+    });
+    const regions=[...panes,window.__KINDRED_IOS_TOOLBAR,...reserved].filter(r=>r&&r.active!==false&&['x','y','width','height'].every(k=>Number.isFinite(r[k]))&&r.width>0&&r.height>0);
+    for(const r of regions){
+      if(r.y>=top+tray.offsetHeight||r.y+r.height<=top||r.x>=right||r.x+r.width<=left)continue;
+      const before=r.x-left,after=right-r.x-r.width;
+      if(Math.max(before,after)<240&&!r.pane){top=r.y+r.height+8;continue;}
+      if(r.pane&&Math.max(before,after)<52)continue;
+      if(before>=after)right=r.x-12;else left=r.x+r.width+12;
+    }
+    tray.dataset.compact=String(panes.length>0&&right-left<280);
+    const values={left:Math.max(0,left-base.left)+'px',right:Math.max(0,base.right-right)+'px',top:Math.max(0,top-base.top)+'px'};
+    for(const [key,value] of Object.entries(values))if(layer.style[key]!==value)layer.style[key]=value;
+    const clearance=Math.max(0,top-base.top+tray.offsetHeight+10)+'px';if(conversation.style.getPropertyValue('--voice-clearance')!==clearance)preserveReading(()=>conversation.style.setProperty('--voice-clearance',clearance));
+  }
+  const queuePosition=()=>{if(!tray.hidden&&!positionFrame)positionFrame=requestAnimationFrame(positionTray);};
+  const boundsObserver=new ResizeObserver(queuePosition);boundsObserver.observe(conversation);if(header)boundsObserver.observe(header);boundsObserver.observe(tray);
+  const paneObserver=new MutationObserver(queuePosition);for(const pane of conversation.parentElement?.querySelectorAll(':scope > .details-panel,:scope > .computer-panel')||[]){boundsObserver.observe(pane);paneObserver.observe(pane,{attributes:true,attributeFilter:['class','style','hidden']});}
+  new ResizeObserver(resizeWave).observe(wave);
+  for(const name of ['resize','kindred-ios-layout','kindred-ios-toolbar','kindred-native-geometry'])window.addEventListener(name,queuePosition);
+  function showTray(){
+    if(!tray.hidden&&!trayClosing)return;trayMotion?.cancel();trayMotion=null;trayClosing=false;
+    preserveReading(()=>{tray.hidden=false;tray.inert=false;tray.removeAttribute('aria-hidden');positionTray();resizeWave();});
+    if(!reducedMotion())trayMotion=tray.animate([{opacity:0,transform:'translateY(-12px) scale(.94)'},{opacity:1,transform:'none'}],{duration:190,easing:'cubic-bezier(.2,.8,.2,1)'});
+  }
+  function hideTray(immediate=false){
+    if(tray.hidden||trayClosing&&!immediate)return;trayMotion?.cancel();trayMotion=null;trayClosing=true;tray.inert=true;tray.setAttribute('aria-hidden','true');
+    const finish=()=>preserveReading(()=>{tray.hidden=true;trayClosing=false;trayMotion=null;conversation.style.removeProperty('--voice-clearance');});
+    if(immediate||reducedMotion()){finish();return;}
+    const motion=trayMotion=tray.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateY(-18px) scale(.86)'}],{duration:180,easing:'cubic-bezier(.4,0,1,1)',fill:'forwards'});
+    motion.finished.then(()=>{if(trayMotion===motion){finish();motion.cancel();}}).catch(()=>{});
+  }
   function levels(op){
     if(operation!==op||document.hidden)return;const now=Date.now();
     if(!op.native){const at=op.audio?.currentTime||0;while(op.outputLevels?.length&&op.outputLevels[0].end<=at)op.outputLevels.shift();const current=op.outputLevels?.[0];op.outputLevel=current&&current.at<=at?current.rms:0;}
     else if(now-(op.nativeLevelAt||0)>250){op.inputLevel=0;op.outputLevel=0;}
-    const active=op.phase==='active'&&!op.captureProblem,input=active&&!op.muted&&now-(op.lastFrame||op.nativeLevelAt||0)<250?op.inputLevel||0:0,output=active?op.outputLevel||0:0;
+    const active=op.phase==='active'&&!op.captureProblem,input=active&&!op.muted&&now-(op.native?op.nativeLevelAt||0:op.lastFrame||0)<250?op.inputLevel||0:0,output=active?op.outputLevel||0:0;
     const speaking=output>.006;if(speaking)op.speakingUntil=now+150;
     const wasSpeaking=tray.dataset.speaking==='true';if(wasSpeaking!==(now<op.speakingUntil))render();
-    tray.dataset.hearing=String(input>.006);
-    const reduced=reducedMotion();if(reduced&&now-(op.lastVisualAt||0)<250)return;op.lastVisualAt=now;
-    const weights=[.35,.58,.78,.92,1,.86,.70,.54,.3];
-    for(const [container,rms] of [[outputWave,output],[inputWave,input]]){const amplitude=rms>.006?Math.min(1,Math.sqrt(rms)*3):0;for(let i=0;i<container.children.length;i++){const scale=(.14+amplitude*(reduced?1:weights[i])*.86).toFixed(3),bar=container.children[i];if(bar.dataset.level!==scale){bar.dataset.level=scale;bar.style.transform='scaleY('+scale+')';}}}
+    const hearing=String(input>.006);if(tray.dataset.hearing!==hearing)tray.dataset.hearing=hearing;
+    const interval=reducedMotion()?250:100;if(now-(op.lastVisualAt||0)<interval)return;op.lastVisualAt=now;
+    op.inputHistory.push(input);op.inputHistory.shift();op.outputHistory.push(output);op.outputHistory.shift();paintWave(op);
   }
   const audioContext=()=>{const Context=window.AudioContext||window.webkitAudioContext;if(!Context)throw Error('Audio is unavailable in this app.');return new Context({latencyHint:'interactive'});};
   const bounded=(promise,ms,message)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error(message)),ms))]).finally(()=>clearTimeout(timer));};
@@ -68,11 +137,14 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
   }
   function render(){
     const active=!!operation,ready=!!config?.configured&&config.enabled&&!!bot()&&chatId()?.startsWith('dm-')&&!composer.matches('.has-files,.is-replying,.is-answering,.is-request-activating,.is-dictating');
-    composer.classList.toggle('is-voice-calling',active);composer.classList.toggle('voice-ready',ready&&!editor.value?.trim());
-    startButton.hidden=!ready||active||!!editor.value?.trim();tray.hidden=!active;
+    const changed=composer.classList.contains('is-voice-calling')!==active;
+    composer.classList.toggle('is-voice-calling',active);composer.classList.toggle('voice-ready',ready&&!active&&!editor.value?.trim());
+    startButton.hidden=!ready||active||!!editor.value?.trim();if(active&&operation.phase!=='ending')showTray();else hideTray();
     if(active){status.textContent=operation.phase==='connecting'?'Connecting…':operation.phase==='ending'?'Ending call…':operation.muted?'Microphone muted':operation.captureProblem||(matchMedia('(max-width: 600px)').matches?(Date.now()<operation.speakingUntil?'Speaking…':'Listening…'):operation.bot.name+(Date.now()<operation.speakingUntil?' is speaking':' is listening'));time.textContent=stamp(operation.started?Math.max(0,Math.floor(((operation.endedAt||Date.now())-operation.started)/1000)):0);mute.disabled=operation.phase!=='active';if(mute.dataset.muted!==String(operation.muted)){mute.dataset.muted=String(operation.muted);mute.replaceChildren(icon(operation.muted?'mic-off':'mic',18));}mute.title=operation.muted?'Unmute microphone':'Mute microphone';mute.setAttribute('aria-pressed',String(operation.muted));mute.setAttribute('aria-label',operation.muted?'Unmute microphone':'Mute microphone');tray.dataset.speaking=String(Date.now()<operation.speakingUntil);}
+    const showingStatus=String(active&&(operation.phase==='connecting'||!!operation.captureProblem));if(tray.dataset.status!==showingStatus)tray.dataset.status=showingStatus;
+    if(active)portrait.title=operation.bot.name+' · '+time.textContent;
     if(settings?.isConnected){const enabled=settings.querySelector('input'),select=settings.querySelector('select');enabled.checked=!!config?.enabled;enabled.disabled=!config?.configured||active||settings.dataset.saving==='true';select.disabled=!config?.configured||active||settings.dataset.saving==='true';settings.querySelector('.voice-summary-state').textContent=!config?'Unavailable':!config.configured?'Not connected':config.enabled?'On':'Off';renderPreview();}
-    composer.dispatchEvent(new CustomEvent('kindred-voice-layout',{bubbles:true}));
+    if(changed)composer.dispatchEvent(new CustomEvent('kindred-voice-layout',{bubbles:true}));
   }
   async function init(){
     const current=++revision;config=null;stopPreview();render();
@@ -110,7 +182,7 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
       }catch{void endCall('Audio playback stopped. Call again to reconnect.');}
     }else if(value.type==='levels'&&op.native){op.nativeLevelAt=Date.now();op.inputLevel=Number.isFinite(value.input)?Math.max(0,Math.min(1,value.input)):0;op.outputLevel=Number.isFinite(value.output)?Math.max(0,Math.min(1,value.output)):0;levels(op);}
     else if(value.type==='speaking'&&op.native){op.speakingUntil=Date.now()+150;}
-    else if(value.type==='mute'){op.muted=value.muted===true;render();}
+    else if(value.type==='mute'){op.muted=value.muted===true;if(op.muted){op.inputHistory.fill(0);paintWave(op);tray.dataset.hearing='false';}render();}
     else if(value.type==='ending'){op.phase='ending';op.endedAt=op.endedAt||Date.now();render();}
     else if(value.type==='ended')complete(op,value.saved===false?'Your call ended, but its transcript is still waiting to be saved.':op.error);
     else if(value.type==='error'){op.error=value.message||'The voice connection ended.';if(value.terminal===true)complete(op,op.error);}
@@ -164,10 +236,10 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     if(operation)return;if(!config?.enabled||!config.configured){openSettings('general');return;}
     const selected=bot(),chat=chatId();if(!selected||!chat?.startsWith('dm-'))return;
     stopPreview();cancelDictation();editor.blur();
-    const op=operation={phase:'connecting',bot:selected,chat,muted:false,started:0,speakingUntil:0,outputLevels:[],playing:new Set(),generation:revision,native:!!native()};
+    const op=operation={phase:'connecting',bot:selected,chat,muted:false,started:0,speakingUntil:0,outputLevels:[],inputHistory:Array(35).fill(0),outputHistory:Array(35).fill(0),playing:new Set(),generation:revision,native:!!native()};
     // A completed WKWebView preview must yield its audio session to native calls.
     if(op.native){stopTones();clearTimeout(effectsIdle);void effects?.close().catch(()=>{});effects=null;}
-    portrait.replaceChildren(avatar(selected));tray.setAttribute('aria-label','Voice call with '+selected.name);wave.style.setProperty('--voice-color',selected.profile?.color||'var(--muted)');render();clock=setInterval(render,1000);op.levelWatch=setInterval(()=>levels(op),100);cue('connecting',op);
+    portrait.replaceChildren(avatar(selected));tray.setAttribute('aria-label','Voice call with '+selected.name);syncWaveColor();paintWave(op);render();clock=setInterval(render,1000);op.levelWatch=setInterval(()=>levels(op),100);cue('connecting',op);
     try{
       if(!op.native)await prepareCapture(op);if(operation!==op){releaseAudio(op);return;}
       const call=await api('/voice/start','POST',{chat_id:chat});if(operation!==op){releaseAudio(op);return;}op.id=call.id;
@@ -179,9 +251,11 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
       socket.onopen=()=>{if(operation!==op){socket.close();return;}op.ping=setInterval(()=>{if(socket.readyState===1)socket.send(JSON.stringify({type:'ping'}));},10000);};
     }catch(e){if(operation===op)complete(op,e.name==='NotAllowedError'?'Allow microphone access to make a call.':e.message||'The call could not start.');else releaseAudio(op);}
   }
-  function setMuted(value){const op=operation;if(!op||op.phase!=='active')return;op.muted=value;op.lastFrame=Date.now();if(op.native)postNative('mute',{id:op.id,muted:value});else{op.capture?.port.postMessage({muted:value});op.stream?.getAudioTracks().forEach(t=>t.enabled=!value);if(op.socket?.readyState===1)op.socket.send(JSON.stringify({type:'mute',muted:value}));}render();}
+  function setMuted(value){const op=operation;if(!op||op.phase!=='active')return;op.muted=value;op.lastFrame=Date.now();if(value){op.inputHistory.fill(0);paintWave(op);tray.dataset.hearing='false';}if(op.native)postNative('mute',{id:op.id,muted:value});else{op.capture?.port.postMessage({muted:value});op.stream?.getAudioTracks().forEach(t=>t.enabled=!value);if(op.socket?.readyState===1)op.socket.send(JSON.stringify({type:'mute',muted:value}));}render();}
   async function endCall(message){const op=operation;if(!op||op.phase==='ending')return;op.phase='ending';op.endedAt=Date.now();op.error=message;finalCue(op,message);releaseAudio(op);render();if(op.native&&op.id)postNative('end',{id:op.id});else if(op.socket?.readyState===1)op.socket.send(JSON.stringify({type:'end'}));else{complete(op,message);return;}op.timeout=setTimeout(()=>complete(op,message),16000);}
-  function reset(){revision++;config=null;stopPreview();const old=operation;void endCall();if(old)complete(old);stopTones();clearTimeout(effectsIdle);void effects?.close().catch(()=>{});effects=null;render();}
+  function reset(){revision++;config=null;stopPreview();const old=operation;void endCall();if(old)complete(old);hideTray(true);stopTones();clearTimeout(effectsIdle);void effects?.close().catch(()=>{});effects=null;render();}
+  function syncWaveColor(){wave.style.setProperty('--voice-color',portrait.firstElementChild?.dataset.avatarColor||operation?.bot.profile?.color||'var(--fg)');}
+  new MutationObserver(syncWaveColor).observe(portrait,{subtree:true,attributes:true,attributeFilter:['data-avatar-color']});
   window.addEventListener('kindred-ios-voice',e=>{if(operation?.native&&e.detail?.id===operation.id&&e.detail.documentID===window.__KINDRED_IOS_VOICE?.documentID)event(operation,e.detail);});
   window.addEventListener('pagehide',()=>{stopPreview();void endCall();stopTones();void effects?.close().catch(()=>{});effects=null;});editor.addEventListener('input',render);
   const syncNative=()=>{if(operation?.native&&operation.id&&!document.hidden)postNative('status',{id:operation.id});else if(operation&&!document.hidden)captureHealth(operation);};

@@ -112,13 +112,13 @@ export function createDictationUI({editor,send,composer,nativeInvoke,api,chatId,
   function render(){
     if(iosOperation&&iosOperation.chat!==chatId())endIOS('cancel',true);
     if(usesIOS()&&iosChat!==chatId()){iosChat=chatId();iosMessage('context');}
-    const active=phase!=='idle',text=!!editor.value?.trim()||hasFiles(),enabled=isEnabled()&&(usesCloud()?openrouterConfigured()&&!!cloud.model:preferences.model!=='ios'||iosAvailable()&&iosCapability().onDeviceAvailable===true),primary=enabled&&!(iosOperation?iosOperation.content:text);
-    const renderKey=JSON.stringify([enabled,text,phase,!!inflight,!!iosOperation?.content]);
+    const calling=composer.classList.contains('is-voice-calling'),active=phase!=='idle',text=!!editor.value?.trim()||hasFiles(),enabled=!calling&&isEnabled()&&(usesCloud()?openrouterConfigured()&&!!cloud.model:preferences.model!=='ios'||iosAvailable()&&iosCapability().onDeviceAvailable===true),primary=enabled&&!(iosOperation?iosOperation.content:text);
+    const renderKey=JSON.stringify([calling,enabled,text,phase,!!inflight,!!iosOperation?.content]);
     if(renderKey===renderedComposerState){if(settings?.isConnected)renderSettingsStatus();return;}
     renderedComposerState=renderKey;
     composer.classList.toggle('dictation-enabled',enabled);composer.classList.toggle('ios-dictation-content',!!iosOperation?.content);composer.classList.toggle('dictation-empty',primary);composer.classList.toggle('is-dictating',active);
     mic.hidden=!enabled;send.hidden=iosOperation?!iosOperation.content:primary||active;mic.classList.toggle('is-primary',primary);mic.classList.toggle('is-recording',phase==='recording'||!!iosOperation&&phase==='finishing');
-    mic.disabled=phase==='starting'||phase==='finishing';send.disabled=active;send.setAttribute('aria-disabled',String(active));
+    mic.disabled=calling||phase==='starting'||phase==='finishing';send.disabled=active;send.setAttribute('aria-disabled',String(active));
     const label=phase==='recording'?'Stop dictating':usesIOS()&&iosCapability().onDeviceAvailable!==true?'On-device dictation unavailable':'Dictate';mic.title=label;mic.setAttribute('aria-label',label);mic.setAttribute('aria-pressed',String(phase==='recording'));
     const stopping=phase==='recording'||!!iosOperation&&phase==='finishing';
     // Status polling must not replace the SVG between pointer-down and pointer-up.
@@ -126,6 +126,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,api,chatId,
     status.hidden=!active;statusLabel.textContent=phase==='recording'?(usesIOS()||usesCloud()?'Listening':inflight?'Listening · transcribing speech…':'Listening · live dictation'):phase==='starting'?'Opening microphone…':phase==='finishing'?(usesIOS()?'Finishing…':'Finishing transcription…'):'';elapsed.hidden=!iosOperation||phase!=='recording';cancelButton.hidden=!active;
     if(settings?.isConnected)renderSettingsStatus();
   }
+  composer.addEventListener('kindred-voice-layout',render);
   function microphone(stop=false){
     const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('width','22');svg.setAttribute('height','22');svg.setAttribute('aria-hidden','true');
     const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',stop?'M7 7h10v10H7z':'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5 11v1a7 7 0 0 0 14 0v-1M12 19v3M9 22h6');path.setAttribute('fill',stop?'currentColor':'none');path.setAttribute('stroke','currentColor');path.setAttribute('stroke-width','1.7');path.setAttribute('stroke-linecap','round');path.setAttribute('stroke-linejoin','round');svg.append(path);return svg;
@@ -247,7 +248,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,api,chatId,
     watchNative();render();
   }
   async function start(){
-    if(!isEnabled()||!chatId()||phase!=='idle')return;
+    if(composer.classList.contains('is-voice-calling')||!isEnabled()||!chatId()||phase!=='idle')return;
     const thisGeneration=++generation;phase='starting';if(!usesIOS())render();let stage='model';
     try {
       if(usesIOS()){

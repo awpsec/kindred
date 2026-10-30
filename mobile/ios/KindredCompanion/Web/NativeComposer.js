@@ -42,7 +42,7 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
   editor.blur=()=>active?request(false):originalBlur();
   const symbol=node=>node.id==='composer-actions'?'plus':node.id==='send'?'arrow.up':node.classList.contains('voice-start')?'waveform':node.classList.contains('dictation-button')?(node.classList.contains('is-recording')?'stop.fill':'mic'):node.classList.contains('composer-image-open')?'photo':/cancel|remove|close/i.test(node.getAttribute('aria-label')||node.title||'')?'xmark':'';
   const snapshot=covered=>{
-    if(covered||!allowed()||!visible(form)||form.classList.contains('is-voice-calling'))return null;
+    if(covered||!allowed()||!visible(form))return null;
     const next=contextKey();if(!next)return null;
     if(next!==context){context=next;ack=0;}
     actions.clear();const items=[],commandMenu=document.querySelector('#command-options');
@@ -81,7 +81,8 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
     const css=getComputedStyle(editor),style=getComputedStyle(form),selection=getSelection();let selected;
     if(selection?.rangeCount){const r=selection.getRangeAt(0);if(editor.contains(r.startContainer)&&editor.contains(r.endContainer)){const before=r.cloneRange();before.selectNodeContents(editor);before.setEnd(r.startContainer,r.startOffset);selected=[before.toString().length,r.toString().length];}}
     const identity=document.querySelector('#bot-details[data-ios-native-glass]'),identityBox=identity&&visible(identity)?identity.getBoundingClientRect():null;
-    const exclusions=[window.__KINDRED_IOS_TOOLBAR,identityBox,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions||[]).filter(r=>r.active!==false)].filter(r=>r&&[r.x,r.y,r.width,r.height].every(Number.isFinite)&&r.width>0&&r.height>0).slice(0,16).map(r=>[r.x,r.y,r.width,r.height]);
+    const call=document.querySelector('.voice-call-tray'),callBox=visible(call)?call.getBoundingClientRect():null;
+    const exclusions=[window.__KINDRED_IOS_TOOLBAR,identityBox,callBox,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions||[]).filter(r=>r.active!==false)].filter(r=>r&&[r.x,r.y,r.width,r.height].every(Number.isFinite)&&r.width>0&&r.height>0).slice(0,16).map(r=>[r.x,r.y,r.width,r.height]);
     return {context,text:value(),placeholder:editor.dataset.placeholder||'Message',rect:rect(form),editor:rect(editor),scroller:rect(document.querySelector('#content')),
       radius:Math.min(64,parseFloat(style.borderTopLeftRadius)||28),font:parseFloat(css.fontSize),line:parseFloat(css.lineHeight)||24,
       inset:[css.paddingTop,css.paddingRight,css.paddingBottom,css.paddingLeft].map(n=>parseFloat(n)||0),dark:document.documentElement.dataset.theme!=='light',ack,items,selection:selected,...(suggestions?{popup:{rect:rect(suggestions),height:suggestions.scrollHeight,offset:suggestions.scrollTop,commands:suggestions===commandMenu,exclusions}}:{}),editing:editor.getAttribute('aria-disabled')!=='true'};
@@ -131,7 +132,7 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
     }
     schedule();return true;
   };
-  document.addEventListener('pointerdown',event=>{if(active&&!event.target.closest('#composer,#composer-menu,.command-options'))request(false);},true);
+  document.addEventListener('pointerdown',event=>{if(active&&!event.target.closest('#composer,#composer-menu,.command-options,.voice-call-tray'))request(false);},true);
   document.addEventListener('load',event=>{if(form.contains(event.target))schedule();},true);
   editor.addEventListener('input',schedule);document.addEventListener('selectionchange',()=>{if(active)schedule();});
   new ResizeObserver(schedule).observe(editor);
