@@ -39,6 +39,10 @@ final class VoiceActivityUIKitTests: XCTestCase {
             XCTAssertTrue(activity.content.state.muted)
             XCTAssertEqual(activity.content.state.started, started)
             await activity.end(nil, dismissalPolicy: .immediate)
+            let dismissDeadline = Date().addingTimeInterval(2)
+            while ![.ended, .dismissed].contains(activity.activityState) && Date() < dismissDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
             XCTAssertTrue([.ended, .dismissed].contains(activity.activityState))
         } catch {
             await activity.end(nil, dismissalPolicy: .immediate)
