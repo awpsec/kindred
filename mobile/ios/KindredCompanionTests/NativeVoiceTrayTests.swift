@@ -7,7 +7,7 @@ final class NativeVoiceTrayTests: XCTestCase {
     private func model(key: String = UUID().uuidString) -> [String: Any] {
         ["key": key, "rect": [12.0,12,358,64], "avatar": [12.0,14,36,36], "activity": [58.0,18,134,28],
          "shape": "cloud", "color": "#2475ff", "label": "Piper · 0:12", "status": "Listening…", "font": 12.0,
-         "opacity": 1.0, "dark": true, "muted": false, "showingStatus": false, "interactive": true,
+         "opacity": 1.0, "dark": true, "muted": false, "showingStatus": false, "interactive": true, "reduceMotion": false,
          "input": [0.0,0.4,0.7], "output": [0.1,0.3,0.1],
          "items": ["settings","mute","end"].enumerated().map { i, id in
              ["id": id, "label": id, "enabled": true, "rect": [Double(200+i*48),10,44,44]] as [String: Any]
@@ -21,6 +21,8 @@ final class NativeVoiceTrayTests: XCTestCase {
             var row = model(); row[key] = value; XCTAssertNil(NativeVoiceTray.Model(row), key)
         }
         var row = model(); row["key"] = "stale"; XCTAssertNil(NativeVoiceTray.Model(row))
+        row = model(); row["reduceMotion"] = "off"; XCTAssertNil(NativeVoiceTray.Model(row))
+        row = model(); row.removeValue(forKey: "reduceMotion"); XCTAssertNil(NativeVoiceTray.Model(row))
         row = model(); var items = row["items"] as! [[String: Any]]; items[0]["id"] = "end"; row["items"] = items
         XCTAssertNil(NativeVoiceTray.Model(row), "duplicate and unknown actions cannot reach native controls")
     }
@@ -73,5 +75,36 @@ final class NativeVoiceTrayTests: XCTestCase {
         row["interactive"] = false; tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
         tray.buttons["end"]?.sendActions(for: .primaryActionTriggered); XCTAssertEqual(actions, ["end"])
         XCTAssertTrue(tray.accessibilityElementsHidden)
+    }
+
+    func testMeterHonorsAppReducedMotionAndLivePreferenceChanges() throws {
+        let tray = NativeVoiceTray(); var row = model()
+        tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
+        let layers = tray.material.contentView.subviews.flatMap { $0.layer.sublayers ?? [] }
+            .compactMap { $0 as? CAShapeLayer }
+        XCTAssertEqual(layers.count, 2, "both actual speaker histories are rendered")
+        func assertMeterAnimation(_ enabled: Bool, file: StaticString = #filePath, line: UInt = #line) {
+            for layer in layers { XCTAssertEqual(layer.animation(forKey: "meter") != nil, enabled, file: file, line: line) }
+        }
+
+        tray.updateMeter(input: [0.2, 0.8, 0.4], output: [0.6, 0.2, 0.1])
+        assertMeterAnimation(!UIAccessibility.isReduceMotionEnabled)
+
+        row["reduceMotion"] = true
+        tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
+        assertMeterAnimation(false) // The already-running tween is cancelled.
+        tray.updateMeter(input: [0.1, 0.9, 0.3], output: [0.2, 0.7, 0.1])
+        assertMeterAnimation(false)
+        XCTAssertTrue(layers.allSatisfy { ($0.path?.boundingBox.height ?? 0) > 16 },
+                      "reduced motion keeps real levels visible without interpolation")
+
+        row["reduceMotion"] = false
+        tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
+        tray.updateMeter(input: [0.2, 0.6, 0.3], output: [0.7, 0.2, 0.1])
+        assertMeterAnimation(!UIAccessibility.isReduceMotionEnabled)
+        NotificationCenter.default.post(name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil)
+        assertMeterAnimation(false) // System preference changes stop in-flight ink too.
+        tray.updateMeter(input: [0.4, 0.6, 0.2], output: [0.2, 0.6, 0.1])
+        assertMeterAnimation(!UIAccessibility.isReduceMotionEnabled)
     }
 }

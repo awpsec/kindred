@@ -14,7 +14,7 @@ final class NativeVoiceTray: UIView {
         let key: String, shape: String, color: String, label: String, status: String
         let frame: CGRect, avatar: CGRect, activity: CGRect
         let opacity: CGFloat, font: CGFloat
-        let dark: Bool, muted: Bool, showingStatus: Bool, interactive: Bool
+        let dark: Bool, muted: Bool, showingStatus: Bool, interactive: Bool, reduceMotion: Bool
         let items: [Item]
         let input: [Double], output: [Double]
 
@@ -36,6 +36,7 @@ final class NativeVoiceTray: UIView {
                   let font = body["font"] as? Double, font.isFinite, (10...48).contains(font),
                   let dark = body["dark"] as? Bool, let muted = body["muted"] as? Bool,
                   let showingStatus = body["showingStatus"] as? Bool, let interactive = body["interactive"] as? Bool,
+                  let reduceMotion = body["reduceMotion"] as? Bool,
                   let rows = body["items"] as? [[String: Any]], rows.count == Self.actions.count,
                   let input = Self.levels(body["input"]), let output = Self.levels(body["output"]) else { return nil }
             var items: [Item] = []
@@ -51,6 +52,7 @@ final class NativeVoiceTray: UIView {
             self.shape = shape; self.color = color; self.label = label; self.status = status
             self.opacity = opacity; self.font = font; self.dark = dark; self.muted = muted
             self.showingStatus = showingStatus; self.interactive = interactive; self.items = items
+            self.reduceMotion = reduceMotion
             self.input = input; self.output = output
         }
 
@@ -65,12 +67,17 @@ final class NativeVoiceTray: UIView {
         private let inputLayer = CAShapeLayer(), outputLayer = CAShapeLayer()
         var input: [Double] = [], output: [Double] = []
         var ink: UIColor = .label
+        var reduceMotion = false
         override init(frame: CGRect) {
             super.init(frame: frame); isUserInteractionEnabled = false
             isAccessibilityElement = true; accessibilityTraits = .updatesFrequently
             layer.addSublayer(outputLayer); layer.addSublayer(inputLayer)
+            NotificationCenter.default.addObserver(self, selector: #selector(motionPreferenceChanged),
+                name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil)
         }
+        deinit { NotificationCenter.default.removeObserver(self) }
         required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+        @objc private func motionPreferenceChanged() { paint(animated: false) }
         override func layoutSubviews() { super.layoutSubviews(); paint(animated: false) }
         func paint(animated: Bool) {
             for (drawing, levels, reverse, alpha) in [(outputLayer, output, false, 0.2), (inputLayer, input, true, 1.0)] {
@@ -81,10 +88,13 @@ final class NativeVoiceTray: UIView {
                     path.append(UIBezierPath(roundedRect: CGRect(x: x, y: (bounds.height-h)/2, width: bar, height: h), cornerRadius: bar/2))
                 }
                 let previous = drawing.presentation()?.path ?? drawing.path
+                // A live preference change also stops the current tween; fresh
+                // audio levels keep painting without interpolation.
+                drawing.removeAnimation(forKey: "meter")
                 CATransaction.begin(); CATransaction.setDisableActions(true)
                 drawing.frame = bounds; drawing.path = path.cgPath; drawing.fillColor = ink.withAlphaComponent(alpha).cgColor
                 CATransaction.commit()
-                if animated, !UIAccessibility.isReduceMotionEnabled, let previous {
+                if animated, !reduceMotion, !UIAccessibility.isReduceMotionEnabled, let previous {
                     let motion = CABasicAnimation(keyPath: "path"); motion.fromValue = previous; motion.toValue = path.cgPath
                     motion.duration = 0.1; drawing.add(motion, forKey: "meter")
                 }
@@ -142,6 +152,7 @@ final class NativeVoiceTray: UIView {
         status.isHidden = !model.showingStatus || model.activity.isEmpty
         status.accessibilityLabel = model.label + ", " + model.status
         wave.frame = model.activity; wave.isHidden = model.showingStatus || model.activity.isEmpty
+        wave.reduceMotion = model.reduceMotion
         wave.accessibilityLabel = model.label + ", " + model.status
         let hex = UInt32(model.color.dropFirst(), radix: 16) ?? 0x2475ff
         wave.ink = UIColor(red: CGFloat((hex >> 16)&255)/255, green: CGFloat((hex >> 8)&255)/255, blue: CGFloat(hex&255)/255, alpha: 1)

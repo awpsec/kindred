@@ -50,6 +50,21 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
     const voiceAction=action=>page.evaluate(action=>{const m=nativeMessages.filter(m=>m.action==='glass-controls'&&m.voice).at(-1);return __kindredGlassControls.performVoice(action,m.voice.key,m.document);},action);
     await page.waitForFunction(()=>document.querySelector('.voice-call-tray').hasAttribute('data-ios-native-voice'));
     assert(await page.evaluate(()=>{const m=nativeMessages.filter(m=>m.voice).at(-1);return !__kindredGlassControls.performVoice('end','stale-call',m.document)&&!__kindredGlassControls.performVoice('end',m.voice.key,'stale-document')}));
+    const voiceMotion=()=>page.evaluate(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.reduceMotion);
+    assert.equal(await voiceMotion(),true,'system reduced motion reaches native call foreground');
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    for(const setting of ['on','off','on']) {
+      await page.evaluate(setting=>document.documentElement.dataset.motion=setting,setting);
+      await page.waitForFunction(expected=>nativeMessages.filter(m=>m.voice).at(-1).voice.reduceMotion===expected,setting==='off');
+      assert(await page.evaluate(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.key===firstVoiceKey),'live motion changes retain the native call identity');
+      assert.equal(await page.locator('#prompt').evaluate(e=>e.value),'Draft while talking');
+    }
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.waitForFunction(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.reduceMotion===true);
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await page.waitForFunction(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.reduceMotion===false);
+    assert.equal(starts,1,'motion changes never restart the call');
+    assert.equal(await page.evaluate(()=>voiceMessages.filter(m=>m.action==='end').length),0,'motion changes never end the call');
     const beforeBlur=await page.evaluate(()=>nativeMessages.filter(m=>m.action==='native-composer-focus'&&m.focused===false).length);
     await voiceAction('mute');await voiceAction('mute');
     assert.equal(await page.evaluate(()=>nativeMessages.filter(m=>m.action==='native-composer-focus'&&m.focused===false).length),beforeBlur,'mute leaves the keyboard focused');

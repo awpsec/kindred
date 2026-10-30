@@ -2182,6 +2182,7 @@
     };
     let nativeComposer, voiceSource, voiceKey, voiceActive = false, voiceAria, meterFrame = 0, lastMeter = '';
     const voiceActions = {settings:'.voice-settings-button',mute:'.voice-mute',end:'.voice-end'};
+    const voiceMotion = matchMedia('(prefers-reduced-motion:reduce)');
     const voiceVisible = () => voiceSource?.isConnected && !voiceSource.hidden && !voiceSource.closest('.conversation[hidden]') && getComputedStyle(voiceSource).visibility === 'visible';
     const voiceLevels = part => [...(voiceSource?.querySelectorAll('.voice-wave-'+part+' i') || [])].slice(0,40).map(node=>Math.max(0,Math.min(1,Number(node.dataset.level)||0)));
     // Meter ink has a separate, bounded bridge. Ten audio samples per second
@@ -2223,6 +2224,7 @@
         label:node.querySelector('.voice-avatar')?.title||'Voice call',status:node.querySelector('.voice-call-state')?.textContent.trim().slice(0,512)||'',
         avatar:slot(node.querySelector('.voice-avatar')),activity:slot(node.querySelector(showingStatus?'.voice-call-activity':'.voice-wave')),
         showingStatus,dark:html.dataset.theme==='dark',muted:node.querySelector('.voice-mute')?.getAttribute('aria-pressed')==='true',
+        reduceMotion:html.dataset.motion==='off'||voiceMotion.matches,
         interactive:!node.inert,font:parseFloat(getComputedStyle(node.querySelector('.voice-call-state')).fontSize)||12,
         items:Object.entries(voiceActions).map(([id,selector])=>{const button=node.querySelector(selector);return {id,label:button?.getAttribute('aria-label')||id,rect:slot(button),enabled:!!button&&!button.disabled&&!node.inert};}),
         input:voiceLevels('input'),output:voiceLevels('output')};
@@ -2301,6 +2303,7 @@
     const resize = new ResizeObserver(schedule);
     for(const node of [shell,sidebar,conversation,composerArea,header])if(node)resize.observe(node);
     for(const name of ['resize','kindred-ios-layout','kindred-native-geometry','kindred-ios-toolbar','pageshow'])window.addEventListener(name,()=>{stopped=false;schedule();});
+    voiceMotion.addEventListener('change',schedule);
     document.addEventListener('scroll',schedule,true);
     window.addEventListener('pagehide',()=>{nativeComposer?.setActive(false);setVoiceActive(false);stopped=true;cancelAnimationFrame(glassFrame);cancelAnimationFrame(meterFrame);glassFrame=meterFrame=0;current.clear();for(const node of replaced.keys())restore(node);glassLast='';window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'glass-controls',document:glassDocument,sequence:++glassSerial,controls:[]});});
     schedule();

@@ -201,6 +201,17 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             tray.material.contentView.subviews.flatMap { $0.layer.sublayers ?? [] }
                 .compactMap { $0 as? CAShapeLayer }.contains { ($0.path?.boundingBox.height ?? 0) > 4 }
         }
+        let callKey = tray.model?.key
+        for setting in ["off", "on", "off"] {
+            _ = try await js("document.documentElement.dataset.motion='\(setting)';true")
+            let systemReduced = try await boolean("matchMedia('(prefers-reduced-motion:reduce)').matches")
+            let reduced = setting == "off" || systemReduced
+            try await waitFor("native call follows live motion preference \(setting)") {
+                self.session.glassControls.voiceTray?.model?.reduceMotion == reduced
+            }
+            XCTAssertTrue(session.glassControls.voiceTray === tray)
+            XCTAssertEqual(tray.model?.key, callKey, "changing motion must retain the current call identity")
+        }
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
         let attachment = XCTAttachment(image: image); attachment.name = "Native call Liquid Glass over retained chat"; attachment.lifetime = .keepAlways; add(attachment)
         tray.buttons["end"]?.sendActions(for: .primaryActionTriggered)
