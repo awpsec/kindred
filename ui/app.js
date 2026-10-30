@@ -4344,8 +4344,8 @@ const composerLayout=new ResizeObserver(()=>{
 new MutationObserver(updateComposerLayout).observe($('composer'),{attributes:true,attributeFilter:['class']});
 composerLayout.observe($('composer'));document.fonts.ready.then(resizeComposer);
 window.addEventListener('kindred-interface-font-change',()=>requestAnimationFrame(()=>{$('composer').classList.remove('is-multiline');resizeComposer();}));
-// The composer remains a floating surface. Animate its reserved space instead
-// of message transforms, so working avatars and collaboration waits move together.
+// The composer remains a floating surface. Reserve space for all chat rows,
+// including working avatars and collaboration waits.
 const composerSpace={height:null,target:0,frame:0};
 function setComposerClearance(height){
   composerSpace.height=height;
@@ -4372,8 +4372,11 @@ const composerClearance=new ResizeObserver(()=>{
   const from=composerSpace.height??to,sameChat=chatScroll.view===chat;
   composerSpace.target=to;
   cancelAnimationFrame(composerSpace.frame);composerSpace.frame=0;
+  // WebKitGTK must lay out and repaint the scrolling SVG transcript after each
+  // padding change. A line wrap needs one adjustment, not a second layout loop
+  // competing with typing and avatar motion. Native mobile owns its spacing.
   // Reply morphs already change height on each frame; don't animate them twice.
-  if(!sameChat||Math.abs(to-from)<1||!chatScroll.follow||chatOpening||$('composer').classList.contains('is-morphing')||!motionAllowed())return setComposerClearance(to);
+  if(window.__KINDRED_DESKTOP?.platform==='linux'||!sameChat||Math.abs(to-from)<1||!chatScroll.follow||chatOpening||$('composer').classList.contains('is-morphing')||!motionAllowed())return setComposerClearance(to);
   const start=performance.now(),duration=180;
   const step=now=>{
     if(!motionAllowed()||composerChatId()!==chat)return settleComposerClearance();
