@@ -15,6 +15,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   validate:
+    # GitHub requires push-level permission to read a private draft release.
+    # This job only downloads inputs and uploads Actions evidence.
+    permissions:
+      contents: write
+      actions: read
     if: ${{ inputs.approve_runner_usage && github.run_attempt == '1' }}
     runs-on: windows-2025
     timeout-minutes: 10
