@@ -502,6 +502,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     }
 
     func testOrientationSafeAreaAndTextSizePreserveDraft() async throws {
+        _ = try await js("window.__poseFrames=[];window.addEventListener('kindred-ios-layout',()=>{const l=window.__KINDRED_IOS_LAYOUT,g=window.__KINDRED_NATIVE_GEOMETRY;if(g&&l.viewportHeight>0)window.__poseFrames.push({layout:l.viewportHeight,geometry:g.height})});true")
         _ = try await js("const p=document.querySelector('#prompt');p.textContent='Rotation draft';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
         let scene = try XCTUnwrap(window.windowScene)
         var rotationFailure: Error?
@@ -525,6 +526,8 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         try await checkComposer(label: "portrait-150")
         let sends = try await js("window.__composerSends.length") as? Int
         XCTAssertEqual(sends, 0)
+        let coherent = try await boolean("window.__poseFrames.length>0 && window.__poseFrames.every(f=>Math.abs(f.layout-f.geometry)<1)")
+        XCTAssertTrue(coherent, "Each pose event must see matching layout and native geometry in the same transaction")
     }
 
     func testNativeDictationComposerStatesKeepDraftAndKeyboard() async throws {

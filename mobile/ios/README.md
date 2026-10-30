@@ -619,27 +619,25 @@ this check. A Linux/WebKit fixture cannot establish these native results.
   during input and check the host's resize/keyboard avoidance does not swallow
   the tap. Repeat once with a failed release to confirm a visible retry path.
 
-### Approved launch animation
+### Workspace loading and display transitions
 
-The [wake-up animation handoff](design/launch/README.md) contains the approved
-light/dark previews and exact motion reference. `KindredLaunchView` implements
-its mark geometry and timing natively over the existing root, with separately
-drawn pill eyes and no persistent branding added to navigation. The static OS
-launch screen and raster assets are unchanged.
+`KindredLoadingView` is the single native opening/recovery surface. It uses the
+Kindred mark, a quiet three-dot indicator and the saved workspace appearance.
+There is no timed logo intro or minimum branding delay. The retained page is
+revealed with a short opacity transition only after its startup status is hidden
+and chats have loaded, including an empty workspace. Network and module-startup
+failures expose native retry and account controls. Reduce Motion leaves the
+indicator static and uses a shorter reveal.
 
-The real UI starts loading concurrently. Its fade/settle normally starts at
-1.17 seconds; late content can delay that by at most 130 ms. The layer is removed
-by 1.97 seconds even with an unavailable server, exposing the existing loading,
-sign-in or error controls. Reduce Motion skips the mark animation and travel,
-using a 220 ms opacity transition. Motion starts after scene activation so the
-static iOS launch snapshot and animated mark do not overlap.
+The former full-window frosted display cover is removed. Backgrounding and the
+app switcher retain the actual screen. UIKit owns window/pose geometry; the
+retained web UI animates its composer, identity and panes. Native safe areas and
+reserved regions publish together in one layout transaction. No app content is
+captured to disk for these transitions.
 
-Simulator checks cover light and dark cold launches, Reduce Motion, signed-out
-startup, the existing signed-in chat, background return without replay, and taps
-after the layer disappears. Native keyframes were compared with the approved
-GIFs. The 22 native tests also cover the exact motion phases, late/unavailable
-content, opacity-only reduced motion, and completion surviving activation,
-reload and account switches. Physical-device startup still awaits verification.
+Verify cold/warm launch, a slow/unavailable server, app switcher previews, rapid
+fold reversals and rotation with a retained draft/keyboard. The older animation
+reference in `design/launch` is historical and is not used by the app.
 
 ## Local update and adaptive-navigation acceptance
 

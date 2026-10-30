@@ -1,3 +1,5 @@
+> Historical reference. Superseded on October 30, 2026 by the native workspace loading surface and direct retained-content transitions. The app no longer plays this timed intro.
+
 # Approved iOS launch: wake up and dissolve
 
 Owner approved this version on October 3, 2026. This folder is the handoff to the

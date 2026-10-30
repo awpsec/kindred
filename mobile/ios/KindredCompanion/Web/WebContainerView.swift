@@ -67,38 +67,10 @@ final class WebHostView: UIView {
     private var hasDivision = false
     private var railSampleScheduled = false
     private var railOnLeft = false
-    @objc private func sceneWillDeactivate(_ notification: Notification) {
-        guard let scene = notification.object as? UIWindowScene,
-              scene === window?.windowScene, let window, let session,
-              hasDivision || session.presentation.usesNativeRail else { return }
-        // Install before iOS transfers the retained page to its other display.
-        session.displayHandoff.suspend(in: window, canvas: session.presentation.canvas)
-    }
-
     @objc private func sceneDidActivate(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene,
               scene === window?.windowScene else { return }
         setNeedsLayout()
-    }
-
-    private func updatePose(inner: Bool) {
-        guard let window, let session else { return }
-        var divisions = ""
-        if #available(iOS 27.1, *) {
-            divisions = window.reservedRegions(kind: .division, options: .includeInactive)
-                .map { "\($0.isActive):\($0.frame)" }.sorted().joined(separator: "|")
-        }
-        let pose = DisplayHandoff.Pose(window: ObjectIdentifier(window), size: window.bounds.size,
-            orientation: window.windowScene?.effectiveGeometry.interfaceOrientation.rawValue ?? 0,
-            inner: inner, divisions: divisions)
-        let layout = "\(bounds)|\(session.webView.frame)|\(session.webView.safeAreaInsets)|\(safeAreaInsets)|\(session.railRevision)"
-        session.displayHandoff.update(pose: pose, layout: layout, in: window,
-            canvas: session.presentation.canvas,
-            active: window.windowScene?.activationState == .foregroundActive,
-            waitForPaint: { [weak session] completion in
-                guard let session else { completion(); return }
-                session.waitForDisplayPaint(completion)
-            })
     }
 
     override func layoutSubviews() {
@@ -120,7 +92,6 @@ final class WebHostView: UIView {
         guard let session, let window, window.windowScene?.activationState == .foregroundActive else { return }
         let web = session.webView
         guard session.presentation.usesNativeRail else { session.updateRailFrame(nil); return }
-        defer { updatePose(inner: session.presentation.isDuoInner) }
         if session.presentation.isDuoInner {
             let identity = session.toolbarIdentityFrame
             session.updateRailFrame(identity, identity: identity)
@@ -170,9 +141,6 @@ final class WebHostView: UIView {
         }
         railOnLeft = railSide == "left"
         guard let session else { return }
-        // Cover Duo changes before publishing the new web geometry.
-        if hasDivision || usesNativeRail { updatePose(inner: isDuoInner) }
-        else { session.displayHandoff.cancel() }
         let keyboardVisible = session.webView.frame.maxY < bounds.maxY - safeAreaInsets.bottom - 1
         var insets = session.webView.safeAreaInsets
         if #available(iOS 27.1, *), usesNativeRail {
@@ -273,8 +241,6 @@ final class WebHostView: UIView {
         if #available(iOS 26.0, *) {
             cornerConfiguration = .corners(radius: .containerConcentric(minimum: 0))
         }
-        NotificationCenter.default.addObserver(self, selector: #selector(sceneWillDeactivate),
-            name: UIScene.willDeactivateNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(sceneDidActivate),
             name: UIScene.didActivateNotification, object: nil)
         if #available(iOS 27.1, *) {
@@ -289,7 +255,6 @@ final class WebHostView: UIView {
     }
 
     func attach(_ session: WebSession) {
-        if self.session !== session { self.session?.displayHandoff.cancel() }
         self.session = session
         hasDivision = hasDivision || session.presentation.isDuo
         let webView = session.webView

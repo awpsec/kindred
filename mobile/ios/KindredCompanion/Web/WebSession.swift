@@ -82,7 +82,7 @@ final class WebSession: NSObject {
     let origin: ServerOrigin
     let webView: WKWebView
     let presentation = WebPresentationState()
-    let displayHandoff = DisplayHandoff()
+    private var environmentScheduled = false
     let glassControls = NativeGlassControls()
     private var conversationTarget: ConversationMenuTarget?
     private var contextMenuPreview: UITargetedPreview?
@@ -338,38 +338,38 @@ final class WebSession: NSObject {
     }
 
     private func publishLayout() {
+        guard !environmentScheduled else { return }
+        environmentScheduled = true
+        // Native safe areas, keyboard bounds and reserved regions can change
+        // within the same UIKit layout pass. Publish one complete environment
+        // before WebKit animates the retained page to its new pose.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.environmentScheduled = false
+            self.flushEnvironment()
+        }
+    }
+
+    private func flushEnvironment() {
         guard origin.matches(webView.url) else { return }
         let script = """
         if (window.top !== window.self || location.origin !== expectedOrigin) return;
         window.__KINDRED_IOS_LAYOUT = {topInset, bottomInset, leftInset, rightInset, isDuo, isDuoInner, usesNativeRail, railSide, composerBottomInset, keyboardVisible, isSlab, viewportHeight, isPortrait};
+        const geometryChanged = nativeGeometry && window.__kindredPublishedGeometry !== nativeGeometry;
+        if (geometryChanged) {
+            window.__KINDRED_NATIVE_GEOMETRY = JSON.parse(nativeGeometry);
+            window.__kindredPublishedGeometry = nativeGeometry;
+        }
         window.dispatchEvent(new CustomEvent('kindred-ios-layout', {detail: window.__KINDRED_IOS_LAYOUT}));
+        if (geometryChanged) window.dispatchEvent(new CustomEvent('kindred-native-geometry', {detail: window.__KINDRED_NATIVE_GEOMETRY}));
         """
         webView.callAsyncJavaScript(script, arguments: ["expectedOrigin": origin.serialized,
             "topInset": Double(layoutTop), "bottomInset": Double(layoutBottom), "isSlab": layoutIsSlab,
             "leftInset": Double(layoutLeft), "rightInset": Double(layoutRight), "isDuo": presentation.isDuo,
             "isDuoInner": presentation.isDuoInner, "usesNativeRail": presentation.usesNativeRail, "railSide": layoutRailSide,
             "composerBottomInset": Double(layoutComposerBottom), "keyboardVisible": layoutKeyboardVisible,
-            "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait], in: nil, in: .page) { _ in }
-    }
-
-    func waitForDisplayPaint(_ completion: @escaping () -> Void) {
-        guard origin.matches(webView.url) else { completion(); return }
-        webView.callAsyncJavaScript("""
-        if (window.top !== window.self || location.origin !== expectedOrigin) return;
-        const paint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        await paint();
-        // Wait for finite layout effects already scheduled by the native shim.
-        // Activity indicators and other repeating animations cannot hold this.
-        const effects = document.getAnimations().filter(animation => {
-            const end = animation.effect?.getComputedTiming().endTime;
-            return Number.isFinite(end) && animation.playState !== 'finished';
-        });
-        await Promise.race([
-            Promise.allSettled(effects.map(animation => animation.finished)),
-            new Promise(resolve => setTimeout(resolve, 500))
-        ]);
-        await paint();
-        """, arguments: ["expectedOrigin": origin.serialized], in: nil, in: .page) { _ in completion() }
+            "viewportHeight": Double(layoutHeight), "isPortrait": layoutIsPortrait,
+            "nativeGeometry": geometry ?? ""], in: nil, in: .page) { _ in }
     }
 
     var toolbarIdentityFrame: CGRect? {
@@ -528,13 +528,7 @@ final class WebSession: NSObject {
     }
 
     private func applyGeometry() {
-        guard let geometry, origin.matches(webView.url) else { return }
-        let script = """
-        if (window.top !== window.self || window.location.origin !== \(WebBootstrap.javaScriptString(origin.serialized))) return;
-        window.__KINDRED_NATIVE_GEOMETRY = \(geometry);
-        window.dispatchEvent(new CustomEvent("kindred-native-geometry", {detail: window.__KINDRED_NATIVE_GEOMETRY}));
-        """
-        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { _ in }
+        publishLayout()
     }
 
     // MARK: Bridge
@@ -603,7 +597,6 @@ final class WebSession: NSObject {
                let title = body["title"] as? String, title.count <= 160, let listVisible = body["listVisible"] as? Bool {
                 // Keep conditional toolbar items in the same native transaction
                 // so the glass bar and its controls change together.
-                displayHandoff.reduceMotion = body["reduceMotion"] as? Bool == true
                 let animate = presentation.hasLoadedChats && presentation.usesNativeRail &&
                     !UIAccessibility.isReduceMotionEnabled && (body["reduceMotion"] as? Bool != true)
                 withAnimation(animate ? .smooth(duration: 0.28) : nil) {
@@ -677,6 +670,10 @@ final class WebSession: NSObject {
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "launch-ready" {
                 presentation.hasLoadedChats = true
+                return
+            }
+            if let body = message.body as? [String: Any], body["action"] as? String == "startup-failed" {
+                loadState.failure = "Your server didn’t finish loading. Check its connection and try again."
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "interface-ready" {

@@ -7,27 +7,12 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var launchFrame = KindredLaunchFrame.at(milliseconds: 0)
 
     var body: some View {
         @Bindable var model = model
-        ZStack {
-            if !model.hasCompletedLaunch {
-                (pageIsDark ?? (colorScheme == .dark) ? Color.black : Color.white)
-                    .ignoresSafeArea()
-            }
-            appContent
-                .opacity(model.hasCompletedLaunch ? 1 : launchFrame.contentOpacity)
-                .offset(y: model.hasCompletedLaunch || reduceMotion ? 0 : (1 - launchFrame.contentOpacity) * 5)
-                .allowsHitTesting(model.hasCompletedLaunch)
-                .accessibilityHidden(!model.hasCompletedLaunch)
-            if !model.hasCompletedLaunch {
-                KindredLaunchView(ready: launchContentReady, frame: $launchFrame) { model.hasCompletedLaunch = true }
-            }
-        }
+        appContent
         .preferredColorScheme(pageIsDark.map { $0 ? .dark : .light })
         .sheet(item: $model.sheet) { route in
             Group {
@@ -97,19 +82,18 @@ struct RootView: View {
                 let session = model.session(for: account)
                 ZStack {
                     WebContainerView(session: session, navigationBlocked: model.sheet != nil || model.download != nil)
+                        .allowsHitTesting(session.presentation.hasLoadedChats && session.loadState.failure == nil)
+                        .accessibilityHidden(!session.presentation.hasLoadedChats || session.loadState.failure != nil)
                     if let failure = session.loadState.failure {
-                        VStack(spacing: 16) {
-                            Text("Couldn't open Kindred").font(.headline)
-                            Text(failure).foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                            Button("Try again") { session.reload() }
-                                .buttonStyle(.borderedProminent)
-                        }
-                        .padding(24)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Theme.canvas)
+                        KindredLoadingView(canvas: pageCanvas, failure: failure) { session.reload() }
+                            .transition(.opacity)
+                    } else if !session.presentation.hasLoadedChats {
+                        KindredLoadingView(canvas: pageCanvas)
+                            .transition(.opacity)
                     }
                 }
+                .animation(.easeOut(duration: reduceMotion ? 0.1 : 0.2), value: session.presentation.hasLoadedChats)
+                .animation(.easeOut(duration: reduceMotion ? 0.1 : 0.2), value: session.loadState.failure)
                 .id(account.id)
                 .ignoresSafeArea(.container, edges: isShowingConversation ? (usesDuoNavigation ? .all : [.top, .bottom]) : .bottom)
                 // WebHostView owns keyboard avoidance exactly once.
@@ -120,11 +104,6 @@ struct RootView: View {
         } else {
             WelcomeView()
         }
-    }
-
-    private var launchContentReady: Bool {
-        guard let account = model.activeAccount, model.isSignedIn(account.id) else { return true }
-        return model.session(for: account).presentation.hasLoadedChats
     }
 
     private var pageCanvas: Color {

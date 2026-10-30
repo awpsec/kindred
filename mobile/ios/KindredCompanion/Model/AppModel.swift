@@ -74,8 +74,6 @@ final class AppModel {
     private(set) var activeAccountID: UUID?
     /// Accounts with a session token in the Keychain.
     private(set) var signedIn: Set<UUID> = []
-    /// Process lifetime state: backgrounding, reloads and account switches never replay the launch.
-    var hasCompletedLaunch = false
     var sheet: SheetRoute?
     var banner: Banner?
     var download: DownloadedFile?

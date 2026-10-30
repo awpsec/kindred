@@ -1813,14 +1813,23 @@
       if (event.target instanceof HTMLSelectElement) event.stopImmediatePropagation();
     }, true);
   }
-  let launchReadySent = false;
+  let launchReadySent = false, startupFailedSent = false, chatsLoaded = false;
+  const startupStatus = document.getElementById('startup-status');
   const markLaunchReady = () => {
-    if (launchReadySent) return;
+    if (startupStatus && !startupStatus.hidden) {
+      if (startupStatus.getAttribute('role') === 'alert' && !startupFailedSent) {
+        startupFailedSent = true;
+        window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'startup-failed'});
+      }
+      return;
+    }
+    if (launchReadySent || (!chatsLoaded && !sidebar.querySelector('.bot-link,.pinned-bot'))) return;
     launchReadySent = true;
     window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'launch-ready'});
   };
-  const checkLoadedRows = () => { if (sidebar.querySelector('.bot-link,.pinned-bot')) markLaunchReady(); };
+  const checkLoadedRows = () => markLaunchReady();
   observeUI(checkLoadedRows).observe(sidebar, {childList:true, subtree:true});
+  if (startupStatus) observeUI(markLaunchReady).observe(startupStatus, {attributes:true, attributeFilter:['hidden','role']});
   checkLoadedRows();
   let lastAppearance = '', themePreference;
   // Observe existing settings and chat responses without extra requests.
@@ -1830,7 +1839,7 @@
     return fetch.apply(this, args).then(response => {
       if (response.ok && response.url === new URL('/api/chats', location.origin).href) {
         // Include an empty account, after the server UI consumes the response.
-        response.clone().json().then(() => requestAnimationFrame(() => requestAnimationFrame(markLaunchReady))).catch(() => {});
+        response.clone().json().then(() => { chatsLoaded = true; requestAnimationFrame(() => requestAnimationFrame(markLaunchReady)); }).catch(() => {});
       }
       if (response.ok && response.url === new URL('/api/settings', location.origin).href) {
         response.clone().json().then(value => {

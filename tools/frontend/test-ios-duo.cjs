@@ -114,6 +114,15 @@ const inner = {width:867,height:645,windowWidth:945,windowHeight:685};
       assert(result.width>=min-.01 && result.height>=min-.01 && result.hittable,`the visible control must be a reachable hit target: ${JSON.stringify(result)}`);
     };
     const assertReservedBounds=async locator=>{
+      if(await locator.evaluate(node=>node.matches('[data-ios-preview-fit]'))) {
+        const proof=await locator.evaluate(node=>{
+          const r=node.getBoundingClientRect(),regions=(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions||[]).filter(z=>z.active!==false&&z.width>0&&z.height>0);
+          return {inside:r.left>=-1&&r.top>=-1&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1,
+            covered:regions.some(z=>r.left<z.x+z.width-1&&r.right>z.x+1&&r.top<z.y+z.height-1&&r.bottom>z.y+1)};
+        });
+        assert(proof.inside&&!proof.covered,'a document preview must stay inside one unobstructed display region: '+JSON.stringify(proof));
+        return;
+      }
       const rect=await locator.boundingBox(),safe=await page.evaluate(()=>Object.fromEntries(['x','y','width','height'].map(name=>[name,parseFloat(document.documentElement.style.getPropertyValue('--ios-safe-'+name))])));
       assert(rect.x>=safe.x-1 && rect.y>=safe.y-1 && rect.x+rect.width<=safe.x+safe.width+1 && rect.y+rect.height<=safe.y+safe.height+1,`native presentation must fit its current usable region: ${JSON.stringify({rect,safe})}`);
     };
