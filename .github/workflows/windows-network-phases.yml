@@ -3,46 +3,62 @@ on:
   workflow_dispatch:
     inputs:
       approve_runner_usage:
-        description: 'Approve this one four-minute diagnostic run; it does not pass the release gate.'
-        type: boolean
+        description: 'Approve one ten-minute diagnostic and retained-app worker/UI check; no rebuild or release pass.'
         required: true
         default: false
+        type: boolean
 permissions:
   contents: read
+  actions: read
 concurrency:
-  group: kindred-windows-network-phase-diagnostic
+  group: kindred-windows-network-phase-diagnostic-0.88.2
   cancel-in-progress: false
 jobs:
-  diagnose:
+  verify:
+    permissions:
+      contents: write
+      actions: read
     if: ${{ inputs.approve_runner_usage && github.run_attempt == '1' }}
     runs-on: windows-2025
-    timeout-minutes: 4
+    timeout-minutes: 10
     defaults:
       run:
         shell: bash
     env:
       CARGO_BUILD_JOBS: '1'
       CARGO_INCREMENTAL: '0'
+      KINDRED_PACKAGE_SOURCE_ROOT: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: be35f1bbda52e8adc7d2665d5d5058a33d3187ec
+          ref: 310a3afc07e5d526654542bb10af00913a5319d8
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: .verification-tools
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
-      - name: Verify immutable diagnostic inputs
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.14.0'
+      - name: Verify selected tool bytes and exact application source
         run: |
           python - <<'PY'
-          import hashlib, subprocess
+          import hashlib, os, subprocess
           from pathlib import Path
-          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == 'be35f1bbda52e8adc7d2665d5d5058a33d3187ec'
-          assert hashlib.sha256(Path('scripts/release/test-windows-network-phases.py').read_bytes()).hexdigest() == '41ea785a6a47e245b2a0b79f36bf792dbc85040899ced20b89cbaed76bf72427'
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '310a3afc07e5d526654542bb10af00913a5319d8'
+          tools = Path('.verification-tools')
+          assert subprocess.check_output(['git', '-C', str(tools), 'rev-parse', 'HEAD'], text=True).strip() == os.environ['GITHUB_SHA']
+          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '2de0ee13721f61c84a5fd1fb1b16009662947099928f80f6efcf79a73008a8af'
+          assert hashlib.sha256((tools / 'scripts/release/test-windows-network-phases.py').read_bytes()).hexdigest() == '9a7177890f79c4100616f75199cf2b52a5fcfc4deaac27e9cd0e8c9121acf2b2'
           PY
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           targets: x86_64-pc-windows-msvc
-      - name: Restore existing compiler dependencies without saving a cache
+      - name: Restore compiler dependencies without saving a cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
@@ -52,14 +68,63 @@ jobs:
           key: kindred-native-v1-x86_64-pc-windows-msvc-${{ hashFiles('desktop/Cargo.lock', 'desktop/build.rs', 'desktop/dictation/**') }}
           restore-keys: kindred-native-v1-x86_64-pc-windows-msvc-
           fail-on-cache-miss: true
-      - name: Observe phases under the unchanged ten-second process budget
+      - name: Stage exact API-bound executable and adjacent standalone resource
+        id: stage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .verification-tools/scripts/release/stage-retained-windows.py --source . --output verification-proof
+      - name: Observe first enumeration phases under the unchanged ten-second budget
+        id: phases
+        run: python .verification-tools/scripts/release/test-windows-network-phases.py --source . --source-commit 310a3afc07e5d526654542bb10af00913a5319d8 --expected-helper-sha256 9a7177890f79c4100616f75199cf2b52a5fcfc4deaac27e9cd0e8c9121acf2b2 --output phase-proof
+      - name: Verify actual retained executable worker lifetime and cancellation
+        id: worker
+        if: ${{ !cancelled() && steps.stage.outcome == 'success' }}
+        run: python scripts/release/test-command-worker.py --binary desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe > verification-proof/worker.json
+      - name: Verify embedded native disclosure, Library and computer popout
+        id: native_ui
+        if: ${{ !cancelled() && steps.stage.outcome == 'success' }}
+        run: node scripts/release/native-ui-smoke/run-native.cjs --source . --binary desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe --output native-ui-validation --version 0.88.2 --source-commit 310a3afc07e5d526654542bb10af00913a5319d8
+      - name: Record independent worker and UI checks without granting a release pass
+        if: ${{ !cancelled() && steps.stage.outcome == 'success' }}
+        env:
+          WORKER_STEP: ${{ steps.worker.outcome }}
+          NATIVE_UI_STEP: ${{ steps.native_ui.outcome }}
         run: |
-          python scripts/release/test-windows-network-phases.py --source-commit 9bf296ebcb30585f68ab6bfd5d3cf115348086ba --expected-helper-sha256 41ea785a6a47e245b2a0b79f36bf792dbc85040899ced20b89cbaed76bf72427 --output phase-proof
-      - name: Retain only the sanitized diagnostic receipt
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          load = lambda path: json.loads(Path(path).read_text())
+          sha = lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest()
+          custody = load('verification-proof/retained-inputs.json')
+          assert custody['staged'] is True and custody['adjacent_resource_bundle_verified'] is True
+          assert custody['version'] == '0.88.2' and custody['server_source'] == '0483210f89455c9f7e33779901597b6c22fecf50'
+          assert sha('desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe') == custody['exe_sha256'] == '3d855b91f59147d2a89c39ccf2d3a153599e5f0b7a76a8b1cdbc659859e3b840'
+          assert sha('desktop/standalone.zip') == custody['bundle_sha256'] == '3362a8f85d8b49782270e031e942d50e13f8dfed69b09ec2d92377d4a90b05c9'
+          phase = load('phase-proof/phase-receipt.json')
+          assert phase['source_commit'] == custody['source'] == '310a3afc07e5d526654542bb10af00913a5319d8'
+          assert phase['native_release_gate_passed'] is False and phase['production_gate_changed'] is False
+          assert phase['budget_seconds'] == 10
+          assert os.environ['WORKER_STEP'] == os.environ['NATIVE_UI_STEP'] == 'success'
+          worker = load('verification-proof/worker.json')
+          assert worker['platform'] == 'nt'
+          assert all(worker[key] is True for key in ['passed', 'incremental_output', 'no_duplicate_execution', 'cancel', 'deadline', 'failed_exit', 'bounded_output'])
+          ui = load('native-ui-validation/verification.json')
+          assert ui['passed'] is True and ui['platform'] == 'windows' and ui['version'] == '0.88.2'
+          assert ui['sourceCommit'] == custody['source'] and ui['binarySha256'] == custody['exe_sha256']
+          evidence = ['verification-proof/retained-inputs.json', 'phase-proof/phase-receipt.json', 'verification-proof/worker.json', 'native-ui-validation/verification.json']
+          receipt = {'version': '0.88.2', 'source': custody['source'], 'server_source': custody['server_source'], 'diagnostic_only': True, 'native_gate_passed': False, 'native_release_gate_passed': False, 'application_rebuilt': False, 'original_cold_network_gate_rerun': False, 'prior_failed_network_runs': [41078903763, 41081782112], 'independent_worker_passed': True, 'independent_native_ui_passed': True, 'phase_probe_precedes_worker_and_ui': True, 'evidence_sha256': {path: sha(path) for path in evidence}}
+          with Path('verification-proof/diagnostic-results.json').open('x') as output:
+              output.write(json.dumps(receipt, indent=2) + '\n')
+          print(json.dumps(receipt))
+          PY
+      - name: Retain evidence only; no package collection or upload
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: windows-network-phases-${{ github.run_id }}-attempt1
-          path: phase-proof/phase-receipt.json
+          path: |
+            verification-proof/*.json
+            phase-proof/phase-receipt.json
+            native-ui-validation/
           if-no-files-found: warn
           retention-days: 7
