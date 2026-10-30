@@ -18,7 +18,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
    if(u.pathname==='/api/settings')return send({theme:light?'light':'dark',reduced_motion:true,notifications:'all'});
    if(u.pathname==='/api/slack-monitoring')return send({connections,items});
    if(u.pathname==='/api/slack-connections'){
-    const v=req.postDataJSON();assert.equal(v.app_token,'xapp-synthetic');assert.equal(v.access_token,'xoxp-synthetic');connections=[account];return send(account);
+    const v=req.postDataJSON();assert.equal(v.app_token,'xapp-synthetic');assert.equal(v.access_token,'xoxp-synthetic');connections=[account,{...account,id:'slack-secondary',name:'Triage',user_id:'U234',user_name:'triage'}];return send(account);
    }
    if(u.pathname.endsWith('/channels'))return send(u.searchParams.get('cursor')?{items:[{id:'C456',name:'helpdesk'}],next_cursor:''}:{items:[{id:'C123',name:'urgent-requests'}],next_cursor:'page-two'});
    if(u.pathname==='/api/slack-monitors'){
@@ -39,6 +39,8 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   await d.getByRole('button',{name:'Add rule',exact:true}).click();await d.locator('.slack-rule-edit').nth(1).getByLabel('Where',{exact:true}).selectOption('channel:C123');
   await d.getByRole('button',{name:'Add rule',exact:true}).click();await d.locator('.slack-rule-edit').nth(2).getByLabel('Where',{exact:true}).selectOption('direct_messages');
   await d.getByRole('button',{name:'Add rule',exact:true}).click();await d.locator('.slack-rule-edit').nth(3).getByLabel('Event',{exact:true}).selectOption('mentions');await d.locator('.slack-rule-edit').nth(3).getByLabel('Where',{exact:true}).selectOption('channel:C456');
+  await d.getByLabel('Slack account',{exact:true}).selectOption('slack-secondary');await d.getByText('triage · Example team · Slack account',{exact:true}).waitFor();assert.equal(await d.locator('.slack-rule-edit').nth(0).getByLabel('Where',{exact:true}).inputValue(),'all_channels');assert.equal(await d.locator('.slack-rule-edit').nth(1).getByLabel('Where',{exact:true}).inputValue(),'');assert.equal(await d.locator('.slack-rule-edit').nth(2).getByLabel('Where',{exact:true}).inputValue(),'direct_messages');
+  await d.getByLabel('Slack account',{exact:true}).selectOption(account.id);await d.getByRole('button',{name:'Load more channels',exact:true}).click();await d.locator('.slack-rule-edit').nth(1).getByLabel('Where',{exact:true}).selectOption('channel:C123');await d.locator('.slack-rule-edit').nth(3).getByLabel('Where',{exact:true}).selectOption('channel:C456');
   assert.equal(await d.getByLabel('What should your bot do?').evaluate(e=>getComputedStyle(e).borderTopWidth),'0px');
   assert(await d.getByRole('button',{name:'Create monitor',exact:true}).evaluate(e=>{const a=e.getBoundingClientRect(),b=e.closest('dialog').getBoundingClientRect();return a.bottom<b.bottom&&a.top>b.top;}),'Save stays inside the dialog');
   await p.screenshot({path:path.join(artifacts,`slack-${engine}-rules.png`)});

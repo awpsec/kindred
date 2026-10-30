@@ -107,7 +107,7 @@ export async function mountSlackMonitoring(root,env){
     }
     async function loadChannels(reset){
       const ticket=++generation,accountId=connection.value;
-      if(reset){channels=[];cursor='';for(const row of rows){row.target.value='';row.initial='all_channels';updateTargets(row);}}
+      if(reset){channels=[];cursor='';for(const row of rows){const selected=row.target.value;row.target.value='';row.initial=selected.startsWith('channel:')?'':selected;row.storedName='';updateTargets(row);}}
       channelMore.disabled=true;
       const a=data.connections.find(a=>a.id===accountId);identity.textContent=a?`${a.user_name} · ${a.team_name}${a.bot_id?' · Slack app bot':' · Slack account'}`:'';
       try{const page=await request(`/slack-connections/${encodeURIComponent(accountId)}/channels?cursor=${encodeURIComponent(cursor)}`);if(ticket!==generation||!dialog.isConnected||!current())return;channels.push(...page.items);cursor=page.next_cursor||'';for(const row of rows)updateTargets(row);channelMore.hidden=!cursor;feedback.textContent='';}
