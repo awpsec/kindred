@@ -1,4 +1,5 @@
 import {nativeFileDelivery,responseFileBlob} from './file-downloads.js';
+import {mountSlackMonitoring} from './slack-monitoring.js';
 import {createNavigationSearch} from './navigation-search.js';
 import {createBotCenter,libraryItems} from './bot-center.js';
 import {createComputerPopout} from './computer-popout.js';
@@ -2944,7 +2945,7 @@ async function settingsRoutines(revision) {
   catch(error){if(settingsRevision!==revision||state.token!==account||state.settings!=='routines'||!$('settings-dialog').open)return;const root=$('settings-content');let feedback=root.querySelector('.routine-refresh-error');if(!feedback){feedback=node('div','routine-refresh-error run-error');feedback.append(node('span','','Could not refresh routines. Previous results are still shown. '),button('Retry',()=>settingsRoutines(),'subtle-button'));root.prepend(feedback);}monitorRefreshTimer=setTimeout(()=>void settingsRoutines(),15000);return;}
   if(state.token!==account||settingsRevision!==revision||state.settings!=='routines'||!$('settings-dialog').open)return;
   routineFlights.observe(routines,routineRead);
-  const root=$('settings-content'),restore=routineFocus(root),rows=new Map([...root.querySelectorAll('.routine-card[data-routine-id]')].map(row=>[row.dataset.routineId,row])),expanded=new Set([...root.querySelectorAll('.monitor-row[open]')].map(row=>row.dataset.monitorId)),monitors=new Map([...root.querySelectorAll('.monitor-row')].map(row=>[row.dataset.monitorId,row]));root.replaceChildren();
+  const root=$('settings-content'),restore=routineFocus(root),slack=root.querySelector('.slack-monitoring'),rows=new Map([...root.querySelectorAll('.routine-card[data-routine-id]')].map(row=>[row.dataset.routineId,row])),expanded=new Set([...root.querySelectorAll('.monitor-row[open]')].map(row=>row.dataset.monitorId)),monitors=new Map([...root.querySelectorAll('.monitor-row')].map(row=>[row.dataset.monitorId,row]));root.replaceChildren();
   const top=node('div','section-toolbar monitor-toolbar');
   top.append(node('h3','','Scheduled'),button('Add routine',()=>editRoutine(),'subtle-button','plus'));
   root.append(top);
@@ -2983,6 +2984,7 @@ async function settingsRoutines(revision) {
     }else actions.append(button('Resume',async()=>{await api('/inbox-monitors','POST',inboxWatchInput(watch,{enabled:true}));await settingsRoutines();},'outline-button','play'),button('Remove',async()=>{if(!confirm('Remove this paused inbox monitor? Its chat and task history will remain.'))return;await api('/inbox-monitors/'+watch.id,'DELETE');await settingsRoutines();},'outline-button','trash'));
     body.append(actions);root.append(row);
   }
+  void mountSlackMonitoring(root,{api,node,button,field,modal,state,routineAssignee,previous:slack,onChanged:()=>settingsRoutines()});
   restore();
   monitorRefreshTimer=setTimeout(()=>{if(state.settings==='routines'&&$('settings-dialog').open)settingsRoutines().catch(()=>{});},15000);
 }

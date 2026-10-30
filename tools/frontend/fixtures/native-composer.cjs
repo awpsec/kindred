@@ -9,7 +9,7 @@ const {server: desktop} = require('./desktop.cjs');
 const directory = process.argv[2];
 if (!directory) throw new Error('Pass the disposable localhost certificate directory');
 const ui = path.resolve(__dirname, '../../../ui');
-const manifest = Object.fromEntries(['style.css', 'progress.css', 'app.js', 'dictation.js', 'commands.js', 'voice.js'].map(name => [name,
+const manifest = Object.fromEntries(['style.css', 'progress.css', 'app.js', 'dictation.js', 'commands.js', 'voice.js', 'slack-monitoring.js'].map(name => [name,
   crypto.createHash('sha256').update(fs.readFileSync(path.join(ui, name))).digest('hex')]));
 const handler = desktop.listeners('request')[0];
 const server = https.createServer({
