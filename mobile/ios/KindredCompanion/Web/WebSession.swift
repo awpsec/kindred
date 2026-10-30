@@ -673,6 +673,8 @@ final class WebSession: NSObject {
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "startup-failed" {
+                presentation.hasChatInterface = false
+                edgeBack?.setNavigation(nil)
                 loadState.failure = "Your server didn’t finish loading. Check its connection and try again."
                 return
             }

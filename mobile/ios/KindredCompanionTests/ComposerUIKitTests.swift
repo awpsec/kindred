@@ -501,6 +501,19 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let attachment=XCTAttachment(data:try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");attachment.name="native-combined-polish";attachment.lifetime = .keepAlways;add(attachment)
     }
 
+    func testStartupFailureRestoresRecoveryNavigationAndRetries() async throws {
+        let web = session.webView
+        _ = try await js("window.webkit.messageHandlers.kindredAccounts.postMessage({action:'startup-failed'});true")
+        try await waitFor("native startup recovery") { self.session.loadState.failure != nil }
+        XCTAssertFalse(session.presentation.hasChatInterface, "A failed startup restores the native Accounts recovery controls")
+        session.reload()
+        try await waitFor("retry opens the same workspace") {
+            self.session.loadState.failure == nil && self.session.presentation.hasLoadedChats
+        }
+        XCTAssertTrue(session.webView === web)
+        XCTAssertEqual(session.webView.url?.host, "localhost")
+    }
+
     func testOrientationSafeAreaAndTextSizePreserveDraft() async throws {
         _ = try await js("window.__poseFrames=[];window.addEventListener('kindred-ios-layout',()=>{const l=window.__KINDRED_IOS_LAYOUT,g=window.__KINDRED_NATIVE_GEOMETRY;if(g&&l.viewportHeight>0)window.__poseFrames.push({layout:l.viewportHeight,geometry:g.height})});true")
         _ = try await js("const p=document.querySelector('#prompt');p.textContent='Rotation draft';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
