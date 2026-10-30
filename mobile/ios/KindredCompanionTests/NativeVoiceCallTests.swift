@@ -197,9 +197,11 @@ final class NativeVoiceCallTests: XCTestCase {
             }
             return buffer
         }
-        player.scheduleBuffer(try buffer(9600, audible: false))
-        player.scheduleBuffer(try buffer(48000, audible: true))
-        player.scheduleBuffer(try buffer(9600, audible: false))
+        // Select the synchronous overload explicitly. Awaiting playback here
+        // would block the offline render loop that consumes these buffers.
+        player.scheduleBuffer(try buffer(9600, audible: false), completionHandler: nil)
+        player.scheduleBuffer(try buffer(48000, audible: true), completionHandler: nil)
+        player.scheduleBuffer(try buffer(9600, audible: false), completionHandler: nil)
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertFalse(meter.values.contains { $0 > 0.006 }, "Scheduling a two-second packet must not move the meter")
         let output = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 960))
