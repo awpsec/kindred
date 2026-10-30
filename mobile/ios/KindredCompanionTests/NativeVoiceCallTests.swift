@@ -131,8 +131,8 @@ final class NativeVoiceCallTests: XCTestCase {
         let sent = try XCTUnwrap(socket.sent.last(where: { $0["type"] as? String == "audio" })?["data"] as? String)
         XCTAssertEqual(Data(base64Encoded: sent), Data(count: audible.count))
         let level = events.last(where: { $0["type"] as? String == "levels" })
-        XCTAssertEqual(level?["input"] as? Double, 0)
-        XCTAssertEqual(level?["output"] as? Double, 0, "Output meter decays when no fresh audible PCM arrives")
+        XCTAssertEqual((level?["input"] as? NSNumber)?.doubleValue, 0)
+        XCTAssertEqual((level?["output"] as? NSNumber)?.doubleValue, 0, "Output meter decays when no fresh audible PCM arrives")
         instant = instant.addingTimeInterval(3.9)
         audio.capture?(Data(count: 1920))
         try await Task.sleep(for: .milliseconds(20))
@@ -159,7 +159,9 @@ final class NativeVoiceCallTests: XCTestCase {
             instant = instant.addingTimeInterval(0.12)
             audio.playbackLevel?(0)
             try await wait { events.filter { $0["type"] as? String == "levels" }.count > before }
+            let sent = socket.sent.filter { $0["type"] as? String == "audio" }.count
             audio.capture?(Data(count: 1920))
+            try await wait { socket.sent.filter { $0["type"] as? String == "audio" }.count > sent }
             XCTAssertEqual(events.last(where: { $0["type"] as? String == "levels" })?["output"] as? Double, 0)
         }
         XCTAssertFalse(events.contains { $0["type"] as? String == "speaking" }, "Queued speech must not animate over earlier silence")
@@ -168,7 +170,9 @@ final class NativeVoiceCallTests: XCTestCase {
             instant = instant.addingTimeInterval(0.12)
             audio.playbackLevel?(0.25)
             try await wait { events.filter { $0["type"] as? String == "levels" }.count > before }
+            let sent = socket.sent.filter { $0["type"] as? String == "audio" }.count
             audio.capture?(Data(count: 1920))
+            try await wait { socket.sent.filter { $0["type"] as? String == "audio" }.count > sent }
             XCTAssertEqual(events.last(where: { $0["type"] as? String == "levels" })?["output"] as? Double, 0.25)
         }
         XCTAssertGreaterThan(events.filter { $0["type"] as? String == "speaking" }.count, 2,

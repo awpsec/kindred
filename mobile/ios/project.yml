@@ -122,6 +122,19 @@ targets:
         TEST_TARGET_NAME: KindredCompanion
         DEVELOPMENT_TEAM: $(KINDRED_DEVELOPMENT_TEAM)
 schemes:
+  KindredVoiceActivityTests:
+    build:
+      targets:
+        KindredCompanion: all
+        KindredCompanionTests: [test]
+    test:
+      config: Debug
+      environmentVariables:
+        KINDRED_TEST_ACTIVITY: "1"
+      targets:
+        - name: KindredCompanionTests
+          onlyTests:
+            - VoiceActivityUIKitTests
   KindredSpeechTests:
     build:
       targets:

@@ -485,7 +485,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         try await waitFor("expanded native task commentary") { try await self.boolean("!!document.querySelector('.progress-commentary')?.getClientRects().length") }
         let nesting=try await boolean("[...document.querySelectorAll('.progress-commentary')].every(n=>{const h=document.querySelector('[data-progress-group=\"native-long-job\"]'),p=n.querySelector('.message-text-content'),a=h.querySelector('.summary-progress-activity');return h.compareDocumentPosition(n)&Node.DOCUMENT_POSITION_FOLLOWING && p.getBoundingClientRect().top>=h.querySelector('summary').getBoundingClientRect().bottom && Math.abs(p.getBoundingClientRect().x-a.getBoundingClientRect().x-parseFloat(getComputedStyle(a).paddingInlineStart))<1 && p.getBoundingClientRect().right<=innerWidth})")
         XCTAssertTrue(nesting)
-        _ = try await js("[...document.querySelectorAll('[aria-label=\"File: skill.md\"] button')].find(b=>b.textContent==='Preview').click();true")
+        _ = try await js("document.querySelector('[aria-label=\"File: skill.md\"] button[aria-label=\"Preview\"]').click();true")
         try await waitFor("native Markdown source dialog") { try await self.boolean("!!document.querySelector('.document-dialog[open] .document-source-code')") }
         try await waitFor("settled native source modal") { try await self.boolean("(()=>{const n=document.querySelector('.document-dialog[open]'),s=n&&getComputedStyle(n);return !!n && Number(s.opacity)===1 && s.transform==='none' && !n.getAnimations().some(a=>a.playState==='running')})()") }
         let sourceOK=try await boolean("document.querySelector('.document-source-code').textContent===window.__candidateSource && document.querySelector('.document-source-gutter').textContent===[1,2,3,4,5].join(String.fromCharCode(10)) && !document.querySelector('.document-source script,.document-source img,.document-source a') && !window.sourceExecuted && document.documentElement.scrollWidth<=innerWidth && document.querySelector('.document-source').scrollWidth>document.querySelector('.document-source').clientWidth")
@@ -909,9 +909,16 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             let sourceControls=sample["controls"] as? [[String:Any]] ?? []
             let nativeReady = nativeComposer.isHidden || sourceControls.allSatisfy { row in
                 let r=CGRect(x:(row["x"] as? Double) ?? 0,y:(row["y"] as? Double) ?? 0,width:(row["width"] as? Double) ?? 0,height:(row["height"] as? Double) ?? 0)
-                return nativeComposer.model?.items.contains { item in
+                let geometryMatches = nativeComposer.model?.items.contains { item in
                     item.kind=="button" && abs(item.frame.minX-r.minX)<1 && abs(item.frame.minY-r.minY)<1 && abs(item.frame.width-r.width)<1 && abs(item.frame.height-r.height)<1
                 } == true
+                guard geometryMatches else { return false }
+                // UIWindow suppresses touches during the system rotation even
+                // after WebKit has published its final layout dimensions.
+                let point = self.session.webView.convert(CGPoint(x:r.midX,y:r.midY),to:self.window)
+                var hit = self.window.hitTest(point,with:nil)
+                while let candidate=hit,!(candidate is UIButton) { hit=candidate.superview }
+                return hit is UIButton
             }
             let stable = stamp != nil && stamp == previousStamp && nativeReady
             previousStamp = stamp

@@ -70,6 +70,14 @@ the Duo-specific API. Do not replace account data or change the bundle ID.
 
 Browser tests cover UI and bridge behavior, not ActivityKit or native audio:
 
+`KindredVoiceActivityTests` is an opt-in app-hosted scheme that requests the
+production system Live Activity, updates its mute state and ends it. It does
+not open the microphone or a provider session. For a simulator visual check,
+set `KINDRED_TEST_ACTIVITY_VISUAL=1` in the test launch environment: the fixture
+holds the unmuted activity for 45 seconds before updating and ending it. Inspect
+the compact and expanded Island from the simulator Home screen. This checks
+system rendering separately from a real call and its app-intent controls.
+
 ```sh
 node tools/frontend/test-voice-audio.cjs
 node tools/frontend/test-voice.cjs

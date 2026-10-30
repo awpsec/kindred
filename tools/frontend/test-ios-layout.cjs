@@ -351,7 +351,8 @@ const resources = path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web'
       assert.equal(colors.actual,colors.expected,'media preview has an opaque theme canvas');
       assert.equal(colors.opacity,'1','capture the fully revealed media viewer');
       assert(Math.abs(dialogBox.width-402)<1,'native media preview uses the full phone width');
-      assert(Math.abs(dialogBox.height-780)<1,'native media preview uses the full available height');
+      assert(Math.abs(dialogBox.y-59)<1,'native media preview starts below the status safe area');
+      assert(Math.abs(dialogBox.height-(780-59))<1,'native media preview uses the full safe available height');
       if(process.env.KINDRED_TEST_ARTIFACTS) {
         fs.mkdirSync(process.env.KINDRED_TEST_ARTIFACTS,{recursive:true});
         await page.screenshot({path:path.join(process.env.KINDRED_TEST_ARTIFACTS,'media-preview-'+theme+'.png')});
