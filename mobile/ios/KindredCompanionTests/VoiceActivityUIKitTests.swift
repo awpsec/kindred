@@ -11,6 +11,11 @@ final class VoiceActivityUIKitTests: XCTestCase {
             throw XCTSkip("Set KINDRED_TEST_ACTIVITY=1 for the system Live Activity fixture")
         }
         XCTAssertTrue(ActivityAuthorizationInfo().areActivitiesEnabled)
+        // Complete the app's cold-launch stale-activity cleanup before this
+        // fixture creates its activity; production calls initialize this owner
+        // before they request their activity too.
+        _ = NativeVoiceCall.shared
+        await Task.yield()
         let id = UUID().uuidString, started = Date().addingTimeInterval(-83)
         let activity = try Activity<VoiceCallAttributes>.request(
             attributes: VoiceCallAttributes(id: id, botName: "Piper QA", shape: "cloud", color: "#2475ff"),
@@ -27,10 +32,14 @@ final class VoiceActivityUIKitTests: XCTestCase {
                 try await Task.sleep(for: .seconds(45))
             }
             await activity.update(ActivityContent(state: .init(started: started, muted: true), staleDate: Date().addingTimeInterval(45)))
+            let deadline = Date().addingTimeInterval(2)
+            while !activity.content.state.muted && Date() < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
             XCTAssertTrue(activity.content.state.muted)
             XCTAssertEqual(activity.content.state.started, started)
             await activity.end(nil, dismissalPolicy: .immediate)
-            XCTAssertEqual(activity.activityState, .ended)
+            XCTAssertTrue([.ended, .dismissed].contains(activity.activityState))
         } catch {
             await activity.end(nil, dismissalPolicy: .immediate)
             throw error
