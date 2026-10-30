@@ -37,7 +37,7 @@ on:
         required: true
         default: all
         type: choice
-        options: [all, windows, macos]
+        options: [all, windows, macos, linux]
 permissions:
   contents: read
 concurrency:
@@ -52,7 +52,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"}]' || inputs.platforms == 'macos' && '[{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]' || '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"},{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"},{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]') }}
+        include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"}]' || inputs.platforms == 'macos' && '[{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]' || inputs.platforms == 'linux' && '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]' || '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"},{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"},{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ matrix.os == 'macos-26' && 15 || matrix.os == 'windows-2025' && 20 || 45 }}
     env:
@@ -234,6 +234,22 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/kindred-paste-browsers
           KINDRED_TEST_MAC_PASTE_SELECTED: ${{ inputs.mac_paste_smoke && '1' || '0' }}
         run: python .release-tools/scripts/release/test-macos-package.py --directory package-artifacts --source . --version "$RELEASE_VERSION" --source-commit "$(git rev-parse HEAD)" --target ${{ matrix.target }} --output mac-validation
+      - name: Verify embedded native disclosure, Library and computer popout
+        if: runner.os == 'Windows' || runner.os == 'macOS'
+        shell: bash
+        run: |
+          native_binary="desktop/target/${{ matrix.target }}/release/kindred-desktop"
+          if [ "${{ runner.os }}" = "Windows" ]; then native_binary="$native_binary.exe"; fi
+          if [ "${{ runner.os }}" = "macOS" ]; then native_binary="desktop/target/${{ matrix.target }}/release/bundle/macos/Kindred.app/Contents/MacOS/kindred-desktop"; fi
+          node .release-tools/scripts/release/native-ui-smoke/run-native.cjs --source . --binary "$native_binary" --output native-ui-validation --version "$RELEASE_VERSION" --source-commit "$(git rev-parse HEAD)"
+      - name: Preserve embedded native UI validation
+        if: ${{ always() && (runner.os == 'Windows' || runner.os == 'macOS') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-ui-${{ inputs.version }}-${{ matrix.target }}
+          path: native-ui-validation/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload verified packages without publishing
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
