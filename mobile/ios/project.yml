@@ -133,7 +133,7 @@ schemes:
         KINDRED_TEST_ACTIVITY: "1"
       targets:
         - name: KindredCompanionTests
-          onlyTests:
+          selectedTests:
             - VoiceActivityUIKitTests
   KindredSpeechTests:
     build:
