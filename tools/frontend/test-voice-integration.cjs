@@ -123,6 +123,19 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
     finished=true;await page.evaluate(()=>voiceEvent({type:'ended',saved:true}));await page.waitForFunction(()=>document.querySelector('#composer').hasAttribute('data-ios-native-composer'));
     assert.equal(await page.locator('#prompt').evaluate(e=>e.value),'');assert(await page.locator('.voice-call-tray').isHidden());
     await page.getByText('Call ended · 1:23',{exact:true}).waitFor();assert.equal(await page.locator('.voice-call-receipt').count(),1);assert.equal(await page.locator('.voice-call-receipt .message-bubble').count(),0);
+    // A retained, idle tray isolates presentation mutations from the live call's
+    // timer, incoming audio and incidental finite animation scans.
+    await page.evaluate(()=>{document.documentElement.dataset.motion='off';const t=document.querySelector('.voice-call-tray');t.dataset.status='true';t.querySelector('.voice-call-state').textContent='Connecting…';t.querySelector('.voice-mute').setAttribute('aria-pressed','false');t.hidden=false;t.inert=false;});
+    await page.waitForFunction(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.showingStatus===true);
+    await page.waitForTimeout(350);
+    const retainedKey=await page.evaluate(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.key);
+    await page.evaluate(()=>document.querySelector('.voice-call-tray').dataset.status='false');
+    await page.waitForFunction(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.showingStatus===false,{}, {timeout:1000});
+    await page.evaluate(()=>document.querySelector('.voice-mute').setAttribute('aria-pressed','true'));
+    await page.waitForFunction(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.muted===true,{}, {timeout:1000});
+    assert.equal(await page.evaluate(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.key),retainedKey,'presentation-only state retains native call identity');
+    assert.equal(starts,2,'presentation checks never open a provider call');
+    await page.evaluate(()=>document.querySelector('.voice-call-tray').hidden=true);
     assert.deepEqual(errors,[]);console.log('Full iOS voice UI: floating overlapping wave, native typing/send/draft/keyboard ownership, settings, 3 Duo poses in light/dark, bounded native scans, immediate End and reduced-motion system End passed.');
   }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1});

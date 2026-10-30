@@ -2198,7 +2198,7 @@
     const voiceVisibility = new MutationObserver(records=>{
       // The HTML tray is retained between calls. Rotate its identity even for
       // hide/show in one task so a delayed native touch cannot end the next call.
-      if(records.some(r=>r.attributeName==='hidden'&&r.oldValue!==null))voiceKey=crypto.randomUUID();
+      if(records.some(r=>r.target===voiceSource&&r.attributeName==='hidden'&&r.oldValue!==null))voiceKey=crypto.randomUUID();
       schedule();
     });
     const setVoiceActive = active => {
@@ -2210,7 +2210,10 @@
     const voiceSnapshot = covered => {
       const node=document.querySelector('.conversation>.voice-call-overlay>.voice-call-tray');
       if(node!==voiceSource){setVoiceActive(false);meterObserver.disconnect();voiceVisibility.disconnect();voiceSource=node;voiceKey=crypto.randomUUID();lastMeter='';
-        if(node){voiceVisibility.observe(node,{attributes:true,attributeOldValue:true,attributeFilter:['hidden']});const wave=node.querySelector('.voice-wave');if(wave)meterObserver.observe(wave,{subtree:true,childList:true,attributes:true,attributeFilter:['data-level']});}}
+        // Presentation state must update even when motion is disabled and no
+        // animation, text replacement or resize happens to request another scan.
+        // Waveform samples keep their separate meter bridge below.
+        if(node){voiceVisibility.observe(node,{subtree:true,characterData:true,attributes:true,attributeOldValue:true,attributeFilter:['hidden','data-status','aria-pressed']});const wave=node.querySelector('.voice-wave');if(wave)meterObserver.observe(wave,{subtree:true,childList:true,attributes:true,attributeFilter:['data-level']});}}
       if(covered||duoRoute()!=='bot-chat'||!voiceVisible())return null;
       const rect=node.getBoundingClientRect(),alpha=opacity(node);
       if(rect.width<=0||rect.height<=0||rect.bottom<=0||rect.top>=(nativeHeight||innerHeight)||alpha<.005)return null;

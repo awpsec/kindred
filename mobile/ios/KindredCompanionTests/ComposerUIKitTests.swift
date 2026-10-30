@@ -169,7 +169,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // transcript. Browser integration separately exercises the call owner.
         try await waitFor("retained call tray") { try await self.boolean("!!document.querySelector('.voice-call-tray')") }
         _ = try await js("""
-        (()=>{const t=document.querySelector('.voice-call-tray');window.__callFixtureActions=[];
+        (()=>{document.documentElement.dataset.motion='off';const t=document.querySelector('.voice-call-tray');window.__callFixtureActions=[];
           t.querySelector('.voice-avatar').replaceChildren(document.querySelector('#header-avatar .character').cloneNode(true));
           t.querySelector('.voice-avatar').title='Piper · sample call';
           t.querySelector('.voice-call-state').textContent='Connecting…';t.dataset.status='true';
@@ -194,6 +194,8 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         tray.buttons["mute"]?.sendActions(for: .primaryActionTriggered)
         try await waitFor("native mute routes to retained handler") { try await self.boolean("__callFixtureActions.join(',')==='mute'") }
         try await waitFor("native mute state refreshed") { self.session.glassControls.voiceTray?.model?.muted == true }
+        // No animation or status-text mutation may be needed to refresh this
+        // presentation state, including both system accessibility settings on.
         _ = try await js("document.querySelector('.voice-call-tray').dataset.status='false';true")
         try await waitFor("live waveform foreground") { self.session.glassControls.voiceTray?.model?.showingStatus == false }
         _ = try await js("document.querySelectorAll('.voice-wave i').forEach((bar,i)=>bar.dataset.level=String((i%7+1)/8));true")
