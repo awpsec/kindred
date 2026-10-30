@@ -9,28 +9,32 @@ export function slackRuleLabel(rule,account){
   return `${rule.event==='mentions'?'Mentions':'All messages'} → ${where}`;
 }
 export async function mountSlackMonitoring(root,env){
-  const {api,node,button,field,modal,state,onChanged,routineAssignee,previous}=env,token=state.token;
-  const current=()=>state.token===token;
+  const {api,node,button,field,modal,state,onChanged,routineAssignee,previous,botId=''}=env,token=state.token;
+  const current=()=>state.token===token&&(!env.isCurrent||env.isCurrent());
+  const latest=()=>current()&&(!env.isLatest||env.isLatest());
   const request=(...args)=>{if(!current())throw new Error('Workspace changed. Open settings again.');return api(...args);};
-  const section=node('section','slack-monitoring');section.setAttribute('aria-label','Slack monitoring');const anchor=previous||section;root.append(anchor);
+  const section=node('section','slack-monitoring');section.setAttribute('aria-label','Slack monitoring');const anchor=previous||section;if(anchor.parentNode!==root)root.append(anchor);
   const top=node('div','section-toolbar monitor-toolbar');top.append(node('h3','','Slack'));section.append(top);
   const loading=node('p','muted small','Loading Slack monitors…');section.append(loading);
   let data;
-  try{data=await request('/slack-monitoring');}catch(error){if(anchor.isConnected&&current()){if(previous){if(!previous.querySelector('.slack-refresh-error'))previous.append(node('p','slack-refresh-error run-error small','Could not refresh Slack status. Trying again shortly.'));}else{loading.textContent='Slack monitoring is unavailable on this server.';top.append(button('Retry',()=>{section.remove();return mountSlackMonitoring(root,env);},'subtle-button'));}}return;}
-  if(!anchor.isConnected||!current())return;
-  const snapshot=JSON.stringify([data,state.bots.map(b=>[b.id,b.name,b.profile?.archived])]);
+  try{data=await request('/slack-monitoring');}catch(error){if(anchor.isConnected&&latest()){if(previous){if(!previous.querySelector('.slack-refresh-error'))previous.append(node('p','slack-refresh-error run-error small','Could not refresh Slack status. Trying again shortly.'));}else{loading.textContent='Slack monitoring is unavailable on this server.';top.append(button('Retry',()=>onChanged(),'subtle-button'));}}return;}
+  if(!anchor.isConnected||!latest())return;
+  const snapshot=JSON.stringify([data,botId,state.bots.map(b=>[b.id,b.name,b.profile?.archived])]);
   if(previous?.dataset.snapshot===snapshot){previous.querySelector('.slack-refresh-error')?.remove();return;}
   const expanded=new Set([...(previous?.querySelectorAll('.slack-monitor-row[open]')||[])].map(row=>row.dataset.slackMonitorId));
   section.dataset.snapshot=snapshot;if(previous)previous.replaceWith(section);loading.remove();
-  const active=(data.connections||[]).filter(a=>a.status!=='disconnected');
-  top.append(button('Add monitor',()=>active.length?editMonitor():connectAccount(),'subtle-button','plus'));
+  let active=(data.connections||[]).filter(a=>a.status!=='disconnected');
+  top.append(button('Add monitor',()=>active.length?editMonitor():connectAccount(null,true),'subtle-button','plus'));
   section.append(node('p','muted small','New Slack messages wake your bot. No repeated AI checks.'));
   const status=a=>a?.status==='connected'?'Listening':a?.status==='connecting'?'Connecting':a?.status==='disconnected'?'Disconnected':'Needs attention';
-  for(const watch of data.items||[]){
+  const watches=(data.items||[]).filter(w=>!botId||w.bot_id===botId);
+  for(const watch of watches){
     const account=data.connections.find(a=>a.id===watch.account_id),row=node('details','slack-monitor-row'),summary=node('summary','monitor-heading');
     row.dataset.slackMonitorId=watch.id;
     row.open=expanded.has(watch.id);
     summary.append(routineAssignee(watch.bot_id),node('span','monitor-mailbox',account?.name||'Slack account'),node('span','monitor-status',watch.enabled?status(account):'Paused'));row.append(summary);
+    const overview=node('span','slack-rule-overview',watch.rules.slice(0,2).map(r=>slackRuleLabel(r,account)).join(' · ')+(watch.rules.length>2?` · +${watch.rules.length-2} more`:''));
+    overview.title=watch.rules.map(r=>slackRuleLabel(r,account)).join('\n');summary.append(overview);
     const body=node('div','slack-monitor-body');
     for(const rule of watch.rules)body.append(node('div','slack-rule-label',slackRuleLabel(rule,account)));
     body.append(node('p','muted small',watch.instructions));
@@ -44,7 +48,7 @@ export async function mountSlackMonitoring(root,env){
     if(!watch.enabled)actions.append(button('Remove',()=>act('remove'),'subtle-button','trash'));
     body.append(actions,feedback);row.append(body);section.append(row);
   }
-  if(!(data.items||[]).length)section.append(node('p','monitor-empty-line','No Slack monitors yet.'));
+  if(!watches.length)section.append(node('p','monitor-empty-line',botId?'No Slack monitors for this bot yet.':'No Slack monitors yet.'));
   const connections=node('details','slack-connections'),heading=node('summary','','Slack connections');connections.open=!!previous?.querySelector('.slack-connections')?.open;connections.append(heading);
   for(const account of data.connections||[]){
     const row=node('div','slack-connection-row');row.append(node('strong','',account.name),node('span','muted small',`${account.user_name} · ${account.team_name} · ${status(account)}`));
@@ -60,7 +64,7 @@ export async function mountSlackMonitoring(root,env){
   function select(label,choices,value){const element=node('select');element.setAttribute('aria-label',label);for(const [id,text] of choices){const option=node('option','',text);option.value=id;element.append(option);}element.value=value;return element;}
   function labeled(text,input){const label=node('label','',text);label.append(input);return label;}
   function installForm(dialog,form,contents,save){const fields=node('div','slack-monitor-fields');fields.append(...contents);form.append(fields,save);dialog.append(form);}
-  function connectAccount(account){
+  function connectAccount(account,thenCreate=false){
     const dialog=modal(account?'Update Slack connection':'Connect Slack','slack-monitor-dialog');
     const form=node('form','slack-monitor-form'),name=field('Connection name',account?.name||'Helpdesk'),app=field('App-level token','','input',{type:'password',placeholder:'xapp-…',autocomplete:'off'}),access=field('Slack account token','','input',{type:'password',placeholder:'xoxp-… or xoxb-…',autocomplete:'off'});
     app.input.setAttribute('data-private','true');access.input.setAttribute('data-private','true');
@@ -75,14 +79,14 @@ export async function mountSlackMonitoring(root,env){
     const link=node('a','detail-link','Open Slack app setup');link.href='https://api.slack.com/apps';link.target='_blank';link.rel='noopener noreferrer';guide.append(steps,copy,link,manifest);
     const feedback=node('p','run-error small');feedback.setAttribute('role','status');const save=button(account?'Update connection':'Connect',()=>{},'primary');save.type='submit';
     installForm(dialog,form,[intro,labeled('Monitor as',kind),guide,name.label,app.label,access.label,node('p','muted small','An incoming webhook only posts messages; it cannot subscribe to them. ChatGPT’s Slack connection is separate from this event connection.'),feedback],save);
-    form.onsubmit=async event=>{event.preventDefault();feedback.textContent='';save.disabled=true;try{if(!access.input.value.trim().startsWith(kind.value==='user'?'xoxp-':'xoxb-'))throw new Error(kind.value==='user'?'Use the User OAuth Token for this Slack account.':'Use the Bot User OAuth Token for this Slack app.');await request('/slack-connections','POST',{id:account?.id||'',name:name.input.value,app_token:app.input.value,access_token:access.input.value});app.input.value='';access.input.value='';dialog.close();await onChanged();}catch(error){feedback.textContent=error.message;}finally{save.disabled=false;}};
+    form.onsubmit=async event=>{event.preventDefault();feedback.textContent='';save.disabled=true;try{if(!access.input.value.trim().startsWith(kind.value==='user'?'xoxp-':'xoxb-'))throw new Error(kind.value==='user'?'Use the User OAuth Token for this Slack account.':'Use the Bot User OAuth Token for this Slack app.');const saved=await request('/slack-connections','POST',{id:account?.id||'',name:name.input.value,app_token:app.input.value,access_token:access.input.value});app.input.value='';access.input.value='';data.connections=[...data.connections.filter(a=>a.id!==saved.id),saved];active=data.connections.filter(a=>a.status!=='disconnected');dialog.close();await onChanged();if(thenCreate&&current())editMonitor(null,saved.id);}catch(error){feedback.textContent=error.message;}finally{save.disabled=false;}};
   }
-  function editMonitor(watch){
+  function editMonitor(watch,accountId){
     const dialog=modal(watch?'Edit Slack monitor':'Slack monitoring','slack-monitor-dialog'),form=node('form','slack-monitor-form');
-    const bot=select('Bot',state.bots.filter(b=>!b.profile?.archived).map(b=>[b.id,b.name]),watch?.bot_id||state.bots.find(b=>!b.profile?.archived)?.id||'');
+    const bot=select('Bot',state.bots.filter(b=>!b.profile?.archived).map(b=>[b.id,b.name]),watch?.bot_id||botId||state.bot?.id||state.bots.find(b=>!b.profile?.archived)?.id||'');
     const choices=watch?data.connections:active;
-    const connection=select('Slack account',choices.map(a=>[a.id,`${a.name} · ${a.user_name}`]),watch?.account_id||active[0]?.id||'');
-    bot.disabled=!!watch;connection.disabled=!!watch;
+    const connection=select('Slack account',choices.map(a=>[a.id,`${a.name} · ${a.user_name}`]),watch?.account_id||accountId||active[0]?.id||'');
+    bot.disabled=!!watch||!!botId;connection.disabled=!!watch;
     const identity=node('p','muted small'),rules=node('div','slack-rule-editor');rules.setAttribute('aria-label','Monitoring rules');
     const instructions=field('What should your bot do?',watch?.instructions||'Help with requests. Reply when useful; stay quiet otherwise.','textarea');
     const feedback=node('p','run-error small');feedback.setAttribute('role','status');

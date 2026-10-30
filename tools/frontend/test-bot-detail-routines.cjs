@@ -60,7 +60,7 @@ fs.mkdirSync(artifacts,{recursive:true});
     await p.goto(origin);await p.locator('#bot-details').click();
     const section=p.getByRole('region',{name:'Routines',exact:true}),row=id=>section.locator('[data-routine-id="'+id+'"]');
     await row('mail').waitFor();assert.equal(await section.locator('li').count(),4);assert.equal(await section.getByText('Atlas only').count(),0);
-    assert.equal(await p.locator('#details-content > .detail-link').allTextContents().then(v=>v.join('|')),'Connections|Skills|Artifacts');
+    assert.equal(await p.locator('#details-content > .detail-link').allTextContents().then(v=>v.join('|')),'Connections|Skills|Slack monitoring|Artifacts');
     assert.match(await row('weekly').textContent(),/Paused · Weekdays · Hourly · 09:00–17:00 · America\/New_York/);
     assert.equal(await row('daily').locator('button').count(),3);assert.equal(await row('daily').locator('button svg').count(),3);
     // Pause/resume, failed action recovery, and no double submits while pending.

@@ -4374,6 +4374,8 @@ details.monitor-row {display:block;padding:12px 0;}
 
 /* Purpose-built connection controls belong in the conversation, not in a tool log. */
 .slack-monitoring .run-error:empty,.slack-monitor-dialog .run-error:empty{display:none}
+.slack-monitor-filter>label{display:flex;align-items:center;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:.9rem}.slack-monitor-filter select{max-width:100%;min-width:160px;padding:8px 12px;border:0;border-radius:10px;background:var(--hover);color:var(--fg)}
+.slack-monitor-row>.monitor-heading{flex-direction:row;align-items:center;flex-wrap:wrap;row-gap:6px}.slack-monitor-row[open] .slack-rule-overview{display:none}.slack-rule-overview{flex-basis:100%;min-width:0;padding-left:24px;color:var(--muted);font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .slack-monitor-dialog[open]{display:flex;flex-direction:column;overflow:hidden}.slack-monitor-dialog>.dialog-header{flex:none}.slack-monitor-form{display:flex;flex-direction:column;min-height:0;overflow:hidden}.slack-monitor-fields{display:grid;gap:16px;min-height:0;overflow:auto;padding-right:2px}.slack-monitor-fields>p{margin:0}.slack-monitor-form>button.primary{align-self:flex-end;flex:none}.slack-monitor-fields label{flex:none}
 .chat-connection-card {width:min(640px,100%);border:1px solid var(--line);border-radius:17px;background:var(--bubble);overflow:hidden;}
 .chat-connection-head {display:flex;align-items:center;gap:12px;padding:13px 15px;}

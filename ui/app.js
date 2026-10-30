@@ -1592,6 +1592,7 @@ function renderDetails() {
       "link",
     ),
     button("Skills", () => openSettings("skills"), "detail-link", "book"),
+    button("Slack monitoring", () => openSlackMonitoring(b.id), "detail-link", "bell"),
     button("Artifacts", () => openArtifacts(), "detail-link", "file"),
   );
   const routineSection=previousRoutines?.dataset.botId===b.id?previousRoutines:node('section','bot-detail-routines');
@@ -2226,7 +2227,8 @@ function routineScheduleLabel(r){
 function settingsWait(promise, message, milliseconds=5000){
   let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(message)),milliseconds);})]).finally(()=>clearTimeout(timer));
 }
-let closePermissionPage=null,settingsRevision=0,settingsRequest=null,settingsMotion=null;
+let closePermissionPage=null,settingsRevision=0,settingsRequest=null,settingsMotion=null,slackMonitoringBot='';
+function openSlackMonitoring(botId='') { slackMonitoringBot=botId; return openSettings('slack'); }
 async function openSettings(page = "general") {
   if((page==='routines'||page==='monitors')&&state.settings==='routines'&&$('settings-dialog').open)return settingsRoutines();
   settingsMotion?.cancel();settingsMotion=null;
@@ -2239,6 +2241,7 @@ async function openSettings(page = "general") {
     ["general", "General", "user"],
     ["connections", "Connections", "link"],
     ["routines", "Routines", "clock"],
+    ["slack", "Slack monitoring", "bell"],
     ["skills", "Skills", "book"],
     ["archived", "Archived", "archive"],
     ["computer", "Computer", "computer"],
@@ -2247,7 +2250,7 @@ async function openSettings(page = "general") {
     const tab=button(label,()=>openSettings(id),'settings-tab',symbol);
     // Navigation remains available while its destination loads; disabling a
     // focused button drops keyboard focus in Chromium and some native webviews.
-    tab.onclick=()=>perform(()=>openSettings(id));
+    tab.onclick=()=>perform(()=>id==='slack'?openSlackMonitoring():openSettings(id));
     tab.dataset.settingsPage=id;$('settings-nav').append(tab);
   }
   for (const tab of $('settings-nav').children) {
@@ -2255,7 +2258,7 @@ async function openSettings(page = "general") {
     tab.classList.toggle('active',selected);
     if(selected)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');
   }
-  $("settings-title").textContent = page==='bot-computer'?'Bot Computer':page[0].toUpperCase() + page.slice(1);
+  $("settings-title").textContent = page==='bot-computer'?'Bot Computer':page==='slack'?'Slack monitoring':page[0].toUpperCase() + page.slice(1);
   const loading=node('p','muted','Loading…');loading.setAttribute('role','status');
   $("settings-content").replaceChildren(loading);
   $("settings-content").scrollTop=0;
@@ -2277,6 +2280,7 @@ async function openSettings(page = "general") {
     general: settingsGeneral,
     connections: settingsConnections,
     routines: settingsRoutines,
+    slack: settingsSlackMonitoring,
     skills: settingsSkills,
     archived: settingsArchived,
     computer: settingsComputer,
@@ -2936,6 +2940,27 @@ async function checkAccount(element) {
       : "Not signed in with an Codex (Subscription).";
 }
 let monitorRefreshTimer;
+async function settingsSlackMonitoring(revision) {
+  if(state.settings!=='slack'||!$('settings-dialog').open)return;
+  revision??=++settingsRevision;clearTimeout(monitorRefreshTimer);
+  const token=state.token,root=$('settings-content'),previous=root.querySelector('.slack-monitoring'),restore=routineFocus(root);
+  const bots=state.bots.filter(b=>!b.profile?.archived);
+  if(!bots.some(b=>b.id===slackMonitoringBot))slackMonitoringBot='';
+  const botId=slackMonitoringBot;
+  const current=()=>state.token===token&&state.settings==='slack'&&$('settings-dialog').open&&slackMonitoringBot===botId;
+  const latest=()=>current()&&settingsRevision===revision;
+  let toolbar=root.querySelector('.slack-monitor-filter');
+  if(!toolbar){toolbar=node('div','slack-monitor-filter');toolbar.append(node('label','','Show monitors for'));root.replaceChildren(toolbar);}
+  const options=JSON.stringify(bots.map(b=>[b.id,b.name]));
+  if(toolbar.dataset.options!==options){
+    const filter=select([['','All bots'],...bots.map(b=>[b.id,b.name])],botId);filter.setAttribute('aria-label','Show monitors for');
+    filter.onchange=()=>{slackMonitoringBot=filter.value;void settingsSlackMonitoring();};toolbar.querySelector('select')?.remove();toolbar.firstChild.append(filter);toolbar.dataset.options=options;
+  }
+  toolbar.querySelector('select').value=botId;
+  await mountSlackMonitoring(root,{api,node,button,field,modal,state,routineAssignee,botId,isCurrent:current,isLatest:latest,previous,onChanged:()=>settingsSlackMonitoring()});
+  if(!latest())return;
+  restore();monitorRefreshTimer=setTimeout(()=>void settingsSlackMonitoring(),15000);
+}
 async function settingsRoutines(revision) {
   if(state.settings!=='routines'||!$('settings-dialog').open)return;
   revision??=++settingsRevision;
