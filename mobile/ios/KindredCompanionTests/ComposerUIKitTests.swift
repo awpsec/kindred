@@ -505,9 +505,63 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let web = session.webView
         _ = try await js("window.webkit.messageHandlers.kindredAccounts.postMessage({action:'startup-failed'});true")
         try await waitFor("native startup recovery") { self.session.loadState.failure != nil }
+        let failure = try XCTUnwrap(session.loadState.failure)
         XCTAssertFalse(session.presentation.hasChatInterface, "A failed startup restores the native Accounts recovery controls")
         XCTAssertFalse(session.presentation.hasLoadedChats, "Retry must await the new document’s readiness")
+
+        // MobileLayout can send interface-ready after checkLoadedRows reports
+        // startup-failed in the same script. Fence these real bridge messages
+        // with an unrelated presentation update, rather than a timing sleep.
+        for phase in ["before-finish", "after-finish"] {
+            _ = try await js("""
+            const bridge=window.webkit.messageHandlers.kindredAccounts;
+            bridge.postMessage({action:'interface-ready'});
+            bridge.postMessage({action:'launch-ready'});
+            bridge.postMessage({action:'duo-navigation',route:'chat-list',title:'startup-\(phase)',listVisible:true});true
+            """)
+            try await waitFor("late readiness messages delivered \(phase)") {
+                self.session.presentation.chatTitle == "startup-\(phase)"
+            }
+            XCTAssertEqual(session.loadState.failure, failure)
+            XCTAssertFalse(session.presentation.hasChatInterface, "Late readiness must not hide Accounts recovery")
+            XCTAssertFalse(session.presentation.hasLoadedChats, "A failed document must not dismiss recovery")
+            if phase == "before-finish" {
+                session.webView(web, didFinish: nil)
+                XCTAssertEqual(session.loadState.failure, failure, "didFinish must not turn a startup failure into an endless loader")
+                XCTAssertFalse(session.presentation.hasChatInterface)
+                XCTAssertFalse(session.presentation.hasLoadedChats)
+            }
+        }
+
+        // Hold only the disposable fixture's chat response on the new document.
+        // This proves retry waits for real startup, not didFinish or old state.
+        web.configuration.userContentController.addUserScript(WKUserScript(source: """
+        (()=>{
+          const fetch=window.fetch.bind(window);
+          const gate=new Promise(resolve=>{window.__releaseStartupChats=resolve});
+          window.__startupChatsHeld=false;
+          window.fetch=(input,options)=>{
+            const url=new URL(typeof input==='string'?input:input.url,location.href);
+            if(url.origin===location.origin&&url.pathname==='/api/chats'){
+              window.__startupChatsHeld=true;
+              return gate.then(()=>fetch(input,options));
+            }
+            return fetch(input,options);
+          };
+        })();
+        """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        let finishedLoads = delegate.milestones.filter { $0 == "navigation-finish" }.count
         session.reload()
+        XCTAssertNil(session.loadState.failure, "An explicit retry clears the old failure")
+        XCTAssertFalse(session.presentation.hasLoadedChats)
+        try await waitFor("fresh document finishes navigation while startup is held") {
+            guard self.delegate.milestones.filter({ $0 == "navigation-finish" }).count > finishedLoads else { return false }
+            return try await self.boolean("window.__startupChatsHeld===true")
+        }
+        XCTAssertNil(session.loadState.failure)
+        XCTAssertTrue(session.presentation.hasChatInterface, "Fresh interface readiness is accepted after retry")
+        XCTAssertFalse(session.presentation.hasLoadedChats, "Page completion alone must not reveal unfinished chats")
+        _ = try await js("window.__releaseStartupChats();true")
         try await waitFor("retry opens the same workspace") {
             self.session.loadState.failure == nil && self.session.presentation.hasLoadedChats
         }

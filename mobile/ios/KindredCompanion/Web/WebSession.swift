@@ -669,6 +669,7 @@ final class WebSession: NSObject {
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "launch-ready" {
+                guard loadState.failure == nil else { return }
                 presentation.hasLoadedChats = true
                 return
             }
@@ -680,6 +681,9 @@ final class WebSession: NSObject {
                 return
             }
             if let body = message.body as? [String: Any], body["action"] as? String == "interface-ready" {
+                // The document can report an earlier startup failure before
+                // its remaining presentation script finishes installing.
+                guard loadState.failure == nil else { return }
                 presentation.hasChatInterface = true
                 lastRailFrame = nil
                 lastIdentityFrame = nil
@@ -928,7 +932,8 @@ extension WebSession: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        loadState.failure = nil
+        // Navigation completion does not mean the workspace started. Keep a
+        // failure reported by this document until a fresh navigation/retry.
         refreshSystemTextSize()
         applyGeometry()
         // A setting can change after document-start injection but before this
