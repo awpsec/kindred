@@ -32,6 +32,11 @@ jobs:
         with:
           ref: ${{ inputs.source_commit }}
           persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: .ios-release-tools
+          persist-credentials: false
       - name: Verify exact source and record Xcode identity
         shell: bash
         env:
@@ -57,11 +62,17 @@ jobs:
               except (OSError,ValueError,subprocess.SubprocessError):
                   continue
           result={'source_commit':actual,'unsigned_simulator_only':True,'available_developer_directories':[{'sdk':'.'.join(map(str,version)),'path':path} for version,path in sorted(choices)]}
-          version,developer=max(choices,default=((0,),''))
+          stable=[choice for choice in choices if choice[0]>=(27,1) and not re.search(r'beta|candidate',choice[1],re.I)]
+          version,developer=min(stable,default=((0,),''))
           Path('ios-validation/environment.json').write_text(json.dumps(result,indent=2)+'\n')
           assert version >= (27,1), 'An installed iOS 27.1+ SDK is required for the reserved-region bridge; no automatic retry.'
           os.environ['DEVELOPER_DIR']=developer
-          with open(os.environ['GITHUB_ENV'],'a') as output: output.write('DEVELOPER_DIR='+developer+'\n')
+          release_version=json.loads(Path('desktop/tauri.conf.json').read_text())['version']
+          assert re.fullmatch(r'\d+\.\d+\.\d+',release_version)
+          with open(os.environ['GITHUB_ENV'],'a') as output:
+              output.write('DEVELOPER_DIR='+developer+'\n')
+              output.write('KINDRED_IOS_DERIVED_DATA='+os.environ['RUNNER_TEMP']+'/kindred-ios-derived\n')
+              output.write('KINDRED_IOS_RELEASE_VERSION='+release_version+'\n')
           result.update(xcode=subprocess.check_output(['xcodebuild','-version'],text=True),developer_directory=developer,sdk_identity=subprocess.check_output(['xcodebuild','-showsdks'],text=True),selected_sdk='.'.join(map(str,version)))
           Path('ios-validation/environment.json').write_text(json.dumps(result,indent=2)+'\n')
           PY
@@ -72,6 +83,15 @@ jobs:
           xcodegen --version > ios-validation/xcodegen-version.txt
           cd mobile/ios
           xcodegen generate
+      - name: Compile the app, ActivityKit extension and native tests
+        timeout-minutes: 5
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ inputs.source_commit }}
+        run: |
+          xcodebuild build-for-testing -project mobile/ios/KindredCompanion.xcodeproj -scheme KindredCompanion -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$KINDRED_IOS_DERIVED_DATA" CODE_SIGNING_ALLOWED=NO KINDRED_MARKETING_VERSION="$KINDRED_IOS_RELEASE_VERSION" KINDRED_SOURCE_REVISION="$EXPECTED_SOURCE" > ios-validation/native-build.log 2>&1
+          python3 .ios-release-tools/scripts/release/record-ios-build.py "$KINDRED_IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/Kindred.app" --source "$EXPECTED_SOURCE" --version "$KINDRED_IOS_RELEASE_VERSION" --output ios-validation/native-build-receipt.json
+          ditto -c -k --keepParent "$KINDRED_IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/Kindred.app" ios-validation/Kindred-unsigned-simulator.app.zip
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         if: ${{ inputs.validation_scope == 'composer' || inputs.validation_scope == 'release-ui' || inputs.validation_scope == 'keyboard-ownership' }}
         with:
@@ -81,8 +101,10 @@ jobs:
         env:
           EXPECTED_SOURCE: ${{ inputs.source_commit }}
           VALIDATION_SCOPE: ${{ inputs.validation_scope }}
+          KINDRED_IOS_SOURCE_ROOT: ${{ github.workspace }}
+          KINDRED_IOS_PREBUILT: '1'
         run: |
-          python3 scripts/release/test-ios-simulator.py --scope "$VALIDATION_SCOPE"
+          python3 .ios-release-tools/scripts/release/test-ios-simulator.py --scope "$VALIDATION_SCOPE"
       - name: Preserve exact results including failures
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

@@ -2,7 +2,7 @@
 import argparse, hashlib, json, math, os, re, signal, ssl, subprocess, tempfile, time, urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.environ.get('KINDRED_IOS_SOURCE_ROOT', Path(__file__).resolve().parents[2])).resolve()
 OUT = ROOT / 'ios-validation'
 
 
@@ -574,18 +574,35 @@ def configure_simulator_reduce_motion(device):
 
 
 
+def select_simulator(devices):
+    # These tests require conventional rotation/software-keyboard behavior. Duo
+    # uses posture changes and needs its own native acceptance lane; choosing it
+    # accidentally by newest runtime made simctl hang before any build or test.
+    candidates = [(runtime, device) for runtime, rows in devices['devices'].items()
+                  if '.iOS-' in runtime for device in rows
+                  if device.get('isAvailable') and device['name'].startswith('iPhone')
+                  and 'duo' not in (device['name'] + device.get('deviceTypeIdentifier', '')).lower()]
+    assert candidates, 'No available conventional iPhone simulator; no runtime download or Duo substitution'
+    return max(candidates, key=lambda row: (
+        tuple(int(value) for value in row[0].rsplit('iOS-', 1)[-1].split('-')),
+        row[1]['name'] == 'iPhone 17'))
+
+
 def main(scope):
     OUT.mkdir(exist_ok=True)
     source = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     assert source == os.environ['EXPECTED_SOURCE'], 'Source checkout changed'
     devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '--json'], text=True))
     record('simulator-inventory.json', devices)
-    candidates = [(runtime, d) for runtime, rows in devices['devices'].items() if '.iOS-' in runtime for d in rows if d.get('isAvailable') and d['name'].startswith('iPhone')]
-    assert candidates, 'No available iPhone simulator; no runtime download'
-    runtime, device = max(candidates, key=lambda row: tuple(int(x) for x in row[0].rsplit('iOS-', 1)[-1].split('-')))
+    runtime, device = select_simulator(devices)
     destination = 'platform=iOS Simulator,id=' + device['udid']
     bundle = OUT / 'KindredCompanion.xcresult'
     command = ['xcodebuild', 'test', '-project', 'KindredCompanion.xcodeproj', '-scheme', 'KindredCompanion', '-destination', destination, '-destination-timeout', '90', '-parallel-testing-enabled', 'NO', '-maximum-concurrent-test-simulator-destinations', '1', '-resultBundlePath', str(bundle), 'CODE_SIGNING_ALLOWED=NO']
+    prebuilt = os.environ.get('KINDRED_IOS_PREBUILT') == '1'
+    if prebuilt:
+        assert os.environ.get('KINDRED_IOS_DERIVED_DATA'), 'Prebuilt native test products need an explicit derived-data directory'
+        command[1] = 'test-without-building'
+        command += ['-derivedDataPath', os.environ['KINDRED_IOS_DERIVED_DATA']]
     if scope in ('composer', 'release-ui'):
         assert (ROOT / 'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').is_file(), 'Reviewed composer tests missing'
         command += [
@@ -597,7 +614,7 @@ def main(scope):
     if scope == 'keyboard-ownership':
         assert (ROOT / 'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').is_file(), 'Reviewed keyboard diagnostics missing'
         command += ['-only-testing:KindredCompanionTests/' + name.removesuffix('()') for name in sorted(KEYBOARD_OWNERSHIP_CASES)]
-    receipt = {'source_commit': source, 'scope': scope, 'runtime': runtime, 'device': device, 'destination': destination, 'command': command, 'full_scheme_includes_AppModelSignInTests': scope == 'full', 'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'automatic_retry': False, 'passed': False}
+    receipt = {'source_commit': source, 'scope': scope, 'runtime': runtime, 'device': device, 'destination': destination, 'command': command, 'full_scheme_includes_AppModelSignInTests': scope == 'full', 'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'automatic_retry': False, 'passed': False, 'prebuilt_app_and_widget': prebuilt, 'Duo_proof': False, 'physical_phone_proof': False}
     if scope in ('composer', 'release-ui'):
         receipt.update(required_methods=sorted(set(COMPOSER_PHASES) | DICTATION_METHODS), required_native_phases=53, real_Apple_recognition_selected=False, real_audio_test_excluded=True, injectable_lifecycle_is_recognition_proof=False)
     if scope == 'release-ui':
