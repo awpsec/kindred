@@ -92,6 +92,7 @@ jobs:
           xcodebuild build-for-testing -project mobile/ios/KindredCompanion.xcodeproj -scheme KindredCompanion -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$KINDRED_IOS_DERIVED_DATA" CODE_SIGNING_ALLOWED=NO KINDRED_MARKETING_VERSION="$KINDRED_IOS_RELEASE_VERSION" KINDRED_SOURCE_REVISION="$EXPECTED_SOURCE" > ios-validation/native-build.log 2>&1
           python3 .ios-release-tools/scripts/release/record-ios-build.py "$KINDRED_IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/Kindred.app" --source "$EXPECTED_SOURCE" --version "$KINDRED_IOS_RELEASE_VERSION" --output ios-validation/native-build-receipt.json
           ditto -c -k --keepParent "$KINDRED_IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/Kindred.app" ios-validation/Kindred-unsigned-simulator.app.zip
+          ditto -c -k --keepParent "$KINDRED_IOS_DERIVED_DATA/Build/Products" ios-validation/Native-test-products.zip
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         if: ${{ inputs.validation_scope == 'composer' || inputs.validation_scope == 'release-ui' || inputs.validation_scope == 'keyboard-ownership' }}
         with:

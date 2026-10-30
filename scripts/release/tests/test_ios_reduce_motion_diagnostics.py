@@ -94,7 +94,7 @@ class ReduceMotionDiagnosticsTests(unittest.TestCase):
   def run(command,**kwargs):
    if command[0]=='openssl':Path(command[command.index('-keyout')+1]).write_text('test-only')
    return self.command(stdout='selected-only' if command[:3]==['xcrun','simctl','getenv'] else ('1' if 'ReduceMotionEnabled' in command and 'read' in command else '0'))
-  with patch.object(m,'ROOT',root),patch.object(m,'OUT',out),patch.dict(m.os.environ,EXPECTED_SOURCE=source),patch.object(m,'_simulator_command',side_effect=run),patch.object(m.subprocess,'run',side_effect=run),patch.object(m.subprocess,'check_output',side_effect=output),patch.object(m.subprocess,'Popen',side_effect=popen),patch.object(m.ssl,'create_default_context'),patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps({'origin':'https://localhost:8765','ui_sha256':{}}).encode())):
+  with patch.object(m,'launch_simulator_host'),patch.object(m,'ROOT',root),patch.object(m,'OUT',out),patch.dict(m.os.environ,EXPECTED_SOURCE=source),patch.object(m,'_simulator_command',side_effect=run),patch.object(m.subprocess,'run',side_effect=run),patch.object(m.subprocess,'check_output',side_effect=output),patch.object(m.subprocess,'Popen',side_effect=popen),patch.object(m.ssl,'create_default_context'),patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps({'origin':'https://localhost:8765','ui_sha256':{}}).encode())):
    with self.assertRaises(SystemExit):m.main('composer')
   self.assertEqual(len(captured),2);self.assertEqual(captured[-1][0],'xcodebuild')
   self.assertIn('CODE_SIGNING_ALLOWED=NO',captured[-1]);self.assertNotIn('-only-testing:KindredCompanionTests/ComposerUIKitTests',captured[-1])

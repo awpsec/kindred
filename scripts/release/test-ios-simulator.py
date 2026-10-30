@@ -1,5 +1,5 @@
 """Run one unsigned simulator attempt; keep scoped composer evidence separate."""
-import argparse, hashlib, json, math, os, re, signal, ssl, subprocess, tempfile, time, urllib.request
+import argparse, hashlib, json, math, os, plistlib, re, signal, ssl, subprocess, tempfile, time, urllib.request
 from pathlib import Path
 
 ROOT = Path(os.environ.get('KINDRED_IOS_SOURCE_ROOT', Path(__file__).resolve().parents[2])).resolve()
@@ -574,6 +574,32 @@ def configure_simulator_reduce_motion(device):
 
 
 
+def launch_simulator_host(device):
+    # Xcode 27 replaced Simulator.app with Device Hub. Start the selected
+    # toolchain's host before waiting on simulator services, not afterward.
+    developer = Path(os.environ['DEVELOPER_DIR'])
+    choices = []
+    for app in (developer / 'Applications').glob('*.app'):
+        try:
+            info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+        except (OSError, plistlib.InvalidFileException):
+            continue
+        names = [app.stem, info.get('CFBundleName', ''), info.get('CFBundleDisplayName', '')]
+        normalized = {name.replace(' ', '').lower() for name in names}
+        if 'devicehub' in normalized: choices.append((0, str(app), 'device-hub'))
+        elif 'simulator' in normalized: choices.append((1, str(app), 'simulator'))
+    assert choices, 'Selected Xcode has no Device Hub or Simulator app'
+    _, app, kind = min(choices)
+    command = ['open', '-a', app]
+    if kind == 'simulator': command += ['--args', '-CurrentDeviceUDID', device['udid']]
+    row = {'host': kind, 'application': app, 'selected_device': device['udid'], 'passed': False}
+    try:
+        run(command)
+        row['passed'] = True
+    finally:
+        record('simulator-host.json', row)
+
+
 def select_simulator(devices):
     # These tests require conventional rotation/software-keyboard behavior. Duo
     # uses posture changes and needs its own native acceptance lane; choosing it
@@ -660,10 +686,10 @@ def main(scope):
                 actual = subprocess.check_output(['defaults', 'read', 'com.apple.iphonesimulator', 'ConnectHardwareKeyboard'], text=True).strip()
                 assert actual == '0', 'Simulator keyboard preference did not apply'
                 record('keyboard-setup.json', {'hardware_keyboard_connected': False, 'previous_preference': old_keyboard, 'native_keyboard_visibility_requires_test_evidence': True})
+                launch_simulator_host(device)
                 boot_simulator(device)
                 wait_for_simulator_transport(device)
                 configure_simulator_reduce_motion(device)
-                run(['open', '-a', 'Simulator', '--args', '-CurrentDeviceUDID', device['udid']])
             with (OUT / 'xcodebuild.log').open('w') as log:
                 process = subprocess.Popen(command, cwd=ROOT / 'mobile/ios', stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
                 try:
