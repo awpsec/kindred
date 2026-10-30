@@ -20,6 +20,7 @@ final class NativeVoiceCall: NSObject {
     private var captureWatchdog: Task<Void, Never>?
     private var captureStarted: Date?
     private var capturedAt: Date?
+    private var diagnostics = VoiceCaptureDiagnostics()
     private var cues: Set<VoiceCallCue> = []
     private var activity: Activity<VoiceCallAttributes>?
     private var started = Date()
@@ -42,11 +43,12 @@ final class NativeVoiceCall: NSObject {
     struct TestHooks {
         var microphonePermission: () async -> Bool = { false }
         var foreground: () -> Bool = { true }
-        var audio: () throws -> VoiceCallAudio = { throw URLError(.unsupportedURL) }
+        var audio: (VoiceCaptureDiagnostics) throws -> VoiceCallAudio = { _ in throw URLError(.unsupportedURL) }
         var connection: (URL) throws -> VoiceCallConnection = { _ in throw URLError(.unsupportedURL) }
         var now: () -> Date = { Date() }
     }
     var testHooks: TestHooks?
+    var debugCaptureDiagnostics: VoiceCaptureSnapshot { diagnostics.snapshot }
     #endif
     private var now: Date {
         #if DEBUG
@@ -56,9 +58,9 @@ final class NativeVoiceCall: NSObject {
     }
     private func makeAudio() throws -> VoiceCallAudio {
         #if DEBUG
-        if let testHooks { return try testHooks.audio() }
+        if let testHooks { return try testHooks.audio(diagnostics) }
         #endif
-        return VoiceAudioPipe()
+        return VoiceAudioPipe(diagnostics: diagnostics)
     }
     private func makeConnection(_ url: URL) throws -> VoiceCallConnection {
         #if DEBUG
@@ -83,7 +85,7 @@ final class NativeVoiceCall: NSObject {
         if let testHooks { return await testHooks.microphonePermission() }
         #endif
         return await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { continuation.resume(returning: $0) }
+            AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
         }
     }
 
@@ -102,6 +104,8 @@ final class NativeVoiceCall: NSObject {
         stopFinishingAudio()
         self.id = id; self.owner = owner; self.emit = emit; ending = false; ready = false; muted = false; lastSpeakingNotice = .distantPast
         captureStarted = nil; capturedAt = nil; cues = []
+        diagnostics = VoiceCaptureDiagnostics()
+        diagnostics.record(.permission, foreground: foreground)
         lastLevelNotice = .distantPast; inputLevel = 0; outputLevel = 0; outputLevelAt = .distantPast
         deadline = Task { [weak self] in
             try? await Task.sleep(for: .seconds(25))
@@ -110,9 +114,27 @@ final class NativeVoiceCall: NSObject {
         }
         receiveTask = Task { [weak self] in
             let allowed = await self?.authorizeMicrophone() ?? false
-            guard let self, self.id == id, !self.ending else { return }
+            guard let self, self.id == id, !self.ending, !Task.isCancelled else { return }
+            self.diagnostics.permission(allowed, foreground: self.foreground)
+            self.diagnostics.record(.permission, foreground: self.foreground)
             guard allowed else { self.fail(id: id, message: "Allow microphone access in Settings to make a call."); return }
             do {
+                // Dismissing the system permission sheet can leave the app
+                // inactive briefly. Do not activate recording until it returns,
+                // and never let cancellation or a replacement call cross this wait.
+                if !self.foreground { self.diagnostics.record(.foregroundWait, foreground: false) }
+                for _ in 0..<20 {
+                    guard self.id == id, !self.ending, !Task.isCancelled else { return }
+                    if self.foreground { break }
+                    try await Task.sleep(for: .milliseconds(100))
+                }
+                guard self.id == id, !self.ending, !Task.isCancelled else { return }
+                guard self.foreground else {
+                    self.diagnostics.record(.foregroundTimeout, foreground: false)
+                    self.fail(id: id, message: "Bring Kindred to the foreground, then try the call again.")
+                    return
+                }
+                self.diagnostics.record(.foregroundReady, foreground: true)
                 // Prove that the native capture graph produces PCM before opening
                 // a billable session. Silent PCM is valid: this is not a speech gate.
                 do {
@@ -124,7 +146,9 @@ final class NativeVoiceCall: NSObject {
                         Task { @MainActor in self?.renderedOutput(level, id: id) }
                     })
                 } catch {
-                    self.fail(id: id, message: "The microphone could not start. Check its permission and audio device, then try again.")
+                    let failure = (error as? VoiceCaptureStartupError) ?? VoiceCaptureStartupError(stage: .audioFactory, error: error)
+                    self.diagnostics.record(failure.stage, error: failure.reason)
+                    self.fail(id: id, message: failure.userMessage)
                     return
                 }
                 self.cue(.connecting)
@@ -193,6 +217,7 @@ final class NativeVoiceCall: NSObject {
     }
     private func capture(_ bytes: Data, id: String) {
         guard self.id == id, !ending, !bytes.isEmpty, bytes.count % 2 == 0, bytes.count <= 48000 else { return }
+        if capturedAt == nil { diagnostics.record(.firstPCM) }
         capturedAt = now
         guard ready else { return }
         inputLevel = muted ? 0 : VoiceAudioPipe.level(bytes)
@@ -277,7 +302,12 @@ final class NativeVoiceCall: NSObject {
     func checkCapture(id: String) {
         guard self.id == id, !ending, let began = captureStarted else { return }
         if now.timeIntervalSince(capturedAt ?? began) >= 4 {
-            fail(id: id, message: "The microphone stopped sending audio. Check its permission and audio device, then call again.")
+            audio?.refreshDiagnostics()
+            diagnostics.record(.captureStalled, foreground: foreground)
+            let message = capturedAt == nil
+                ? "The microphone is not sending audio. Check your audio device, then try again."
+                : "The microphone stopped sending audio. Check your audio device, then call again."
+            fail(id: id, message: message)
         }
     }
     private func cue(_ cue: VoiceCallCue) {
@@ -313,10 +343,14 @@ final class NativeVoiceCall: NSObject {
         finishingAudio?.stop(); finishingAudio = nil
     }
     @objc private func interrupted(_ notification: Notification) {
-        if let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, type == AVAudioSession.InterruptionType.began.rawValue, let id { end(id: id) }
+        guard let id, let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
+        audio?.refreshDiagnostics(); diagnostics.record(.interruption, reason: type)
+        if type == AVAudioSession.InterruptionType.began.rawValue { end(id: id) }
     }
     @objc private func routeChanged(_ notification: Notification) {
-        if let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt, reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue, let id { end(id: id) }
+        guard let id, let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt else { return }
+        audio?.refreshDiagnostics(); diagnostics.record(.routeChanged, reason: reason)
+        if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue { end(id: id) }
     }
 }
 
@@ -354,7 +388,10 @@ protocol VoiceCallAudio: AnyObject {
     func playCue(_ cue: VoiceCallCue) -> TimeInterval
     func stopCapture()
     func stop()
+    func refreshDiagnostics()
 }
+
+extension VoiceCallAudio { func refreshDiagnostics() {} }
 
 enum VoiceCallCue: Hashable, CaseIterable {
     case connecting, connected, ended, error
@@ -390,29 +427,68 @@ final class VoiceAudioPipe: VoiceCallAudio {
     private var active = false
     private let lock = NSLock()
     private var queuedSeconds: Double = 0
+    private let diagnostics: VoiceCaptureDiagnostics
+    private var configurationObserver: NSObjectProtocol?
     private let pcm = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: true)!
     private let playback = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
+    init(diagnostics: VoiceCaptureDiagnostics = VoiceCaptureDiagnostics()) {
+        self.diagnostics = diagnostics
+        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
+            object: engine, queue: nil) { [weak self] _ in
+                // Apple's audio callback queue must never synchronously wait for
+                // engine inspection or teardown. Record evidence only; no retry.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.active else { return }
+                    self.refreshDiagnostics()
+                    self.diagnostics.record(.configurationChanged)
+                }
+            }
+    }
     func start(capture: @escaping (Data) -> Void, playbackLevel: @escaping (Double) -> Void) throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
-        try session.setActive(true)
-        active = true
+        var stage = VoiceCaptureStage.category
         do {
+            diagnostics.record(stage)
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+            stage = .activation; diagnostics.record(stage)
+            try session.setActive(true)
+            active = true
+            stage = .voiceProcessing; diagnostics.record(stage)
             try engine.inputNode.setVoiceProcessingEnabled(true)
+            stage = .inputFormat
             let input = engine.inputNode.outputFormat(forBus: 0)
-            guard input.sampleRate > 0, input.channelCount > 0 else { throw URLError(.cannotDecodeContentData) }
-            guard let converter = AVAudioConverter(from: input, to: pcm) else { throw URLError(.cannotDecodeContentData) }
+            diagnostics.refresh(session: session, engine: engine, input: input); diagnostics.record(stage)
+            guard input.sampleRate.isFinite, input.sampleRate > 0, input.channelCount > 0 else {
+                throw NSError(domain: "KindredVoiceCapture", code: 1)
+            }
+            stage = .converter
+            guard let converter = AVAudioConverter(from: input, to: pcm) else { throw NSError(domain: "KindredVoiceCapture", code: 2) }
+            stage = .graph
             engine.attach(player); engine.connect(player, to: engine.mainMixerNode, format: playback)
             engine.attach(cuePlayer); engine.connect(cuePlayer, to: engine.mainMixerNode, format: playback)
             // This node contains bot speech only. Observing its rendered output
             // follows long/queued buffers and excludes the local call chimes.
             Self.installPlaybackMeter(on: player, format: playback, emit: playbackLevel)
             playbackTapped = true
-            engine.inputNode.installTap(onBus: 0, bufferSize: 2048, format: input) { [pcm] buffer, _ in
-                if let bytes = Self.convertCapture(buffer, using: converter, to: pcm) { capture(bytes) }
+            engine.inputNode.installTap(onBus: 0, bufferSize: 2048, format: input) { [pcm, diagnostics] buffer, _ in
+                let bytes = Self.convertCapture(buffer, using: converter, to: pcm, onError: { diagnostics.conversionFailed($0) })
+                diagnostics.capture(rawFrames: Int(buffer.frameLength), convertedFrames: (bytes?.count ?? 0) / 2)
+                if let bytes { capture(bytes) }
             }
-            tapped = true; engine.prepare(); try engine.start(); player.play(); cuePlayer.play()
-        } catch { stop(); throw error }
+            tapped = true; stage = .engineStart; diagnostics.record(stage)
+            engine.prepare(); try engine.start(); player.play(); cuePlayer.play()
+            refreshDiagnostics(); diagnostics.record(.capturing)
+        } catch {
+            let failure = VoiceCaptureStartupError(stage: stage, error: error)
+            refreshDiagnostics(); diagnostics.record(stage, error: failure.reason)
+            stop(); throw failure
+        }
+    }
+    func refreshDiagnostics() {
+        diagnostics.refresh(session: .sharedInstance(), engine: engine,
+            input: active ? engine.inputNode.outputFormat(forBus: 0) : nil,
+            output: active ? engine.outputNode.inputFormat(forBus: 0) : nil,
+            voiceProcessing: active ? engine.inputNode.isVoiceProcessingEnabled : nil)
     }
     func play(_ bytes: Data) throws {
         guard bytes.count > 0, bytes.count % 2 == 0 else { throw URLError(.cannotDecodeContentData) }
@@ -428,7 +504,8 @@ final class VoiceAudioPipe: VoiceCallAudio {
             guard let self else { return }; self.lock.lock(); self.queuedSeconds = max(0, self.queuedSeconds-duration); self.lock.unlock()
         }
     }
-    static func convertCapture(_ buffer: AVAudioPCMBuffer, using converter: AVAudioConverter, to pcm: AVAudioFormat) -> Data? {
+    static func convertCapture(_ buffer: AVAudioPCMBuffer, using converter: AVAudioConverter, to pcm: AVAudioFormat,
+                               onError: ((Error) -> Void)? = nil) -> Data? {
         guard buffer.frameLength > 0, buffer.format.sampleRate > 0 else { return nil }
         let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * pcm.sampleRate / buffer.format.sampleRate)) + 16
         guard let output = AVAudioPCMBuffer(pcmFormat: pcm, frameCapacity: capacity) else { return nil }
@@ -438,7 +515,10 @@ final class VoiceAudioPipe: VoiceCallAudio {
             if used { status.pointee = .noDataNow; return nil }
             used = true; status.pointee = .haveData; return buffer
         }
-        guard status != .error, error == nil, output.frameLength > 0, let samples = output.int16ChannelData?[0] else { return nil }
+        if status == .error || error != nil {
+            onError?(error ?? NSError(domain: "KindredVoiceCapture", code: 3)); return nil
+        }
+        guard output.frameLength > 0, let samples = output.int16ChannelData?[0] else { return nil }
         return Data(bytes: samples, count: Int(output.frameLength) * 2)
     }
     static func level(_ bytes: Data) -> Double {
@@ -484,8 +564,13 @@ final class VoiceAudioPipe: VoiceCallAudio {
         player.stop()
     }
     func stop() {
+        let wasActive = active
         stopCapture(); cuePlayer.stop(); engine.stop()
         if active { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation); active = false }
+        if wasActive { refreshDiagnostics(); diagnostics.record(.stopped) }
     }
-    deinit { stop() }
+    deinit {
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+        stop()
+    }
 }

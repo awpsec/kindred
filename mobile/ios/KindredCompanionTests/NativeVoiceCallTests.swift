@@ -1,10 +1,12 @@
 import AVFoundation
 import Foundation
+import UIKit
 import XCTest
 @testable import Kindred
 
-/// No microphone, provider requests, or Live Activities are opened by these
-/// fixtures. The conversion test does exercise Apple's real PCM converter.
+/// Default fixtures never open the microphone, provider, or Live Activities.
+/// The explicitly opted-in physical test captures real PCM into a fake socket
+/// that discards audio; it never creates a provider session or stores samples.
 @MainActor
 final class NativeVoiceCallTests: XCTestCase {
     private let owner = UUID()
@@ -22,7 +24,7 @@ final class NativeVoiceCallTests: XCTestCase {
     private func hooks(audio: VoiceAudioFixture, socket: VoiceSocketFixture) -> NativeVoiceCall.TestHooks {
         var hooks = NativeVoiceCall.TestHooks()
         hooks.microphonePermission = { true }
-        hooks.audio = { audio }
+        hooks.audio = { _ in audio }
         hooks.connection = { _ in socket }
         return hooks
     }
@@ -38,6 +40,171 @@ final class NativeVoiceCallTests: XCTestCase {
         try await wait { socket.receiving }
         socket.push(["type": "started"])
         try await wait { call.snapshot(owner: owner, id: id)?["type"] as? String == "started" }
+    }
+
+    func testPermissionGrantWaitsForForegroundBeforeStartingCapture() async throws {
+        let call = NativeVoiceCall(), audio = VoiceAudioFixture(), socket = VoiceSocketFixture(), id = UUID().uuidString
+        defer { call.end(owner: owner) }
+        var active = true, opened = 0
+        var fixture = hooks(audio: audio, socket: socket)
+        fixture.foreground = { active }
+        fixture.microphonePermission = { active = false; return true }
+        fixture.connection = { _ in opened += 1; return socket }
+        call.testHooks = fixture
+        start(call, id: id)
+        try await wait { call.debugCaptureDiagnostics.stage == .foregroundWait }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertNil(audio.capture); XCTAssertEqual(opened, 0)
+        XCTAssertTrue(call.isActive, "The waiting call still reserves the microphone against dictation")
+        active = true
+        try await wait { audio.capture != nil }
+        XCTAssertEqual(opened, 0, "Foreground permission is not proof of captured PCM")
+        audio.capture?(Data(count: 1920))
+        try await wait { opened == 1 && socket.receiving }
+        XCTAssertTrue(call.debugCaptureDiagnostics.foreground)
+        socket.push(["type": "started"])
+        try await wait { call.snapshot(owner: owner, id: id)?["type"] as? String == "started" }
+        call.end(id: id); socket.push(["type": "ended", "saved": true])
+        try await wait { !call.isActive }
+    }
+
+    func testForegroundWaitTimesOutWithoutStartingAudioOrConnection() async throws {
+        let call = NativeVoiceCall(), audio = VoiceAudioFixture(), socket = VoiceSocketFixture(), id = UUID().uuidString
+        defer { call.end(owner: owner) }
+        var active = true, factories = 0, opened = 0, events: [[String: Any]] = []
+        var fixture = hooks(audio: audio, socket: socket)
+        fixture.foreground = { active }
+        fixture.microphonePermission = { active = false; return true }
+        fixture.audio = { _ in factories += 1; return audio }
+        fixture.connection = { _ in opened += 1; return socket }
+        call.testHooks = fixture
+        start(call, id: id) { events.append($0) }
+        try await wait({ events.contains { $0["terminal"] as? Bool == true } }, timeout: 3)
+        XCTAssertFalse(call.isActive); XCTAssertEqual(factories, 0); XCTAssertEqual(opened, 0)
+        XCTAssertEqual(call.debugCaptureDiagnostics.stage, .foregroundTimeout)
+        XCTAssertEqual(events.last?["message"] as? String, "Bring Kindred to the foreground, then try the call again.")
+        XCTAssertEqual(events.filter { $0["type"] as? String == "error" }.count, 1)
+    }
+
+    func testCancelledForegroundWaitCannotStartOrAffectReplacementCall() async throws {
+        let call = NativeVoiceCall(), oldAudio = VoiceAudioFixture(), newAudio = VoiceAudioFixture(), socket = VoiceSocketFixture()
+        let old = UUID().uuidString, current = UUID().uuidString
+        defer { call.end(owner: owner) }
+        var active = true, opened = 0, oldEvents: [[String: Any]] = []
+        var fixture = hooks(audio: oldAudio, socket: socket)
+        fixture.foreground = { active }
+        fixture.microphonePermission = { active = false; return true }
+        fixture.connection = { _ in opened += 1; return socket }
+        call.testHooks = fixture
+        start(call, id: old) { oldEvents.append($0) }
+        try await wait { call.debugCaptureDiagnostics.stage == .foregroundWait }
+        call.end(owner: owner)
+        XCTAssertFalse(call.isActive)
+        active = true; fixture.microphonePermission = { true }; fixture.audio = { _ in newAudio }; call.testHooks = fixture
+        start(call, id: current)
+        try await wait { newAudio.capture != nil }
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertNil(oldAudio.capture); XCTAssertEqual(opened, 0)
+        XCTAssertEqual(oldEvents.last?["type"] as? String, "ended")
+        call.end(id: old); call.checkCapture(id: old)
+        XCTAssertTrue(call.owns(owner: owner, id: current)); XCTAssertFalse(newAudio.stopped)
+        newAudio.capture?(Data(count: 1920)); try await wait { opened == 1 }
+        socket.push(["type": "started"])
+        try await wait { call.snapshot(owner: owner, id: current)?["type"] as? String == "started" }
+        call.end(id: current); socket.push(["type": "ended", "saved": true])
+        try await wait { !call.isActive }
+    }
+
+    func testAudioStartupFailureKeepsSafeStageWithoutOpeningConnection() async throws {
+        for stage in [VoiceCaptureStage.activation, .inputFormat, .engineStart] {
+            let call = NativeVoiceCall(), audio = VoiceAudioFixture(), socket = VoiceSocketFixture(), id = UUID().uuidString
+            defer { call.end(owner: owner) }
+            let privateMarker = "PRIVATE-TRANSCRIPT-TICKET-DEVICE"
+            let failure = VoiceCaptureStartupError(stage: stage,
+                error: NSError(domain: NSOSStatusErrorDomain, code: 561017449,
+                               userInfo: [NSLocalizedDescriptionKey: privateMarker, "ticket": privateMarker]))
+            audio.startError = failure
+            var opened = 0, events: [[String: Any]] = []
+            var fixture = hooks(audio: audio, socket: socket)
+            fixture.connection = { _ in opened += 1; return socket }; call.testHooks = fixture
+            start(call, id: id) { events.append($0) }
+            try await wait { events.contains { $0["terminal"] as? Bool == true } }
+            XCTAssertFalse(call.isActive); XCTAssertEqual(opened, 0); XCTAssertTrue(audio.stopped)
+            XCTAssertEqual(events.last?["message"] as? String, failure.userMessage)
+            let diagnostic = call.debugCaptureDiagnostics
+            XCTAssertEqual(diagnostic.errorStage, stage)
+            XCTAssertEqual(diagnostic.error?.domain, NSOSStatusErrorDomain); XCTAssertEqual(diagnostic.error?.code, 561017449)
+            XCTAssertFalse(diagnostic.text.contains(privateMarker))
+            XCTAssertFalse(String(describing: events).contains(privateMarker))
+            XCTAssertEqual(events.filter { $0["type"] as? String == "error" }.count, 1)
+        }
+    }
+
+    func testCaptureDiagnosticsBoundCountersAndRejectPrivateErrorDomains() throws {
+        let diagnostic = VoiceCaptureDiagnostics()
+        let privateMarker = "PRIVATE-DEVICE-NAME-OR-TOKEN"
+        diagnostic.permission(true, foreground: true)
+        diagnostic.capture(rawFrames: Int.max, convertedFrames: Int.max)
+        diagnostic.capture(rawFrames: 512, convertedFrames: 0)
+        diagnostic.conversionFailed(NSError(domain: privateMarker, code: -50, userInfo: [NSLocalizedDescriptionKey: privateMarker]))
+        diagnostic.record(.captureStalled)
+        let snapshot = diagnostic.snapshot
+        XCTAssertEqual(snapshot.rawBuffers, 2); XCTAssertEqual(snapshot.convertedBuffers, 1)
+        XCTAssertEqual(snapshot.rawFrames, 1_000_512); XCTAssertEqual(snapshot.convertedFrames, 1_000_000)
+        XCTAssertEqual(snapshot.conversionFailures, 1); XCTAssertEqual(snapshot.conversionError?.domain, "other")
+        XCTAssertEqual(snapshot.conversionError?.code, -50)
+        XCTAssertFalse(snapshot.text.contains(privateMarker)); XCTAssertLessThan(snapshot.text.count, 2048)
+        XCTAssertNotNil(try JSONSerialization.jsonObject(with: Data(snapshot.text.utf8)) as? [String: Any])
+    }
+
+    func testPhysicalVoiceCaptureProducesPCMBeforeFakeProviderConnects() async throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Voice microphone capture requires an explicitly selected physical device")
+        #else
+        guard ProcessInfo.processInfo.environment["KINDRED_TEST_VOICE_MICROPHONE"] == "1" else {
+            throw XCTSkip("Real voice-call microphone capture is opt-in; stop Device Hub View Screen first")
+        }
+        let call = NativeVoiceCall(), socket = VoiceDiscardingSocketFixture(), id = UUID().uuidString
+        var opened = 0, events: [[String: Any]] = []
+        defer {
+            call.end(owner: owner)
+            let attachment = XCTAttachment(string: call.debugCaptureDiagnostics.text)
+            attachment.name = "voice-capture-metadata-no-audio"; attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        try await wait({ UIApplication.shared.applicationState == .active }, timeout: 3)
+        var fixture = NativeVoiceCall.TestHooks()
+        fixture.foreground = { UIApplication.shared.applicationState == .active }
+        fixture.microphonePermission = {
+            await withCheckedContinuation { continuation in
+                AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
+            }
+        }
+        fixture.audio = { VoiceAudioPipe(diagnostics: $0) }
+        fixture.connection = { _ in
+            XCTAssertGreaterThan(call.debugCaptureDiagnostics.rawFrames, 0)
+            XCTAssertGreaterThan(call.debugCaptureDiagnostics.convertedFrames, 0, "Actual capture must precede connection")
+            opened += 1; return socket
+        }
+        call.testHooks = fixture
+        start(call, id: id) { events.append($0) }
+        try await wait({ socket.audioMessages >= 3 || events.contains { $0["type"] as? String == "error" } }, timeout: 30)
+        XCTAssertFalse(events.contains { $0["type"] as? String == "error" }, call.debugCaptureDiagnostics.text)
+        XCTAssertEqual(opened, 1); XCTAssertGreaterThanOrEqual(socket.audioMessages, 3)
+        let initialFrames = socket.audioFrames
+        try await Task.sleep(for: .seconds(5))
+        XCTAssertTrue(call.isActive, "Capture must survive beyond the four-second watchdog")
+        XCTAssertGreaterThan(socket.audioFrames, initialFrames)
+        XCTAssertFalse(events.contains { $0["type"] as? String == "error" }, call.debugCaptureDiagnostics.text)
+        XCTAssertGreaterThan(socket.audioFrames, 0)
+        let snapshot = call.debugCaptureDiagnostics
+        XCTAssertTrue(snapshot.permissionGranted); XCTAssertTrue(snapshot.inputAvailable); XCTAssertTrue(snapshot.engineRunning)
+        XCTAssertGreaterThan(snapshot.inputRate, 0); XCTAssertGreaterThan(snapshot.inputChannels, 0)
+        XCTAssertGreaterThanOrEqual(snapshot.rawBuffers, snapshot.convertedBuffers)
+        XCTAssertGreaterThan(snapshot.convertedFrames, 0); XCTAssertEqual(snapshot.conversionFailures, 0)
+        call.end(id: id); try await wait { !call.isActive }
+        XCTAssertTrue(socket.closed)
+        #endif
     }
 
     func testCapturePreflightAcceptsSilenceBeforeConnectingAndCuesPlayOnce() async throws {
@@ -238,7 +405,7 @@ final class NativeVoiceCallTests: XCTestCase {
         start(call, id: old); try await wait { oldAudio.capture != nil }
         call.end(id: old)
         XCTAssertFalse(call.isActive)
-        fixture.audio = { newAudio }; call.testHooks = fixture
+        fixture.audio = { _ in newAudio }; call.testHooks = fixture
         start(call, id: current); try await wait { newAudio.capture != nil }
         oldAudio.capture?(Data(count: 1920)); call.end(id: old); call.checkCapture(id: old)
         try await Task.sleep(for: .milliseconds(40))
@@ -259,7 +426,7 @@ final class NativeVoiceCallTests: XCTestCase {
         XCTAssertTrue(oldAudio.captureStopped)
         XCTAssertTrue(call.isActive, "Dictation must not open a second session during the short ending tone")
         XCTAssertFalse(oldAudio.stopped)
-        fixture.audio = { newAudio }; call.testHooks = fixture
+        fixture.audio = { _ in newAudio }; call.testHooks = fixture
         start(call, id: current); try await wait { newAudio.capture != nil }
         XCTAssertTrue(oldAudio.stopped, "The old session must deactivate before a new audio graph starts")
         try await Task.sleep(for: .milliseconds(150))
@@ -284,23 +451,30 @@ final class NativeVoiceCallTests: XCTestCase {
 
     func testRealCaptureConversionResamplesMonoAndStereoIncludingSilence() throws {
         let target = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24000, channels: 1, interleaved: true))
-        for rate in [44100.0, 48000.0] {
+        for rate in [8000.0, 16000.0, 24000.0, 44100.0, 48000.0] {
             for channels in [AVAudioChannelCount(1), AVAudioChannelCount(2)] {
                 for silent in [false, true] {
                     let source = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: rate, channels: channels))
                     let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: source, frameCapacity: 2048))
                     buffer.frameLength = 2048
-                    for channel in 0..<Int(channels) {
-                        for frame in 0..<2048 {
-                            buffer.floatChannelData![channel][frame] = silent ? 0 : Float(sin(2 * .pi * 440 * Double(frame) / rate) * 0.2)
-                        }
-                    }
                     let converter = try XCTUnwrap(AVAudioConverter(from: source, to: target))
-                    let bytes = try XCTUnwrap(VoiceAudioPipe.convertCapture(buffer, using: converter, to: target))
-                    XCTAssertFalse(bytes.isEmpty); XCTAssertEqual(bytes.count % 2, 0)
-                    XCTAssertLessThanOrEqual(bytes.count, Int(ceil(2048 * 24000 / rate)) * 2 + 32)
-                    if silent { XCTAssertEqual(VoiceAudioPipe.level(bytes), 0) }
-                    else { XCTAssertGreaterThan(VoiceAudioPipe.level(bytes), 0.01); XCTAssertLessThan(VoiceAudioPipe.level(bytes), 0.3) }
+                    // Reuse the converter across callbacks, including narrowband
+                    // Bluetooth rates, rather than checking only its first buffer.
+                    for packet in 0..<4 {
+                        for channel in 0..<Int(channels) {
+                            for frame in 0..<2048 {
+                                buffer.floatChannelData![channel][frame] = silent ? 0
+                                    : Float(sin(2 * .pi * 440 * Double(packet * 2048 + frame) / rate) * 0.2)
+                            }
+                        }
+                        var conversionErrors = 0
+                        let bytes = try XCTUnwrap(VoiceAudioPipe.convertCapture(buffer, using: converter, to: target,
+                            onError: { _ in conversionErrors += 1 }))
+                        XCTAssertEqual(conversionErrors, 0); XCTAssertFalse(bytes.isEmpty); XCTAssertEqual(bytes.count % 2, 0)
+                        XCTAssertLessThanOrEqual(bytes.count, Int(ceil(2048 * 24000 / rate)) * 2 + 32)
+                        if silent { XCTAssertEqual(VoiceAudioPipe.level(bytes), 0) }
+                        else { XCTAssertGreaterThan(VoiceAudioPipe.level(bytes), 0.01); XCTAssertLessThan(VoiceAudioPipe.level(bytes), 0.3) }
+                    }
                 }
             }
         }
@@ -322,6 +496,7 @@ final class NativeVoiceCallTests: XCTestCase {
 }
 
 private final class VoiceAudioFixture: VoiceCallAudio {
+    var startError: Error?
     var capture: ((Data) -> Void)?
     var playbackLevel: ((Double) -> Void)?
     var cues: [VoiceCallCue] = []
@@ -330,12 +505,39 @@ private final class VoiceAudioFixture: VoiceCallAudio {
     var stopped = false
     var cueDuration: TimeInterval = 0
     func start(capture: @escaping (Data) -> Void, playbackLevel: @escaping (Double) -> Void) throws {
+        if let startError { throw startError }
         self.capture = capture; self.playbackLevel = playbackLevel
     }
     func play(_ bytes: Data) throws { played.append(bytes) }
     func playCue(_ cue: VoiceCallCue) -> TimeInterval { cues.append(cue); return cueDuration }
     func stopCapture() { captureStopped = true }
     func stop() { stopCapture(); stopped = true }
+}
+
+/// Real capture can exercise the entire native state machine without a network
+/// connection. Only byte counts survive send(); no microphone samples are saved.
+@MainActor
+private final class VoiceDiscardingSocketFixture: VoiceCallConnection {
+    var audioMessages = 0
+    var audioFrames = 0
+    var closed = false
+    private var initial = true
+    private var pending: CheckedContinuation<[String: Any], Error>?
+    func receive() async throws -> [String: Any] {
+        if closed { throw URLError(.cancelled) }
+        if initial { initial = false; return ["type": "started"] }
+        return try await withCheckedThrowingContinuation { pending = $0 }
+    }
+    func send(_ value: [String: Any]) async throws {
+        if closed { throw URLError(.cancelled) }
+        if value["type"] as? String == "audio", let encoded = value["data"] as? String,
+           let bytes = Data(base64Encoded: encoded) {
+            audioMessages += 1; audioFrames += bytes.count / 2
+        } else if value["type"] as? String == "end" {
+            pending?.resume(returning: ["type": "ended", "saved": true]); pending = nil
+        }
+    }
+    func close() { closed = true; pending?.resume(throwing: URLError(.cancelled)); pending = nil }
 }
 
 private final class VoiceMeterFixture {

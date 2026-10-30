@@ -122,6 +122,19 @@ targets:
         TEST_TARGET_NAME: KindredCompanion
         DEVELOPMENT_TEAM: $(KINDRED_DEVELOPMENT_TEAM)
 schemes:
+  KindredVoiceCaptureTests:
+    build:
+      targets:
+        KindredCompanion: all
+        KindredCompanionTests: [test]
+    test:
+      config: Personal
+      environmentVariables:
+        KINDRED_TEST_VOICE_MICROPHONE: "1"
+      targets:
+        - name: KindredCompanionTests
+          selectedTests:
+            - NativeVoiceCallTests
   KindredVoiceActivityTests:
     build:
       targets:

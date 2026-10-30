@@ -41,6 +41,24 @@ skip both hardware tests. The WebKit native-dictation composer test separately
 checks partial/final transcript delivery through native actions, draft
 preservation, selection acknowledgements, and no automatic sending.
 
+For call startup, use the separate opt-in `KindredVoiceCaptureTests` scheme on
+an explicitly selected physical device with Device Hub **View Screen** off.
+It uses the production `VoiceAudioPipe` (`playAndRecord`, `voiceChat`, voice
+processing and PCM conversion) with a fake transport. The transport discards
+audio immediately; it never connects to a provider or saves microphone samples.
+The test checks that actual PCM arrives before the fake connection opens, then
+checks ongoing capture and cleanup. Silence is valid, so this establishes buffer
+delivery, not intelligible speech or a successful end-to-end provider call.
+Default suites skip this hardware test. The opt-in scheme uses the existing
+Personal signing configuration and needs microphone permission on the device.
+
+Call capture diagnostics use the `dev.kindred.companion` log subsystem and
+`VoiceCapture` category. Output is bounded to startup transitions and final
+snapshots, with safe error domains/codes, route types, formats, engine state and
+raw/converted frame counters. Device names, account identifiers, audio samples,
+transcripts and connection tickets are excluded. The hardware test also attaches
+this metadata to its test result as `voice-capture-metadata-no-audio`.
+
 > **Mac verification (2026-10-03):** the app builds with Xcode 27.2 beta 2.
 > The core suite passes all 39 tests; all 25 native sign-in, Keychain, appearance and
 > layout/fallback tests pass on iOS 27.2. Live sign-in, account navigation, conversation switching,
