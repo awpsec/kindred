@@ -582,7 +582,12 @@ final class NativeVoiceCallTests: XCTestCase {
         engine.attach(player); engine.connect(player, to: engine.mainMixerNode, format: format)
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 960)
         VoiceAudioPipe.installPlaybackMeter(on: player, format: format) { meter.append($0) }
-        defer { player.removeTap(onBus: 0); player.stop(); engine.stop() }
+        defer {
+            player.removeTap(onBus: 0); player.stop(); engine.stop()
+            // Release the offline hardware mode explicitly: the next test may
+            // open the real voice-processing graph in this same app process.
+            engine.disableManualRenderingMode()
+        }
         try engine.start(); player.play()
         func buffer(_ frames: AVAudioFrameCount, audible: Bool) throws -> AVAudioPCMBuffer {
             let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
