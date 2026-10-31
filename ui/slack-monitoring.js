@@ -1,4 +1,56 @@
 const historyScopes=['channels:history','groups:history','im:history','mpim:history'];
+function refreshSlackSetupCards(){document.querySelectorAll('[data-connection-toolkit="slack_events"]').forEach(card=>card.refreshConnection?.());}
+export function slackSetupCard(request,env){
+  const {api,node,button,field,modal,state,openMonitoring,logo}=env,token=state.token;
+  const card=node('section','chat-connection-card slack-setup-card');card.dataset.connectionToolkit='slack_events';
+  const head=node('div','chat-connection-head'),copy=node('div','chat-connection-copy'),description=node('p','muted small'),status=node('span','connection-state','Checking');
+  copy.append(button('Slack monitoring',()=>openMonitoring(request.bot_id),'chat-connection-title'),description);head.append(logo(),copy,status);
+  const footer=node('div','chat-connection-accounts'),feedback=node('p','run-error small');feedback.setAttribute('role','status');card.append(head,footer,feedback);
+  const current=()=>state.token===token&&card.isConnected;
+  const call=(...args)=>{if(!current())throw new Error('Workspace changed. Open the conversation again.');return api(...args);};
+  let generation=0,busy=false,timer,accounts=[];
+  function completed(declined=false,dismissed=false){
+    card.dataset.completed='true';clearTimeout(timer);status.textContent=dismissed?'Dismissed':declined?'Not now':'Connected';status.className='connection-state'+(!declined&&!dismissed?' connected':'');
+    description.textContent=dismissed?'Setup dismissed.':declined?'Setup deferred.':'Connected · setup continuing';
+    footer.replaceChildren(button('Manage monitoring',()=>openMonitoring(request.bot_id),'subtle-button'));feedback.textContent='';
+  }
+  async function act(action){
+    if(busy||!current()||card.dataset.completed==='true')return;
+    busy=true;clearTimeout(timer);feedback.textContent='';for(const b of footer.querySelectorAll('button'))b.disabled=true;
+    try{await action();}catch(error){if(current())feedback.textContent=error.message;}
+    finally{busy=false;if(current()&&card.dataset.completed!=='true'){for(const b of footer.querySelectorAll('button'))b.disabled=false;}}
+  }
+  function connect(){
+    if(!current())return;
+    const account=accounts.find(a=>request.account_id?a.id===request.account_id:request.account_name&&a.name.toLowerCase()===request.account_name.toLowerCase());
+    openSlackConnection({node,button,field,modal,request:call,accountName:request.account_name,onConnected:async()=>{if(current())await render();refreshSlackSetupCards();}},account);
+  }
+  function actions(){
+    footer.append(button('Connect Slack',connect,'subtle-button','plus'),button('Check again',()=>render(),'subtle-button','refresh'));
+    if(request.question_id)footer.append(button('Not now',()=>act(async()=>{await call('/questions/'+encodeURIComponent(request.question_id)+'/answer','POST',{selected:1});if(current())completed(true);}), 'subtle-button'));
+  }
+  async function render(){
+    if(!current()||busy||card.dataset.completed==='true')return;
+    clearTimeout(timer);const ticket=++generation;
+    try{
+      const data=await call('/slack-monitoring');if(!current()||ticket!==generation||busy||card.dataset.completed==='true')return;
+      accounts=data.connections||[];const choices=accounts.filter(a=>!request.account_id||a.id===request.account_id),ready=choices.filter(a=>a.status==='connected');
+      status.textContent=ready.length?'Choose account':choices.some(a=>a.status==='connecting')?'Connecting':'Connection needed';
+      description.textContent=request.account_name?`Connect ${request.account_name}, then select its account to continue setup.`:'Connect Slack, then select an account. Your bot will finish the monitoring rules.';
+      footer.replaceChildren();
+      for(const account of ready){
+        const label=`Use ${account.name} · ${account.user_name} · ${account.team_name}`;
+        footer.append(button(label,()=>act(async()=>{await call('/slack-setup/'+encodeURIComponent(request.question_id)+'/complete','POST',{account_id:account.id});if(current())completed();}),'connection-account-chip connected','check'));
+      }
+      actions();
+      if(choices.some(a=>a.status==='connecting'))timer=setTimeout(()=>void render(),2000);
+    }catch(error){if(!current()||ticket!==generation)return;status.textContent='Unavailable';description.textContent='Couldn’t load Slack connections.';feedback.textContent=error.message;footer.replaceChildren();actions();}
+  }
+  card.refreshConnection=render;
+  if(request.completed)completed(request.declined,request.dismissed);
+  else requestAnimationFrame(()=>void render());
+  return card;
+}
 export function slackAppManifest(kind='user'){
   const manifest={display_information:{name:'Kindred monitoring',description:'Receive messages for your Kindred teammates'},oauth_config:{scopes:{[kind]:[...historyScopes,'channels:read','groups:read','im:read','mpim:read']}},settings:{event_subscriptions:{[kind==='bot'?'bot_events':'user_events']:['message.channels','message.groups','message.im','message.mpim']},socket_mode_enabled:true,token_rotation_enabled:false}};
   if(kind==='bot')manifest.features={bot_user:{display_name:'Kindred monitoring',always_online:false}};
@@ -65,21 +117,11 @@ export async function mountSlackMonitoring(root,env){
   function labeled(text,input){const label=node('label','',text);label.append(input);return label;}
   function installForm(dialog,form,contents,save){const fields=node('div','slack-monitor-fields');fields.append(...contents);form.append(fields,save);dialog.append(form);}
   function connectAccount(account,thenCreate=false){
-    const dialog=modal(account?'Update Slack connection':'Connect Slack','slack-monitor-dialog');
-    const form=node('form','slack-monitor-form'),name=field('Connection name',account?.name||'Helpdesk'),app=field('App-level token','','input',{type:'password',placeholder:'xapp-…',autocomplete:'off'}),access=field('Slack account token','','input',{type:'password',placeholder:'xoxp-… or xoxb-…',autocomplete:'off'});
-    app.input.setAttribute('data-private','true');access.input.setAttribute('data-private','true');
-    const intro=node('p','muted small','Use a dedicated Slack app for each account and Kindred workspace. A user token monitors that account’s mentions and DMs; a bot token monitors the Slack app’s conversations.');
-    const kind=select('Monitor as',[['user','Existing Slack account'],['bot','Slack app bot']],account?.bot_id?'bot':'user');
-    const guide=node('details','slack-setup-guide');guide.append(node('summary','','Set up the Slack app'));
-    const steps=node('ol');
-    for(const text of ['Create a Slack app from the manifest below, in the workspace you want to monitor.','Enable Socket Mode and create an app-level token with connections:write.','Install the app. Copy the User OAuth Token to monitor an existing account, or the Bot User OAuth Token for the app bot.','Paste both tokens below. In Slack, join the channels you want to monitor.'])steps.append(node('li','',text));
-    const copy=button('Copy app manifest',async()=>{try{await navigator.clipboard.writeText(manifest.value);copy.textContent='Manifest copied';}catch{manifest.hidden=false;manifest.select();}},'subtle-button');
-    const manifest=node('textarea','slack-manifest');manifest.value=JSON.stringify(slackAppManifest(kind.value),null,2);manifest.readOnly=true;manifest.hidden=true;manifest.setAttribute('aria-label','Slack app manifest');
-    kind.onchange=()=>{manifest.value=JSON.stringify(slackAppManifest(kind.value),null,2);copy.textContent='Copy app manifest';access.input.placeholder=kind.value==='user'?'xoxp-…':'xoxb-…';};kind.onchange();
-    const link=node('a','detail-link','Open Slack app setup');link.href='https://api.slack.com/apps';link.target='_blank';link.rel='noopener noreferrer';guide.append(steps,copy,link,manifest);
-    const feedback=node('p','run-error small');feedback.setAttribute('role','status');const save=button(account?'Update connection':'Connect',()=>{},'primary');save.type='submit';
-    installForm(dialog,form,[intro,labeled('Monitor as',kind),guide,name.label,app.label,access.label,node('p','muted small','An incoming webhook only posts messages; it cannot subscribe to them. ChatGPT’s Slack connection is separate from this event connection.'),feedback],save);
-    form.onsubmit=async event=>{event.preventDefault();feedback.textContent='';save.disabled=true;try{if(!access.input.value.trim().startsWith(kind.value==='user'?'xoxp-':'xoxb-'))throw new Error(kind.value==='user'?'Use the User OAuth Token for this Slack account.':'Use the Bot User OAuth Token for this Slack app.');const saved=await request('/slack-connections','POST',{id:account?.id||'',name:name.input.value,app_token:app.input.value,access_token:access.input.value});app.input.value='';access.input.value='';data.connections=[...data.connections.filter(a=>a.id!==saved.id),saved];active=data.connections.filter(a=>a.status!=='disconnected');dialog.close();await onChanged();if(thenCreate&&current())editMonitor(null,saved.id);}catch(error){feedback.textContent=error.message;}finally{save.disabled=false;}};
+    return openSlackConnection({node,button,field,modal,request,onConnected:async saved=>{
+      if(!current())return;
+      data.connections=[...data.connections.filter(a=>a.id!==saved.id),saved];active=data.connections.filter(a=>a.status!=='disconnected');
+      await onChanged();refreshSlackSetupCards();if(thenCreate&&current())editMonitor(null,saved.id);
+    }},account);
   }
   function editMonitor(watch,accountId){
     const dialog=modal(watch?'Edit Slack monitor':'Slack monitoring','slack-monitor-dialog'),form=node('form','slack-monitor-form');
@@ -131,3 +173,25 @@ export async function mountSlackMonitoring(root,env){
     };
   }
 }
+
+export function openSlackConnection(env,account=null){
+    const {node,button,field,modal,request,onConnected,accountName=''}=env;
+    function select(label,choices,value){const element=node('select');element.setAttribute('aria-label',label);for(const [id,text] of choices){const option=node('option','',text);option.value=id;element.append(option);}element.value=value;return element;}
+    function labeled(text,input){const label=node('label','',text);label.append(input);return label;}
+    function installForm(dialog,form,contents,save){const fields=node('div','slack-monitor-fields');fields.append(...contents);form.append(fields,save);dialog.append(form);}
+    const dialog=modal(account?'Update Slack connection':'Connect Slack','slack-monitor-dialog');
+    const form=node('form','slack-monitor-form'),name=field('Connection name',account?.name||accountName||'Helpdesk'),app=field('App-level token','','input',{type:'password',placeholder:'xapp-…',autocomplete:'off'}),access=field('Slack account token','','input',{type:'password',placeholder:'xoxp-… or xoxb-…',autocomplete:'off'});
+    app.input.setAttribute('data-private','true');access.input.setAttribute('data-private','true');
+    const intro=node('p','muted small','Use a dedicated Slack app for each account and Kindred workspace. A user token monitors that account’s mentions and DMs; a bot token monitors the Slack app’s conversations.');
+    const kind=select('Monitor as',[['user','Existing Slack account'],['bot','Slack app bot']],account?.bot_id?'bot':'user');
+    const guide=node('details','slack-setup-guide');guide.append(node('summary','','Set up the Slack app'));
+    const steps=node('ol');
+    for(const text of ['Create a Slack app from the manifest below, in the workspace you want to monitor.','Enable Socket Mode and create an app-level token with connections:write.','Install the app. Copy the User OAuth Token to monitor an existing account, or the Bot User OAuth Token for the app bot.','Paste both tokens below. In Slack, join the channels you want to monitor.'])steps.append(node('li','',text));
+    const copy=button('Copy app manifest',async()=>{try{await navigator.clipboard.writeText(manifest.value);copy.textContent='Manifest copied';}catch{manifest.hidden=false;manifest.select();}},'subtle-button');
+    const manifest=node('textarea','slack-manifest');manifest.value=JSON.stringify(slackAppManifest(kind.value),null,2);manifest.readOnly=true;manifest.hidden=true;manifest.setAttribute('aria-label','Slack app manifest');
+    kind.onchange=()=>{manifest.value=JSON.stringify(slackAppManifest(kind.value),null,2);copy.textContent='Copy app manifest';access.input.placeholder=kind.value==='user'?'xoxp-…':'xoxb-…';};kind.onchange();
+    const link=node('a','detail-link','Open Slack app setup');link.href='https://api.slack.com/apps';link.target='_blank';link.rel='noopener noreferrer';guide.append(steps,copy,link,manifest);
+    const feedback=node('p','run-error small');feedback.setAttribute('role','status');const save=button(account?'Update connection':'Connect',()=>{},'primary');save.type='submit';
+    installForm(dialog,form,[intro,labeled('Monitor as',kind),guide,name.label,app.label,access.label,node('p','muted small','An incoming webhook only posts messages; it cannot subscribe to them. ChatGPT’s Slack connection is separate from this event connection.'),feedback],save);
+    form.onsubmit=async event=>{event.preventDefault();feedback.textContent='';save.disabled=true;try{if(!access.input.value.trim().startsWith(kind.value==='user'?'xoxp-':'xoxb-'))throw new Error(kind.value==='user'?'Use the User OAuth Token for this Slack account.':'Use the Bot User OAuth Token for this Slack app.');const saved=await request('/slack-connections','POST',{id:account?.id||'',name:name.input.value,app_token:app.input.value,access_token:access.input.value});app.input.value='';access.input.value='';dialog.close();await onConnected(saved);}catch(error){feedback.textContent=error.message;}finally{save.disabled=false;}};
+  }

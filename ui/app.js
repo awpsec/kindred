@@ -1,5 +1,5 @@
 import {nativeFileDelivery,responseFileBlob} from './file-downloads.js';
-import {mountSlackMonitoring} from './slack-monitoring.js';
+import {mountSlackMonitoring,slackSetupCard} from './slack-monitoring.js';
 import {createNavigationSearch} from './navigation-search.js';
 import {createBotCenter,libraryItems} from './bot-center.js';
 import {createComputerPopout} from './computer-popout.js';
@@ -7213,6 +7213,7 @@ let connectionCardAccounts;
 function validConnectionCard(raw){try{const value=JSON.parse(raw);return !!value&&/^[a-zA-Z0-9_-]{1,160}$/.test(value.toolkit||'');}catch{return /^[a-zA-Z0-9_-]{1,160}$/.test(raw);}}
 function chatConnectionCard(raw){
   let request={};try{request=JSON.parse(raw);}catch{}const toolkit=request.toolkit||raw;
+  if(toolkit==='slack_events')return slackSetupCard(request,{api,node,button,field,modal,state,openMonitoring:openSlackMonitoring,logo:()=>connectorLogo(connectorBrand('slack'))});
   const complete=request.question_id?async account=>{await api('/composio/'+toolkit+'/complete-connection','POST',{account_id:account.id,question_id:request.question_id});card.dataset.completed='true';status.textContent='Connected';status.className='connection-state connected';footer.replaceChildren(node('span','muted small','Connected · setup continuing'));}:null;
   const onboarding={accountName:request.account_name||'',onConnected:complete};
   const card=node('section','chat-connection-card');card.dataset.connectionToolkit=toolkit;
