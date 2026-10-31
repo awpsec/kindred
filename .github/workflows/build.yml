@@ -52,9 +52,9 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"}]' || inputs.platforms == 'macos' && '[{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]' || inputs.platforms == 'linux' && '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]' || '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"},{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"},{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]') }}
+        include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-2022","target":"x86_64-pc-windows-msvc","bundles":"native"}]' || inputs.platforms == 'macos' && '[{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]' || inputs.platforms == 'linux' && '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]' || '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"},{"os":"windows-2022","target":"x86_64-pc-windows-msvc","bundles":"native"},{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ matrix.os == 'macos-26' && 15 || matrix.os == 'windows-2025' && 20 || 45 }}
+    timeout-minutes: ${{ matrix.os == 'macos-26' && 15 || matrix.os == 'windows-2022' && 20 || 45 }}
     env:
       KINDRED_PACKAGE_SOURCE_ROOT: ${{ github.workspace }}
       CARGO_BUILD_JOBS: 2
