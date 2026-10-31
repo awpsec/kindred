@@ -113,6 +113,15 @@ try:
   finally:
    command(['hdiutil','detach',mount],'unmount.log');mounted=False
   info=plistlib.loads((app/'Contents/Info.plist').read_bytes());assert info['CFBundleShortVersionString']==a.version
+  if (a.source/'branding/team-shadows.json').is_file():
+   icon_name=info.get('CFBundleIconFile','')
+   assert icon_name and Path(icon_name).name==icon_name,'Missing or invalid packaged Mac icon'
+   icon=app/'Contents/Resources'/(icon_name if icon_name.endswith('.icns') else icon_name+'.icns')
+   approved=a.source/'desktop/icons/macos.icns'
+   assert icon.read_bytes()==approved.read_bytes(),'Packaged Mac icon differs from approved light artwork'
+   command(['swift',tools/'mac-brand-proof.swift',app,out],'macos-brand.log')
+   brand=json.loads((out/'macos-brand.json').read_text());assert brand['passed'] is True
+   proof['approved_light_branding']={**brand,'icns_sha256':hashlib.sha256(icon.read_bytes()).hexdigest()}
   assert isinstance(info.get('NSMicrophoneUsageDescription'),str) and info['NSMicrophoneUsageDescription'].strip(),'Mac app is missing its microphone purpose declaration'
   executable=app/'Contents/MacOS'/info['CFBundleExecutable']
   assert arch in command(['lipo','-archs',executable],'architecture.log').stdout.split()

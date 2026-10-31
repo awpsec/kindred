@@ -35,5 +35,20 @@ class VoiceUIEvidenceTests(unittest.TestCase):
         self.exports['tests'] = 1
         with self.assertRaises(AssertionError): self.validate()
 
+    def test_identity_scope_requires_branding_lifecycle_and_voice_cases(self):
+        methods = m.IDENTITY_UI_METHODS
+        self.assertEqual(len(methods), 11)
+        self.assertTrue(m.VOICE_UI_METHODS < methods)
+        summary = dict(totalTestCount=len(methods), passedTests=len(methods), failedTests=0)
+        cases = [dict(nodeType='Test Case', nodeIdentifier=key, result='Passed') for key in methods]
+        tree = {'testNodes': cases}
+        self.assertEqual(m.validate_native_methods_evidence(self.exports, summary, tree, methods), 11)
+        # The older six-case voice receipt cannot pass as branding acceptance.
+        with self.assertRaises(AssertionError):
+            m.validate_native_methods_evidence(self.exports, self.summary, self.tree, methods)
+        cases[-1]['result'] = 'Skipped'
+        with self.assertRaises(AssertionError):
+            m.validate_native_methods_evidence(self.exports, summary, tree, methods)
+
 
 if __name__ == '__main__': unittest.main()

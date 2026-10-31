@@ -106,8 +106,21 @@ VOICE_UI_METHODS = {
 
 
 def validate_voice_ui_evidence(exports, summary, tree):
-    assert all(exports[k] == 0 for k in ('summary', 'tests', 'attachments')), 'Voice result export failed'
-    assert summary['totalTestCount'] == len(VOICE_UI_METHODS) and summary['passedTests'] == len(VOICE_UI_METHODS) and summary['failedTests'] == 0, 'All native voice UI tests must pass'
+    return validate_native_methods_evidence(exports, summary, tree, VOICE_UI_METHODS)
+
+
+IDENTITY_UI_METHODS = VOICE_UI_METHODS | {
+    'BrandIdentityTests/testCompiledMarkKeepsOriginalColorsInBothAppearances()',
+    'BrandIdentityTests/testWelcomeKeepsApprovedArtworkAcrossPhoneAndDuoThemes()',
+    'WebHostLifecycleTests/testInactiveAndBackgroundScenesKeepContentUncovered()',
+    'WebHostLifecycleTests/testDisplayReparentingRetainsWebViewAndNativeComposerWithoutAWindowCover()',
+    'WebHostLifecycleTests/testLoadingAndRecoveryFitPhoneAndDuoInBothThemes()',
+}
+
+
+def validate_native_methods_evidence(exports, summary, tree, required_methods):
+    assert all(exports[k] == 0 for k in ('summary', 'tests', 'attachments')), 'Native result export failed'
+    assert summary['totalTestCount'] == len(required_methods) and summary['passedTests'] == len(required_methods) and summary['failedTests'] == 0, 'All selected native UI tests must pass'
     tree = json.loads(tree) if isinstance(tree, str) else tree
     cases = []
     def visit(nodes):
@@ -115,8 +128,8 @@ def validate_voice_ui_evidence(exports, summary, tree):
             if node.get('nodeType') == 'Test Case': cases.append(node)
             visit(node.get('children', []))
     visit(tree['testNodes'])
-    assert len(cases) == len(VOICE_UI_METHODS) and {n['nodeIdentifier'] for n in cases} == VOICE_UI_METHODS, 'Missing or duplicate native voice test'
-    assert all(n['result'] == 'Passed' for n in cases), 'Native voice tests cannot be skipped'
+    assert len(cases) == len(required_methods) and {n['nodeIdentifier'] for n in cases} == required_methods, 'Missing or duplicate native test'
+    assert all(n['result'] == 'Passed' for n in cases), 'Native tests cannot be skipped'
     return len(cases)
 
 
@@ -624,8 +637,9 @@ def main(scope):
     if scope == 'keyboard-ownership':
         assert (ROOT / 'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').is_file(), 'Reviewed keyboard diagnostics missing'
         command += ['-only-testing:KindredCompanionTests/' + name.removesuffix('()') for name in sorted(KEYBOARD_OWNERSHIP_CASES)]
-    if scope == 'voice-ui':
-        command += ['-only-testing:KindredCompanionTests/' + name.removesuffix('()') for name in sorted(VOICE_UI_METHODS)]
+    if scope in ('voice-ui', 'identity-ui'):
+        methods = IDENTITY_UI_METHODS if scope == 'identity-ui' else VOICE_UI_METHODS
+        command += ['-only-testing:KindredCompanionTests/' + name.removesuffix('()') for name in sorted(methods)]
     receipt = {'source_commit': source, 'scope': scope, 'runtime': runtime, 'device': device, 'destination': destination, 'command': command, 'full_scheme_includes_AppModelSignInTests': scope == 'full', 'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'automatic_retry': False, 'passed': False}
     if scope in ('composer', 'release-ui'):
         receipt.update(required_methods=sorted(set(COMPOSER_PHASES) | DICTATION_METHODS), required_native_phases=53, real_Apple_recognition_selected=False, real_audio_test_excluded=True, injectable_lifecycle_is_recognition_proof=False)
@@ -635,6 +649,9 @@ def main(scope):
         receipt.update(diagnostic_only=True, release_passed=False, required_methods=sorted(KEYBOARD_OWNERSHIP_CASES), required_native_phases=4, native_command_seconds=480, real_Apple_recognition_selected=False)
     if scope == 'voice-ui':
         receipt.update(required_methods=sorted(VOICE_UI_METHODS), microphone_tested=False, paid_provider_calls=False)
+    if scope == 'identity-ui':
+        receipt.update(required_methods=sorted(IDENTITY_UI_METHODS), microphone_tested=False, paid_provider_calls=False,
+                       home_screen_appearances_tested=False, physical_duo_tested=False)
     record('test-receipt.json', receipt)
     fixture = None
     old_keyboard = None
@@ -642,7 +659,7 @@ def main(scope):
     started = time.monotonic()
     try:
         with tempfile.TemporaryDirectory(prefix='kindred-ios-fixture-') as private:
-            if scope in ('composer', 'release-ui', 'keyboard-ownership', 'voice-ui'):
+            if scope in ('composer', 'release-ui', 'keyboard-ownership', 'voice-ui', 'identity-ui'):
                 private = Path(private)
                 config = private / 'openssl.cnf'
                 config.write_text('[req]\nprompt=no\ndistinguished_name=dn\nx509_extensions=ext\n[dn]\nCN=localhost\n[ext]\nsubjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:TRUE\n')
@@ -692,12 +709,14 @@ def main(scope):
                 exports = export_results(bundle)
                 if scope == 'voice-ui':
                     receipt['native_test_count'] = validate_voice_ui_evidence(exports, json.loads((OUT / 'xcresult-summary.log').read_text()), (OUT / 'xcresult-tests.log').read_text())
+                if scope == 'identity-ui':
+                    receipt['native_test_count'] = validate_native_methods_evidence(exports, json.loads((OUT / 'xcresult-summary.log').read_text()), (OUT / 'xcresult-tests.log').read_text(), IDENTITY_UI_METHODS)
                 if scope in ('composer', 'release-ui', 'keyboard-ownership'):
                     summary = json.loads((OUT / 'xcresult-summary.log').read_text())
                     tree = (OUT / 'xcresult-tests.log').read_text()
                     validator = validate_keyboard_ownership_evidence if scope == 'keyboard-ownership' else (validate_release_ui_evidence if scope == 'release-ui' else validate_composer_evidence)
                     receipt['native_test_count'] = validator(exports, summary, tree, OUT / 'attachments')
-            elif scope in ('composer', 'release-ui', 'keyboard-ownership', 'voice-ui'):
+            elif scope in ('composer', 'release-ui', 'keyboard-ownership', 'voice-ui', 'identity-ui'):
                 raise RuntimeError('Composer result bundle missing')
     except Exception as error:
         receipt['passed'] = False
@@ -727,5 +746,5 @@ def main(scope):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--scope', choices=['full', 'composer', 'release-ui', 'keyboard-ownership', 'voice-ui'], required=True)
+    parser.add_argument('--scope', choices=['full', 'composer', 'release-ui', 'keyboard-ownership', 'voice-ui', 'identity-ui'], required=True)
     main(parser.parse_args().scope)
