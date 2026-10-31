@@ -314,13 +314,36 @@ final class NativeVoiceCallTests: XCTestCase {
         }
     }
 
-    func testPhysicalVoiceCaptureProducesPCMBeforeFakeProviderConnects() async throws {
+    private func requirePhysicalVoiceProbe() throws {
         #if targetEnvironment(simulator)
         throw XCTSkip("Voice microphone capture requires an explicitly selected physical device")
         #else
         guard ProcessInfo.processInfo.environment["KINDRED_TEST_VOICE_MICROPHONE"] == "1" else {
             throw XCTSkip("Real voice-call microphone capture is opt-in; stop Device Hub View Screen first")
         }
+        #endif
+    }
+
+    private func physicalHooks(call: NativeVoiceCall, socket: VoiceDiscardingSocketFixture,
+                               opened: @escaping () -> Void) -> NativeVoiceCall.TestHooks {
+        var fixture = NativeVoiceCall.TestHooks()
+        fixture.foreground = { UIApplication.shared.applicationState == .active }
+        fixture.microphonePermission = {
+            await withCheckedContinuation { continuation in
+                AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
+            }
+        }
+        fixture.audio = { VoiceAudioPipe(diagnostics: $0) }
+        fixture.connection = { [weak call] _ in
+            XCTAssertGreaterThan(call?.debugCaptureDiagnostics.rawFrames ?? 0, 0)
+            XCTAssertGreaterThan(call?.debugCaptureDiagnostics.convertedFrames ?? 0, 0, "Actual capture must precede connection")
+            opened(); return socket
+        }
+        return fixture
+    }
+
+    func testPhysicalVoiceCaptureProducesPCMBeforeFakeProviderConnects() async throws {
+        try requirePhysicalVoiceProbe()
         let call = NativeVoiceCall(), socket = VoiceDiscardingSocketFixture(), id = UUID().uuidString
         var opened = 0, events: [[String: Any]] = []
         defer {
@@ -330,20 +353,7 @@ final class NativeVoiceCallTests: XCTestCase {
             add(attachment)
         }
         try await wait({ UIApplication.shared.applicationState == .active }, timeout: 3)
-        var fixture = NativeVoiceCall.TestHooks()
-        fixture.foreground = { UIApplication.shared.applicationState == .active }
-        fixture.microphonePermission = {
-            await withCheckedContinuation { continuation in
-                AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
-            }
-        }
-        fixture.audio = { VoiceAudioPipe(diagnostics: $0) }
-        fixture.connection = { _ in
-            XCTAssertGreaterThan(call.debugCaptureDiagnostics.rawFrames, 0)
-            XCTAssertGreaterThan(call.debugCaptureDiagnostics.convertedFrames, 0, "Actual capture must precede connection")
-            opened += 1; return socket
-        }
-        call.testHooks = fixture
+        call.testHooks = physicalHooks(call: call, socket: socket) { opened += 1 }
         start(call, id: id) { events.append($0) }
         try await wait({ socket.audioMessages >= 3 || events.contains { $0["type"] as? String == "error" } }, timeout: 30)
         XCTAssertFalse(events.contains { $0["type"] as? String == "error" }, call.debugCaptureDiagnostics.text)
@@ -361,7 +371,64 @@ final class NativeVoiceCallTests: XCTestCase {
         XCTAssertGreaterThan(snapshot.convertedFrames, 0); XCTAssertEqual(snapshot.conversionFailures, 0)
         call.end(id: id); try await wait { !call.isActive }
         XCTAssertTrue(socket.closed)
-        #endif
+    }
+
+    func testPhysicalVoiceDuplexMuteAndSecondCall() async throws {
+        try requirePhysicalVoiceProbe()
+        let call = NativeVoiceCall()
+        defer { call.end(owner: owner) }
+        try await wait({ UIApplication.shared.applicationState == .active }, timeout: 3)
+        for attempt in 1...2 {
+            let socket = VoiceDiscardingSocketFixture(), id = UUID().uuidString
+            var opened = 0, events: [[String: Any]] = []
+            defer {
+                let attachment = XCTAttachment(string: call.debugCaptureDiagnostics.text)
+                attachment.name = "voice-duplex-attempt-\(attempt)-metadata-no-audio"
+                attachment.lifetime = .keepAlways; add(attachment)
+            }
+            call.testHooks = physicalHooks(call: call, socket: socket) { opened += 1 }
+            start(call, id: id) { events.append($0) }
+            try await wait({ socket.audioMessages >= 3 || events.contains { $0["type"] as? String == "error" } }, timeout: 30)
+            XCTAssertFalse(events.contains { $0["type"] as? String == "error" }, call.debugCaptureDiagnostics.text)
+            XCTAssertEqual(opened, 1); XCTAssertGreaterThanOrEqual(socket.audioMessages, 3)
+
+            // Synthetic, quiet playback exercises the production output graph
+            // while the real microphone keeps running. Never retain mic samples.
+            var tone = Data()
+            for frame in 0..<14400 {
+                let envelope = min(1.0, Double(min(frame, 14399 - frame)) / 240)
+                let sample = Int16(sin(2 * .pi * 440 * Double(frame) / 24000) * 1200 * envelope)
+                let bits = UInt16(bitPattern: sample)
+                tone.append(UInt8(truncatingIfNeeded: bits)); tone.append(UInt8(truncatingIfNeeded: bits >> 8))
+            }
+            let initialFrames = socket.audioFrames
+            socket.push(["type": "audio", "data": tone.base64EncodedString()])
+            try await wait({ events.contains { $0["type"] as? String == "levels" && ($0["output"] as? Double ?? 0) > 0.006 } }, timeout: 3)
+            XCTAssertGreaterThan(socket.audioFrames, initialFrames, "Capture must continue during rendered playback")
+
+            call.setMuted(id: id, value: true)
+            try await wait { socket.mutedAudioMessages >= 3 }
+            let mutedFrames = socket.audioFrames
+            try await Task.sleep(for: .seconds(5))
+            XCTAssertTrue(call.isActive, "Muted capture must survive the four-second watchdog")
+            XCTAssertGreaterThan(socket.audioFrames, mutedFrames)
+            XCTAssertEqual(socket.nonzeroMutedMessages, 0, "Mute must transmit silence without stopping capture")
+            call.setMuted(id: id, value: false)
+            try await wait { !socket.muted }
+            let unmutedFrames = socket.audioFrames
+            try await wait { socket.audioFrames > unmutedFrames }
+            XCTAssertFalse(events.contains { $0["type"] as? String == "error" }, call.debugCaptureDiagnostics.text)
+            XCTAssertEqual(events.filter { $0["type"] as? String == "started" }.count, 1)
+            XCTAssertEqual(call.debugCaptureDiagnostics.conversionFailures, 0)
+
+            call.end(id: id); try await wait { !call.isActive }
+            XCTAssertTrue(socket.closed)
+            let endedFrames = call.debugCaptureDiagnostics.rawFrames
+            try await Task.sleep(for: .milliseconds(150))
+            XCTAssertEqual(call.debugCaptureDiagnostics.rawFrames, endedFrames, "Hangup must release the microphone before the next call")
+            XCTAssertFalse(call.debugCaptureDiagnostics.engineRunning)
+            XCTAssertEqual(call.snapshot(owner: owner, id: id)?["saved"] as? Bool, true)
+        }
     }
 
     func testCapturePreflightAcceptsSilenceBeforeConnectingAndCuesPlayOnce() async throws {
@@ -679,12 +746,17 @@ private final class VoiceAudioFixture: VoiceCallAudio {
 private final class VoiceDiscardingSocketFixture: VoiceCallConnection {
     var audioMessages = 0
     var audioFrames = 0
+    var muted = false
+    var mutedAudioMessages = 0
+    var nonzeroMutedMessages = 0
     var closed = false
     private var initial = true
     private var pending: CheckedContinuation<[String: Any], Error>?
+    private var queued: [[String: Any]] = []
     func receive() async throws -> [String: Any] {
         if closed { throw URLError(.cancelled) }
         if initial { initial = false; return ["type": "started"] }
+        if !queued.isEmpty { return queued.removeFirst() }
         return try await withCheckedThrowingContinuation { pending = $0 }
     }
     func send(_ value: [String: Any]) async throws {
@@ -692,11 +764,22 @@ private final class VoiceDiscardingSocketFixture: VoiceCallConnection {
         if value["type"] as? String == "audio", let encoded = value["data"] as? String,
            let bytes = Data(base64Encoded: encoded) {
             audioMessages += 1; audioFrames += bytes.count / 2
+            if muted {
+                mutedAudioMessages += 1
+                if bytes.contains(where: { $0 != 0 }) { nonzeroMutedMessages += 1 }
+            }
+        } else if value["type"] as? String == "mute" {
+            muted = value["muted"] as? Bool ?? false
         } else if value["type"] as? String == "end" {
-            pending?.resume(returning: ["type": "ended", "saved": true]); pending = nil
+            push(["type": "ended", "saved": true])
         }
     }
-    func close() { closed = true; pending?.resume(throwing: URLError(.cancelled)); pending = nil }
+    func push(_ value: [String: Any]) {
+        guard !closed else { return }
+        if let pending { self.pending = nil; pending.resume(returning: value) }
+        else { queued.append(value) }
+    }
+    func close() { closed = true; pending?.resume(throwing: URLError(.cancelled)); pending = nil; queued = [] }
 }
 
 private final class VoiceMeterFixture {

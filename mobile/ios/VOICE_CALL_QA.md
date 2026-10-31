@@ -5,12 +5,12 @@ General contains a collapsed Voice (OpenAI API) section. Calls use the account's
 OpenAI API key, independently of the selected bot's chat provider. The matching
 server branch is required. No credentials are embedded in the mobile app.
 
-Live delegates requests to the originating bot's normal task system during the
-call. That bot keeps its provider, tools, full context and approval rules; Live
-gets a smaller recent chat excerpt, including prior calls. Public results are
-returned to the voice and retained in chat with their full links. A durable
-delegation ledger prevents end-of-call/restart from repeating dispatched work.
-Approvals and choices still require the normal chat cards.
+Live uses the bot's allowed tools in a separate call workspace. It receives the
+bot's instructions and a recent chat excerpt, including prior calls. Tool
+results return to the voice session without starting the ordinary chat model
+or posting progress into chat. Hangup saves one recap with useful results and
+links. Durable action receipts prevent duplicate work after reconnects or
+hangup. Approvals and choices still require the normal visible cards.
 
 The dropdown consumes `/api/voice/settings`. That endpoint explicitly identifies
 its source as OpenAI's documented GPT-Live catalog (31 built-in voices, verified
@@ -55,18 +55,20 @@ the Duo-specific API. Do not replace account data or change the bundle ID.
 6. Check denied Live Activities, audio interruption/headphone disconnect,
    network loss, force quit, stale activity, account switch and a second call.
    A delayed action from the first call must not affect the second.
-7. After ending, verify one quiet “Call ended · m:ss” receipt. The transcript
-   must reach the originating bot, including trailing words, without appearing
-   as a chat transcript. Test a bot using a provider other than OpenAI.
+7. After ending, verify one quiet “Call ended · m:ss” receipt and one recap.
+   Keep trailing words in the saved conversation without displaying a raw
+   transcript or submitting it as new chat work. Test a bot whose chat provider
+   is not OpenAI.
 8. Ask for a harmless current lookup (for example a bicycle shop and its opening
-   hours), then correct the location while it works. Verify the configured bot
-   does the lookup during the call, Live speaks only returned findings, and
-   names, verified links and phone numbers remain readable in chat afterward.
+   hours), then correct the location while it works. Verify Live performs the
+   lookup through the call's tools and speaks only returned findings. No normal
+   chat task or progress should appear. Names, verified links and phone numbers
+   must remain readable in the recap afterward.
 9. Exercise a pending choice and approval. Voice should direct the user to the
    card; saying “yes” must not bypass its approval controls. End while work is
-   running and verify it continues once, with no duplicated external action.
-   Repeat after a dropped connection and server restart. Include a second call
-   that refers to the earlier conversation, and excluded/deleted chat history.
+   running and verify no external action is dispatched twice or replayed by the
+   recap. Repeat after a dropped connection and server restart. Include a second
+   call that refers to the earlier conversation, and excluded/deleted history.
 
 Browser tests cover UI and bridge behavior, not ActivityKit or native audio:
 
@@ -93,8 +95,21 @@ Device Hub fully quit. Use three independent app launches. Each run must deliver
 real PCM before the fake transport opens, continue capture beyond the four-second
 watchdog, and close cleanly. Retain each result bundle and the
 `voice-capture-metadata-no-audio` attachment; do not substitute simulated capture.
-A silent buffer passes this probe. Audible two-way speech still needs a separate
-explicitly started provider call before claiming that end-to-end calls work.
+A silent buffer passes this probe. Also run
+`NativeVoiceCallTests/testPhysicalVoiceDuplexMuteAndSecondCall`. It uses the real
+capture and playback graph, plays a quiet synthetic tone, verifies capture keeps
+running during playback and mute, and starts a second call after clean teardown.
+Its fake transport discards microphone samples; only counters and safe metadata
+are retained. Both physical test bodies are compiled by simulator builds, while
+their execution remains explicitly restricted to opted-in physical devices.
+
+After these pass, install the signed build using the existing bundle identity,
+team and account data. Retain its source commit, version/build number and install
+receipt. Verify an actual spoken call: the bot hears and answers a short phrase,
+mute works, hangup stops audio, and the next call also connects. Test the Duo
+closed and open and fold during the call. A rendered test tone or simulator pass
+does not establish that a real two-way provider call works. Do not describe a
+diagnostic installation as a verified microphone fix.
 
 `KindredVoiceActivityTests` is an opt-in app-hosted scheme that requests the
 production system Live Activity, updates its mute state and ends it. It does
@@ -118,12 +133,6 @@ The matching server needs its durable handoff and local WebSocket fixture tests:
 cargo test --bin kindred -j1 voice:: -- --test-threads=1
 ```
 
-Both browser engines passed the component and full native-adapter fixtures,
-including all three Duo poses. PCM capture checks passed at 24, 44.1 and 48 kHz.
-The server test harness compiled and all 15 `voice::` tests passed during release
-preparation on 2026-10-30, including the local WebSocket relay, corrections,
-public results, pending approvals, context and restart deduplication. Fixtures
-now create the bot and its direct conversation through the production path.
-No real OpenAI call or native build was verified by the Linux preparation task.
-The native and real-provider checks above still require their own receipts;
-browser and local provider fixtures do not establish device verification.
+Keep browser, simulator, physical capture and actual provider-call receipts
+separate. Record the exact source and test selection, including skipped tests.
+Browser and local provider fixtures do not establish device verification.
