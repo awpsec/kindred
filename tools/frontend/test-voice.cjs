@@ -23,6 +23,17 @@ if(out){fs.mkdirSync(out,{recursive:true});await p.screenshot({path:path.join(ou
 for(const mode of ['has-files','is-replying','is-answering','is-request-activating','is-dictating']){await p.evaluate(mode=>{document.querySelector('#composer').classList.add(mode);ui.render();},mode);assert(await p.getByRole('button',{name:'Start voice call',exact:true}).isHidden(),mode+' must retain its existing send action');await p.evaluate(mode=>{document.querySelector('#composer').classList.remove(mode);ui.render();},mode);}
 await p.locator('summary').click();await p.getByRole('button',{name:'Start voice call',exact:true}).click();await p.waitForFunction(()=>document.querySelector('.voice-call-state').textContent.toLowerCase().includes('listening'));assert(await p.getByRole('button',{name:'Send',exact:true}).isVisible(),'typing stays available during a call');assert(await p.evaluate(()=>dictationCancelled));assert.equal(await p.evaluate(()=>ui.canNavigate('dm-two')),false);await p.getByRole('button',{name:'Mute microphone',exact:true}).click();assert.equal(await p.evaluate(()=>sends.filter(s=>s.type==='mute').at(-1).muted),true);await p.waitForFunction(()=>document.querySelector('.voice-call-state').textContent==='Microphone muted');await p.getByRole('button',{name:'Unmute microphone',exact:true}).click();assert.equal(await p.evaluate(()=>sends.filter(s=>s.type==='mute').at(-1).muted),false);
 await p.evaluate(()=>capture.port.onmessage({data:new Int16Array(960).fill(500).buffer}));assert.equal(await p.evaluate(()=>sends.at(-1).type),'audio');
+for(const theme of ['dark','light']){
+  const shades=await p.evaluate(theme=>{
+    document.documentElement.dataset.theme=theme;
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const c=canvas.getContext('2d');
+    const rgba=color=>{c.clearRect(0,0,1,1);c.fillStyle=color;c.fillRect(0,0,1,1);return [...c.getImageData(0,0,1,1).data]};
+    return {avatar:rgba(document.querySelector('.voice-avatar').firstElementChild.dataset.avatarColor),input:rgba(getComputedStyle(document.querySelector('.voice-wave-input')).color),output:rgba(getComputedStyle(document.querySelector('.voice-wave-output')).color)};
+  },theme);
+  for(const speaker of ['input','output'])assert(shades[speaker].slice(0,3).every((value,i)=>Math.abs(value-shades.avatar[i])<=2),'both speaker shades follow the bot color in '+theme);
+  assert.notEqual(shades.input[3],shades.output[3],'speaker shades remain distinct');
+}
+await p.evaluate(()=>document.documentElement.dataset.theme='dark');
 await p.getByRole('button',{name:'Voice options',exact:true}).click();
 const optionsDialog=p.getByRole('dialog',{name:'Voice options'}),callVoice=optionsDialog.getByRole('combobox',{name:'Voice',exact:true});
 assert(await optionsDialog.getByRole('button',{name:'Close voice options',exact:true}).evaluate(e=>e===document.activeElement),'settings opens the submenu, not a voice picker');

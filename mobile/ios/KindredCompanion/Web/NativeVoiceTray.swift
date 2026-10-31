@@ -67,6 +67,7 @@ final class NativeVoiceTray: UIView {
         private let meterLayer = CAShapeLayer()
         var input: [Double] = [], output: [Double] = []
         var reduceMotion = false
+        var color: UIColor = .label
         override init(frame: CGRect) {
             super.init(frame: frame); isUserInteractionEnabled = false
             isAccessibilityElement = true; accessibilityTraits = .updatesFrequently
@@ -84,7 +85,7 @@ final class NativeVoiceTray: UIView {
             let hearing = input.contains { $0 > 0 }
             let levels = hearing ? input : output
             let quiet = !hearing && !levels.contains { $0 > 0.108 }
-            let ink: UIColor = quiet ? .tertiaryLabel : hearing ? .secondaryLabel : .label
+            let ink = color.withAlphaComponent(quiet ? 0.36 : hearing ? 0.62 : 1)
             let path = UIBezierPath(), bar = min(3, bounds.width / CGFloat(max(1, levels.count)))
             for (index, level) in levels.enumerated() {
                 let x = levels.count < 2 ? bounds.midX : CGFloat(index) * max(0, bounds.width-bar) / CGFloat(levels.count-1)
@@ -154,6 +155,10 @@ final class NativeVoiceTray: UIView {
         status.isHidden = !model.showingStatus || model.activity.isEmpty
         status.accessibilityLabel = model.label + ", " + model.status
         wave.frame = model.activity; wave.isHidden = model.showingStatus || model.activity.isEmpty
+        let rgb = UInt32(model.color.dropFirst(), radix: 16) ?? 0x2475ff
+        wave.color = UIColor(red: CGFloat((rgb >> 16) & 255) / 255,
+                             green: CGFloat((rgb >> 8) & 255) / 255,
+                             blue: CGFloat(rgb & 255) / 255, alpha: 1)
         wave.reduceMotion = model.reduceMotion
         wave.accessibilityLabel = model.label + ", " + model.status
         for item in model.items {

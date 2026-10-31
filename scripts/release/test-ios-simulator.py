@@ -101,7 +101,7 @@ VOICE_UI_METHODS = {
         'testRealGlassRetainsCallAcrossResizesAndBlocksStaleTouches',
         'testConnectingAndEndingStatesDisableUnavailableActions',
         'testMeterHonorsAppReducedMotionAndLivePreferenceChanges',
-        'testMeterKeepsPositionsAndUsesNeutralSpeakerShades')
+        'testMeterKeepsPositionsAndUsesBotColorSpeakerShades')
 } | {'ComposerUIKitTests/testNativeCallGlassProjectsRetainedControlsAndRestoresFallback()'}
 
 

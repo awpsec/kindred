@@ -108,8 +108,9 @@ final class NativeVoiceTrayTests: XCTestCase {
         assertMeterAnimation(!UIAccessibility.isReduceMotionEnabled)
     }
 
-    func testMeterKeepsPositionsAndUsesNeutralSpeakerShades() throws {
-        let tray = NativeVoiceTray(); tray.apply(try XCTUnwrap(NativeVoiceTray.Model(model())))
+    func testMeterKeepsPositionsAndUsesBotColorSpeakerShades() throws {
+        let tray = NativeVoiceTray(); var row = model()
+        tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
         let layer = try XCTUnwrap(tray.material.contentView.subviews.flatMap { $0.layer.sublayers ?? [] }.compactMap { $0 as? CAShapeLayer }.first)
         let zero = Array(repeating: 0.0, count: 3)
         tray.updateMeter(input: [0.2,0.8,0.4], output: zero, animated: false)
@@ -122,8 +123,16 @@ final class NativeVoiceTrayTests: XCTestCase {
         tray.updateMeter(input: zero, output: [0.2,0.8,0.4], animated: false)
         XCTAssertNotEqual(inputInk, layer.fillColor)
         let outputInk = layer.fillColor
+        let botColor = UIColor(red: 36.0/255, green: 117.0/255, blue: 1, alpha: 1)
+        XCTAssertEqual(outputInk, botColor.cgColor, "bot speech uses the call avatar color")
+        XCTAssertEqual(inputInk, botColor.withAlphaComponent(0.62).cgColor, "human speech uses a softer shade of that same color")
         tray.updateMeter(input: zero, output: Array(repeating: 0.107, count: 3), animated: false)
         XCTAssertNotEqual(outputInk, layer.fillColor)
         XCTAssertLessThanOrEqual(try XCTUnwrap(layer.path).boundingBox.height, 3.01)
+        row["color"] = "#ef6611"; row["dark"] = false
+        tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
+        tray.updateMeter(input: zero, output: [0.2,0.8,0.4], animated: false)
+        XCTAssertEqual(layer.fillColor, UIColor(red: 239.0/255, green: 102.0/255, blue: 17.0/255, alpha: 1).cgColor,
+                       "an updated avatar changes the retained meter in either theme")
     }
 }
