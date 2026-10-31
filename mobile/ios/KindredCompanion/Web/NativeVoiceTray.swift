@@ -64,14 +64,13 @@ final class NativeVoiceTray: UIView {
     }
 
     private final class Wave: UIView {
-        private let inputLayer = CAShapeLayer(), outputLayer = CAShapeLayer()
+        private let meterLayer = CAShapeLayer()
         var input: [Double] = [], output: [Double] = []
-        var ink: UIColor = .label
         var reduceMotion = false
         override init(frame: CGRect) {
             super.init(frame: frame); isUserInteractionEnabled = false
             isAccessibilityElement = true; accessibilityTraits = .updatesFrequently
-            layer.addSublayer(outputLayer); layer.addSublayer(inputLayer)
+            layer.addSublayer(meterLayer)
             NotificationCenter.default.addObserver(self, selector: #selector(motionPreferenceChanged),
                 name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil)
         }
@@ -80,24 +79,27 @@ final class NativeVoiceTray: UIView {
         @objc private func motionPreferenceChanged() { paint(animated: false) }
         override func layoutSubviews() { super.layoutSubviews(); paint(animated: false) }
         func paint(animated: Bool) {
-            for (drawing, levels, reverse, alpha) in [(outputLayer, output, false, 0.2), (inputLayer, input, true, 1.0)] {
-                let path = UIBezierPath(), bar = min(3, bounds.width / CGFloat(max(1, levels.count)))
-                for (index, level) in levels.enumerated() {
-                    let x = levels.count < 2 ? bounds.midX : CGFloat(reverse ? levels.count-1-index : index) * max(0, bounds.width-bar) / CGFloat(levels.count-1)
-                    let h = min(28, bounds.height) * level
-                    path.append(UIBezierPath(roundedRect: CGRect(x: x, y: (bounds.height-h)/2, width: bar, height: h), cornerRadius: bar/2))
-                }
-                let previous = drawing.presentation()?.path ?? drawing.path
-                // A live preference change also stops the current tween; fresh
-                // audio levels keep painting without interpolation.
-                drawing.removeAnimation(forKey: "meter")
-                CATransaction.begin(); CATransaction.setDisableActions(true)
-                drawing.frame = bounds; drawing.path = path.cgPath; drawing.fillColor = ink.withAlphaComponent(alpha).cgColor
-                CATransaction.commit()
-                if animated, !reduceMotion, !UIAccessibility.isReduceMotionEnabled, let previous {
-                    let motion = CABasicAnimation(keyPath: "path"); motion.fromValue = previous; motion.toValue = path.cgPath
-                    motion.duration = 0.1; drawing.add(motion, forKey: "meter")
-                }
+            // These are simultaneous positions from the retained page's meter,
+            // not time histories. One speaker owns the single stationary row.
+            let hearing = input.contains { $0 > 0 }
+            let levels = hearing ? input : output
+            let quiet = !hearing && !levels.contains { $0 > 0.108 }
+            let ink: UIColor = quiet ? .tertiaryLabel : hearing ? .secondaryLabel : .label
+            let path = UIBezierPath(), bar = min(3, bounds.width / CGFloat(max(1, levels.count)))
+            for (index, level) in levels.enumerated() {
+                let x = levels.count < 2 ? bounds.midX : CGFloat(index) * max(0, bounds.width-bar) / CGFloat(levels.count-1)
+                let h = min(28, bounds.height) * level
+                path.append(UIBezierPath(roundedRect: CGRect(x: x, y: (bounds.height-h)/2, width: bar, height: h), cornerRadius: bar/2))
+            }
+            let previous = meterLayer.presentation()?.path ?? meterLayer.path
+            meterLayer.removeAnimation(forKey: "meter")
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            meterLayer.frame = bounds; meterLayer.path = path.cgPath
+            meterLayer.fillColor = ink.resolvedColor(with: traitCollection).cgColor
+            CATransaction.commit()
+            if animated, !reduceMotion, !UIAccessibility.isReduceMotionEnabled, let previous {
+                let motion = CABasicAnimation(keyPath: "path"); motion.fromValue = previous; motion.toValue = path.cgPath
+                motion.duration = 0.1; meterLayer.add(motion, forKey: "meter")
             }
         }
     }
@@ -154,8 +156,6 @@ final class NativeVoiceTray: UIView {
         wave.frame = model.activity; wave.isHidden = model.showingStatus || model.activity.isEmpty
         wave.reduceMotion = model.reduceMotion
         wave.accessibilityLabel = model.label + ", " + model.status
-        let hex = UInt32(model.color.dropFirst(), radix: 16) ?? 0x2475ff
-        wave.ink = UIColor(red: CGFloat((hex >> 16)&255)/255, green: CGFloat((hex >> 8)&255)/255, blue: CGFloat(hex&255)/255, alpha: 1)
         for item in model.items {
             guard let button = buttons[item.id] else { continue }
             button.frame = item.frame; button.layer.cornerRadius = min(item.frame.width, item.frame.height)/2

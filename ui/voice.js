@@ -1,10 +1,23 @@
 // The server owns credentials, the call transcript, private work session and one recap.
 // Tones are original, short state cues, never recordings from another application.
 const callTones={connecting:[[392,0,.09],[494,.12,.09]],connected:[[523,0,.11],[659,.13,.11]],ended:[[494,0,.12],[330,.14,.12]],error:[[330,0,.14],[262,.17,.14]]};
+// Each position has a fixed profile. Only current PCM energy changes its height;
+// this is a meter, never a scrolling recording of previous audio samples.
+export function voiceWaveLevels(input,output,count,reduceMotion=false){
+  const clean=value=>Number.isFinite(value)?Math.max(0,Math.min(1,value)):0;
+  input=clean(input);output=clean(output);count=Math.max(8,Math.min(40,Math.floor(count)||8));
+  const speaker=input>.006?'input':output>.006?'output':'quiet',level=speaker==='input'?input:output;
+  const energy=speaker==='quiet'?0:reduceMotion ? .5 : Math.min(1,Math.sqrt(level)*2.7);
+  const shape=Array.from({length:count},(_,i)=>{
+    const x=(i+.5)/count,profile=(.48+.52*Math.sin(Math.PI*x))*(.70+.30*Math.cos(i*1.83)**2);
+    return Number((.107+.893*energy*profile).toFixed(3));
+  });
+  return {speaker,input:speaker==='input'?shape:Array(count).fill(0),output:speaker==='input'?Array(count).fill(0):shape};
+}
 export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,notice,openSettings,cancelDictation,onEnded=()=>{}}){
   const node=(tag,cls='',text='')=>{const n=document.createElement(tag);n.className=cls;n.textContent=text;return n;};
   const button=(label,symbol,run,cls='')=>{const b=node('button','voice-control '+cls);b.type='button';b.title=label;b.setAttribute('aria-label',label);b.append(icon(symbol,18));b.onclick=run;return b;};
-  let config=null,settings=null,revision=0,operation=null,clock=null,preview=null,effects=null,effectsIdle=null,cueRevision=0,trayMotion=null,trayClosing=false,positionFrame=0,waveCount=0;
+  let config=null,settings=null,callOptions=null,revision=0,operation=null,clock=null,preview=null,effects=null,effectsIdle=null,cueRevision=0,trayMotion=null,trayClosing=false,positionFrame=0,waveCount=0;
   const cueNodes=new Map();
   const startButton=button('Start voice call','voice',()=>void start(),'voice-start');startButton.hidden=true;send.before(startButton);
   const tray=node('div','voice-call-tray');tray.hidden=true;tray.setAttribute('role','group');tray.setAttribute('aria-label','Voice call');
@@ -12,26 +25,48 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
   const layer=node('div','voice-call-overlay'),portrait=node('span','voice-avatar'),activity=node('div','voice-call-activity'),copy=node('div','voice-call-copy'),status=node('div','voice-call-state'),time=node('div','voice-call-time','0:00');status.setAttribute('role','status');copy.append(status,time);
   const wave=node('span','voice-wave');wave.setAttribute('aria-hidden','true');
   const outputWave=node('span','voice-wave-output'),inputWave=node('span','voice-wave-input');wave.append(outputWave,inputWave);activity.append(wave,copy);
-  const gear=button('Voice settings','settings',()=>void showSettings(),'voice-settings-button'),mute=button('Mute microphone','mic',()=>setMuted(!operation?.muted),'voice-mute'),end=button('End call','close',()=>void endCall(),'voice-end');tray.append(portrait,activity,gear,mute,end);layer.append(tray);conversation.append(layer);
+  const gear=button('Voice options','settings',()=>void showSettings(),'voice-settings-button'),mute=button('Mute microphone','mic',()=>setMuted(!operation?.muted),'voice-mute'),end=button('End call','close',()=>void endCall(),'voice-end');tray.append(portrait,activity,gear,mute,end);layer.append(tray);conversation.append(layer);
   const stamp=n=>Math.floor(n/60)+':'+String(n%60).padStart(2,'0');
   const native=()=>window.__KINDRED_IOS_VOICE?.protocolVersion===1&&window.webkit?.messageHandlers?.kindredVoice;
   const postNative=(action,extra={})=>native()?.postMessage({action,documentID:window.__KINDRED_IOS_VOICE.documentID,...extra});
   const reducedMotion=()=>document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches;
   async function showSettings(){
-    try{await openSettings('general');const details=settings?.querySelector('details');if(details?.isConnected){details.open=true;details.scrollIntoView({block:'center',behavior:'instant'});details.querySelector('summary')?.focus({preventScroll:true});}}
-    catch{notice('Voice settings could not open. Try Settings → General.',true);}
+    if(callOptions?.open)return;stopPreview();
+    const owner=callOptions=node('dialog','text-dialog voice-call-options'),title=node('h2','','Voice options');
+    title.id='voice-call-options-title';owner.setAttribute('aria-labelledby',title.id);
+    const head=node('div','dialog-heading'),close=button('Close voice options','close',()=>owner.close());head.append(title,close);
+    const voice=node('select'),pace=node('select');voice.setAttribute('aria-label','Voice');pace.setAttribute('aria-label','Speaking pace');
+    const voiceRow=node('label','setting-row','Voice'),paceRow=node('label','setting-row','Speaking pace');voiceRow.append(voice);paceRow.append(pace);
+    const note=node('p','muted small','Voice changes apply to your next call. Speaking pace updates during this call.'),error=node('p','voice-options-error muted small');error.setAttribute('role','status');
+    owner.append(head,voiceRow,paceRow,note,error);document.body.append(owner);
+    const populate=()=>{
+      voice.replaceChildren(...(config?.voices||[]).map(v=>{const option=node('option','',v.name);option.value=v.id;return option;}));voice.value=config?.voice||'';
+      pace.replaceChildren(...['slower','normal','faster'].map(value=>{const option=node('option','',value[0].toUpperCase()+value.slice(1));option.value=value;return option;}));pace.value=config?.pace||'normal';
+      voice.disabled=pace.disabled=!config?.configured||owner.dataset.saving==='true';
+      note.textContent=operation?'Voice changes apply to your next call. Speaking pace updates during this call.':'Voice and speaking pace apply to your next call.';
+    };
+    const save=async()=>{
+      if(owner.dataset.saving==='true')return;const current=revision,changes={enabled:!!config?.enabled,voice:voice.value,pace:pace.value};
+      owner.dataset.saving='true';error.textContent='';populate();
+      try{const result=await api('/voice/settings','PUT',changes);if(current!==revision)return;config=result;}
+      catch(e){if(current===revision&&owner.isConnected)error.textContent=e.message||'Voice options could not be saved.';}
+      finally{owner.dataset.saving='false';if(current===revision&&owner.isConnected){populate();render();}}
+    };
+    voice.onchange=save;pace.onchange=save;
+    owner.addEventListener('click',e=>{if(e.target===owner){const r=owner.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)owner.close();}});
+    owner.addEventListener('close',()=>{owner.remove();if(callOptions===owner)callOptions=null;if(!tray.hidden)gear.focus({preventScroll:true});},{once:true});
+    populate();owner.showModal();voice.focus({preventScroll:true});
   }
   function resizeWave(){
-    const count=Math.max(8,Math.min(35,Math.floor((wave.clientWidth+4)/7)));if(count===waveCount)return;waveCount=count;
+    const count=Math.max(8,Math.min(40,Math.floor((wave.clientWidth+3)/6)));if(count===waveCount)return;waveCount=count;
     for(const part of [inputWave,outputWave])part.replaceChildren(...Array.from({length:count},()=>node('i')));
     if(operation)paintWave(operation);
   }
   function paintWave(op){
-    // One baseline, two real PCM histories. The mic is bright and mirrored;
-    // quieter bot ink stays underneath it, matching the call's two speakers.
-    for(const [part,history,baseline] of [[outputWave,op.outputHistory,.107],[inputWave,op.inputHistory,0]]){
-      const values=history.slice(-waveCount);for(let i=0;i<part.children.length;i++){
-        const rms=values[i]||0,scale=Math.max(baseline,rms>.006?Math.min(1,Math.sqrt(rms)*2.7):0).toFixed(3),bar=part.children[i];
+    const values=voiceWaveLevels(op.visualInput||0,op.visualOutput||0,waveCount,reducedMotion());wave.dataset.speaker=values.speaker;
+    for(const [part,levels] of [[outputWave,values.output],[inputWave,values.input]]){
+      for(let i=0;i<part.children.length;i++){
+        const scale=String(levels[i]||0),bar=part.children[i];
         if(bar.dataset.level!==scale){bar.dataset.level=scale;bar.style.transform='scaleY('+scale+')';}
       }
     }
@@ -95,7 +130,7 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     const wasSpeaking=tray.dataset.speaking==='true';if(wasSpeaking!==(now<op.speakingUntil))render();
     const hearing=String(input>.006);if(tray.dataset.hearing!==hearing)tray.dataset.hearing=hearing;
     const interval=reducedMotion()?250:100;if(now-(op.lastVisualAt||0)<interval)return;op.lastVisualAt=now;
-    op.inputHistory.push(input);op.inputHistory.shift();op.outputHistory.push(output);op.outputHistory.shift();paintWave(op);
+    op.visualInput=input;op.visualOutput=output;paintWave(op);
   }
   const audioContext=()=>{const Context=window.AudioContext||window.webkitAudioContext;if(!Context)throw Error('Audio is unavailable in this app.');return new Context({latencyHint:'interactive'});};
   const bounded=(promise,ms,message)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error(message)),ms))]).finally(()=>clearTimeout(timer));};
@@ -143,7 +178,7 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     if(active){status.textContent=operation.phase==='connecting'?'Connecting…':operation.phase==='ending'?'Ending call…':operation.muted?'Microphone muted':operation.captureProblem||(matchMedia('(max-width: 600px)').matches?(Date.now()<operation.speakingUntil?'Speaking…':'Listening…'):operation.bot.name+(Date.now()<operation.speakingUntil?' is speaking':' is listening'));time.textContent=stamp(operation.started?Math.max(0,Math.floor(((operation.endedAt||Date.now())-operation.started)/1000)):0);mute.disabled=operation.phase!=='active';if(mute.dataset.muted!==String(operation.muted)){mute.dataset.muted=String(operation.muted);mute.replaceChildren(icon(operation.muted?'mic-off':'mic',18));}mute.title=operation.muted?'Unmute microphone':'Mute microphone';mute.setAttribute('aria-pressed',String(operation.muted));mute.setAttribute('aria-label',operation.muted?'Unmute microphone':'Mute microphone');tray.dataset.speaking=String(Date.now()<operation.speakingUntil);}
     const showingStatus=String(active&&(operation.phase==='connecting'||!!operation.captureProblem));if(tray.dataset.status!==showingStatus)tray.dataset.status=showingStatus;
     if(active)portrait.title=operation.bot.name+' · '+time.textContent;
-    if(settings?.isConnected){const enabled=settings.querySelector('input'),select=settings.querySelector('select');enabled.checked=!!config?.enabled;enabled.disabled=!config?.configured||active||settings.dataset.saving==='true';select.disabled=!config?.configured||active||settings.dataset.saving==='true';settings.querySelector('.voice-summary-state').textContent=!config?'Unavailable':!config.configured?'Not connected':config.enabled?'On':'Off';renderPreview();}
+    if(settings?.isConnected){const enabled=settings.querySelector('input');enabled.checked=!!config?.enabled;enabled.disabled=!config?.configured||active||settings.dataset.saving==='true';for(const select of settings.querySelectorAll('select')){select.disabled=!config?.configured||settings.dataset.saving==='true';select.value=select.classList.contains('voice-pace')?(config?.pace||'normal'):(config?.voice||'');}settings.querySelector('.voice-next-call').hidden=!active;settings.querySelector('.voice-summary-state').textContent=!config?'Unavailable':!config.configured?'Not connected':config.enabled?'On':'Off';renderPreview();}
     if(changed)composer.dispatchEvent(new CustomEvent('kindred-voice-layout',{bubbles:true}));
   }
   async function init(){
@@ -153,14 +188,16 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
   function settingsSection(){
     stopPreview();settings=node('section','settings-section voice-settings');const details=node('details','settings-pane voice-options'),summary=node('summary');summary.append(icon('chevron',14),node('span','','Voice (OpenAI API)'),node('span','muted small','Experimental'),node('span','muted small voice-summary-state'));
     const body=node('div','voice-settings-body'),enabled=node('input');enabled.type='checkbox';enabled.disabled=true;enabled.setAttribute('role','switch');const label=node('label','setting-row','Enable voice calls');label.append(enabled);
-    const select=node('select');select.disabled=true;select.setAttribute('aria-label','Voice');const voiceRow=node('div','setting-row'),voiceLabel=node('span','','Voice'),choices=node('div','voice-selection'),play=button('Preview voice','play',()=>void previewVoice(),'voice-preview');choices.append(select,play);voiceRow.append(voiceLabel,choices);
+    const select=node('select','voice-choice');select.disabled=true;select.setAttribute('aria-label','Voice');const voiceRow=node('div','setting-row'),voiceLabel=node('span','','Voice'),choices=node('div','voice-selection'),play=button('Preview voice','play',()=>void previewVoice(),'voice-preview');choices.append(select,play);voiceRow.append(voiceLabel,choices);
+    const pace=node('select','voice-pace'),paceRow=node('label','setting-row','Speaking pace');pace.setAttribute('aria-label','Speaking pace');for(const value of ['slower','normal','faster']){const option=node('option','',value[0].toUpperCase()+value.slice(1));option.value=value;pace.append(option);}paceRow.append(pace);
+    const nextCall=node('p','muted small voice-next-call','Voice changes apply to your next call. Speaking pace updates during this call.');nextCall.hidden=!operation;
     const note=node('p','muted small'),context=node('p','muted small','Talk and get results in the call. A short recap with useful links appears in chat afterward.'),error=node('p','muted small voice-settings-error');error.setAttribute('role','status');
     const connect=node('button','subtle-button','Connect OpenAI in Connections');connect.type='button';connect.onclick=()=>openSettings('connections');
-    body.append(label,voiceRow,note,context,error,connect);details.append(summary,body);settings.append(details);details.addEventListener('toggle',()=>{if(!details.open)stopPreview();});
+    body.append(label,voiceRow,paceRow,nextCall,note,context,error,connect);details.append(summary,body);settings.append(details);details.addEventListener('toggle',()=>{if(!details.open)stopPreview();});
     const owner=settings;
     const populate=()=>{if(settings!==owner)return;select.replaceChildren();for(const voice of config?.voices||[]){const option=node('option','',voice.name);option.value=voice.id;select.append(option);}select.value=config?.voice||'';note.textContent=config?.configured?'AI voice · Calls, tools, recaps and previews use your OpenAI API credits.':'Connect an OpenAI API key to enable calls.';connect.hidden=!!config?.configured;render();};
-    const save=async()=>{const changes={enabled:enabled.checked,voice:select.value};stopPreview();owner.dataset.saving='true';render();error.textContent='';const current=revision;try{const result=await api('/voice/settings','PUT',changes);if(current!==revision)return;config=result;}catch(e){if(current===revision)error.textContent=e.message;}finally{owner.dataset.saving='false';if(current===revision)populate();}};
-    enabled.onchange=save;select.onchange=save;populate();void init().then(populate);return settings;
+    const save=async()=>{if(owner.dataset.saving==='true')return;const changes={enabled:enabled.checked,voice:select.value,pace:pace.value};stopPreview();owner.dataset.saving='true';render();error.textContent='';const current=revision;try{const result=await api('/voice/settings','PUT',changes);if(current!==revision)return;config=result;}catch(e){if(current===revision)error.textContent=e.message;}finally{owner.dataset.saving='false';if(current===revision)populate();}};
+    enabled.onchange=save;select.onchange=save;pace.onchange=save;populate();void init().then(populate);return settings;
   }
   function releaseAudio(op){
     clearInterval(op.ping);clearInterval(op.captureWatch);clearInterval(op.levelWatch);clearTimeout(op.timeout);op.cancelCapture?.();op.cancelCapture=null;
@@ -182,7 +219,8 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
       }catch{void endCall('Audio playback stopped. Call again to reconnect.');}
     }else if(value.type==='levels'&&op.native){op.nativeLevelAt=Date.now();op.inputLevel=Number.isFinite(value.input)?Math.max(0,Math.min(1,value.input)):0;op.outputLevel=Number.isFinite(value.output)?Math.max(0,Math.min(1,value.output)):0;levels(op);}
     else if(value.type==='speaking'&&op.native){op.speakingUntil=Date.now()+150;}
-    else if(value.type==='mute'){op.muted=value.muted===true;if(op.muted){op.inputHistory.fill(0);paintWave(op);tray.dataset.hearing='false';}render();}
+    else if(value.type==='mute'){op.muted=value.muted===true;if(op.muted){op.visualInput=0;paintWave(op);tray.dataset.hearing='false';}render();}
+    else if(value.type==='options_error'){const error=callOptions?.querySelector('.voice-options-error')||settings?.querySelector('.voice-settings-error');if(error?.isConnected)error.textContent=value.message;else notice(value.message,true);}
     else if(value.type==='ending'){op.phase='ending';op.endedAt=op.endedAt||Date.now();render();}
     else if(value.type==='ended')complete(op,value.saved===false?'Your call ended, but its transcript is still waiting to be saved.':op.error);
     else if(value.type==='error'){op.error=value.message||'The voice connection ended.';if(value.terminal===true)complete(op,op.error);}
@@ -236,7 +274,7 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     if(operation)return;if(!config?.enabled||!config.configured){openSettings('general');return;}
     const selected=bot(),chat=chatId();if(!selected||!chat?.startsWith('dm-'))return;
     stopPreview();cancelDictation();editor.blur();
-    const op=operation={phase:'connecting',bot:selected,chat,muted:false,started:0,speakingUntil:0,outputLevels:[],inputHistory:Array(35).fill(0),outputHistory:Array(35).fill(0),playing:new Set(),generation:revision,native:!!native()};
+    const op=operation={phase:'connecting',bot:selected,chat,muted:false,started:0,speakingUntil:0,outputLevels:[],visualInput:0,visualOutput:0,playing:new Set(),generation:revision,native:!!native()};
     // A completed WKWebView preview must yield its audio session to native calls.
     if(op.native){stopTones();clearTimeout(effectsIdle);void effects?.close().catch(()=>{});effects=null;}
     portrait.replaceChildren(avatar(selected));tray.setAttribute('aria-label','Voice call with '+selected.name);syncWaveColor();paintWave(op);render();clock=setInterval(render,1000);op.levelWatch=setInterval(()=>levels(op),100);cue('connecting',op);
@@ -251,9 +289,9 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
       socket.onopen=()=>{if(operation!==op){socket.close();return;}op.ping=setInterval(()=>{if(socket.readyState===1)socket.send(JSON.stringify({type:'ping'}));},10000);};
     }catch(e){if(operation===op)complete(op,e.name==='NotAllowedError'?'Allow microphone access to make a call.':e.message||'The call could not start.');else releaseAudio(op);}
   }
-  function setMuted(value){const op=operation;if(!op||op.phase!=='active')return;op.muted=value;op.lastFrame=Date.now();if(value){op.inputHistory.fill(0);paintWave(op);tray.dataset.hearing='false';}if(op.native)postNative('mute',{id:op.id,muted:value});else{op.capture?.port.postMessage({muted:value});op.stream?.getAudioTracks().forEach(t=>t.enabled=!value);if(op.socket?.readyState===1)op.socket.send(JSON.stringify({type:'mute',muted:value}));}render();}
+  function setMuted(value){const op=operation;if(!op||op.phase!=='active')return;op.muted=value;op.lastFrame=Date.now();if(value){op.visualInput=0;paintWave(op);tray.dataset.hearing='false';}if(op.native)postNative('mute',{id:op.id,muted:value});else{op.capture?.port.postMessage({muted:value});op.stream?.getAudioTracks().forEach(t=>t.enabled=!value);if(op.socket?.readyState===1)op.socket.send(JSON.stringify({type:'mute',muted:value}));}render();}
   async function endCall(message){const op=operation;if(!op||op.phase==='ending')return;op.phase='ending';op.endedAt=Date.now();op.error=message;finalCue(op,message);releaseAudio(op);render();if(op.native&&op.id)postNative('end',{id:op.id});else if(op.socket?.readyState===1)op.socket.send(JSON.stringify({type:'end'}));else{complete(op,message);return;}op.timeout=setTimeout(()=>complete(op,message),16000);}
-  function reset(){revision++;config=null;stopPreview();const old=operation;void endCall();if(old)complete(old);hideTray(true);stopTones();clearTimeout(effectsIdle);void effects?.close().catch(()=>{});effects=null;render();}
+  function reset(){revision++;callOptions?.close();config=null;stopPreview();const old=operation;void endCall();if(old)complete(old);hideTray(true);stopTones();clearTimeout(effectsIdle);void effects?.close().catch(()=>{});effects=null;render();}
   function syncWaveColor(){wave.style.setProperty('--voice-color',portrait.firstElementChild?.dataset.avatarColor||operation?.bot.profile?.color||'var(--fg)');}
   new MutationObserver(syncWaveColor).observe(portrait,{subtree:true,attributes:true,attributeFilter:['data-avatar-color']});
   window.addEventListener('kindred-ios-voice',e=>{if(operation?.native&&e.detail?.id===operation.id&&e.detail.documentID===window.__KINDRED_IOS_VOICE?.documentID)event(operation,e.detail);});

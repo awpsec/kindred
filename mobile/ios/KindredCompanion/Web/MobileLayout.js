@@ -1489,7 +1489,7 @@
   };
   // Shared dialogs retain their forms, selection and close handlers. Only
   // their presentation belongs to the installed app's current safe rectangle.
-  const sheetSelector = 'dialog.navigation-search,dialog.bot-dialog,dialog.chat-dialog,dialog.server-chat-dialog,dialog#settings-dialog';
+  const sheetSelector = 'dialog.navigation-search,dialog.bot-dialog,dialog.chat-dialog,dialog.server-chat-dialog,dialog#settings-dialog,dialog.voice-call-options';
   function updateNativeSheets() {
     const layout = window.__KINDRED_IOS_LAYOUT || {}, style = getComputedStyle(html);
     const read = name => parseFloat(style.getPropertyValue(name)) || 0;
@@ -1516,7 +1516,7 @@
       const left = Math.max(region.x,flow ? 0 : Number(layout.leftInset)||0);
       const right = Math.min(region.x+region.width,innerWidth-(flow ? 0 : Number(layout.rightInset)||0));
       const gap = Math.min(12,Math.max(0,(bottom-top)/8));
-      const width = Math.max(0,Math.min(preferences ? 760 : search ? 680 : 600,right-left-2*gap));
+      const width = Math.max(0,Math.min(preferences ? 760 : search ? 680 : dialog.classList.contains('voice-call-options') ? 380 : 600,right-left-2*gap));
       const sheetHeight = Math.max(0,Math.min(search ? 680 : 760,bottom-top-2*gap));
       const x = left+(right-left-width)/2, y = preferences ? top+(bottom-top-sheetHeight)/2 : top+gap;
       setContentInset(dialog,'--ios-sheet-x',x);

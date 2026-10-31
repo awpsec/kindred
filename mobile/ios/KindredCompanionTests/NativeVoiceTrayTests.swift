@@ -82,7 +82,7 @@ final class NativeVoiceTrayTests: XCTestCase {
         tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
         let layers = tray.material.contentView.subviews.flatMap { $0.layer.sublayers ?? [] }
             .compactMap { $0 as? CAShapeLayer }
-        XCTAssertEqual(layers.count, 2, "both actual speaker histories are rendered")
+        XCTAssertEqual(layers.count, 1, "one stationary row renders the current speaker")
         func assertMeterAnimation(_ enabled: Bool, file: StaticString = #filePath, line: UInt = #line) {
             for layer in layers { XCTAssertEqual(layer.animation(forKey: "meter") != nil, enabled, file: file, line: line) }
         }
@@ -106,5 +106,24 @@ final class NativeVoiceTrayTests: XCTestCase {
         assertMeterAnimation(false) // System preference changes stop in-flight ink too.
         tray.updateMeter(input: [0.4, 0.6, 0.2], output: [0.2, 0.6, 0.1])
         assertMeterAnimation(!UIAccessibility.isReduceMotionEnabled)
+    }
+
+    func testMeterKeepsPositionsAndUsesNeutralSpeakerShades() throws {
+        let tray = NativeVoiceTray(); tray.apply(try XCTUnwrap(NativeVoiceTray.Model(model())))
+        let layer = try XCTUnwrap(tray.material.contentView.subviews.flatMap { $0.layer.sublayers ?? [] }.compactMap { $0 as? CAShapeLayer }.first)
+        let zero = Array(repeating: 0.0, count: 3)
+        tray.updateMeter(input: [0.2,0.8,0.4], output: zero, animated: false)
+        let inputInk = try XCTUnwrap(layer.fillColor)
+        let first = try XCTUnwrap(layer.path).boundingBox
+        tray.updateMeter(input: [0.4,0.6,0.3], output: zero, animated: false)
+        let second = try XCTUnwrap(layer.path).boundingBox
+        XCTAssertEqual(first.minX, second.minX); XCTAssertEqual(first.maxX, second.maxX)
+        XCTAssertEqual(first.midY, second.midY); XCTAssertNotEqual(first.height, second.height)
+        tray.updateMeter(input: zero, output: [0.2,0.8,0.4], animated: false)
+        XCTAssertNotEqual(inputInk, layer.fillColor)
+        let outputInk = layer.fillColor
+        tray.updateMeter(input: zero, output: Array(repeating: 0.107, count: 3), animated: false)
+        XCTAssertNotEqual(outputInk, layer.fillColor)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(layer.path).boundingBox.height, 3.01)
     }
 }

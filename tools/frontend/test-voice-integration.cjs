@@ -8,13 +8,14 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
   await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await(process.env.WEBKIT?webkit:chromium).launch({timeout:90000});
   try{
     const page=await browser.newPage({viewport:{width:951,height:669}}),errors=[];
-    page.on('pageerror',e=>{errors.push(e.message);console.error('Page error:',e.message)});let starts=0,finished=false,review=false,takeover=false;const engine=process.env.WEBKIT?'webkit':'chromium';
+    page.on('pageerror',e=>{errors.push(e.message);console.error('Page error:',e.message)});let starts=0,finished=false,review=false,takeover=false,failOptions=false;const engine=process.env.WEBKIT?'webkit':'chromium';
     await page.route('**/api/chats/**',async route=>{const response=await route.fetch();const value=await response.json();if(Array.isArray(value.messages)){value.messages=value.messages.slice(-4);value.page={has_before:false,has_after:false};if(finished)value.messages.push({seq:100000,sender:'user',text:'Call ended · 1:23',kind:'voice_call',run_id:'',created:1791302500},{seq:100001,sender:'piper',text:'From our call: use the [north entrance](https://example.com/route).',kind:'voice_recap',run_id:'private-call-run',created:1791302501})}return route.fulfill({response,json:value})});
     const voiceRun=status=>({id:'private-call-run',bot_id:'piper',chat_id:'dm-piper',status,created:1791302490,voice_session:true});
     await page.route('**/api/approvals',route=>route.fulfill({json:review?[{id:'call-review',run_id:'private-call-run',tool:'guest_exec',args:{command:'echo fixture'},status:'pending',created:1791302490,voice_run:voiceRun('awaiting_approval')}]:[]}));
     await page.route('**/api/user-tasks',route=>route.fulfill({json:takeover?[{id:'call-takeover',run_id:'private-call-run',bot_id:'piper',title:'Sign in for the call',instructions:'Enter your credentials on the website.',status:'pending',outcome:'',created:1791302490,voice_run:voiceRun('awaiting_user')}]:[]}));
     await page.emulateMedia({reducedMotion:'reduce'});
-    await page.route('**/api/voice/settings',route=>route.fulfill({json:{enabled:true,configured:true,voice:'willow',voices:[{id:'willow',name:'Willow'}]}}));
+    const options={enabled:true,configured:true,voice:'willow',pace:'normal',voices:[{id:'willow',name:'Willow'},{id:'cedar',name:'Cedar'}]};
+    await page.route('**/api/voice/settings',route=>{if(route.request().method()==='PUT'){if(failOptions)return route.fulfill({status:500,json:{error:'Could not save voice options'}});Object.assign(options,route.request().postDataJSON());}return route.fulfill({json:options});});
     await page.route('**/api/voice/start',route=>{starts++;return route.fulfill({json:{id:'6f9619ff-8b86-4d11-b42d-00cf4fc964aa',ticket:'b'.repeat(64)}})});
     const native=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
     await page.addInitScript(({token,profileID,layout,composer,css})=>{
@@ -89,13 +90,31 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
     await page.evaluate(()=>voiceEvent({type:'levels',input:0,output:.12}));await page.waitForFunction(()=>document.querySelector('.voice-call-tray').dataset.speaking==='true');
     await page.evaluate(()=>voiceEvent({type:'levels',input:0,output:0}));await page.waitForFunction(()=>document.querySelector('.voice-call-tray').dataset.speaking==='false');
     await voiceAction('mute');assert.equal(await page.evaluate(()=>voiceMessages.at(-1).muted),true);await voiceAction('mute');assert.equal(await page.evaluate(()=>voiceMessages.at(-1).muted),false);
-    await voiceAction('settings');await page.locator('.voice-settings details[open]').waitFor();assert(await page.getByRole('combobox',{name:'Voice',exact:true}).isVisible());assert(await page.getByRole('combobox',{name:'Voice',exact:true}).isDisabled());await page.getByRole('button',{name:'Close settings sheet',exact:true}).click();
+    await voiceAction('settings');await page.getByRole('dialog',{name:'Voice options'}).waitFor();assert(await page.getByRole('combobox',{name:'Voice',exact:true}).isEnabled());await page.getByRole('combobox',{name:'Voice',exact:true}).selectOption('cedar');await page.waitForFunction(()=>document.querySelector('.voice-call-options').dataset.saving==='false');assert.equal(options.voice,'cedar');await page.getByRole('combobox',{name:'Speaking pace',exact:true}).selectOption('faster');await page.waitForFunction(()=>document.querySelector('.voice-call-options').dataset.saving==='false');assert.equal(options.pace,'faster');
+    await page.evaluate(()=>voiceEvent({type:'options_error',message:'Speaking pace could not be applied to this call.'}));
+    await page.getByText('Speaking pace could not be applied to this call.',{exact:true}).waitFor();
+    assert(await page.locator('.voice-call-tray').isVisible(),'rejected options do not end a call');
+    failOptions=true;await page.getByRole('combobox',{name:'Speaking pace',exact:true}).selectOption('slower');
+    await page.getByText('Could not save voice options',{exact:true}).waitFor();assert.equal(options.pace,'faster');
+    assert.equal(await page.getByRole('combobox',{name:'Speaking pace',exact:true}).inputValue(),'faster');failOptions=false;
+    await page.getByRole('combobox',{name:'Speaking pace',exact:true}).selectOption('normal');
+    await page.waitForFunction(()=>document.querySelector('.voice-call-options').dataset.saving==='false');assert.equal(options.pace,'normal');
+    assert.equal(starts,1,'voice preferences never reconnect the call');assert.equal(await page.getByRole('button',{name:'Enable voice calls'}).count(),0);await page.getByRole('button',{name:'Close voice options',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('#composer').hasAttribute('data-ios-native-composer'));
     assert.equal(await page.locator('#prompt').evaluate(e=>e.value),'Keep this call draft');
     await page.emulateMedia({reducedMotion:'no-preference'});
     for(const [width,height,inner] of [[466,678,false],[669,951,true],[951,669,true]]){
       await page.setViewportSize({width,height});await page.evaluate(({width,height,inner})=>{Object.assign(__KINDRED_IOS_TOOLBAR,{x:width-70,y:40,width:64,height:height-170});dispatchEvent(new CustomEvent('kindred-ios-toolbar',{detail:__KINDRED_IOS_TOOLBAR}));Object.assign(__KINDRED_NATIVE_GEOMETRY,{width,height,windowWidth:width,windowHeight:height,reservedRegions:inner?[]:[{kind:'occlusion',active:true,x:width-84,y:30,width:84,height:84}]});dispatchEvent(new CustomEvent('kindred-native-geometry',{detail:__KINDRED_NATIVE_GEOMETRY}));Object.assign(__KINDRED_IOS_LAYOUT,{isDuoInner:inner,isPortrait:height>width,viewportHeight:height});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));},{width,height,inner});
-      await page.waitForTimeout(350);const box=await page.locator('.voice-end').boundingBox(),pill=await page.locator('.voice-call-tray').boundingBox(),wave=await page.locator('.voice-wave').boundingBox();
+      await page.waitForTimeout(350);
+      await voiceAction('settings');await page.getByRole('dialog',{name:'Voice options'}).waitFor();
+      await page.waitForFunction(()=>document.querySelector('.voice-call-options').hasAttribute('data-ios-sheet'));
+      const settingsBox=await page.locator('.voice-call-options').boundingBox();
+      assert(settingsBox.x>=0&&settingsBox.x+settingsBox.width<=width-70,'voice options stay clear of the Duo control rail');
+      assert(await page.getByRole('button',{name:'Close voice options',exact:true}).evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}));
+      if(process.env.KINDRED_TEST_ARTIFACTS)await page.screenshot({path:path.join(process.env.KINDRED_TEST_ARTIFACTS,'voice-options-duo-'+width+'-'+engine+'.png')});
+      await page.getByRole('button',{name:'Close voice options',exact:true}).click();
+      await page.waitForFunction(()=>document.querySelector('.voice-call-tray').hasAttribute('data-ios-native-voice'));
+      const box=await page.locator('.voice-end').boundingBox(),pill=await page.locator('.voice-call-tray').boundingBox(),wave=await page.locator('.voice-wave').boundingBox();
       assert(box&&box.width>=44&&box.x>=0&&box.x+box.width<=width-70&&box.y<height/2,'End call floats at the top, clear of the measured Duo rail, with a 44pt target');
       assert(pill.x>=0&&pill.x+pill.width<=width-70&&wave.width>=90,'the full pill and usable waveform fit the safe chat width');
       if(!inner){assert(Math.abs(pill.x-12)<1);assert(Math.abs((width-84)-(pill.x+pill.width)-pill.x)<1,'front pill has equal gaps to the screen-left edge and actual camera boundary');}
@@ -106,7 +125,7 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
       assert.equal(await page.locator('#composer').getAttribute('data-ios-native-composer'),'true');
       const maxNative=await page.evaluate(()=>{window.nativeProbe={scans:0,start:nativeMessages.length};const old=__kindredNativeComposer.snapshot;__kindredNativeComposer.snapshot=(...args)=>{nativeProbe.scans++;return old(...args)};window.restoreSnapshot=()=>{__kindredNativeComposer.snapshot=old};return nativeMessages.length;});
       await page.evaluate(()=>{let n=0;const input=[.008,.018,.04,.09,.13,.05,.02,0,.007,.06,.1,.015],output=[0,.03,.05,.14,.06,.016,0,.07,.1,.04];window.levelTimer=setInterval(()=>{voiceEvent({type:'levels',input:input[n%input.length],output:output[n%output.length]});n++},100)});
-      await page.waitForTimeout(3800);assert(await page.evaluate(()=>[...document.querySelectorAll('.voice-wave-input i')].some(e=>Number(e.dataset.level)>.15)),'bright microphone history must still update after mute/unmute');assert((await page.evaluate(()=>nativeProbe.scans))<35,'decorative waveform updates must not drive native geometry scans at animation frame rate');
+      await page.waitForTimeout(3800);assert(await page.evaluate(()=>[...document.querySelectorAll('.voice-wave-input i')].some(e=>Number(e.dataset.level)>.15)),'microphone bars must still update after mute/unmute');assert((await page.evaluate(()=>nativeProbe.scans))<35,'decorative waveform updates must not drive native geometry scans at animation frame rate');
       assert(await page.evaluate(()=>nativeMessages.slice(nativeProbe.start).some(m=>m.action==='voice-meter'&&m.input.some(n=>n>.15))),'actual waveform histories reach the native meter bridge');
       if(process.env.KINDRED_TEST_ARTIFACTS)for(const theme of ['dark','light']){await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await page.waitForTimeout(160);await page.screenshot({path:path.join(process.env.KINDRED_TEST_ARTIFACTS,'voice-floating-duo-'+width+'-'+theme+'-'+engine+'.png')});await page.evaluate(()=>{window.webPreview=true;const m=nativeMessages.filter(m=>m.action==='glass-controls').at(-1);__kindredGlassControls.setActive(m.document,[],m.sequence);});await page.waitForTimeout(80);await page.screenshot({path:path.join(process.env.KINDRED_TEST_ARTIFACTS,'voice-floating-duo-web-preview-'+width+'-'+theme+'-'+engine+'.png')});await page.evaluate(()=>{window.webPreview=false;const m=nativeMessages.filter(m=>m.action==='glass-controls').at(-1);__kindredGlassControls.setActive(m.document,[...m.controls.map(c=>c.id),...(m.composer?['composer']:[]),...(m.voice?['voice']:[])],m.sequence);});}
       await page.evaluate(()=>{restoreSnapshot();clearInterval(levelTimer);voiceEvent({type:'levels',input:0,output:0});document.documentElement.dataset.theme='dark'});
@@ -150,6 +169,6 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
     assert.equal(await page.evaluate(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.key),retainedKey,'presentation-only state retains native call identity');
     assert.equal(starts,2,'presentation checks never open a provider call');
     await page.evaluate(()=>document.querySelector('.voice-call-tray').hidden=true);
-    assert.deepEqual(errors,[]);console.log('Full iOS voice UI: floating overlapping wave, native typing/send/draft/keyboard ownership, settings, 3 Duo poses in light/dark, bounded native scans, immediate End, reduced-motion system End, call-owned approvals/takeover and a single post-call recap passed.');
+    assert.deepEqual(errors,[]);console.log('Full iOS voice UI: stationary single-row meter, native typing/send/draft/keyboard ownership, settings, 3 Duo poses in light/dark, bounded native scans, immediate End, reduced-motion system End, call-owned approvals/takeover and a single post-call recap passed.');
   }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1});

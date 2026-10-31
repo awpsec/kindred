@@ -581,6 +581,8 @@ html[data-kindred-ios] dialog[data-ios-sheet][open] {
  animation:ios-action-sheet-in 220ms ease-out;
 }
 html[data-kindred-ios] dialog.navigation-search[data-ios-sheet][open] { display:flex; flex-direction:column; height:var(--ios-sheet-height); overflow:hidden; animation:none; }
+html[data-kindred-ios] dialog.voice-call-options[data-ios-sheet][open] { padding:20px; }
+html[data-kindred-ios] dialog.voice-call-options[data-ios-sheet] select { min-height:44px; }
 html[data-kindred-ios] #settings-dialog[data-ios-sheet][open] {
  height:var(--ios-sheet-height); max-height:var(--ios-sheet-height); padding:0; border-radius:24px;
  overflow:hidden; animation:ios-action-sheet-in 220ms ease-out;

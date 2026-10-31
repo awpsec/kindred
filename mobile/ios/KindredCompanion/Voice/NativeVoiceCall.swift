@@ -202,6 +202,10 @@ final class NativeVoiceCall: NSObject {
                         if !self.ending, let text = value["data"] as? String, let bytes = Data(base64Encoded: text), bytes.count <= 96000 {
                             try self.audio?.play(bytes)
                         }
+                    case "options_applied", "options_error":
+                        // Voice preferences never interrupt capture or playback.
+                        var forwarded = value; forwarded["id"] = id
+                        self.emit?(forwarded)
                     case "ended":
                         self.finishAudio(cue: .ended)
                         self.terminal(["type": "ended", "id": id, "saved": value["saved"] as? Bool ?? false])
