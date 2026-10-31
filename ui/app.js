@@ -9522,7 +9522,7 @@ async function pollBrowserNotifications() {
       if(token!==state.token){if(portrait)URL.revokeObjectURL(portrait);return;}
       if(!eligible()){if(portrait)URL.revokeObjectURL(portrait);browserNotificationCursor=item.id;continue;}
       void playBrowserNotificationSound(eligible,item.id);
-      let n;try{n=new Notification(item.title,{body:item.body,tag:'kindred-'+item.id,icon:portrait||'/favicon.svg',silent:true});}catch(error){if(portrait)URL.revokeObjectURL(portrait);throw error;}
+      let n;try{n=new Notification(item.title,{body:item.body,tag:'kindred-'+item.id,icon:portrait||'/brand-icon.png',silent:true});}catch(error){if(portrait)URL.revokeObjectURL(portrait);throw error;}
       browserNotificationCursor=item.id;
       if(portrait){n.onclose=()=>URL.revokeObjectURL(portrait);setTimeout(()=>URL.revokeObjectURL(portrait),60000);}
       n.onclick=()=>{if(token!==state.token){n.close();return;}window.focus();n.close();void openNotificationChat(item);};

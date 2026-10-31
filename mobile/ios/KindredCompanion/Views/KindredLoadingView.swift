@@ -22,6 +22,7 @@ struct KindredLoadingView: View {
     private var presentation: some View {
         VStack(spacing: 0) {
             Image("KindredMark")
+                .renderingMode(.original)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 84, height: 84)

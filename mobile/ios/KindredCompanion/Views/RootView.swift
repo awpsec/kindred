@@ -250,6 +250,7 @@ struct WelcomeView: View {
         VStack(spacing: 18) {
             Spacer()
             Image("KindredMark")
+                .renderingMode(.original)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 96, height: 96)
