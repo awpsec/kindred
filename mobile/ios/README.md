@@ -758,20 +758,27 @@ failure happened before confirmation or after Connect. Never copy a real code,
 QR pixels, account token or claim response into logs. Create a fresh disposable
 code for each claim attempt; do not automatically replay an uncertain claim.
 
-### Soft K icon appearances
+### Team shadows identity
 
-The approved Soft K artwork has default (light), dark, and tinted AppIcon entries.
-iOS chooses the appearance using the Home Screen customization setting, including
-Automatic; the in-app theme does not override that system choice. The 1024px
-source images are opaque square RGB PNGs; iOS applies its own corner mask.
-Regenerate all three icons and the in-app mark with
-`python3 mobile/ios/tools/render-assets.py` (requires librsvg).
-Keep the silhouette, pill eyes, gradients and placement aligned with the approved
-SVGs in `tools/app-icon.svg` and `tools/app-icon-dark.svg`.
+The approved three-bot identity uses a square, happy circle and curious triangle.
+The triangle is the smaller approved proportion; all expressions are fixed in
+`branding/team-shadows.json`. Default, dark and tinted Home Screen icons use
+opaque square RGB source PNGs; iOS selects the appearance and applies its mask.
+The in-app theme does not override Home Screen customization.
 
-Desktop equivalents are generated with `node scripts/generate-app-icons.cjs`
-and `node scripts/generate-macos-icon.cjs`; these accept
-`KINDRED_PLAYWRIGHT_MODULE` for an external Playwright installation. Regenerate
-the installer sidebar with `node scripts/generate-installer-banner.cjs`.
-Verify native Home Screen light/dark/tinted selection on an installed iOS build
-before reporting device verification complete.
+`KindredMark` has light and dark original-color image variants at 1x/2x/3x.
+The existing iOS loading/recovery and welcome views resolve the correct variant
+from their native appearance. This adds no startup hold, new overlay, or replay.
+The system launch storyboard remains the existing canvas-only first frame.
+
+Regenerate all exports with `python3 branding/generate.py` (Python 3 + librsvg),
+or only iOS with `python3 mobile/ios/tools/render-assets.py`. Desktop wrappers
+`node scripts/generate-app-icons.cjs` and
+`node scripts/generate-macos-icon.cjs` call the same source generator.
+The macOS package always uses the LIGHT artwork, including in dark mode.
+Regenerate the Windows sidebar with `node scripts/generate-installer-banner.cjs`.
+See [Branding](../../docs/BRANDING.md) for asset locations and validation.
+
+Before release, verify Home Screen light/dark/tinted selection, native loading
+and recovery in both appearances, welcome/sign-in, cold/warm launch, Reduce
+Motion, account switching and the macOS Dock on actual Apple platforms.
