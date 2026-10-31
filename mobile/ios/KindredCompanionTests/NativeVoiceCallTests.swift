@@ -323,11 +323,21 @@ final class NativeVoiceCallTests: XCTestCase {
         }
         let call = NativeVoiceCall(), socket = VoiceDiscardingSocketFixture(), id = UUID().uuidString
         var opened = 0, events: [[String: Any]] = []
+        var peakOutput = 0.0, offeredPlaybackFrames = 0
         defer {
             call.end(owner: owner)
             let attachment = XCTAttachment(string: call.debugCaptureDiagnostics.text)
             attachment.name = "voice-capture-metadata-no-audio"; attachment.lifetime = .keepAlways
             add(attachment)
+            let evidence: [String: Any] = ["fake_transport_connections": opened,
+                "captured_transport_frames": socket.audioFrames, "generated_playback_frames": offeredPlaybackFrames,
+                "peak_rendered_output_rms": peakOutput,
+                "speaker_volume": Double(AVAudioSession.sharedInstance().outputVolume)]
+            if let data = try? JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]),
+               let text = String(data: data, encoding: .utf8) {
+                let playback = XCTAttachment(string: text)
+                playback.name = "voice-playback-metadata-no-audio"; playback.lifetime = .keepAlways; add(playback)
+            }
         }
         try await wait({ UIApplication.shared.applicationState == .active }, timeout: 3)
         var fixture = NativeVoiceCall.TestHooks()
@@ -344,10 +354,28 @@ final class NativeVoiceCallTests: XCTestCase {
             opened += 1; return socket
         }
         call.testHooks = fixture
-        start(call, id: id) { events.append($0) }
+        start(call, id: id) {
+            events.append($0)
+            if $0["type"] as? String == "levels", let output = $0["output"] as? Double { peakOutput = max(peakOutput, output) }
+        }
         try await wait({ socket.audioMessages >= 3 || events.contains { $0["type"] as? String == "error" } }, timeout: 30)
         XCTAssertFalse(events.contains { $0["type"] as? String == "error" }, call.debugCaptureDiagnostics.text)
         XCTAssertEqual(opened, 1); XCTAssertGreaterThanOrEqual(socket.audioMessages, 3)
+        guard opened == 1, socket.audioMessages >= 3 else { throw URLError(.cannotConnectToHost) }
+        try await wait { events.contains { $0["type"] as? String == "started" } }
+        // Generated, quiet PCM exercises the actual provider-playback path. The
+        // player's real rendered meter excludes the separate local call chimes.
+        let frames = 9600
+        var tone = Data(capacity: frames * 2)
+        for frame in 0..<frames {
+            let sample = Int16((sin(2 * .pi * 440 * Double(frame) / 24000) * 1600).rounded())
+            let word = UInt16(bitPattern: sample)
+            tone.append(UInt8(truncatingIfNeeded: word)); tone.append(UInt8(truncatingIfNeeded: word >> 8))
+        }
+        offeredPlaybackFrames = frames
+        socket.push(["type": "audio", "data": tone.base64EncodedString()])
+        try await wait({ peakOutput > 0.006 }, timeout: 3)
+        XCTAssertGreaterThan(peakOutput, 0.006, "PCM must actually render, rather than merely being queued")
         let initialFrames = socket.audioFrames
         try await Task.sleep(for: .seconds(5))
         XCTAssertTrue(call.isActive, "Capture must survive beyond the four-second watchdog")
@@ -682,10 +710,16 @@ private final class VoiceDiscardingSocketFixture: VoiceCallConnection {
     var closed = false
     private var initial = true
     private var pending: CheckedContinuation<[String: Any], Error>?
+    private var queued: [[String: Any]] = []
     func receive() async throws -> [String: Any] {
         if closed { throw URLError(.cancelled) }
         if initial { initial = false; return ["type": "started"] }
+        if !queued.isEmpty { return queued.removeFirst() }
         return try await withCheckedThrowingContinuation { pending = $0 }
+    }
+    func push(_ value: [String: Any]) {
+        if let pending { self.pending = nil; pending.resume(returning: value) }
+        else { queued.append(value) }
     }
     func send(_ value: [String: Any]) async throws {
         if closed { throw URLError(.cancelled) }
@@ -696,7 +730,7 @@ private final class VoiceDiscardingSocketFixture: VoiceCallConnection {
             pending?.resume(returning: ["type": "ended", "saved": true]); pending = nil
         }
     }
-    func close() { closed = true; pending?.resume(throwing: URLError(.cancelled)); pending = nil }
+    func close() { closed = true; queued.removeAll(); pending?.resume(throwing: URLError(.cancelled)); pending = nil }
 }
 
 private final class VoiceMeterFixture {

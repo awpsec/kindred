@@ -91,8 +91,10 @@ the startup recovery, cancellation and conversion tests. Then run
 through the opt-in `KindredVoiceCaptureTests` scheme on the physical Duo with
 Device Hub fully quit. Use three independent app launches. Each run must deliver
 real PCM before the fake transport opens, continue capture beyond the four-second
-watchdog, and close cleanly. Retain each result bundle and the
-`voice-capture-metadata-no-audio` attachment; do not substitute simulated capture.
+watchdog, render a short quiet generated tone through the actual playback player,
+and close cleanly. The rendered output meter excludes local call chimes. Retain
+each result bundle and both `voice-capture-metadata-no-audio` and
+`voice-playback-metadata-no-audio` attachments; do not substitute simulated capture.
 A silent buffer passes this probe. Audible two-way speech still needs a separate
 explicitly started provider call before claiming that end-to-end calls work.
 
