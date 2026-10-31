@@ -6334,7 +6334,16 @@ details.voice-options>summary::before{display:none}
 .voice-wave>span{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;gap:0}
 .voice-wave i{flex:0 0 3px;background:currentColor;width:3px;height:28px;border-radius:999px;transform:scaleY(0);transition:transform .1s ease-out}
 .voice-wave-output{color:var(--fg)}.voice-wave-input{color:color-mix(in srgb,var(--fg) 62%,var(--surface))}.voice-wave[data-speaker=quiet] .voice-wave-output{color:color-mix(in srgb,var(--fg) 36%,var(--surface))}
-.voice-call-options{width:min(380px,calc(100vw - 32px));box-sizing:border-box}.voice-call-options .dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.voice-call-options h2{margin:0;font-size:17px}.voice-call-options .setting-row select{max-width:62%;min-width:110px}.voice-call-options p{margin:12px 0 0}.voice-call-options .voice-options-error:empty{display:none}
+.voice-call-options{width:min(400px,calc(100vw - 32px));box-sizing:border-box;padding:20px}
+.voice-call-options .dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+.voice-call-options h2{margin:0;font-size:calc(16px * var(--text-scale,1));font-weight:550}
+.voice-call-options .setting-row{gap:12px}
+.voice-call-options .setting-label{min-width:0}
+.voice-call-options .setting-row select{max-width:55%;min-width:100px}
+.voice-call-options p{margin:12px 2px 0;line-height:1.5}
+.voice-call-options .voice-options-error{color:var(--danger)}
+.voice-call-options .voice-options-error:empty{display:none}
+html[data-kindred-ios] .voice-call-options .icon-button{width:44px;height:44px;border-radius:50%}
 html .conversation:has(>.voice-call-overlay>.voice-call-tray:not([hidden])) .messages{padding-top:max(calc(var(--ios-chat-top,57px) + 8px),var(--voice-clearance,0px));scroll-padding-top:max(calc(var(--ios-chat-top,57px) + 8px),var(--voice-clearance,0px))}
 .voice-call-receipt{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:7px;margin:12px 0}.voice-call-receipt svg{width:14px;height:14px}
 @media(pointer:coarse){.voice-control{width:44px;height:44px}.voice-call-tray{gap:8px;padding:10px}}

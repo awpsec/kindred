@@ -34,16 +34,16 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     if(callOptions?.open)return;stopPreview();
     const owner=callOptions=node('dialog','text-dialog voice-call-options'),title=node('h2','','Voice options');
     title.id='voice-call-options-title';owner.setAttribute('aria-labelledby',title.id);
-    const head=node('div','dialog-heading'),close=button('Close voice options','close',()=>owner.close());head.append(title,close);
+    const head=node('div','dialog-heading'),close=button('Close voice options','close',()=>owner.close());close.className='icon-button';close.autofocus=true;head.append(title,close);
     const voice=node('select'),pace=node('select');voice.setAttribute('aria-label','Voice');pace.setAttribute('aria-label','Speaking pace');
-    const voiceRow=node('label','setting-row','Voice'),paceRow=node('label','setting-row','Speaking pace');voiceRow.append(voice);paceRow.append(pace);
-    const note=node('p','muted small','Voice changes apply to your next call. Speaking pace updates during this call.'),error=node('p','voice-options-error muted small');error.setAttribute('role','status');
-    owner.append(head,voiceRow,paceRow,note,error);document.body.append(owner);
+    const group=node('div','settings-pane'),voiceRow=node('label','setting-row'),paceRow=node('label','setting-row');voiceRow.append(node('span','setting-label','Voice'),voice);paceRow.append(node('span','setting-label','Speaking pace'),pace);group.append(voiceRow,paceRow);
+    const note=node('p','muted small'),error=node('p','voice-options-error muted small');error.setAttribute('role','status');
+    owner.append(head,group,note,error);document.body.append(owner);
     const populate=()=>{
       voice.replaceChildren(...(config?.voices||[]).map(v=>{const option=node('option','',v.name);option.value=v.id;return option;}));voice.value=config?.voice||'';
       pace.replaceChildren(...['slower','normal','faster'].map(value=>{const option=node('option','',value[0].toUpperCase()+value.slice(1));option.value=value;return option;}));pace.value=config?.pace||'normal';
       voice.disabled=pace.disabled=!config?.configured||owner.dataset.saving==='true';
-      note.textContent=operation?'Voice changes apply to your next call. Speaking pace updates during this call.':'Voice and speaking pace apply to your next call.';
+      note.textContent=operation?'Voice changes on your next call. Pace updates now.':'Voice and pace apply to your next call.';
     };
     const save=async()=>{
       if(owner.dataset.saving==='true')return;const current=revision,changes={enabled:!!config?.enabled,voice:voice.value,pace:pace.value};
@@ -55,7 +55,9 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     voice.onchange=save;pace.onchange=save;
     owner.addEventListener('click',e=>{if(e.target===owner){const r=owner.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)owner.close();}});
     owner.addEventListener('close',()=>{owner.remove();if(callOptions===owner)callOptions=null;if(!tray.hidden)gear.focus({preventScroll:true});},{once:true});
-    populate();owner.showModal();voice.focus({preventScroll:true});
+    // Focusing a select from this gesture opens the system picker in WKWebView.
+    // Show the options first; the user opens a picker by tapping its own row.
+    populate();owner.showModal();close.focus({preventScroll:true});
   }
   function resizeWave(){
     const count=Math.max(8,Math.min(40,Math.floor((wave.clientWidth+3)/6)));if(count===waveCount)return;waveCount=count;
