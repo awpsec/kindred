@@ -19,7 +19,7 @@ jobs:
       contents: write
       actions: read
     if: ${{ inputs.approve_runner_usage && github.run_attempt == '1' }}
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 10
     defaults:
       run:
@@ -67,6 +67,10 @@ jobs:
           key: kindred-native-v1-x86_64-pc-windows-msvc-${{ hashFiles('desktop/Cargo.lock', 'desktop/build.rs', 'desktop/dictation/**') }}
           restore-keys: kindred-native-v1-x86_64-pc-windows-msvc-
           fail-on-cache-miss: true
+      - name: Record selected native verification environment
+        run: |
+          mkdir -p verification-proof
+          python -c "import json,platform; from pathlib import Path; Path('verification-proof/environment.json').write_text(json.dumps({'platform':platform.platform(),'windows_version':platform.win32_ver(),'runner_image':'windows-2022','cold_discovery_first':True,'discovery_budget_seconds':10}))"
       - name: Stage exact API-bound executable and adjacent standalone resource
         env:
           GH_TOKEN: ${{ github.token }}
@@ -98,7 +102,7 @@ jobs:
           assert sha('desktop/standalone.zip') == custody['bundle_sha256'] == 'fb25bb8f1864fbc1e7b76ab4973e1c5260530f4b5bead2e090fba8de72b929de'
           network = load('native-network-validation/network-validation.json')
           assert network['passed'] is True and network['actual_native_discovery_passed'] is True and network['explicit_compose_generation_passed'] is True
-          assert network['exit_code'] == 0
+          assert network['exit_code'] == 0 and network['actual_compose_merge_passed'] is True
           assert network['source_commit'] == custody['source'] == '18e9629d47948454dc903a158065f35a31e574fc'
           assert network['target'] == 'x86_64-pc-windows-msvc' and network['owner_state_mutated'] is False
           worker = load('verification-proof/worker.json')
