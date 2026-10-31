@@ -567,14 +567,17 @@ def wait_for_simulator_transport(device):
 
 
 def configure_simulator_reduce_motion(device):
-    """Keep the same setup budget/gate; diagnose failure without replacing it."""
+    """Allow one bounded cold preference launch; retain readback and native gates."""
     started = time.monotonic()
     prefix = ['xcrun', 'simctl', 'spawn', device['udid'], 'defaults']
     status = {'selected_device': device['udid'], 'phase': 'write', 'passed': False, 'commands': [],
               'requested_enabled': True, 'native_UIAccessibility_observation_required': True,
               'preference_readback_is_native_runtime_proof': False}
     try:
-        _reduce_motion_command('write', prefix + ['write', 'com.apple.Accessibility', 'ReduceMotionEnabled', '-bool', 'true'], 10, status)
+        # Cold Duo simulators can answer getenv while their first defaults
+        # process is still starting. Give that single process a bounded minute;
+        # do not retry it, replace the native observation, or accept a timeout.
+        _reduce_motion_command('write', prefix + ['write', 'com.apple.Accessibility', 'ReduceMotionEnabled', '-bool', 'true'], 60, status)
         status['phase'] = 'read'
         result = _reduce_motion_command('read', prefix + ['read', 'com.apple.Accessibility', 'ReduceMotionEnabled'], 10, status)
         observed = result.stdout.strip()

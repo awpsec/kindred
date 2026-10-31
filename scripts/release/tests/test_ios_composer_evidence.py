@@ -75,7 +75,8 @@ class ComposerEvidenceTests(unittest.TestCase):
         with patch.object(m,'OUT',self.root),patch.object(m,'_simulator_command',side_effect=replies) as run:
             m.configure_simulator_reduce_motion({'udid':'selected-only'})
             self.assertEqual(run.call_args_list[0].args[0],['xcrun','simctl','spawn','selected-only','defaults','write','com.apple.Accessibility','ReduceMotionEnabled','-bool','true'])
-            self.assertEqual(run.call_args_list[0].kwargs['timeout'],10)
+            self.assertEqual(run.call_args_list[0].kwargs['timeout'],60)
+            self.assertEqual(run.call_args_list[1].kwargs['timeout'],10)
         replies=[subprocess.CompletedProcess([],0,'',''),subprocess.CompletedProcess([],0,'0','')]+[OSError('probe')]*3
         with patch.object(m,'OUT',self.root),patch.object(m,'_simulator_command',side_effect=replies):
             with self.assertRaises(AssertionError):m.configure_simulator_reduce_motion({'udid':'selected-only'})

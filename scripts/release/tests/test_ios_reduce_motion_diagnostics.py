@@ -18,7 +18,7 @@ class ReduceMotionDiagnosticsTests(unittest.TestCase):
   self.assertIs(got.exception,failure)
   row=self.receipt();self.assertFalse(row['passed']);self.assertEqual(row['phase'],'write')
   self.assertEqual(row['commands'][0]['stdout'],'partial write output');self.assertEqual(row['commands'][0]['stderr'],'partial write error')
-  self.assertEqual(row['commands'][0]['status'],'timeout');self.assertEqual(row['commands'][0]['deadline_seconds'],10)
+  self.assertEqual(row['commands'][0]['status'],'timeout');self.assertEqual(row['commands'][0]['deadline_seconds'],60)
 
  def command(self,code=0,stdout='',stderr=''):
   return subprocess.CompletedProcess([],code,stdout,stderr)
@@ -28,7 +28,7 @@ class ReduceMotionDiagnosticsTests(unittest.TestCase):
   with patch.object(m,'_simulator_command',side_effect=[self.command(stdout='written\n'),self.command(stdout='1\n')]) as run:
    m.configure_simulator_reduce_motion(self.device)
   row=self.receipt();self.assertTrue(row['passed']);self.assertFalse(row['preference_readback_is_native_runtime_proof'])
-  self.assertEqual(len(run.call_args_list),2);self.assertEqual([c.kwargs['timeout'] for c in run.call_args_list],[10,10])
+  self.assertEqual(len(run.call_args_list),2);self.assertEqual([c.kwargs['timeout'] for c in run.call_args_list],[60,10])
   self.assertEqual(row['commands'][0]['stdout'],'written\n')
   self.assertNotIn('probes',row)
  def test_nonzero_preserves_exact_status_and_selected_probes(self):
