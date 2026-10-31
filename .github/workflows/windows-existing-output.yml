@@ -11,7 +11,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: kindred-windows-existing-output-verification
+  group: kindred-windows-existing-output-verification-0.88.3
   cancel-in-progress: false
 jobs:
   verify:
@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: 0ed07d614d2e2a186a56c188091ae5abb63d5503
+          ref: 18e9629d47948454dc903a158065f35a31e574fc
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -41,15 +41,18 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.14.0'
       - name: Verify selected tool bytes and exact application source
         run: |
           python - <<'PY'
           import hashlib, os, subprocess
           from pathlib import Path
-          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '0ed07d614d2e2a186a56c188091ae5abb63d5503'
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '18e9629d47948454dc903a158065f35a31e574fc'
           tools = Path('.verification-tools')
           assert subprocess.check_output(['git', '-C', str(tools), 'rev-parse', 'HEAD'], text=True).strip() == os.environ['GITHUB_SHA']
-          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '125f861ed25f35596e1b8532b20d73c235ab4903ea397a214dd50556acce8a19'
+          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '85939797baeff78397ef9e7612085e84e57daff956de836a03158eb2b2dffd6a'
           PY
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
@@ -69,10 +72,49 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python .verification-tools/scripts/release/stage-retained-windows.py --source . --output verification-proof
       - name: Verify unchanged cold production network discovery and Compose replacement
+        id: network
         run: python scripts/release/test-native-network.py --target x86_64-pc-windows-msvc --output native-network-validation
+      - name: Retain phase diagnostics only if the original discovery gate fails
+        if: ${{ failure() && steps.network.outcome == 'failure' }}
+        run: python .verification-tools/scripts/release/test-windows-network-phases.py --source . --source-commit 18e9629d47948454dc903a158065f35a31e574fc --expected-helper-sha256 34ed0e65f42fffda28b488dc3dd0a88e850c98ab5d916ddbe4cd2bec81e64461 --output phase-proof
       - name: Verify actual retained executable worker lifetime and cancellation
+        id: worker
         run: python scripts/release/test-command-worker.py --binary desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe > verification-proof/worker.json
+      - name: Verify embedded native disclosure, Library and computer popout
+        id: native_ui
+        run: node scripts/release/native-ui-smoke/run-native.cjs --source . --binary desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe --output native-ui-validation --version 0.88.3 --source-commit 18e9629d47948454dc903a158065f35a31e574fc
+      - name: Require unchanged inputs and every native receipt before collection
+        id: gates
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          load = lambda path: json.loads(Path(path).read_text())
+          sha = lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest()
+          custody = load('verification-proof/retained-inputs.json')
+          assert custody['staged'] is True and custody['adjacent_resource_bundle_verified'] is True
+          assert custody['version'] == '0.88.3' and custody['server_source'] == 'cef87bb95895257eba52d9f461e964dacc36ef87'
+          assert sha('desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe') == custody['exe_sha256'] == '64b0bf6ea833a8ff04b8e3d22a640692d6650dab062924228eb1ca3a8b7571bb'
+          assert sha('desktop/standalone.zip') == custody['bundle_sha256'] == 'fb25bb8f1864fbc1e7b76ab4973e1c5260530f4b5bead2e090fba8de72b929de'
+          network = load('native-network-validation/network-validation.json')
+          assert network['passed'] is True and network['actual_native_discovery_passed'] is True and network['explicit_compose_generation_passed'] is True
+          assert network['exit_code'] == 0
+          assert network['source_commit'] == custody['source'] == '18e9629d47948454dc903a158065f35a31e574fc'
+          assert network['target'] == 'x86_64-pc-windows-msvc' and network['owner_state_mutated'] is False
+          worker = load('verification-proof/worker.json')
+          assert worker['platform'] == 'nt'
+          assert all(worker[key] is True for key in ['passed', 'incremental_output', 'no_duplicate_execution', 'cancel', 'deadline', 'failed_exit', 'bounded_output'])
+          ui = load('native-ui-validation/verification.json')
+          assert ui['passed'] is True and ui['platform'] == 'windows' and ui['version'] == '0.88.3'
+          assert ui['sourceCommit'] == custody['source'] and ui['binarySha256'] == custody['exe_sha256']
+          evidence = ['verification-proof/retained-inputs.json', 'native-network-validation/network-validation.json', 'verification-proof/worker.json', 'native-ui-validation/verification.json']
+          receipt = {'version': '0.88.3', 'source': custody['source'], 'server_source': custody['server_source'], 'native_gate_passed': True, 'application_rebuilt': False, 'evidence_sha256': {path: sha(path) for path in evidence}}
+          with Path('verification-proof/native-gates.json').open('x') as output:
+              output.write(json.dumps(receipt, indent=2) + '\n')
+          print(json.dumps(receipt))
+          PY
       - name: Verify and collect the retained native package
+        id: collect
         run: python scripts/release/collect-packages.py --target x86_64-pc-windows-msvc --output package-artifacts
       - name: Retain native evidence including refusals
         if: ${{ always() }}
@@ -82,12 +124,15 @@ jobs:
           path: |
             verification-proof/*.json
             native-network-validation/
+            native-ui-validation/
+            phase-proof/phase-receipt.json
           if-no-files-found: warn
           retention-days: 7
       - name: Upload packages only after every required native gate passed
+        if: ${{ success() && steps.gates.outcome == 'success' && steps.collect.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: kindred-0.86.11-x86_64-pc-windows-msvc
+          name: kindred-0.88.3-x86_64-pc-windows-msvc
           path: package-artifacts/*
           if-no-files-found: error
           retention-days: 7
