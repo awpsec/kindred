@@ -1,6 +1,6 @@
 # Kindred
 
-<img src="ui/favicon.svg" width="64" height="64" alt="Kindred logo">
+<img src="ui/brand-icon.svg" width="96" height="96" alt="Kindred team-shadows logo">
 
 **Your AI teammates, at home on your desktop.**
 

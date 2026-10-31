@@ -86,7 +86,11 @@ html[data-account-section] main>h1,html[data-account-section] footer{display:non
 /* First launch shares the account and setup machinery, with one choice at a time. */
 .welcome-brand{display:none}
 html[data-first-run] main{max-width:660px;padding-top:44px}
-html[data-first-run] .welcome-brand{display:block;font-size:28px;font-weight:650;letter-spacing:-1.3px;margin-bottom:34px}
+html[data-first-run] .welcome-brand{display:flex;align-items:center;gap:12px;margin-bottom:34px}
+.welcome-brand img,.welcome-brand>svg{display:block;flex:none;object-fit:contain}
+.welcome-brand .brand-dark{display:none}
+html[data-theme="dark"] .welcome-brand .brand-light{display:none}
+html[data-theme="dark"] .welcome-brand .brand-dark{display:block}
 #setup-choices{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:26px 0}
 .setup-choice{display:flex;flex-direction:column;gap:8px;text-align:left;padding:22px;border-radius:14px;background:var(--panel);transition:border-color .18s,background .18s}
 .setup-choice strong{font-size:14px;font-weight:550}

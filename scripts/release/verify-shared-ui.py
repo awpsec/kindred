@@ -14,6 +14,8 @@ SHARED = ('ui/navigation-search.js', 'ui/navigation-search.css', 'ui/bot-center.
           'ui/vendor.js', 'ui/visual-panels.js', 'ui/decision-receipts.js', 'ui/connector-cards.js', 'ui/email-recipients.js', 'ui/group-activity.js', 'ui/computer-pointer.js', 'ui/document-preview.js', 'ui/document-worker.js', 'ui/profile-home.html',
           'ui/profile-home.css', 'ui/profile-home.js', 'ui/bundled-dialog.css')
 
+SHARED += ('ui/favicon.svg', 'ui/brand-icon.svg', 'ui/brand-icon-light.svg', 'ui/brand-icon-dark.svg', 'ui/brand-icon.png', 'ui/brand-wordmark.svg', 'ui/apple-touch-icon.png')
+
 SHARED += ('ui/file-downloads.js', 'ui/computer-popout.js', 'ui/computer-popout.css', 'ui/voice.js', 'ui/voice-audio-worklet.js', 'ui/microphone-permission.js', 'ui/slack-monitoring.js')
 
 def verify(desktop, server, desktop_source, server_source):

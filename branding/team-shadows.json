@@ -1,0 +1,89 @@
+{
+  "concept": "Company \u2014 three bots, three teammates' shadows",
+  "light": {
+    "bg": "#F6F3EE",
+    "end": "#EAE5DD",
+    "pool": "#FFFFFF",
+    "pool_opacity": 0.55,
+    "shadow_opacity": 0.36,
+    "shadow_end_opacity": 0.1,
+    "pool_y": 26,
+    "pool_r": 48
+  },
+  "dark": {
+    "bg": "#34353B",
+    "end": "#27282E",
+    "pool": "#55565E",
+    "pool_opacity": 0.5,
+    "pool_y": 48,
+    "pool_r": 62,
+    "shadow_opacity": 0.72,
+    "shadow_end_opacity": 0.42,
+    "small_shadow_opacity": 0.68
+  },
+  "shadow_order": [
+    0,
+    2,
+    1
+  ],
+  "bots": [
+    {
+      "shape": "square",
+      "cx": 21.6,
+      "cy": 21,
+      "shadow_top": 35.5,
+      "head_path": "M27 13L71 11Q88 11 90 29L92 69Q92 88 75 90L29 92Q11 92 10 75L9 32Q9 15 27 13Z",
+      "shadow_path": "M-8.5 104L8.6 41.5Q8.6 35.5 14.6 35.5H28.6Q34.6 35.5 34.6 41.5L28.6 104Z",
+      "eyes": "<g fill=\"#1B1714\" transform=\"translate(4 8) rotate(-10 50.5 51.5)\"><rect x=\"35.7\" y=\"43.4\" width=\"8.6\" height=\"19.2\" rx=\"4.3\"/><rect x=\"57.7\" y=\"43.4\" width=\"8.6\" height=\"19.2\" rx=\"4.3\"/></g>",
+      "light": {
+        "head": "#7A72EA",
+        "shadow": "#4C45B8"
+      },
+      "dark": {
+        "head": "#8C85F2",
+        "shadow": "#1A1838"
+      },
+      "head_transform": "translate(8.47 7.61) scale(0.26)"
+    },
+    {
+      "shape": "round",
+      "cx": 49,
+      "cy": 22.5,
+      "shadow_top": 40,
+      "head_path": "M92 52A42 42 0 1 1 8 52A42 42 0 1 1 92 52Z",
+      "shadow_path": "M25.8 104L32.5 51C32.5 44 39.9 40 49 40C58.1 40 65.5 44 65.5 51L71.9 104Z",
+      "eyes": "<g fill=\"none\" stroke=\"#1B1714\" stroke-width=\"6\" stroke-linecap=\"round\" transform=\"translate(4 9) rotate(-12 50 52)\"><path d=\"M-4 2q4-8 8 0\" transform=\"translate(39.5 52)\"/><path d=\"M-4 2q4-8 8 0\" transform=\"translate(60.5 52)\"/></g>",
+      "light": {
+        "head": "#EE5A2F",
+        "shadow": "#B8431F"
+      },
+      "dark": {
+        "head": "#FF6B3D",
+        "shadow": "#241A19"
+      },
+      "head_transform": "translate(34 6.9) scale(0.30)"
+    },
+    {
+      "shape": "triangle",
+      "cx": 76,
+      "cy": 25.976,
+      "shadow_top": 37.25,
+      "head_path": "M44 13C46.7 8 53.3 8 56 13L90 75C94.5 83.5 90.5 92 81 92H19C9.5 92 5.5 83.5 10 75Z",
+      "shadow_path": "M66.9 104L62.62 46.3Q62.5 44.75 63.63 43.71L68.6 39.15Q70.5 37.25 73.2 37.25H79.8Q82.5 37.25 84.4 39.15L89.37 43.71Q90.5 44.75 90.87 46.28L104.6 104Z",
+      "eyes": "<g transform=\"translate(46 71) scale(1.0638297872340425) translate(-44.79 -57.99)\"><g fill=\"#1B1714\" transform=\"translate(-5 5) rotate(8 50 51.5)\"><g transform=\"translate(39.5 51.9) rotate(-9) scale(.92)\"><rect x=\"-3.9\" y=\"-6.2\" width=\"7.8\" height=\"12.4\" rx=\"3.9\"/></g><g transform=\"translate(60.5 54.1) rotate(9) scale(.92)\"><rect x=\"-4.8\" y=\"-10.5\" width=\"9.6\" height=\"21\" rx=\"4.8\"/></g></g></g>",
+      "light": {
+        "head": "#2FA487",
+        "shadow": "#1F7563"
+      },
+      "dark": {
+        "head": "#3BBB9A",
+        "shadow": "#0C2421"
+      },
+      "head_transform": "translate(61.9 6.8) scale(0.282)"
+    }
+  ],
+  "penumbra_blur": 1.75,
+  "identity": "team-shadows-v1",
+  "approved": "2026-10-31",
+  "macos_appearance": "light"
+}
