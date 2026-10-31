@@ -1629,11 +1629,25 @@ function renderBotDetailRoutines(root,routines,focused){
   restore();if(focused?.isConnected)focused.focus({preventScroll:true});
 }
 
+function confirmRoutineDeletion(r){
+  // Browser confirmation panels are not available in every embedded webview.
+  // Keep this in the app's modal layer so it also works above Settings on iOS.
+  return new Promise(resolve=>{
+    const d=modal('Delete routine?','text-dialog routine-delete-dialog');
+    const description=node('p','','Delete “'+r.name+'”? Future checks will stop. Chat and task history will remain.');
+    const actions=node('div','dialog-actions'),cancel=button('Cancel',()=>d.close('cancel'),'subtle-button');
+    actions.append(cancel,button('Delete routine',()=>d.close('delete'),'danger-button'));
+    d.append(description,actions);
+    d.addEventListener('close',()=>resolve(d.returnValue==='delete'),{once:true});
+    cancel.focus();
+  });
+}
 async function changeDetailRoutine(r,action){
   if(routinePending(r))return;
-  if(action==='delete'&&!confirm('Delete routine “'+r.name+'”? Its chat and task history will remain.'))return;
   if(action==='toggle'&&!r.enabled&&r.run_at&&r.run_at<=Date.now()/1000){editRoutine(r);return;}
+  const account=state.token;
   const setPending=pending=>{
+    if(state.token!==account)return;
     for(const row of document.querySelectorAll('.bot-detail-routine'))if(row.dataset.routineId===r.id){
       row.setAttribute('aria-busy',String(pending));for(const control of row.querySelectorAll('button'))control.disabled=pending;
     }
@@ -1641,17 +1655,23 @@ async function changeDetailRoutine(r,action){
   const pendingKey=routineIdentity(r);routineActionErrors.delete(pendingKey);pendingDetailRoutines.add(pendingKey);setPending(true);
   for(const row of document.querySelectorAll('[data-routine-id]'))row.updateFlight?.();
   try{
+    if(action==='delete'&&!await confirmRoutineDeletion(r))return;
+    // Native account switching can occur while this asynchronous dialog is open.
+    if(state.token!==account)return;
     if(r.trigger==='activity'){
       if(action==='delete'){
         if(r.enabled)await api('/inbox-monitors/'+r.id+'/pause','POST',{});
+        if(state.token!==account)return;
         try{await api('/inbox-monitors/'+r.id,'DELETE');}
-        catch(error){await refresh(true).catch(()=>{});throw error;}
+        catch(error){if(state.token===account)await refresh(true).catch(()=>{});throw error;}
       }
       else if(r.enabled)await api('/inbox-monitors/'+r.id+'/pause','POST',{});
       else await api('/inbox-monitors','POST',inboxWatchInput(r.monitor,{enabled:true}));
     }else await api('/routines/'+r.id,action==='delete'?'DELETE':'PATCH',action==='delete'?undefined:{enabled:!r.enabled});
+    if(state.token!==account)return;
     await refresh(true);
   }catch(error){routineActionErrors.set(pendingKey,error.message||'Could not change this routine. Try again.');throw error;}finally{pendingDetailRoutines.delete(pendingKey);setPending(false);for(const row of document.querySelectorAll('[data-routine-id]'))row.updateFlight?.();}
+  if(state.token!==account)return;
   renderComputerRoutines();if(state.settings==='routines'&&$('settings-dialog').open)await settingsRoutines();
 }
 function botIdentityForm(bot){
@@ -3006,7 +3026,7 @@ async function settingsRoutines(revision) {
     const actions=node('div','monitor-actions');actions.append(button('Edit',()=>editInboxMonitor(watch,data,connections),'outline-button','edit'));
     if(watch.enabled){
       actions.append(button('Check now',async()=>{await api('/inbox-monitors/'+watch.id+'/check','POST',{});await settingsRoutines();},'outline-button','refresh'),button('Pause',async()=>{await api('/inbox-monitors/'+watch.id+'/pause','POST',{});await settingsRoutines();},'outline-button','pause'));
-    }else actions.append(button('Resume',async()=>{await api('/inbox-monitors','POST',inboxWatchInput(watch,{enabled:true}));await settingsRoutines();},'outline-button','play'),button('Remove',async()=>{if(!confirm('Remove this paused inbox monitor? Its chat and task history will remain.'))return;await api('/inbox-monitors/'+watch.id,'DELETE');await settingsRoutines();},'outline-button','trash'));
+    }else actions.append(button('Resume',async()=>{await api('/inbox-monitors','POST',inboxWatchInput(watch,{enabled:true}));await settingsRoutines();},'outline-button','play'),button('Remove',()=>changeDetailRoutine({id:watch.id,bot_id:watch.bot_id,name:watch.name,enabled:watch.enabled,trigger:'activity',monitor:watch},'delete'),'outline-button','trash'));
     body.append(actions);root.append(row);
   }
   void mountSlackMonitoring(root,{api,node,button,field,modal,state,routineAssignee,previous:slack,onChanged:()=>settingsRoutines()});
