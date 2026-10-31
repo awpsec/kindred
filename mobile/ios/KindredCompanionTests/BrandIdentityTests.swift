@@ -30,7 +30,6 @@ final class BrandIdentityTests: XCTestCase {
             for size in [CGSize(width: 382, height: 650), CGSize(width: 867, height: 645), CGSize(width: 594, height: 466)] {
                 let content = WelcomeView().environment(model)
                     .environment(\.colorScheme, dark ? .dark : .light)
-                    .environment(\.accessibilityReduceMotion, true)
                     .frame(width: size.width, height: size.height)
                     .background(dark ? Color.black : Color.white)
                 let image = try XCTUnwrap(ImageRenderer(content: content).uiImage)
