@@ -76,7 +76,7 @@ jobs:
         run: python scripts/release/test-native-network.py --target x86_64-pc-windows-msvc --output native-network-validation
       - name: Retain phase diagnostics only if the original discovery gate fails
         if: ${{ failure() && steps.network.outcome == 'failure' }}
-        run: python .verification-tools/scripts/release/test-windows-network-phases.py --source . --source-commit 18e9629d47948454dc903a158065f35a31e574fc --expected-helper-sha256 34ed0e65f42fffda28b488dc3dd0a88e850c98ab5d916ddbe4cd2bec81e64461 --output phase-proof
+        run: python .verification-tools/scripts/release/test-windows-network-phases.py --source . --source-commit 18e9629d47948454dc903a158065f35a31e574fc --expected-helper-sha256 2a2fb49ed9d83a9bd21479507a0c5cfb08f40e934b987312edb25136c8cfe115 --output phase-proof
       - name: Verify actual retained executable worker lifetime and cancellation
         id: worker
         run: python scripts/release/test-command-worker.py --binary desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe > verification-proof/worker.json

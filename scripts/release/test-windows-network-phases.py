@@ -38,7 +38,7 @@ def is_windows(): return os.name == 'nt'
 
 def source_parts(repo):
     src = repo / 'desktop/src'
-    if digest((repo/'desktop/Cargo.lock').read_bytes()) != '667020e3b75c291609f73b3e8af4a9da3d4b1379eaf8fdcbd6607a22bad653ee':
+    if digest((repo/'desktop/Cargo.lock').read_bytes()) != '64026d9995a3f9ac97424abd776cce521e3e3768899273956cf1dacdd1e59088':
         raise ValueError('Production dependency lock mismatch')
     for name, expected in HASHES.items():
         if digest((src/name).read_bytes()) != expected:
