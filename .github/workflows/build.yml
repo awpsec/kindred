@@ -170,7 +170,10 @@ jobs:
           print('macOS SDK:', '.'.join(map(str, current)))
           PYSDK
       - name: Reuse native compiler dependencies
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        # Restoring the verified cache is sufficient for these manual builds.
+        # A multi-GB post-job cache upload previously exhausted the Mac runner
+        # after every package and native check had already passed.
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
             ~/.cargo/registry
