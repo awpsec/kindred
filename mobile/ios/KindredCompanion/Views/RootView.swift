@@ -2,7 +2,8 @@ import KindredCore
 import SwiftUI
 
 /// The server's chat header owns navigation once it is ready. Native account
-/// controls remain available during loading, sign-in and page failures.
+/// controls remain available for sign-in and page failures. Normal workspace
+/// startup keeps a single loading surface without a temporary account header.
 @MainActor
 struct RootView: View {
     @Environment(AppModel.self) private var model
@@ -54,11 +55,11 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(pageCanvas)
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar { toolbar }
+                .toolbar { if !isOpeningWorkspace { toolbar } }
                 .tint(usesDuoNavigation ? Color.primary : Theme.accent)
                 .toolbarBackground(Theme.chrome, for: .navigationBar)
-                .toolbarBackground(isShowingConversation ? .hidden : .visible, for: .navigationBar)
-                .toolbar(isShowingConversation && !usesDuoNavigation ? .hidden : .visible, for: .navigationBar)
+                .toolbarBackground(isOpeningWorkspace || isShowingConversation ? .hidden : .visible, for: .navigationBar)
+                .toolbar(isOpeningWorkspace || (isShowingConversation && !usesDuoNavigation) ? .hidden : .visible, for: .navigationBar)
                 .sheet(item: $model.download) { file in
                     ShareSheet(items: [file.url])
                 }
@@ -95,7 +96,7 @@ struct RootView: View {
                 .animation(.easeOut(duration: reduceMotion ? 0.1 : 0.2), value: session.presentation.hasLoadedChats)
                 .animation(.easeOut(duration: reduceMotion ? 0.1 : 0.2), value: session.loadState.failure)
                 .id(account.id)
-                .ignoresSafeArea(.container, edges: isShowingConversation ? (usesDuoNavigation ? .all : [.top, .bottom]) : .bottom)
+                .ignoresSafeArea(.container, edges: isOpeningWorkspace ? .all : isShowingConversation ? (usesDuoNavigation ? .all : [.top, .bottom]) : .bottom)
                 // WebHostView owns keyboard avoidance exactly once.
                 .ignoresSafeArea(.keyboard)
             } else {
@@ -124,6 +125,11 @@ struct RootView: View {
     private var activeSession: WebSession? {
         guard let account = model.activeAccount, model.isSignedIn(account.id) else { return nil }
         return model.session(for: account)
+    }
+
+    private var isOpeningWorkspace: Bool {
+        guard let session = activeSession else { return false }
+        return session.loadState.failure == nil && !session.presentation.hasLoadedChats
     }
 
     private var usesDuoNavigation: Bool {
