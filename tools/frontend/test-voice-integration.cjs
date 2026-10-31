@@ -8,8 +8,11 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
   await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await(process.env.WEBKIT?webkit:chromium).launch({timeout:90000});
   try{
     const page=await browser.newPage({viewport:{width:951,height:669}}),errors=[];
-    page.on('pageerror',e=>{errors.push(e.message);console.error('Page error:',e.message)});let starts=0,finished=false;const engine=process.env.WEBKIT?'webkit':'chromium';
-    await page.route('**/api/chats/**',async route=>{const response=await route.fetch();const value=await response.json();if(Array.isArray(value.messages)){value.messages=value.messages.slice(-4);value.page={has_before:false,has_after:false};if(finished)value.messages.push({seq:100000,sender:'user',text:'Call ended · 1:23',kind:'voice_call',run_id:'',created:1791302500})}return route.fulfill({response,json:value})});
+    page.on('pageerror',e=>{errors.push(e.message);console.error('Page error:',e.message)});let starts=0,finished=false,review=false,takeover=false;const engine=process.env.WEBKIT?'webkit':'chromium';
+    await page.route('**/api/chats/**',async route=>{const response=await route.fetch();const value=await response.json();if(Array.isArray(value.messages)){value.messages=value.messages.slice(-4);value.page={has_before:false,has_after:false};if(finished)value.messages.push({seq:100000,sender:'user',text:'Call ended · 1:23',kind:'voice_call',run_id:'',created:1791302500},{seq:100001,sender:'piper',text:'From our call: use the [north entrance](https://example.com/route).',kind:'voice_recap',run_id:'private-call-run',created:1791302501})}return route.fulfill({response,json:value})});
+    const voiceRun=status=>({id:'private-call-run',bot_id:'piper',chat_id:'dm-piper',status,created:1791302490,voice_session:true});
+    await page.route('**/api/approvals',route=>route.fulfill({json:review?[{id:'call-review',run_id:'private-call-run',tool:'guest_exec',args:{command:'echo fixture'},status:'pending',created:1791302490,voice_run:voiceRun('awaiting_approval')}]:[]}));
+    await page.route('**/api/user-tasks',route=>route.fulfill({json:takeover?[{id:'call-takeover',run_id:'private-call-run',bot_id:'piper',title:'Sign in for the call',instructions:'Enter your credentials on the website.',status:'pending',outcome:'',created:1791302490,voice_run:voiceRun('awaiting_user')}]:[]}));
     await page.emulateMedia({reducedMotion:'reduce'});
     await page.route('**/api/voice/settings',route=>route.fulfill({json:{enabled:true,configured:true,voice:'willow',voices:[{id:'willow',name:'Willow'}]}}));
     await page.route('**/api/voice/start',route=>{starts++;return route.fulfill({json:{id:'6f9619ff-8b86-4d11-b42d-00cf4fc964aa',ticket:'b'.repeat(64)}})});
@@ -43,6 +46,13 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
     assert.equal(await page.evaluate(({action,staleMic})=>__kindredNativeComposer.perform({...action,id:staleMic}),{action,staleMic}),false,'stale native dictation action cannot steal call capture');
     assert.equal(await page.evaluate(()=>speechCommands.filter(m=>m.action==='start').length),0);
     assert(await page.evaluate(()=>!nativeMessages.filter(m=>m.composer).at(-1).composer.items.some(i=>i.symbol==='mic')));
+    assert.equal(await page.getByRole('link',{name:'north entrance',exact:true}).count(),0,'no recap during the call');
+    review=true;await page.locator('[data-approval="call-review"]').waitFor({state:'visible'});
+    assert(await page.locator('.voice-call-tray').isVisible(),'review does not replace the call');
+    review=false;await page.locator('[data-approval="call-review"]').waitFor({state:'hidden'});
+    takeover=true;await page.locator('[data-user-task="call-takeover"]').waitFor({state:'visible'});
+    assert(await page.locator('.voice-call-tray').isVisible(),'human participation remains available in the call');
+    takeover=false;await page.locator('[data-user-task="call-takeover"]').waitFor({state:'hidden'});
     await page.evaluate(()=>{window.nativeRevision=1;window.nativeCommand=(action,text,extra={})=>{const m=nativeMessages.filter(m=>m.composer).at(-1);return __kindredNativeComposer.perform({document:m.document,context:m.composer.context,revision:++nativeRevision,text,selection:[text.length,0],action,...extra})};nativeCommand('edit','Draft while talking');nativeCommand('focus','Draft while talking',{focused:true});});
     await page.waitForFunction(()=>nativeMessages.filter(m=>m.composer).at(-1).composer.text==='Draft while talking');
     assert(await page.evaluate(()=>nativeMessages.filter(m=>m.composer).at(-1).composer.items.some(i=>i.text==='Send message'&&i.enabled)),'native send stays enabled during a call');
@@ -123,6 +133,10 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
     finished=true;await page.evaluate(()=>voiceEvent({type:'ended',saved:true}));await page.waitForFunction(()=>document.querySelector('#composer').hasAttribute('data-ios-native-composer'));
     assert.equal(await page.locator('#prompt').evaluate(e=>e.value),'');assert(await page.locator('.voice-call-tray').isHidden());
     await page.getByText('Call ended · 1:23',{exact:true}).waitFor();assert.equal(await page.locator('.voice-call-receipt').count(),1);assert.equal(await page.locator('.voice-call-receipt .message-bubble').count(),0);
+    await page.getByRole('link',{name:'north entrance',exact:true}).waitFor();
+    assert.equal(await page.getByRole('link',{name:'north entrance',exact:true}).count(),1);
+    assert.equal(await page.locator('[data-message="100001"] .task-cards,[data-message="100001"] .tool-timeline').count(),0,'recap has no duplicated work stream');
+    if(process.env.KINDRED_TEST_ARTIFACTS)await page.screenshot({path:path.join(process.env.KINDRED_TEST_ARTIFACTS,'voice-recap-'+engine+'.png')});
     // A retained, idle tray isolates presentation mutations from the live call's
     // timer, incoming audio and incidental finite animation scans.
     await page.evaluate(()=>{document.documentElement.dataset.motion='off';const t=document.querySelector('.voice-call-tray');t.dataset.status='true';t.querySelector('.voice-call-state').textContent='Connecting…';t.querySelector('.voice-mute').setAttribute('aria-pressed','false');t.hidden=false;t.inert=false;});
@@ -136,6 +150,6 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
     assert.equal(await page.evaluate(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.key),retainedKey,'presentation-only state retains native call identity');
     assert.equal(starts,2,'presentation checks never open a provider call');
     await page.evaluate(()=>document.querySelector('.voice-call-tray').hidden=true);
-    assert.deepEqual(errors,[]);console.log('Full iOS voice UI: floating overlapping wave, native typing/send/draft/keyboard ownership, settings, 3 Duo poses in light/dark, bounded native scans, immediate End and reduced-motion system End passed.');
+    assert.deepEqual(errors,[]);console.log('Full iOS voice UI: floating overlapping wave, native typing/send/draft/keyboard ownership, settings, 3 Duo poses in light/dark, bounded native scans, immediate End, reduced-motion system End, call-owned approvals/takeover and a single post-call recap passed.');
   }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1});

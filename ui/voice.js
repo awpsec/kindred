@@ -1,4 +1,4 @@
-// The server owns credentials, the call transcript and its idempotent chat handoff.
+// The server owns credentials, the call transcript, private work session and one recap.
 // Tones are original, short state cues, never recordings from another application.
 const callTones={connecting:[[392,0,.09],[494,.12,.09]],connected:[[523,0,.11],[659,.13,.11]],ended:[[494,0,.12],[330,.14,.12]],error:[[330,0,.14],[262,.17,.14]]};
 export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,notice,openSettings,cancelDictation,onEnded=()=>{}}){
@@ -154,11 +154,11 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     stopPreview();settings=node('section','settings-section voice-settings');const details=node('details','settings-pane voice-options'),summary=node('summary');summary.append(icon('chevron',14),node('span','','Voice (OpenAI API)'),node('span','muted small','Experimental'),node('span','muted small voice-summary-state'));
     const body=node('div','voice-settings-body'),enabled=node('input');enabled.type='checkbox';enabled.disabled=true;enabled.setAttribute('role','switch');const label=node('label','setting-row','Enable voice calls');label.append(enabled);
     const select=node('select');select.disabled=true;select.setAttribute('aria-label','Voice');const voiceRow=node('div','setting-row'),voiceLabel=node('span','','Voice'),choices=node('div','voice-selection'),play=button('Preview voice','play',()=>void previewVoice(),'voice-preview');choices.append(select,play);voiceRow.append(voiceLabel,choices);
-    const note=node('p','muted small'),context=node('p','muted small','Your bot can look things up and work during calls. Results and links stay in chat.'),error=node('p','muted small voice-settings-error');error.setAttribute('role','status');
+    const note=node('p','muted small'),context=node('p','muted small','Talk and get results in the call. A short recap with useful links appears in chat afterward.'),error=node('p','muted small voice-settings-error');error.setAttribute('role','status');
     const connect=node('button','subtle-button','Connect OpenAI in Connections');connect.type='button';connect.onclick=()=>openSettings('connections');
     body.append(label,voiceRow,note,context,error,connect);details.append(summary,body);settings.append(details);details.addEventListener('toggle',()=>{if(!details.open)stopPreview();});
     const owner=settings;
-    const populate=()=>{if(settings!==owner)return;select.replaceChildren();for(const voice of config?.voices||[]){const option=node('option','',voice.name);option.value=voice.id;select.append(option);}select.value=config?.voice||'';note.textContent=config?.configured?'AI voice · Calls and previews use your OpenAI API credits.':'Connect an OpenAI API key to enable calls.';connect.hidden=!!config?.configured;render();};
+    const populate=()=>{if(settings!==owner)return;select.replaceChildren();for(const voice of config?.voices||[]){const option=node('option','',voice.name);option.value=voice.id;select.append(option);}select.value=config?.voice||'';note.textContent=config?.configured?'AI voice · Calls, tools, recaps and previews use your OpenAI API credits.':'Connect an OpenAI API key to enable calls.';connect.hidden=!!config?.configured;render();};
     const save=async()=>{const changes={enabled:enabled.checked,voice:select.value};stopPreview();owner.dataset.saving='true';render();error.textContent='';const current=revision;try{const result=await api('/voice/settings','PUT',changes);if(current!==revision)return;config=result;}catch(e){if(current===revision)error.textContent=e.message;}finally{owner.dataset.saving='false';if(current===revision)populate();}};
     enabled.onchange=save;select.onchange=save;populate();void init().then(populate);return settings;
   }

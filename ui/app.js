@@ -5943,7 +5943,7 @@ function renderRequestTray(chat,entry){
   const answering=questionComposerMode();
   if(answering&&resolved.has('question:'+answering.q.id))finishQuestionComposer(answering.q,true);
   const requests=[];
-  for(const a of state.approvals){const run=state.allRuns.find(r=>r.id===a.run_id);if((a.status||'pending')==='pending'&&!resolved.has('approval:'+a.id)&&simpleApproval(a)&&approvalChat(run)===chat.id)requests.push({key:'approval:'+a.id,created:a.created??run.created,seq:a.message_seq??0,a,run});}
+  for(const a of state.approvals){const run=requestRun(a);if((a.status||'pending')==='pending'&&!resolved.has('approval:'+a.id)&&simpleApproval(a)&&approvalChat(run)===chat.id)requests.push({key:'approval:'+a.id,created:a.created??run.created,seq:a.message_seq??0,a,run});}
   for(const m of entry.messages||[])if(m.question?.status==='pending'&&!resolved.has('question:'+m.question.id))requests.push({key:'question:'+m.question.id,created:m.question.created??m.created,seq:m.seq,q:m.question});
   for(const q of state.questions||[])if(q.status==='pending'&&!resolved.has('question:'+q.id)&&(q.delivery_chat_id||q.chat_id)===chat.id&&!requests.some(r=>r.key==='question:'+q.id))requests.push({key:'question:'+q.id,created:q.created,seq:q.message_seq??0,q});
   requests.sort((a,b)=>a.created-b.created||a.seq-b.seq||a.key.localeCompare(b.key));
@@ -6196,7 +6196,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   beginChatRender(id);
   unreadObserver.disconnect();
   if(entry.hasBefore)area.append(historyEdge(entry,'older'));
-  if (!data.messages.length && !runs.length && !entry.pendingWaits?.length && !entry.commands?.length && !helperWork(chat.id.startsWith('dm-')?chat.id.slice(3):null) && !pendingHumanRequests().some(t=>humanRequestChat(t)===id||'dm-'+t.bot_id===id||delegationContext(state.allRuns.find(r=>r.id===t.run_id))?.target?.id===id) && !state.approvals.some(a=>(a.status||'pending')==='pending'&&state.allRuns.some(r=>r.id===a.run_id&&r.status==='awaiting_approval'&&'dm-'+r.bot_id===id))) {
+  if (!data.messages.length && !runs.length && !entry.pendingWaits?.length && !entry.commands?.length && !helperWork(chat.id.startsWith('dm-')?chat.id.slice(3):null) && !pendingHumanRequests().some(t=>humanRequestChat(t)===id||'dm-'+t.bot_id===id||delegationContext(state.allRuns.find(r=>r.id===t.run_id))?.target?.id===id) && !state.approvals.some(a=>(a.status||'pending')==='pending'&&(requestRun(a)?.status==='awaiting_approval'&&'dm-'+requestRun(a).bot_id===id))) {
     const empty = node("div", "empty"),
       avatars = chat.id.startsWith('dm-')?buddy(state.bot,55):participantStack(chat,'tile');
     empty.append(
@@ -6419,7 +6419,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));
-    if(['message','assistant','result','handoff'].includes(m.kind)){
+    if(['message','assistant','result','handoff','voice_recap'].includes(m.kind)){
       group.tabIndex=0;group.dataset.messageFocus='group';
       const actions=messageActions(chat.id,m);if(attachmentOnly)actions.querySelector('[data-message-action="copy"]')?.remove();row.classList.add('has-message-actions');
       if(isUser&&!chat.shared&&(queuedMessageWaiting(m)||state.queueEdits.has(chat.id+':'+m.seq))){
@@ -6436,11 +6436,11 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       if(images.length){const strip=fileLinks(images);strip.classList.add('message-images');group.insertBefore(strip,row);}
       if(documents.length)group.append(fileLinks(documents));
     }
-    if (m.kind === "result") {
+    if (m.kind === "result" || m.kind === "voice_recap") {
       renderAttachments(group, remainingAttachments(m.attachments || state.details.get(m.run_id)?.attachments));
       const run =
         runs.find((r) => r.id === m.run_id) || state.details.get(m.run_id)?.run;
-      if (run) {
+      if (run && m.kind!=="voice_recap") {
         group.insertBefore(taskCards(run),row);
         group.append(messageTools(run, state.details.get(run.id)?.events || [],false));
       }
@@ -6551,7 +6551,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   }
   const requestStrips=node('div','human-request-signposts');requestStrips.dataset.message='human-request-signposts-'+id;
   for(const task of pendingHumanRequests()) {
-    const run=state.allRuns.find(r=>r.id===task.run_id),delegation=delegationContext(run),bot=state.bots.find(b=>b.id===task.bot_id);
+    const run=requestRun(task),delegation=delegationContext(run),bot=state.bots.find(b=>b.id===task.bot_id);
     const canonical=humanRequestChat(task),helperDM='dm-'+task.bot_id;
     if(canonical===id&&!area.querySelector('[data-user-task="'+CSS.escape(task.id)+'"]')) {
       const cards=taskCards(run),card=[...cards.querySelectorAll('[data-user-task]')].find(n=>n.dataset.userTask===task.id);
@@ -6565,7 +6565,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   }
   if(requestStrips.children.length)area.prepend(requestStrips);
   for(const approval of state.approvals.filter(a=>(a.status||'pending')==='pending')){
-    const run=state.allRuns.find(r=>r.id===approval.run_id);if(!run||run.status!=='awaiting_approval')continue;
+    const run=requestRun(approval);if(!run||run.status!=='awaiting_approval')continue;
     const source=state.chats.find(c=>c.id===run.chat_id),target=source&&!source.bot_only&&!source.archived?source.id:'dm-'+run.bot_id;
     if(target===id&&!simpleApproval(approval)&&!area.querySelector('[data-approval="'+CSS.escape(approval.id)+'"]')){const card=approvalCard({...approval,status:approval.status||'pending'},run);card.dataset.approval=approval.id;area.append(attachTaskReview(card,taskReviewGroup({approval,run_id:run.id,sender:run.bot_id},summaries,id,data.messages),taskTrackers,true));}
   }
@@ -8942,15 +8942,20 @@ function fileLinks(files, expanded=false){
   return row;
 }
 
+// Call-owned work stays out of the task list; its reviews still carry the
+// minimal run identity needed by the same approval and takeover controls.
+function requestRun(request) {
+  return state.allRuns.find(r=>r.id===request.run_id)||request.voice_run||null;
+}
 function pendingHumanTask(botId=screenBotId()) {
-  return state.userTasks.find(t=>t.bot_id===botId && t.status==='pending' && state.allRuns.some(r=>r.id===t.run_id&&r.status==='awaiting_user'));
+  return state.userTasks.find(t=>t.bot_id===botId && t.status==='pending' && requestRun(t)?.status==='awaiting_user');
 }
 function humanRequestChat(task) {
-  const run=state.allRuns.find(r=>r.id===task.run_id),chat=state.chats.find(c=>c.id===run?.chat_id);
+  const run=requestRun(task),chat=state.chats.find(c=>c.id===run?.chat_id);
   return chat&&!chat.bot_only&&!chat.archived?chat.id:'dm-'+task.bot_id;
 }
 function pendingHumanRequests() {
-  return state.userTasks.filter(t=>t.status==='pending'&&state.allRuns.some(r=>r.id===t.run_id&&r.status==='awaiting_user'));
+  return state.userTasks.filter(t=>t.status==='pending'&&requestRun(t)?.status==='awaiting_user');
 }
 async function openHumanRequest(task) {
   const id=humanRequestChat(task),chat=state.chats.find(c=>c.id===id),bot=state.bots.find(b=>b.id===task.bot_id);
