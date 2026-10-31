@@ -108,6 +108,7 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
       await page.waitForTimeout(350);
       await voiceAction('settings');await page.getByRole('dialog',{name:'Voice options'}).waitFor();
       await page.waitForFunction(()=>document.querySelector('.voice-call-options').hasAttribute('data-ios-sheet'));
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector('.voice-call-options')).opacity==='1');
       const settingsBox=await page.locator('.voice-call-options').boundingBox();
       assert(settingsBox.x>=0&&settingsBox.x+settingsBox.width<=width-70,'voice options stay clear of the Duo control rail');
       assert(await page.getByRole('button',{name:'Close voice options',exact:true}).evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}));
