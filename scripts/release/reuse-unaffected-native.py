@@ -1,4 +1,4 @@
-"""Reuse unchanged Windows/Linux packages after a macOS-only window or notification fix.
+"""Reuse unchanged Windows/Linux packages after a verified macOS-only fix.
 
 Verifies the complete Git tree difference, including identical bundled resources.
 Original package manifests and build commits remain in the release provenance.
@@ -17,6 +17,19 @@ def source_check(original, source):
     changed = git('diff', '--name-only', original, source).decode().splitlines()
     for name in changed:
         if name.startswith('scripts/release/') or name.startswith('tools/frontend/test-') or name == 'tools/frontend/fixtures/desktop.cjs':
+            continue
+        if name in ('branding/generate.py', 'branding/test_assets.py', 'branding/requirements.txt', 'docs/BRANDING.md',
+                    'mobile/ios/KindredCompanionTests/BrandIdentityTests.swift',
+                    'desktop/icons/macos-runtime.png'):
+            # Generator/tests/docs are not linked into desktop packages. This
+            # separate runtime image is selected only by the macOS config.
+            continue
+        if name == 'desktop/tauri.macos.conf.json':
+            before, after = [json.loads(git('show', commit + ':' + name)) for commit in [original, source]]
+            old_icons = before['bundle'].pop('icon')
+            new_icons = after['bundle'].pop('icon')
+            if before != after or old_icons != ['icons/macos.icns', 'icons/macos.png'] or new_icons != ['icons/macos.icns', 'icons/macos-runtime.png']:
+                raise ValueError('Unverified macOS configuration change')
             continue
         if name == 'desktop/src/updater.rs':
             before, after = [git('show', commit + ':' + name).decode() for commit in [original, source]]

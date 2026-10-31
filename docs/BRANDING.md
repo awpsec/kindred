@@ -11,7 +11,9 @@ expressions, face spacing/tilt and the quiet shadows. Orange is an accent.
 `branding/wordmark.svg` contains the approved outlined wordmark. No runtime font
 or remote image service is required for logos.
 
-Run `python3 branding/generate.py` with Python 3 and librsvg (`rsvg-convert`).
+Run `python3 branding/generate.py` with Python 3, Pillow and librsvg (`rsvg-convert`).
+Install the pinned Python dependency with `python3 -m pip install -r branding/requirements.txt`
+inside your build virtual environment.
 Use `--target web|desktop|macos|ios` to regenerate only one set. Existing Node
 icon-generator commands and the iOS `render-assets.py` command are compatibility
 entry points for this same source. Installer sidebar regeneration remains
@@ -35,6 +37,11 @@ opaque 1024px RGB squares. Let the platform apply its icon presentation; do not
 add a second rounded tile to the iOS catalog. In-app marks retain their approved
 rounded tile and original colors. See [Apple's icon guidance](https://developer.apple.com/design/human-interface-guidelines/app-icons)
 and [asset catalog guidance](https://developer.apple.com/documentation/xcode/configuring-your-app-icon).
+
+Tauri additionally needs an RGBA runtime icon. `desktop/icons/macos-runtime.png`
+is a fully opaque copy of the approved light RGB master, with every RGB pixel
+unchanged. The macOS configuration selects it alongside the original ICNS;
+the approved master and ICNS bytes remain intact.
 
 At 16px the optical variant keeps only the three heads. At 24/32px it omits eyes;
 at 48/64px and above it retains the expressions. Small dark assets use restrained

@@ -23,9 +23,16 @@ class NativeReuse(unittest.TestCase):
             self.check(b'desktop/src/notch.rs\n', original, original.replace(b'common', b'changed'))
 
     def test_resources_and_other_native_code_require_rebuild(self):
-        for name in ['ui/notch.js', 'desktop/standalone.zip', 'desktop/Cargo.toml', 'desktop/src/main.rs']:
+        for name in ['ui/notch.js', 'desktop/standalone.zip', 'desktop/Cargo.toml', 'desktop/src/main.rs', 'desktop/icons/icon.png', 'desktop/tauri.conf.json']:
             with self.assertRaisesRegex(ValueError, 'prevents package reuse'):
                 self.check(name.encode())
+
+    def test_mac_runtime_icon_reference_is_narrowly_checked(self):
+        before = b'{"bundle":{"icon":["icons/macos.icns","icons/macos.png"]}}'
+        after = b'{"bundle":{"icon":["icons/macos.icns","icons/macos-runtime.png"]}}'
+        self.assertEqual(self.check(b'desktop/tauri.macos.conf.json\n', before, after), ['desktop/tauri.macos.conf.json'])
+        with self.assertRaisesRegex(ValueError, 'Unverified macOS'):
+            self.check(b'desktop/tauri.macos.conf.json\n', before, after.replace(b'"bundle":', b'"identifier":"changed","bundle":'))
 
     def test_validation_tools_can_change(self):
         self.assertEqual(len(self.check(b'scripts/release/verify-release.py\ntools/frontend/fixtures/desktop.cjs\n')), 2)

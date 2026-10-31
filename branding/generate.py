@@ -8,10 +8,12 @@ from pathlib import Path
 import argparse
 import copy
 import json
+import io
 import re
 import struct
 import subprocess
 from geometry import scene, tile
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 BRAND = ROOT / 'branding'
@@ -109,6 +111,11 @@ def macos():
     images = {size: raster(artwork(False, size, masked=False), size)
               for size in (16, 32, 64, 128, 256, 512, 1024)}
     write('desktop/icons/macos.png', images[1024])
+    # Tauri's runtime icon decoder requires RGBA. Keep the approved RGB master
+    # and ICNS unchanged; this opaque copy has identical RGB pixels.
+    runtime = io.BytesIO()
+    Image.open(io.BytesIO(images[1024])).convert('RGBA').save(runtime, format='PNG')
+    write('desktop/icons/macos-runtime.png', runtime.getvalue())
     kinds = {'icp4':16, 'icp5':32, 'icp6':64, 'ic07':128, 'ic08':256,
              'ic09':512, 'ic10':1024, 'ic11':32, 'ic12':64, 'ic13':256, 'ic14':512}
     records = [kind.encode() + struct.pack('>I', len(images[size]) + 8) + images[size]

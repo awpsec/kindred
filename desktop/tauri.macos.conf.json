@@ -3,7 +3,7 @@
   "bundle": {
     "icon": [
       "icons/macos.icns",
-      "icons/macos.png"
+      "icons/macos-runtime.png"
     ]
   }
 }

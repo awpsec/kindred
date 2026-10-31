@@ -4,6 +4,7 @@ import json
 import struct
 import unittest
 import xml.etree.ElementTree as ET
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 ICONS = ROOT / 'desktop/icons'
@@ -16,6 +17,15 @@ def png_header(data):
 
 
 class BrandPackagingTests(unittest.TestCase):
+    def test_tauri_mac_runtime_icon_is_opaque_rgba_with_exact_approved_pixels(self):
+        runtime = ICONS / 'macos-runtime.png'
+        self.assertEqual(png_header(runtime.read_bytes()), (1024, 1024, 8, 6))
+        with Image.open(runtime) as rgba, Image.open(ICONS / 'macos.png') as master:
+            self.assertEqual(rgba.getchannel('A').getextrema(), (255, 255))
+            self.assertEqual(rgba.convert('RGB').tobytes(), master.convert('RGB').tobytes())
+        config = json.loads((ROOT / 'desktop/tauri.macos.conf.json').read_text())
+        self.assertEqual(config['bundle']['icon'], ['icons/macos.icns', 'icons/macos-runtime.png'])
+
     def test_ios_icons_are_opaque_and_appearance_entries_resolve(self):
         catalog = ASSETS / 'AppIcon.appiconset'
         entries = json.loads((catalog / 'Contents.json').read_text())['images']
