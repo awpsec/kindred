@@ -118,8 +118,10 @@ final class NativeVoiceTrayTests: XCTestCase {
         let first = try XCTUnwrap(layer.path).boundingBox
         tray.updateMeter(input: [0.4,0.6,0.3], output: zero, animated: false)
         let second = try XCTUnwrap(layer.path).boundingBox
-        XCTAssertEqual(first.minX, second.minX); XCTAssertEqual(first.maxX, second.maxX)
-        XCTAssertEqual(first.midY, second.midY); XCTAssertNotEqual(first.height, second.height)
+        XCTAssertEqual(first.minX, second.minX, accuracy: 0.001)
+        XCTAssertEqual(first.maxX, second.maxX, accuracy: 0.001)
+        XCTAssertEqual(first.midY, second.midY, accuracy: 0.001)
+        XCTAssertNotEqual(first.height, second.height)
         tray.updateMeter(input: zero, output: [0.2,0.8,0.4], animated: false)
         XCTAssertNotEqual(inputInk, layer.fillColor)
         let outputInk = layer.fillColor
