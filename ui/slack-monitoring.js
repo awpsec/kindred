@@ -66,11 +66,12 @@ export async function mountSlackMonitoring(root,env){
   const latest=()=>current()&&(!env.isLatest||env.isLatest());
   const request=(...args)=>{if(!current())throw new Error('Workspace changed. Open settings again.');return api(...args);};
   const section=node('section','slack-monitoring');section.setAttribute('aria-label','Slack monitoring');const anchor=previous||section;if(anchor.parentNode!==root)root.append(anchor);
-  const top=node('div','section-toolbar monitor-toolbar');top.append(node('h3','','Slack'));section.append(top);
+  const top=node('div','section-toolbar monitor-toolbar');top.append(node('h3','',env.embedded?'Monitoring':'Slack'));section.append(top);
   const loading=node('p','muted small','Loading Slack monitors…');section.append(loading);
   let data;
-  try{data=await request('/slack-monitoring');}catch(error){if(anchor.isConnected&&latest()){if(previous){if(!previous.querySelector('.slack-refresh-error'))previous.append(node('p','slack-refresh-error run-error small','Could not refresh Slack status. Trying again shortly.'));}else{loading.textContent='Slack monitoring is unavailable on this server.';top.append(button('Retry',()=>onChanged(),'subtle-button'));}}return;}
+  try{data=await request('/slack-monitoring');}catch(error){if(anchor.isConnected&&latest()){env.onUnavailable?.();if(previous){if(!previous.querySelector('.slack-refresh-error'))previous.append(node('p','slack-refresh-error run-error small','Could not refresh Slack status. Trying again shortly.'));}else{loading.textContent='Slack monitoring is unavailable on this server.';top.append(button('Retry',()=>onChanged(),'subtle-button'));}}return;}
   if(!anchor.isConnected||!latest())return;
+  env.onStatus?.(data);
   const snapshot=JSON.stringify([data,botId,state.bots.map(b=>[b.id,b.name,b.profile?.archived])]);
   if(previous?.dataset.snapshot===snapshot){previous.querySelector('.slack-refresh-error')?.remove();return;}
   const expanded=new Set([...(previous?.querySelectorAll('.slack-monitor-row[open]')||[])].map(row=>row.dataset.slackMonitorId));

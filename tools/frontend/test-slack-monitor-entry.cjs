@@ -38,12 +38,14 @@ fs.mkdirSync(artifacts,{recursive:true});
       if(url.pathname.startsWith('/api/chats/'))return send({chat:chats.find(c=>c.id===url.pathname.slice(11)),messages:[]});
       if(url.pathname==='/api/settings')return send({theme:'dark',reduced_motion:true,notifications:'all'});
       if(url.pathname==='/api/routines')return send([]);
+      if(url.pathname==='/api/providers')return send({providers:[]});
+      if(url.pathname==='/api/connections/decisions')return send({configured:false});
       if(['/api/inbox-monitors','/api/composio'].includes(url.pathname)){
         unrelatedReads++;return route.fulfill({status:503,json:{error:'Unrelated Gmail service unavailable'}});
       }
       if(url.pathname==='/api/slack-monitoring'){
         slackReads++;const pending=deferNext;deferNext=null;if(pending)await pending;
-        if(rejectNext){rejectNext=false;return route.fulfill({status:503,json:{error:'Temporary Slack status error'}});}
+        if(rejectNext){return route.fulfill({status:503,json:{error:'Temporary Slack status error'}});}
         return send({connections,items});
       }
       if(url.pathname.endsWith('/channels'))return send({items:[{id:'C123',name:'urgent-requests'}],next_cursor:''});
@@ -51,17 +53,21 @@ fs.mkdirSync(artifacts,{recursive:true});
     });
     const page=await context.newPage();page.setDefaultTimeout(12000);page.on('pageerror',e=>errors.push(e.message));
     await page.goto(origin);await page.locator('#bot-details').click();
-    await page.locator('#details-content').getByRole('button',{name:'Slack monitoring',exact:true}).waitFor();
+    await page.locator('#details-content').getByRole('button',{name:'Connections',exact:true}).waitFor();
+    assert.equal(await page.locator('#details-content').getByRole('button',{name:'Slack monitoring',exact:true}).count(),0);
     await page.screenshot({path:path.join(artifacts,`slack-${engine}-bot-entry.png`)});
-    const baseline=unrelatedReads;
-    await page.locator('#details-content').getByRole('button',{name:'Slack monitoring',exact:true}).click();
+    assert.equal(await page.locator('#settings-nav').getByRole('button',{name:'Slack monitoring',exact:true}).count(),0);
+    await page.locator('#details-content').getByRole('button',{name:'Connections',exact:true}).click();
+    await page.locator('.slack-account > summary').click();
     const section=page.getByRole('region',{name:'Slack monitoring'}),filter=page.getByLabel('Show monitors for',{exact:true});
     const rows=section.locator('.slack-monitor-row');
     await rows.locator('.slack-rule-overview').waitFor();
     assert.equal(await filter.inputValue(),'piper');assert.equal(await rows.count(),1);
     assert.equal(await rows.getAttribute('data-slack-monitor-id'),'piper-watch');
     assert.match(await rows.innerText(),/Mentions → All channels.*All messages → #urgent-requests/s);
-    assert.equal(unrelatedReads,baseline,'Slack opens without depending on Gmail or Composio');
+    assert.equal(await page.locator('#settings-title').innerText(),'Connections');
+    assert(unrelatedReads>0,'The existing connections screen still attempts other app connections');
+    assert.equal(await page.locator('#settings-nav').getByRole('button',{name:'Slack monitoring',exact:true}).count(),0);
     assert.equal(await filter.locator('option[value="archived"]').count(),0);
     await page.screenshot({path:path.join(artifacts,`slack-${engine}-bot-monitors.png`)});
 
@@ -74,14 +80,16 @@ fs.mkdirSync(artifacts,{recursive:true});
     await editor.getByRole('button',{name:'Close',exact:true}).click();
     await filter.selectOption('orion');await rows.locator('.monitor-status').getByText('Paused',{exact:true}).waitFor();
     assert.equal(await rows.count(),1);assert.equal(await rows.getAttribute('data-slack-monitor-id'),'atlas-watch');
-    await page.locator('#settings-nav').getByRole('button',{name:'Slack monitoring',exact:true}).click();
+    await page.locator('#settings-nav').getByRole('button',{name:'Connections',exact:true}).click();
+    await page.locator('.slack-account > summary').click();
     await page.waitForFunction(()=>document.querySelectorAll('.slack-monitor-row').length===2);
     assert.equal(await filter.inputValue(),'');
 
     // The same path works for a different bot, with no state left over from the first.
     await page.locator('#settings-close').click();
     await page.locator('#bots').getByRole('button',{name:'Atlas',exact:true}).click();
-    await page.locator('#details-content').getByRole('button',{name:'Slack monitoring',exact:true}).click();
+    await page.locator('#details-content').getByRole('button',{name:'Connections',exact:true}).click();
+    await page.locator('.slack-account > summary').click();
     await rows.locator('.monitor-status').getByText('Paused',{exact:true}).waitFor();
     assert.equal(await filter.inputValue(),'orion');assert.equal(await rows.count(),1);
 
@@ -101,7 +109,9 @@ fs.mkdirSync(artifacts,{recursive:true});
     assert.equal(await page.locator('#settings-title').innerText(),'General');
 
     // Slack's own failure stays retryable; it is independent from the broken Gmail endpoints.
-    rejectNext=true;await page.locator('#settings-nav').getByRole('button',{name:'Slack monitoring',exact:true}).click();
+    rejectNext=true;await page.locator('#settings-nav').getByRole('button',{name:'Connections',exact:true}).click();
+    await page.locator('.slack-account > summary').click();
+    await section.getByRole('button',{name:'Retry',exact:true}).waitFor();rejectNext=false;
     await section.getByRole('button',{name:'Retry',exact:true}).click();
     await page.waitForFunction(()=>document.querySelectorAll('.slack-monitor-row').length===2);
     assert.equal(await section.count(),1);
@@ -114,10 +124,11 @@ fs.mkdirSync(artifacts,{recursive:true});
       await page.evaluate(()=>document.documentElement.style.setProperty('--text-scale','1.2'));
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
       assert(await rows.evaluateAll(elements=>elements.every(el=>el.scrollWidth<=el.clientWidth+1)));
+      assert(await page.locator('.slack-account > summary').evaluate(el=>el.querySelector('.connector-logo').getBoundingClientRect().right+4<=el.querySelector('strong').getBoundingClientRect().left),'Slack icon and label must not overlap at phone or Duo widths');
       await page.screenshot({path:path.join(artifacts,`slack-${engine}-${label}-overview.png`)});
     }
     assert.deepEqual(errors,[]);
-    console.log(JSON.stringify({engine,passed:true,botEntry:true,botScoped:true,allBots:true,gmailFailureIndependent:true,lateNavigationGuard:true,retry:true,focusRetained:true,responsive:true}));
+    console.log(JSON.stringify({engine,passed:true,connectionsEntry:true,noStandaloneSettingsTab:true,noExtraBotShortcut:true,botScoped:true,allBots:true,otherConnectionsFailureIndependent:true,lateNavigationGuard:true,retry:true,focusRetained:true,responsive:true}));
     await context.close();
   }finally{await browser.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 })();

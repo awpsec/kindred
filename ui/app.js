@@ -1587,12 +1587,11 @@ function renderDetails() {
   root.append(
     button(
       "Connections",
-      () => openSettings("connections"),
+      () => openSettings("connections", {botId:b.id}),
       "detail-link",
       "link",
     ),
     button("Skills", () => openSettings("skills"), "detail-link", "book"),
-    button("Slack monitoring", () => openSlackMonitoring(b.id), "detail-link", "bell"),
     button("Artifacts", () => openArtifacts(), "detail-link", "file"),
   );
   const routineSection=previousRoutines?.dataset.botId===b.id?previousRoutines:node('section','bot-detail-routines');
@@ -2247,21 +2246,21 @@ function routineScheduleLabel(r){
 function settingsWait(promise, message, milliseconds=5000){
   let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(message)),milliseconds);})]).finally(()=>clearTimeout(timer));
 }
-let closePermissionPage=null,settingsRevision=0,settingsRequest=null,settingsMotion=null,slackMonitoringBot='';
-function openSlackMonitoring(botId='') { slackMonitoringBot=botId; return openSettings('slack'); }
-async function openSettings(page = "general") {
+let closePermissionPage=null,settingsRevision=0,settingsRequest=null,settingsMotion=null,connectionView={};
+function openSlackMonitoring(botId='') { return openSettings('connections',{botId,showSlack:true}); }
+async function openSettings(page = "general", options={}) {
   if((page==='routines'||page==='monitors')&&state.settings==='routines'&&$('settings-dialog').open)return settingsRoutines();
   settingsMotion?.cancel();settingsMotion=null;
   const revision=++settingsRevision;settingsRequest?.abort('settings-navigation');settingsRequest=new AbortController();
   if(closePermissionPage){const close=closePermissionPage;closePermissionPage=null;void settingsWait(close(),'The device permissions view is taking too long to close.').catch(e=>notice(e.message,true));}
   if(page==='monitors')page='routines';
+  if(page==='connections')connectionView=options;
   state.settings = page;
   // Keep navigation nodes alive: rebuilding them drops keyboard focus on every tab.
   if (!$('settings-nav').children.length) for (const [id, label, symbol] of [
     ["general", "General", "user"],
     ["connections", "Connections", "link"],
     ["routines", "Routines", "clock"],
-    ["slack", "Slack monitoring", "bell"],
     ["skills", "Skills", "book"],
     ["archived", "Archived", "archive"],
     ["computer", "Computer", "computer"],
@@ -2270,7 +2269,7 @@ async function openSettings(page = "general") {
     const tab=button(label,()=>openSettings(id),'settings-tab',symbol);
     // Navigation remains available while its destination loads; disabling a
     // focused button drops keyboard focus in Chromium and some native webviews.
-    tab.onclick=()=>perform(()=>id==='slack'?openSlackMonitoring():openSettings(id));
+    tab.onclick=()=>perform(()=>openSettings(id));
     tab.dataset.settingsPage=id;$('settings-nav').append(tab);
   }
   for (const tab of $('settings-nav').children) {
@@ -2278,7 +2277,7 @@ async function openSettings(page = "general") {
     tab.classList.toggle('active',selected);
     if(selected)tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');
   }
-  $("settings-title").textContent = page==='bot-computer'?'Bot Computer':page==='slack'?'Slack monitoring':page[0].toUpperCase() + page.slice(1);
+  $("settings-title").textContent = page==='bot-computer'?'Bot Computer':page[0].toUpperCase() + page.slice(1);
   const loading=node('p','muted','Loading…');loading.setAttribute('role','status');
   $("settings-content").replaceChildren(loading);
   $("settings-content").scrollTop=0;
@@ -2300,7 +2299,6 @@ async function openSettings(page = "general") {
     general: settingsGeneral,
     connections: settingsConnections,
     routines: settingsRoutines,
-    slack: settingsSlackMonitoring,
     skills: settingsSkills,
     archived: settingsArchived,
     computer: settingsComputer,
@@ -2701,11 +2699,16 @@ async function claudeBrowserSignIn(row,message,check) {
 async function settingsConnections(revision) {
   if(state.settings!=='connections'||!$('settings-dialog').open)return;
   revision??=++settingsRevision;
-  const [connections,providers]=await Promise.all([api('/connections'),loadProviderAccounts(true)]);
+  const root=$('settings-content'),apps=section('Apps'),ai=section('AI accounts');root.replaceChildren(apps,ai);
+  settingsSlackConnection(apps,connectionView);
+  let connections,providers;
+  try{[connections,providers]=await Promise.all([api('/connections'),loadProviderAccounts(true)]);}
+  catch(error){if(settingsRevision===revision&&ai.isConnected)ai.append(node('p','run-error',error.message),button('Try again',()=>settingsConnections(),'subtle-button'));return;}
   if(settingsRevision!==revision||state.settings!=='connections'||!$('settings-dialog').open)return;
   state.connections=connections;
-  const root=$('settings-content');root.replaceChildren();const ai=section('AI accounts');root.append(ai);
-  ai.append(await decisionsConnection());
+  const decisions=await decisionsConnection();
+  if(settingsRevision!==revision||state.settings!=='connections'||!$('settings-dialog').open)return;
+  ai.append(decisions);
   const openCodePlans=providers.filter(provider=>['opencode','opencode-go'].includes(provider.id));
   for(const provider of providers) {
     if(openCodePlans.includes(provider)){
@@ -2786,7 +2789,8 @@ async function settingsConnections(revision) {
   }
   const add=accountCard({name:'Add custom provider',connected:false});add.status(false,'OpenAI-compatible API');
   customProviderEditor(add.body);ai.append(add.card);
-  await settingsComposio(root);
+  try{await settingsComposio(root,()=>settingsRevision===revision&&state.settings==='connections'&&$('settings-dialog').open);}
+  catch(error){if(settingsRevision===revision&&root.isConnected)root.append(node('p','run-error small','Other app connections could not be loaded. '+error.message));}
 }
 function openCodeAccount(root,plans) {
   const row=accountCard({name:'OpenCode',kind:'api'});root.append(row.card);
@@ -2871,9 +2875,9 @@ function customProviderEditor(root,provider=null) {
     if(provider.connected&&!provider.no_auth)root.append(button('Disconnect',async()=>{const {id,name,base_url,no_auth}=provider;await api('/providers','POST',{provider:{id,name,base_url,no_auth},key:''});await settingsConnections();}));
   }
 }
-async function settingsComposio(root) {
+async function settingsComposio(root,isCurrent=()=>root.isConnected) {
   const data = await api("/composio");
-  if (!root.isConnected) return;
+  if (!root.isConnected||!isCurrent()) return;
   const group = section("Composio");
   const editor = node(data.configured ? 'details' : 'div', 'composio-key-editor');
   if (data.configured) {
@@ -2960,26 +2964,38 @@ async function checkAccount(element) {
       : "Not signed in with an Codex (Subscription).";
 }
 let monitorRefreshTimer;
-async function settingsSlackMonitoring(revision) {
-  if(state.settings!=='slack'||!$('settings-dialog').open)return;
-  revision??=++settingsRevision;clearTimeout(monitorRefreshTimer);
-  const token=state.token,root=$('settings-content'),previous=root.querySelector('.slack-monitoring'),restore=routineFocus(root);
-  const bots=state.bots.filter(b=>!b.profile?.archived);
-  if(!bots.some(b=>b.id===slackMonitoringBot))slackMonitoringBot='';
-  const botId=slackMonitoringBot;
-  const current=()=>state.token===token&&state.settings==='slack'&&$('settings-dialog').open&&slackMonitoringBot===botId;
-  const latest=()=>current()&&settingsRevision===revision;
-  let toolbar=root.querySelector('.slack-monitor-filter');
-  if(!toolbar){toolbar=node('div','slack-monitor-filter');toolbar.append(node('label','','Show monitors for'));root.replaceChildren(toolbar);}
-  const options=JSON.stringify(bots.map(b=>[b.id,b.name]));
-  if(toolbar.dataset.options!==options){
-    const filter=select([['','All bots'],...bots.map(b=>[b.id,b.name])],botId);filter.setAttribute('aria-label','Show monitors for');
-    filter.onchange=()=>{slackMonitoringBot=filter.value;void settingsSlackMonitoring();};toolbar.querySelector('select')?.remove();toolbar.firstChild.append(filter);toolbar.dataset.options=options;
-  }
-  toolbar.querySelector('select').value=botId;
-  await mountSlackMonitoring(root,{api,node,button,field,modal,state,routineAssignee,botId,isCurrent:current,isLatest:latest,previous,onChanged:()=>settingsSlackMonitoring()});
-  if(!latest())return;
-  restore();monitorRefreshTimer=setTimeout(()=>void settingsSlackMonitoring(),15000);
+function settingsSlackConnection(root,{botId='',showSlack=false}={}) {
+  const token=state.token,row=accountCard({name:'Slack'}),bots=state.bots.filter(b=>!profile(b).archived);
+  row.card.classList.add('slack-account');row.card.open=showSlack;
+  row.card.querySelector('.account-check').replaceWith(connectorLogo(connectorBrand('Slack')));
+  row.status(false,'Checking…');root.append(row.card);
+  let selected=bots.some(b=>b.id===botId)?botId:'',generation=0,inFlight=0,lastRefresh=0,timer;
+  const toolbar=node('div','slack-monitor-filter'),label=node('label','','Show monitors for');
+  const filter=select([['','All bots'],...bots.map(b=>[b.id,b.name])],selected);filter.setAttribute('aria-label','Show monitors for');
+  label.append(filter);toolbar.append(label);row.body.append(toolbar);
+  const current=()=>state.token===token&&state.settings==='connections'&&$('settings-dialog').open&&row.card.isConnected;
+  const refresh=async()=>{
+    clearTimeout(timer);if(!current())return;
+    const ticket=++generation,scope=selected,restore=routineFocus(row.body),previous=row.body.querySelector('.slack-monitoring');
+    inFlight++;
+    try{await mountSlackMonitoring(row.body,{api,node,button,field,modal,state,routineAssignee,botId:scope,embedded:true,previous,
+      isCurrent:()=>current()&&selected===scope,isLatest:()=>current()&&ticket===generation,onChanged:refresh,
+      onStatus:data=>{
+        const accounts=data.connections.filter(a=>a.status!=='disconnected').length,watches=data.items.filter(w=>!scope||w.bot_id===scope).length;
+        row.status(accounts>0,accounts?`${accounts} account${accounts===1?'':'s'} · ${watches} monitor${watches===1?'':'s'}`:'Not connected');
+      },onUnavailable:()=>row.status(false,'Unavailable')});}finally{inFlight--;}
+    if(!current()||ticket!==generation)return;
+    lastRefresh=Date.now();restore();if(row.card.open)timer=setTimeout(refresh,15000);
+  };
+  filter.onchange=()=>{selected=filter.value;void refresh();};
+  row.card.addEventListener('toggle',()=>{
+    clearTimeout(timer);
+    if(!row.card.open||inFlight)return;
+    // Opening the disclosure retains the initial result and its Retry button.
+    if(Date.now()-lastRefresh>15000)void refresh();else timer=setTimeout(refresh,15000);
+  });
+  settingsRequest?.signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});
+  void refresh();
 }
 async function settingsRoutines(revision) {
   if(state.settings!=='routines'||!$('settings-dialog').open)return;

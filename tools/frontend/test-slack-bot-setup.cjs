@@ -15,6 +15,8 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
    if(u.pathname==='/identity/meta')return send({profiles:false});
    if(u.pathname==='/api/settings')return send({theme:'dark',reduced_motion:true,notifications:'all'});
    if(u.pathname==='/api/questions')return send([]);
+   if(u.pathname==='/api/providers')return send({providers:[]});
+   if(u.pathname==='/api/connections/decisions')return send({configured:false});
    if(u.pathname==='/api/chats/dm-piper')return send({chat:{id:'dm-piper',name:'Piper',members:['piper'],archived:false},messages:[{seq:1,sender:'user',text:'Monitor all messages in urgent-requests, mentions everywhere, and my Helpdesk DMs.',kind:'message',created:100},{seq:2,sender:'piper',kind:'connection_card',text:JSON.stringify({toolkit:'slack_events',question_id:'q-slack',bot_id:'piper',account_name:'Helpdesk',completed:state.completed,declined:state.declined,dismissed:state.dismissed}),run_id:'run-screenshot',created:101}],page:{has_before:false,has_after:false}});
    if(u.pathname==='/api/slack-monitoring')return state.failList?route.fulfill({status:503,json:{error:'Connection status unavailable'}}):send({connections:state.connections,items:[]});
    if(req.method()==='POST'){
@@ -40,6 +42,11 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   await card.getByRole('button',{name:/^Use Helpdesk/}).click();await card.getByText('Connected · setup continuing',{exact:true}).waitFor();assert.equal(state.posts.filter(p=>p.path.includes('/complete')).length,2);
   assert.equal(state.posts.filter(p=>p.path.includes('routines')||p.path==='/api/slack-monitors').length,0,'Connection alone must not create monitoring or polling');
   assert(!(await card.innerText()).includes('synthetic'));await page.reload();await card.getByRole('button',{name:'Manage monitoring',exact:true}).waitFor();assert.equal(await card.getByRole('button',{name:/^Use /}).count(),0);
+  await card.getByRole('button',{name:'Manage monitoring',exact:true}).click();
+  await page.locator('.slack-account[open] .slack-monitoring').waitFor();
+  assert.equal(await page.locator('#settings-title').innerText(),'Connections');
+  assert.equal(await page.getByLabel('Show monitors for',{exact:true}).inputValue(),'piper');
+  assert.equal(await page.locator('#settings-nav').getByRole('button',{name:'Slack monitoring',exact:true}).count(),0);
   await f.context.close();
   for(const [width,height,name] of [[390,844,'phone'],[466,780,'duo-front'],[900,650,'duo-inner']]){
    f=await fixture(width,height);({page,card,state}=f);state.connections=[account];await card.getByRole('button',{name:'Check again',exact:true}).click();await card.getByRole('button',{name:/^Use Helpdesk/}).waitFor();
