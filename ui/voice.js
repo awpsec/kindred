@@ -157,17 +157,26 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     const active=!!preview,label=active?'Stop voice preview':'Preview '+(config?.voices?.find(v=>v.id===config.voice)?.name||'voice');
     control.disabled=!config?.configured||!!operation||settings.dataset.saving==='true';control.title=label;control.setAttribute('aria-label',label);control.setAttribute('aria-pressed',String(active));control.setAttribute('aria-busy',String(preview?.phase==='loading'));control.replaceChildren(icon(active?'stop':'play',16));
   }
-  function stopPreview(){const old=preview;preview=null;if(old){clearInterval(old.check);old.controller.abort();if(old.source){old.source.onended=null;try{old.source.stop();old.source.disconnect();}catch{}}}renderPreview();idleEffects();}
+  function stopPreview(){const old=preview;preview=null;if(old){clearInterval(old.check);clearTimeout(old.timer);old.controller.abort();if(old.native){if(window.__KINDRED_IOS_VOICE?.previewID===old.id)delete window.__KINDRED_IOS_VOICE.previewID;postNative('previewStop',{id:old.id});}if(old.source){old.source.onended=null;try{old.source.stop();old.source.disconnect();}catch{}}}renderPreview();idleEffects();}
   async function previewVoice(){
     if(preview){stopPreview();return;}if(operation||!config?.configured||!config.voice)return;
     const error=settings.querySelector('.voice-settings-error');error.textContent='';const current=revision,owner=settings;
-    const sample=preview={controller:new AbortController(),phase:'loading'};renderPreview();
+    const sample=preview={controller:new AbortController(),phase:'loading',id:crypto.randomUUID(),native:!!native()&&window.__KINDRED_IOS_VOICE.previewPlayback===true,error};renderPreview();
     sample.check=setInterval(()=>{if(!owner.isConnected||!owner.querySelector('details').open)stopPreview();},250);
     try{
-      const {context,ready}=effectsContext();await bounded(ready,3000,'Audio playback is paused. Try preview again.');if(preview!==sample)return;
+      let context;
+      if(!sample.native){const audio=effectsContext();context=audio.context;await bounded(audio.ready,3000,'Audio playback is paused. Try preview again.');}if(preview!==sample)return;
       const blob=await api('/voice/preview','POST',{voice:config.voice},{responseType:'blob',maxBlobBytes:1500000,signal:sample.controller.signal,timeoutMs:35000});
       if(preview!==sample||current!==revision)return;if(!blob.type.startsWith('audio/'))throw Error('The voice preview could not be played.');
-      const buffer=await context.decodeAudioData(await blob.arrayBuffer());if(preview!==sample||current!==revision)return;
+      const bytes=await blob.arrayBuffer();if(preview!==sample||current!==revision)return;
+      if(sample.native){
+        // iOS previews use an explicit playback session, so silent mode and the
+        // browser's audio category cannot turn a successful request into silence.
+        const data=new Uint8Array(bytes);let raw='';for(let i=0;i<data.length;i+=8192)raw+=String.fromCharCode(...data.subarray(i,i+8192));
+        window.__KINDRED_IOS_VOICE.previewID=sample.id;postNative('preview',{id:sample.id,audio:btoa(raw)});
+        sample.timer=setTimeout(()=>{if(preview===sample){stopPreview();error.textContent='The voice preview did not start. Try again.';}},4000);return;
+      }
+      const buffer=await context.decodeAudioData(bytes);if(preview!==sample||current!==revision)return;
       if(context.state!=='running')await bounded(context.resume(),3000,'Audio playback is paused. Try preview again.');if(preview!==sample||current!==revision)return;
       const source=sample.source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);source.onended=()=>{if(preview===sample)stopPreview();};sample.phase='playing';source.start();renderPreview();
     }catch(e){if(preview===sample&&current===revision){stopPreview();error.textContent=e.message||'The voice preview could not be played.';}}
@@ -296,7 +305,16 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
   function reset(){revision++;callOptions?.close();config=null;stopPreview();const old=operation;void endCall();if(old)complete(old);hideTray(true);stopTones();clearTimeout(effectsIdle);void effects?.close().catch(()=>{});effects=null;render();}
   function syncWaveColor(){wave.style.setProperty('--voice-color',portrait.firstElementChild?.dataset.avatarColor||operation?.bot.profile?.color||'var(--fg)');}
   new MutationObserver(syncWaveColor).observe(portrait,{subtree:true,attributes:true,attributeFilter:['data-avatar-color']});
-  window.addEventListener('kindred-ios-voice',e=>{if(operation?.native&&e.detail?.id===operation.id&&e.detail.documentID===window.__KINDRED_IOS_VOICE?.documentID)event(operation,e.detail);});
+  window.addEventListener('kindred-ios-voice',e=>{
+    const value=e.detail;if(value?.documentID!==window.__KINDRED_IOS_VOICE?.documentID)return;
+    if(preview?.native&&value.id===preview.id){
+      const sample=preview;
+      if(value.type==='preview_playing'){clearTimeout(sample.timer);sample.phase='playing';sample.timer=setTimeout(()=>{if(preview===sample)stopPreview();},15000);renderPreview();}
+      else if(value.type==='preview_ended')stopPreview();
+      else if(value.type==='preview_error'){stopPreview();if(sample.error.isConnected)sample.error.textContent=value.message||'The voice preview could not be played.';}
+    }
+    if(operation?.native&&value?.id===operation.id)event(operation,value);
+  });
   window.addEventListener('pagehide',()=>{stopPreview();void endCall();stopTones();void effects?.close().catch(()=>{});effects=null;});editor.addEventListener('input',render);
   const syncNative=()=>{if(operation?.native&&operation.id&&!document.hidden)postNative('status',{id:operation.id});else if(operation&&!document.hidden)captureHealth(operation);};
   document.addEventListener('visibilitychange',syncNative);window.addEventListener('focus',syncNative);

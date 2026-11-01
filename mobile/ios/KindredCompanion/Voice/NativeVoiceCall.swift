@@ -101,6 +101,7 @@ final class NativeVoiceCall: NSObject {
         guard self.id == nil, UUID(uuidString: id) != nil,
               ticket.count == 64, ticket.allSatisfy({ $0.isHexDigit }),
               foreground else { return }
+        NativeVoicePreview.shared.stop()
         stopFinishingAudio()
         self.id = id; self.owner = owner; self.emit = emit; ending = false; ready = false; muted = false; lastSpeakingNotice = .distantPast
         captureStarted = nil; capturedAt = nil; cues = []
@@ -460,7 +461,7 @@ final class VoiceAudioPipe: VoiceCallAudio {
     private var playbackTapped = false
     private var active = false
     private let lock = NSLock()
-    private var queuedSeconds: Double = 0
+    private var playbackTimeline = VoicePlaybackTimeline()
     private let diagnostics: VoiceCaptureDiagnostics
     private var configurationObserver: NSObjectProtocol?
     private let startupRecovery = VoiceCaptureStartupRecovery()
@@ -545,6 +546,7 @@ final class VoiceAudioPipe: VoiceCallAudio {
                 guard let self, self.active, let capture = self.capture else { return }
                 self.diagnostics.record(.configurationRecovery)
                 self.player.stop(); self.cuePlayer.stop()
+                self.lock.lock(); self.playbackTimeline.reset(); self.lock.unlock()
                 try self.installInputTap(capture: capture)
                 // Leave the main mixer -> output connection automatic. Apple
                 // updates that format to the hardware on restart; pinning the
@@ -569,17 +571,19 @@ final class VoiceAudioPipe: VoiceCallAudio {
     }
     func play(_ bytes: Data) throws {
         guard bytes.count > 0, bytes.count % 2 == 0 else { throw URLError(.cannotDecodeContentData) }
-        let count = bytes.count / 2, duration = Double(count) / 24000
-        lock.lock(); let behind = queuedSeconds > 3; if !behind { queuedSeconds += duration }; lock.unlock()
-        guard !behind else { throw URLError(.cannotDecodeContentData) }
+        let count = bytes.count / 2
+        let rendered = player.lastRenderTime.flatMap { player.playerTime(forNodeTime: $0)?.sampleTime } ?? 0
+        let at: Int64
+        lock.lock()
+        do { at = try playbackTimeline.reserve(frames: Int64(count), renderedFrame: max(0, rendered)) }
+        catch { lock.unlock(); throw error }
+        lock.unlock()
         let buffer = AVAudioPCMBuffer(pcmFormat: playback, frameCapacity: AVAudioFrameCount(count))!
         buffer.frameLength = AVAudioFrameCount(count)
         bytes.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             for i in 0..<count { let value = UInt16(raw[i*2]) | UInt16(raw[i*2+1]) << 8; buffer.floatChannelData![0][i] = Float(Int16(bitPattern: value)) / 32768 }
         }
-        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            guard let self else { return }; self.lock.lock(); self.queuedSeconds = max(0, self.queuedSeconds-duration); self.lock.unlock()
-        }
+        player.scheduleBuffer(buffer, at: AVAudioTime(sampleTime: at, atRate: VoicePlaybackTimeline.rate), completionHandler: nil)
     }
     static func convertCapture(_ buffer: AVAudioPCMBuffer, using converter: AVAudioConverter, to pcm: AVAudioFormat,
                                onError: ((Error) -> Void)? = nil) -> Data? {
@@ -649,6 +653,7 @@ final class VoiceAudioPipe: VoiceCallAudio {
         if tapped { engine.inputNode.removeTap(onBus: 0); tapped = false }
         if playbackTapped { player.removeTap(onBus: 0); playbackTapped = false }
         player.stop()
+        lock.lock(); playbackTimeline.reset(); lock.unlock()
     }
     func stop() {
         let wasActive = active

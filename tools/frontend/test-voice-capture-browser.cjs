@@ -50,7 +50,36 @@ const server=http.createServer((q,r)=>{if(q.url==='/'){r.setHeader('Content-Type
  await page.getByRole('button',{name:'Preview Willow',exact:true}).click();await page.waitForFunction(()=>previewPending.length===1);await page.getByRole('button',{name:'Stop voice preview',exact:true}).click();await page.evaluate(()=>previewPending.shift()());await page.getByRole('button',{name:'Preview Willow',exact:true}).waitFor();
  await page.getByRole('button',{name:'Preview Willow',exact:true}).click();await page.waitForFunction(()=>previewPending.length===1);await page.evaluate(()=>{ui.reset();previewPending.shift()()});await page.waitForTimeout(80);assert.equal(await page.locator('.voice-preview').getAttribute('aria-pressed'),'false');
  await page.setViewportSize({width:950,height:650});await page.evaluate(async()=>{holdPreview=false;await ui.init()});
+ // Native previews must bypass WKWebView audio, preserve cancellation fences,
+ // and report actual native playback rather than merely a successful download.
+ await page.evaluate(()=>{
+   window.nativePreviewMessages=[];
+   window.__KINDRED_IOS_VOICE={protocolVersion:1,previewPlayback:true,documentID:crypto.randomUUID()};
+   window.webkit={messageHandlers:{kindredVoice:{postMessage:m=>nativePreviewMessages.push(m)}}};
+   window.nativePreviewEvent=(type,extra={})=>{const sent=nativePreviewMessages.filter(m=>m.action==='preview').at(-1);dispatchEvent(new CustomEvent('kindred-ios-voice',{detail:{id:sent.id,documentID:sent.documentID,type,...extra}}));};
+ });
+ const nativeContexts=await page.evaluate(()=>contexts.length),nativeMic=await page.evaluate(()=>micRequests);
+ await page.getByRole('button',{name:'Preview Willow',exact:true}).click();await page.waitForFunction(()=>nativePreviewMessages.some(m=>m.action==='preview'));
+ assert.equal(await page.evaluate(()=>contexts.length),nativeContexts,'native previews never open a browser audio session');
+ assert.equal(await page.evaluate(()=>micRequests),nativeMic,'previews never request microphone access');
+ assert(await page.evaluate(()=>atob(nativePreviewMessages.find(m=>m.action==='preview').audio).startsWith('RIFF')));
+ await page.evaluate(()=>nativePreviewEvent('preview_playing',{documentID:'stale-document'}));
+ assert.equal(await page.locator('.voice-preview').getAttribute('aria-busy'),'true');
+ await page.evaluate(()=>nativePreviewEvent('preview_playing'));
+ assert.equal(await page.locator('.voice-preview').getAttribute('aria-busy'),'false');
+ await page.getByRole('button',{name:'Stop voice preview',exact:true}).click();
+ assert.equal(await page.evaluate(()=>nativePreviewMessages.at(-1).action),'previewStop');
+ assert.equal(await page.evaluate(()=>__KINDRED_IOS_VOICE.previewID),undefined);
+ await page.evaluate(()=>nativePreviewEvent('preview_playing'));
+ assert.equal(await page.locator('.voice-preview').getAttribute('aria-pressed'),'false','late native acknowledgment cannot revive a stopped sample');
+ await page.getByRole('button',{name:'Preview Willow',exact:true}).click();await page.waitForFunction(()=>nativePreviewMessages.filter(m=>m.action==='preview').length===2);
+ await page.evaluate(()=>nativePreviewEvent('preview_error',{message:'Native playback interrupted'}));
+ await page.getByText('Native playback interrupted',{exact:true}).waitFor();
+ await page.evaluate(()=>holdPreview=true);await page.getByRole('button',{name:'Preview Willow',exact:true}).click();await page.waitForFunction(()=>previewPending.length===1);
+ await page.getByRole('button',{name:'Stop voice preview',exact:true}).click();await page.evaluate(()=>previewPending.shift()());await page.waitForTimeout(80);
+ assert.equal(await page.evaluate(()=>nativePreviewMessages.filter(m=>m.action==='preview').length),2,'canceled HTTP response never reaches native playback');
+ await page.evaluate(()=>{delete window.webkit;delete window.__KINDRED_IOS_VOICE;holdPreview=false;});
  if(out)await page.locator('.voice-settings').screenshot({path:path.join(out,'voice-settings-preview-'+engine+'.png')});
  await page.evaluate(async()=>{holdPreview=false;previewFailure=true;await ui.init();document.querySelector('#settings').replaceChildren(ui.settingsSection())});await page.locator('summary').click();await page.getByRole('button',{name:'Preview Willow',exact:true}).click();await page.getByText('Preview unavailable',{exact:true}).waitFor();
- if(out)await page.screenshot({path:path.join(out,'voice-preview-'+engine+'.png')});assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,realAudioWorklet:true,capture,silentOutput:true,mute:true,suspendRecovery:true,previewCancel:true,previewAccountFence:true,noPaidProviderCalls:true}));
+ if(out)await page.screenshot({path:path.join(out,'voice-preview-'+engine+'.png')});assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,realAudioWorklet:true,capture,silentOutput:true,mute:true,suspendRecovery:true,previewCancel:true,previewAccountFence:true,nativePreviewRouting:true,nativePreviewAcknowledgments:true,noPaidProviderCalls:true}));
  }finally{await browser.close();server.close()}})().catch(e=>{console.error(e);server.close();process.exitCode=1});

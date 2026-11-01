@@ -47,6 +47,113 @@ final class NativeVoiceCallTests: XCTestCase {
         try await wait { call.snapshot(owner: owner, id: id)?["type"] as? String == "started" }
     }
 
+    private func previewWav(seconds: Double = 0.25) -> Data {
+        let frames = Int(24_000 * seconds), bytes = frames * 2
+        var data = Data("RIFF".utf8)
+        func number<T: FixedWidthInteger>(_ value: T) { var little = value.littleEndian; withUnsafeBytes(of: &little) { data.append(contentsOf: $0) } }
+        number(UInt32(36 + bytes)); data.append(Data("WAVEfmt ".utf8)); number(UInt32(16))
+        number(UInt16(1)); number(UInt16(1)); number(UInt32(24_000)); number(UInt32(48_000))
+        number(UInt16(2)); number(UInt16(16)); data.append(Data("data".utf8)); number(UInt32(bytes))
+        for i in 0..<frames { number(Int16(sin(Double(i) * 2 * .pi * 440 / 24_000) * 3_000)) }
+        return data
+    }
+
+    func testVoicePreviewDecodesExactPCMRateAndRejectsInvalidClips() throws {
+        let player = try NativeVoicePreview.makePlayer(previewWav())
+        XCTAssertEqual(player.duration, 0.25, accuracy: 0.001)
+        XCTAssertEqual(player.format.sampleRate, 24_000)
+        XCTAssertEqual(player.format.channelCount, 1)
+        XCTAssertThrowsError(try NativeVoicePreview.makePlayer(Data()))
+        XCTAssertThrowsError(try NativeVoicePreview.makePlayer(Data(repeating: 0, count: 500)))
+        XCTAssertThrowsError(try NativeVoicePreview.makePlayer(previewWav(seconds: 13)))
+        XCTAssertThrowsError(try NativeVoicePreview.makePlayer(Data(repeating: 0, count: 1_500_001)))
+    }
+
+    func testVoicePreviewUsesMediaPlaybackAndOwnerScopedCancellation() throws {
+        let preview = NativeVoicePreview(), id = UUID().uuidString
+        var events: [[String: Any]] = []
+        defer { preview.stop() }
+        preview.start(id: id, owner: owner, data: previewWav(seconds: 1)) { events.append($0) }
+        XCTAssertEqual(events.last?["type"] as? String, "preview_playing")
+        XCTAssertEqual(AVAudioSession.sharedInstance().category, .playback, "Explicit samples must play in silent mode without asking for the microphone")
+        XCTAssertEqual(AVAudioSession.sharedInstance().mode, .spokenAudio)
+        preview.stop(owner: UUID(), id: id)
+        preview.stop(owner: owner, id: UUID().uuidString)
+        XCTAssertEqual(events.count, 1, "Another account or a stale preview cannot stop the current sample")
+        preview.stop(owner: owner, id: id)
+        XCTAssertEqual(events.last?["type"] as? String, "preview_ended")
+        preview.stop()
+        XCTAssertEqual(events.count, 2)
+    }
+
+    func testCallReleasesVoicePreviewBeforeCaptureStarts() async throws {
+        let call = NativeVoiceCall(), audio = VoiceAudioFixture(), socket = VoiceSocketFixture(), id = UUID().uuidString
+        var previewEnded = false, captureStartedAfterPreview = false
+        defer { call.end(owner: owner); NativeVoicePreview.shared.stop() }
+        NativeVoicePreview.shared.start(id: UUID().uuidString, owner: owner, data: previewWav(seconds: 1)) {
+            if $0["type"] as? String == "preview_ended" { previewEnded = true }
+        }
+        var fixture = hooks(audio: audio, socket: socket)
+        fixture.audio = { _ in captureStartedAfterPreview = previewEnded; return audio }
+        call.testHooks = fixture
+        start(call, id: id)
+        try await wait { audio.capture != nil }
+        XCTAssertTrue(captureStartedAfterPreview)
+    }
+
+    func testPlaybackTimelineAbsorbsJitterWithoutGapsRateChangesOrOverlaps() throws {
+        var timeline = VoicePlaybackTimeline()
+        var end: Int64?
+        // Provider frames cover 100 ms; arrivals alternate between early and
+        // 70 ms late. Immediate playback underruns on every late arrival.
+        for i in 0..<100 {
+            let arrived = Int64(i * 2_400 + (i % 2 == 0 ? 0 : 1_680))
+            let start = try timeline.reserve(frames: 2_400, renderedFrame: arrived)
+            if let end { XCTAssertEqual(start, end) }
+            else { XCTAssertEqual(start, VoicePlaybackTimeline.leadFrames) }
+            end = start + 2_400
+        }
+        XCTAssertEqual(timeline.rebufferCount, 0)
+        let afterStall = end! + 4_800
+        XCTAssertEqual(try timeline.reserve(frames: 2_400, renderedFrame: afterStall), afterStall + VoicePlaybackTimeline.leadFrames)
+        XCTAssertEqual(timeline.rebufferCount, 1)
+        timeline.reset()
+        XCTAssertEqual(try timeline.reserve(frames: 2_400, renderedFrame: 0), VoicePlaybackTimeline.leadFrames)
+        XCTAssertThrowsError(try timeline.reserve(frames: 0, renderedFrame: 0))
+        XCTAssertThrowsError(try timeline.reserve(frames: 96_000, renderedFrame: 0))
+        _ = try timeline.reserve(frames: 48_000, renderedFrame: 0)
+        XCTAssertThrowsError(try timeline.reserve(frames: 48_000, renderedFrame: 0), "Backpressure must stay bounded")
+    }
+
+    func testJitteredPacketsRenderAsContinuousUnchangedPCM() throws {
+        let engine = AVAudioEngine(), player = AVAudioPlayerNode()
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1))
+        engine.attach(player); engine.connect(player, to: engine.mainMixerNode, format: format)
+        try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 240)
+        defer { player.stop(); engine.stop(); engine.disableManualRenderingMode() }
+        try engine.start(); player.play()
+        var timeline = VoicePlaybackTimeline(), packet = 0, rendered: [Float] = []
+        let output = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 240))
+        for tick in 0..<130 {
+            let now = Int64(tick * 240)
+            while packet < 10 && now >= Int64(packet * 2_400 + (packet % 2 == 0 ? 0 : 1_680)) {
+                let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2_400))
+                buffer.frameLength = 2_400
+                for i in 0..<2_400 { buffer.floatChannelData![0][i] = 0.2 }
+                let at = try timeline.reserve(frames: 2_400, renderedFrame: now)
+                player.scheduleBuffer(buffer, at: AVAudioTime(sampleTime: at, atRate: 24_000), completionHandler: nil)
+                packet += 1
+            }
+            XCTAssertEqual(try engine.renderOffline(240, to: output), .success)
+            rendered.append(contentsOf: UnsafeBufferPointer(start: output.floatChannelData![0], count: Int(output.frameLength)))
+        }
+        XCTAssertEqual(packet, 10)
+        let start = Int(VoicePlaybackTimeline.leadFrames)
+        XCTAssertTrue(rendered[..<start].allSatisfy { abs($0) < 0.0001 })
+        XCTAssertTrue(rendered[start..<(start + 24_000)].allSatisfy { abs($0 - 0.2) < 0.0001 }, "No dropouts, clipping, gain boost or changed sample rate across late packets")
+        XCTAssertTrue(rendered[(start + 24_000)...].allSatisfy { abs($0) < 0.0001 })
+    }
+
     func testPermissionGrantWaitsForForegroundBeforeStartingCapture() async throws {
         let call = NativeVoiceCall(), audio = VoiceAudioFixture(), socket = VoiceSocketFixture(), id = UUID().uuidString
         defer { call.end(owner: owner) }

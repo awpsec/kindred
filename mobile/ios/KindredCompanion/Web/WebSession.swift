@@ -275,7 +275,7 @@ final class WebSession: NSObject {
         })();
         """
         let textSize = WebTextSize.script(origin: origin, scale: systemTextScale)
-        controller.addUserScript(WKUserScript(source: source + "\n" + textSize + "\n" + WebDictation.bootstrap(origin: origin) + "\nif(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_VOICE={protocolVersion:1,documentID:window.__KINDRED_IOS_DICTATION.documentID};if(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_FILES={protocolVersion:1,documentID:window.__KINDRED_IOS_DICTATION.documentID};", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        controller.addUserScript(WKUserScript(source: source + "\n" + textSize + "\n" + WebDictation.bootstrap(origin: origin) + "\nif(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_VOICE={protocolVersion:1,previewPlayback:true,documentID:window.__KINDRED_IOS_DICTATION.documentID};if(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_FILES={protocolVersion:1,documentID:window.__KINDRED_IOS_DICTATION.documentID};", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
         // Bundle the presentation layer so an older server still fits an iPhone.
         // The same exact-origin check as the session bootstrap scopes this script.
         if let cssURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "css"),
@@ -726,6 +726,7 @@ final class WebSession: NSObject {
     }
 
     private func invalidateDictationContext(reason: String, preserveVerifiedChat: Bool = false) {
+        NativeVoicePreview.shared.stop(owner: accountID)
         // Folding/reparenting a visible host keeps the call. Account changes do not.
         if reason == "account-changed", !preserveVerifiedChat {
             NativeVoiceCall.shared.end(owner: accountID)
@@ -787,6 +788,7 @@ final class WebSession: NSObject {
                   chatID == self.dictationChatID, !self.nativeNavigationBlocked,
                   self.webView.window != nil, !self.webView.isLoading,
                   UIApplication.shared.applicationState == .active else { return }
+            NativeVoicePreview.shared.stop()
             self.dictation.start(documentID: command.documentID, operationID: operationID, chatID: chatID, locale: command.locale)
         case .stop:
             if let operation = self.dictation.operation, operation.documentID == command.documentID,
@@ -853,6 +855,28 @@ final class WebSession: NSObject {
         guard let action = body["action"] as? String,
               let id = body["id"] as? String, UUID(uuidString: id) != nil,
               let document = body["documentID"] as? String, UUID(uuidString: document) != nil else { return }
+        if action == "previewStop" {
+            NativeVoicePreview.shared.stop(owner: accountID, id: id); return
+        }
+        if action == "preview" {
+            guard !nativeNavigationBlocked, webView.window != nil, !webView.isLoading,
+                  UIApplication.shared.applicationState == .active,
+                  let encoded = body["audio"] as? String, encoded.utf8.count <= 2_000_000,
+                  let data = Data(base64Encoded: encoded) else { return }
+            let generation = dictationDocumentGeneration
+            webView.callAsyncJavaScript("return window.__KINDRED_IOS_VOICE?.documentID===documentID && window.__KINDRED_IOS_VOICE?.previewID===id",
+                arguments: ["documentID": document, "id": id], in: nil, in: .page) { [weak self] result in
+                guard let self, generation == self.dictationDocumentGeneration, !self.nativeNavigationBlocked,
+                      self.webView.window != nil, self.origin.matches(self.webView.url),
+                      UIApplication.shared.applicationState == .active,
+                      case .success(let accepted) = result, accepted as? Bool == true else { return }
+                self.dictation.cancel()
+                NativeVoicePreview.shared.start(id: id, owner: self.accountID, data: data) { [weak self] value in
+                    self?.emitVoice(value, document: document)
+                }
+            }
+            return
+        }
         if action == "status", let snapshot = NativeVoiceCall.shared.snapshot(owner: accountID, id: id) {
             emitVoice(snapshot, document: document); return
         }

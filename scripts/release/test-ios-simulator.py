@@ -102,7 +102,14 @@ VOICE_UI_METHODS = {
         'testConnectingAndEndingStatesDisableUnavailableActions',
         'testMeterHonorsAppReducedMotionAndLivePreferenceChanges',
         'testMeterKeepsPositionsAndUsesBotColorSpeakerShades')
-} | {'ComposerUIKitTests/testNativeCallGlassProjectsRetainedControlsAndRestoresFallback()'}
+} | {'ComposerUIKitTests/testNativeCallGlassProjectsRetainedControlsAndRestoresFallback()'} | {
+    'NativeVoiceCallTests/' + name + '()' for name in (
+        'testVoicePreviewDecodesExactPCMRateAndRejectsInvalidClips',
+        'testVoicePreviewUsesMediaPlaybackAndOwnerScopedCancellation',
+        'testCallReleasesVoicePreviewBeforeCaptureStarts',
+        'testPlaybackTimelineAbsorbsJitterWithoutGapsRateChangesOrOverlaps',
+        'testJitteredPacketsRenderAsContinuousUnchangedPCM')
+}
 
 
 def validate_voice_ui_evidence(exports, summary, tree):
