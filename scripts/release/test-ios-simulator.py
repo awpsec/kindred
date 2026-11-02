@@ -102,7 +102,11 @@ VOICE_UI_METHODS = {
         'testConnectingAndEndingStatesDisableUnavailableActions',
         'testMeterHonorsAppReducedMotionAndLivePreferenceChanges',
         'testMeterKeepsPositionsAndUsesBotColorSpeakerShades')
-} | {'ComposerUIKitTests/testNativeCallGlassProjectsRetainedControlsAndRestoresFallback()'} | {
+} | {
+    'ComposerUIKitTests/testNativeCallGlassProjectsRetainedControlsAndRestoresFallback()',
+    'ComposerUIKitTests/testStoppedPreviewCannotResumeAfterPendingDocumentValidation()',
+    'ComposerUIKitTests/testStaleStopCannotCancelANewerPendingPreview()',
+} | {
     'NativeVoiceCallTests/' + name + '()' for name in (
         'testVoicePreviewDecodesExactPCMRateAndRejectsInvalidClips',
         'testVoicePreviewUsesMediaPlaybackAndOwnerScopedCancellation',

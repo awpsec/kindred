@@ -163,6 +163,57 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         window = nil
     }
 
+    func testStoppedPreviewCannotResumeAfterPendingDocumentValidation() async throws {
+        let playedAfterStop = try await pendingPreviewStartedAfterStop(matchesCurrentRequest: true)
+        XCTAssertFalse(playedAfterStop, "A delayed document-acceptance reply cannot restart a stopped voice preview")
+    }
+
+    func testStaleStopCannotCancelANewerPendingPreview() async throws {
+        let playedAfterStaleStop = try await pendingPreviewStartedAfterStop(matchesCurrentRequest: false)
+        XCTAssertTrue(playedAfterStaleStop, "An old preview's Stop must not cancel the current preview's pending validation")
+    }
+
+    private func pendingPreviewStartedAfterStop(matchesCurrentRequest: Bool) async throws -> Bool {
+        defer { NativeVoicePreview.shared.stop(owner: session.accountID) }
+        // A generated WAV exercises the real preview bridge without opening the
+        // microphone, fetching a provider sample, or changing a saved account.
+        var wav = Data("RIFF".utf8)
+        func little<T: FixedWidthInteger>(_ number: T) {
+            var value = number.littleEndian
+            withUnsafeBytes(of: &value) { wav.append(contentsOf: $0) }
+        }
+        let frames = 12_000
+        little(UInt32(36 + frames * 2)); wav.append(Data("WAVEfmt ".utf8)); little(UInt32(16))
+        little(UInt16(1)); little(UInt16(1)); little(UInt32(24_000)); little(UInt32(48_000))
+        little(UInt16(2)); little(UInt16(16)); wav.append(Data("data".utf8)); little(UInt32(frames * 2))
+        for frame in 0..<frames { little(Int16(sin(Double(frame) * 2 * .pi * 440 / 24_000) * 1_200)) }
+        let id = UUID().uuidString
+        let stoppedID = matchesCurrentRequest ? id : UUID().uuidString
+        _ = try await js("""
+        (()=>{
+          const voice=window.__KINDRED_IOS_VOICE,documentID=voice.documentID,id='\(id)';
+          window.__pendingPreviewEvents=[];window.__pendingPreviewStopped=false;
+          addEventListener('kindred-ios-voice',e=>{if(e.detail.id===id)__pendingPreviewEvents.push(e.detail.type)});
+          voice.previewID=id;
+          // Stop is delivered while native document validation is outstanding.
+          // Returning the previously accepted identity deliberately makes its
+          // later reply stale; cancellation must be enforced natively too.
+          Object.defineProperty(voice,'documentID',{configurable:true,get(){
+            if(!window.__pendingPreviewStopped){window.__pendingPreviewStopped=true;
+              window.webkit.messageHandlers.kindredVoice.postMessage({action:'previewStop',id:'\(stoppedID)',documentID});}
+            return documentID;
+          }});
+          window.webkit.messageHandlers.kindredVoice.postMessage({action:'preview',id,documentID,audio:'\(wav.base64EncodedString())'});
+          return true;
+        })()
+        """)
+        try await waitFor("Stop while native preview validation is pending") {
+            try await self.boolean("window.__pendingPreviewStopped===true")
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        return try await boolean("__pendingPreviewEvents.includes('preview_playing')")
+    }
+
     func testNativeCallGlassProjectsRetainedControlsAndRestoresFallback() async throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Liquid Glass requires iOS 26") }
         // Visible call foreground only: no provider request, microphone or

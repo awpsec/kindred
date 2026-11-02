@@ -8,15 +8,15 @@ m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 class VoiceUIEvidenceTests(unittest.TestCase):
     def setUp(self):
         self.exports = dict(summary=0, tests=0, attachments=0)
-        self.summary = dict(totalTestCount=11, passedTests=11, failedTests=0)
+        self.summary = dict(totalTestCount=13, passedTests=13, failedTests=0)
         self.tree = {'testNodes': [{'nodeType': 'Test Suite', 'children': [
             dict(nodeType='Test Case', nodeIdentifier=key, result='Passed') for key in m.VOICE_UI_METHODS]}]}
 
     def validate(self):
         return m.validate_voice_ui_evidence(self.exports, self.summary, self.tree)
 
-    def test_accepts_all_eleven_native_cases(self):
-        self.assertEqual(self.validate(), 11)
+    def test_accepts_all_thirteen_native_cases(self):
+        self.assertEqual(self.validate(), 13)
 
     def test_rejects_missing_skipped_or_duplicate_case(self):
         cases = self.tree['testNodes'][0]['children']
@@ -37,12 +37,12 @@ class VoiceUIEvidenceTests(unittest.TestCase):
 
     def test_identity_scope_requires_branding_lifecycle_and_voice_cases(self):
         methods = m.IDENTITY_UI_METHODS
-        self.assertEqual(len(methods), 16)
+        self.assertEqual(len(methods), 18)
         self.assertTrue(m.VOICE_UI_METHODS < methods)
         summary = dict(totalTestCount=len(methods), passedTests=len(methods), failedTests=0)
         cases = [dict(nodeType='Test Case', nodeIdentifier=key, result='Passed') for key in methods]
         tree = {'testNodes': cases}
-        self.assertEqual(m.validate_native_methods_evidence(self.exports, summary, tree, methods), 16)
+        self.assertEqual(m.validate_native_methods_evidence(self.exports, summary, tree, methods), 18)
         # The voice-only receipt cannot pass as branding acceptance.
         with self.assertRaises(AssertionError):
             m.validate_native_methods_evidence(self.exports, self.summary, self.tree, methods)

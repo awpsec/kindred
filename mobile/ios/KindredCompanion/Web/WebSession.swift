@@ -74,6 +74,8 @@ final class WebSession: NSObject {
     private var dictationDocumentID: String?
     private var dictationChatID: String?
     private var dictationCommands = DictationCommandQueue()
+    // Stop must also invalidate validation replies received before a player exists.
+    private var voicePreviewRequestID: String?
     static var downloadsFolder: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("Downloads", isDirectory: true)
     }
@@ -726,6 +728,7 @@ final class WebSession: NSObject {
     }
 
     private func invalidateDictationContext(reason: String, preserveVerifiedChat: Bool = false) {
+        voicePreviewRequestID = nil
         NativeVoicePreview.shared.stop(owner: accountID)
         // Folding/reparenting a visible host keeps the call. Account changes do not.
         if reason == "account-changed", !preserveVerifiedChat {
@@ -788,6 +791,7 @@ final class WebSession: NSObject {
                   chatID == self.dictationChatID, !self.nativeNavigationBlocked,
                   self.webView.window != nil, !self.webView.isLoading,
                   UIApplication.shared.applicationState == .active else { return }
+            voicePreviewRequestID = nil
             NativeVoicePreview.shared.stop()
             self.dictation.start(documentID: command.documentID, operationID: operationID, chatID: chatID, locale: command.locale)
         case .stop:
@@ -856,6 +860,7 @@ final class WebSession: NSObject {
               let id = body["id"] as? String, UUID(uuidString: id) != nil,
               let document = body["documentID"] as? String, UUID(uuidString: document) != nil else { return }
         if action == "previewStop" {
+            if voicePreviewRequestID == id { voicePreviewRequestID = nil }
             NativeVoicePreview.shared.stop(owner: accountID, id: id); return
         }
         if action == "preview" {
@@ -863,10 +868,12 @@ final class WebSession: NSObject {
                   UIApplication.shared.applicationState == .active,
                   let encoded = body["audio"] as? String, encoded.utf8.count <= 2_000_000,
                   let data = Data(base64Encoded: encoded) else { return }
+            voicePreviewRequestID = id
             let generation = dictationDocumentGeneration
             webView.callAsyncJavaScript("return window.__KINDRED_IOS_VOICE?.documentID===documentID && window.__KINDRED_IOS_VOICE?.previewID===id",
                 arguments: ["documentID": document, "id": id], in: nil, in: .page) { [weak self] result in
-                guard let self, generation == self.dictationDocumentGeneration, !self.nativeNavigationBlocked,
+                guard let self, generation == self.dictationDocumentGeneration, self.voicePreviewRequestID == id,
+                      !self.nativeNavigationBlocked,
                       self.webView.window != nil, self.origin.matches(self.webView.url),
                       UIApplication.shared.applicationState == .active,
                       case .success(let accepted) = result, accepted as? Bool == true else { return }
@@ -893,6 +900,7 @@ final class WebSession: NSObject {
         webView.callAsyncJavaScript("return window.__KINDRED_IOS_VOICE?.documentID===documentID", arguments: ["documentID":document], in: nil, in: .page) { [weak self] result in
             guard let self, generation == self.dictationDocumentGeneration,
                   self.origin.matches(self.webView.url), case .success(let accepted) = result, accepted as? Bool == true else { return }
+            self.voicePreviewRequestID = nil
             self.dictation.cancel()
             NativeVoiceCall.shared.start(id: id, owner: self.accountID, origin: self.origin.rootURL, ticket: ticket,
                 name: body["botName"] as? String ?? "Bot", shape: body["shape"] as? String ?? "round", color: body["color"] as? String ?? "#2475ff") { [weak self] value in
