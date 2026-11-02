@@ -24,14 +24,19 @@ for(const mode of ['has-files','is-replying','is-answering','is-request-activati
 await p.locator('summary').click();await p.getByRole('button',{name:'Start voice call',exact:true}).click();await p.waitForFunction(()=>document.querySelector('.voice-call-state').textContent.toLowerCase().includes('listening'));assert(await p.getByRole('button',{name:'Send',exact:true}).isVisible(),'typing stays available during a call');assert(await p.evaluate(()=>dictationCancelled));assert.equal(await p.evaluate(()=>ui.canNavigate('dm-two')),false);await p.getByRole('button',{name:'Mute microphone',exact:true}).click();assert.equal(await p.evaluate(()=>sends.filter(s=>s.type==='mute').at(-1).muted),true);await p.waitForFunction(()=>document.querySelector('.voice-call-state').textContent==='Microphone muted');await p.getByRole('button',{name:'Unmute microphone',exact:true}).click();assert.equal(await p.evaluate(()=>sends.filter(s=>s.type==='mute').at(-1).muted),false);
 await p.evaluate(()=>capture.port.onmessage({data:new Int16Array(960).fill(500).buffer}));assert.equal(await p.evaluate(()=>sends.at(-1).type),'audio');
 for(const theme of ['dark','light']){
-  const shades=await p.evaluate(theme=>{
+  const shades=await p.evaluate(async theme=>{
     document.documentElement.dataset.theme=theme;
+    await Promise.resolve();
     const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const c=canvas.getContext('2d');
     const rgba=color=>{c.clearRect(0,0,1,1);c.fillStyle=color;c.fillRect(0,0,1,1);return [...c.getImageData(0,0,1,1).data]};
     return {avatar:rgba(document.querySelector('.voice-avatar').firstElementChild.dataset.avatarColor),input:rgba(getComputedStyle(document.querySelector('.voice-wave-input')).color),output:rgba(getComputedStyle(document.querySelector('.voice-wave-output')).color)};
   },theme);
-  for(const speaker of ['input','output'])assert(shades[speaker].slice(0,3).every((value,i)=>Math.abs(value-shades.avatar[i])<=2),'both speaker shades follow the bot color in '+theme);
-  assert.notEqual(shades.input[3],shades.output[3],'speaker shades remain distinct');
+  for(const speaker of ['input','output']){
+    assert.equal(shades[speaker][3],255,'both active speakers use solid ink in '+theme);
+    const order=shades.avatar.slice(0,3).map((v,i)=>i).sort((a,b)=>shades.avatar[a]-shades.avatar[b]);
+    assert(shades[speaker][order[0]]<=shades[speaker][order[1]]&&shades[speaker][order[1]]<=shades[speaker][order[2]],'shades retain the bot hue');
+  }
+  assert.notDeepEqual(shades.input,shades.output,'speaker shades remain distinct');
 }
 await p.evaluate(()=>document.documentElement.dataset.theme='dark');
 await p.getByRole('button',{name:'Voice options',exact:true}).click();

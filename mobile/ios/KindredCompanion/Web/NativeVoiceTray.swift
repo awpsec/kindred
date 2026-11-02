@@ -4,6 +4,33 @@ import UIKit
 /// replaces only its floating foreground, on real system glass above WebKit.
 @MainActor
 final class NativeVoiceTray: UIView {
+    // Match voiceWaveColors in voice.js. Opaque ink avoids losing the caller's
+    // waveform in the glass material; both shades retain the avatar's hue.
+    static func waveformColors(_ color: UIColor, dark: Bool) -> (input: UIColor, output: UIColor, quiet: UIColor) {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        let rgb = color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            ? [red, green, blue].map { Double(($0 * 255).rounded()) } : [36.0,117,255]
+        let background = dark ? 52.0 : 235.0, foreground = dark ? 255.0 : 0.0
+        func luminance(_ values: [Double]) -> Double {
+            zip(values, [0.2126,0.7152,0.0722]).reduce(0) { sum, pair in
+                let v = pair.0 / 255
+                return sum + (v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)) * pair.1
+            }
+        }
+        let bg = luminance([background,background,background])
+        var output = rgb
+        for step in 0...40 {
+            output = rgb.map { ($0 + (foreground - $0) * Double(step) / 40).rounded() }
+            let l = luminance(output)
+            if (max(l,bg) + 0.05) / (min(l,bg) + 0.05) >= 5 { break }
+        }
+        func blend(_ amount: Double) -> UIColor {
+            let values = output.map { CGFloat(($0 * (1 - amount) + background * amount).rounded() / 255) }
+            return UIColor(red: values[0], green: values[1], blue: values[2], alpha: 1)
+        }
+        return (blend(0.18), blend(0), blend(0.5))
+    }
+
     struct Model {
         struct Item {
             let id: String, label: String
@@ -67,7 +94,7 @@ final class NativeVoiceTray: UIView {
         private let meterLayer = CAShapeLayer()
         var input: [Double] = [], output: [Double] = []
         var reduceMotion = false
-        var color: UIColor = .label
+        var inks = NativeVoiceTray.waveformColors(UIColor(red: 36.0/255, green: 117.0/255, blue: 1, alpha: 1), dark: true)
         override init(frame: CGRect) {
             super.init(frame: frame); isUserInteractionEnabled = false
             isAccessibilityElement = true; accessibilityTraits = .updatesFrequently
@@ -85,11 +112,11 @@ final class NativeVoiceTray: UIView {
             let hearing = input.contains { $0 > 0 }
             let levels = hearing ? input : output
             let quiet = !hearing && !levels.contains { $0 > 0.108 }
-            let ink = color.withAlphaComponent(quiet ? 0.36 : hearing ? 0.62 : 1)
-            let path = UIBezierPath(), bar = min(3, bounds.width / CGFloat(max(1, levels.count)))
+            let ink = quiet ? inks.quiet : hearing ? inks.input : inks.output
+            let path = UIBezierPath(), bar = min(3.5, bounds.width / CGFloat(max(1, levels.count)))
             for (index, level) in levels.enumerated() {
                 let x = levels.count < 2 ? bounds.midX : CGFloat(index) * max(0, bounds.width-bar) / CGFloat(levels.count-1)
-                let h = min(28, bounds.height) * level
+                let h = min(32, bounds.height) * level
                 path.append(UIBezierPath(roundedRect: CGRect(x: x, y: (bounds.height-h)/2, width: bar, height: h), cornerRadius: bar/2))
             }
             let previous = meterLayer.presentation()?.path ?? meterLayer.path
@@ -156,9 +183,9 @@ final class NativeVoiceTray: UIView {
         status.accessibilityLabel = model.label + ", " + model.status
         wave.frame = model.activity; wave.isHidden = model.showingStatus || model.activity.isEmpty
         let rgb = UInt32(model.color.dropFirst(), radix: 16) ?? 0x2475ff
-        wave.color = UIColor(red: CGFloat((rgb >> 16) & 255) / 255,
+        wave.inks = Self.waveformColors(UIColor(red: CGFloat((rgb >> 16) & 255) / 255,
                              green: CGFloat((rgb >> 8) & 255) / 255,
-                             blue: CGFloat(rgb & 255) / 255, alpha: 1)
+                             blue: CGFloat(rgb & 255) / 255, alpha: 1), dark: model.dark)
         wave.reduceMotion = model.reduceMotion
         wave.accessibilityLabel = model.label + ", " + model.status
         for item in model.items {

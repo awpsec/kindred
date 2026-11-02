@@ -172,7 +172,11 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
     await page.waitForTimeout(350);
     const retainedKey=await page.evaluate(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.key);
     await page.evaluate(()=>document.querySelector('.voice-call-tray').dataset.status='false');
-    await page.waitForFunction(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.showingStatus===false,{}, {timeout:1000});
+    try { await page.waitForFunction(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.showingStatus===false,{}, {timeout:1000}); }
+    catch(error) {
+      console.error('Retained tray diagnostics',await page.evaluate(()=>{const t=document.querySelector('.voice-call-tray');return {hidden:t.hidden,status:t.dataset.status,documentHidden:document.hidden,visibility:getComputedStyle(t).visibility,rect:t.getBoundingClientRect().toJSON(),last:nativeMessages.filter(m=>m.action==='glass-controls').slice(-3).map(m=>({sequence:m.sequence,voice:m.voice}))};}));
+      throw error;
+    }
     await page.evaluate(()=>document.querySelector('.voice-mute').setAttribute('aria-pressed','true'));
     await page.waitForFunction(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.muted===true,{}, {timeout:1000});
     assert.equal(await page.evaluate(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.key),retainedKey,'presentation-only state retains native call identity');

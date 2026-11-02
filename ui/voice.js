@@ -7,12 +7,27 @@ export function voiceWaveLevels(input,output,count,reduceMotion=false){
   const clean=value=>Number.isFinite(value)?Math.max(0,Math.min(1,value)):0;
   input=clean(input);output=clean(output);count=Math.max(8,Math.min(40,Math.floor(count)||8));
   const speaker=input>.006?'input':output>.006?'output':'quiet',level=speaker==='input'?input:output;
-  const energy=speaker==='quiet'?0:reduceMotion ? .5 : Math.min(1,Math.sqrt(level)*2.7);
+  const energy=speaker==='quiet'?0:reduceMotion ? .65 : Math.min(1,Math.pow(Math.max(0,level-.004)/.10,.38));
   const shape=Array.from({length:count},(_,i)=>{
     const x=(i+.5)/count,profile=(.48+.52*Math.sin(Math.PI*x))*(.70+.30*Math.cos(i*1.83)**2);
     return Number((.107+.893*energy*profile).toFixed(3));
   });
   return {speaker,input:speaker==='input'?shape:Array(count).fill(0),output:speaker==='input'?Array(count).fill(0):shape};
+}
+// Solid shades stay readable on both the web surface and system glass. Keep
+// this palette in sync with NativeVoiceTray.waveformColors; no audio gain changes.
+export function voiceWaveColors(color,dark=true){
+  const rgb=/^#[\da-f]{6}$/i.test(color||'')?[1,3,5].map(i=>parseInt(color.slice(i,i+2),16)):[36,117,255];
+  const background=dark?52:235,foreground=dark?255:0;
+  const luminance=values=>values.reduce((sum,v,i)=>{v/=255;return sum+(v<=.04045?v/12.92:((v+.055)/1.055)**2.4)*[.2126,.7152,.0722][i];},0);
+  const bg=luminance([background,background,background]);
+  let output=rgb;
+  for(let step=0;step<=40;step++){
+    output=rgb.map(v=>Math.round(v+(foreground-v)*step/40));
+    const l=luminance(output);if((Math.max(l,bg)+.05)/(Math.min(l,bg)+.05)>=5)break;
+  }
+  const hex=values=>'#'+values.map(v=>v.toString(16).padStart(2,'0')).join('');
+  return {output:hex(output),input:hex(output.map(v=>Math.round(v*.82+background*.18))),quiet:hex(output.map(v=>Math.round(v*.5+background*.5)))};
 }
 export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,notice,openSettings,cancelDictation,onEnded=()=>{}}){
   const node=(tag,cls='',text='')=>{const n=document.createElement(tag);n.className=cls;n.textContent=text;return n;};
@@ -303,8 +318,13 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
   function setMuted(value){const op=operation;if(!op||op.phase!=='active')return;op.muted=value;op.lastFrame=Date.now();if(value){op.visualInput=0;paintWave(op);tray.dataset.hearing='false';}if(op.native)postNative('mute',{id:op.id,muted:value});else{op.capture?.port.postMessage({muted:value});op.stream?.getAudioTracks().forEach(t=>t.enabled=!value);if(op.socket?.readyState===1)op.socket.send(JSON.stringify({type:'mute',muted:value}));}render();}
   async function endCall(message){const op=operation;if(!op||op.phase==='ending')return;op.phase='ending';op.endedAt=Date.now();op.error=message;finalCue(op,message);releaseAudio(op);render();if(op.native&&op.id)postNative('end',{id:op.id});else if(op.socket?.readyState===1)op.socket.send(JSON.stringify({type:'end'}));else{complete(op,message);return;}op.timeout=setTimeout(()=>complete(op,message),16000);}
   function reset(){revision++;callOptions?.close();config=null;stopPreview();const old=operation;void endCall();if(old)complete(old);hideTray(true);stopTones();clearTimeout(effectsIdle);void effects?.close().catch(()=>{});effects=null;render();}
-  function syncWaveColor(){wave.style.setProperty('--voice-color',portrait.firstElementChild?.dataset.avatarColor||operation?.bot.profile?.color||'var(--fg)');}
+  function syncWaveColor(){
+    const color=portrait.firstElementChild?.dataset.avatarColor||operation?.bot.profile?.color||'#2475ff';
+    wave.style.setProperty('--voice-color',color);
+    for(const [speaker,ink] of Object.entries(voiceWaveColors(color,document.documentElement.dataset.theme!=='light')))wave.style.setProperty('--voice-ink-'+speaker,ink);
+  }
   new MutationObserver(syncWaveColor).observe(portrait,{subtree:true,attributes:true,attributeFilter:['data-avatar-color']});
+  new MutationObserver(syncWaveColor).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
   window.addEventListener('kindred-ios-voice',e=>{
     const value=e.detail;if(value?.documentID!==window.__KINDRED_IOS_VOICE?.documentID)return;
     if(preview?.native&&value.id===preview.id){

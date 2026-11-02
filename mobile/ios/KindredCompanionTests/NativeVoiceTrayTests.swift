@@ -5,7 +5,7 @@ import WebKit
 @MainActor
 final class NativeVoiceTrayTests: XCTestCase {
     private func model(key: String = UUID().uuidString) -> [String: Any] {
-        ["key": key, "rect": [12.0,12,358,64], "avatar": [12.0,14,36,36], "activity": [58.0,18,134,28],
+        ["key": key, "rect": [12.0,12,358,64], "avatar": [12.0,14,36,36], "activity": [58.0,16,134,32],
          "shape": "cloud", "color": "#2475ff", "label": "Piper · 0:12", "status": "Listening…", "font": 12.0,
          "opacity": 1.0, "dark": true, "muted": false, "showingStatus": false, "interactive": true, "reduceMotion": false,
          "input": [0.0,0.4,0.7], "output": [0.1,0.3,0.1],
@@ -125,16 +125,33 @@ final class NativeVoiceTrayTests: XCTestCase {
         tray.updateMeter(input: zero, output: [0.2,0.8,0.4], animated: false)
         XCTAssertNotEqual(inputInk, layer.fillColor)
         let outputInk = layer.fillColor
-        let botColor = UIColor(red: 36.0/255, green: 117.0/255, blue: 1, alpha: 1)
-        XCTAssertEqual(outputInk, botColor.cgColor, "bot speech uses the call avatar color")
-        XCTAssertEqual(inputInk, botColor.withAlphaComponent(0.62).cgColor, "human speech uses a softer shade of that same color")
+        XCTAssertEqual(inputInk.alpha, 1, "human speech must not fade into the glass")
+        XCTAssertEqual(try XCTUnwrap(outputInk).alpha, 1)
         tray.updateMeter(input: zero, output: Array(repeating: 0.107, count: 3), animated: false)
         XCTAssertNotEqual(outputInk, layer.fillColor)
-        XCTAssertLessThanOrEqual(try XCTUnwrap(layer.path).boundingBox.height, 3.01)
-        row["color"] = "#ef6611"; row["dark"] = false
-        tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
-        tray.updateMeter(input: zero, output: [0.2,0.8,0.4], animated: false)
-        XCTAssertEqual(layer.fillColor, UIColor(red: 239.0/255, green: 102.0/255, blue: 17.0/255, alpha: 1).cgColor,
-                       "an updated avatar changes the retained meter in either theme")
+        XCTAssertLessThanOrEqual(try XCTUnwrap(layer.path).boundingBox.height, 3.5)
+        func luminance(_ color: CGColor) -> Double {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            UIColor(cgColor: color).getRed(&r, green: &g, blue: &b, alpha: &a)
+            return zip([r,g,b], [0.2126,0.7152,0.0722]).reduce(0) { sum, pair in
+                let v = Double(pair.0)
+                return sum + (v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)) * pair.1
+            }
+        }
+        for dark in [true,false] {
+            let background = luminance(UIColor(white: dark ? 52.0/255 : 235.0/255, alpha: 1).cgColor)
+            for color in ["#000000","#ffffff","#2475ff","#7b49d9","#13bcc6","#ff991e","#ee2457","#ffff00"] {
+                row["color"] = color; row["dark"] = dark
+                tray.apply(try XCTUnwrap(NativeVoiceTray.Model(row)))
+                tray.updateMeter(input: zero, output: [0.2,0.8,0.4], animated: false)
+                let bot = try XCTUnwrap(layer.fillColor), botLight = luminance(bot)
+                XCTAssertGreaterThanOrEqual((max(botLight,background)+0.05)/(min(botLight,background)+0.05), 5)
+                tray.updateMeter(input: [0.2,0.8,0.4], output: zero, animated: false)
+                let caller = try XCTUnwrap(layer.fillColor), callerLight = luminance(caller)
+                XCTAssertGreaterThanOrEqual((max(callerLight,background)+0.05)/(min(callerLight,background)+0.05), 3.3)
+                XCTAssertEqual(bot.alpha, 1); XCTAssertEqual(caller.alpha, 1)
+                XCTAssertNotEqual(bot, caller, "speaker identity remains visible for every bot color and theme")
+            }
+        }
     }
 }
