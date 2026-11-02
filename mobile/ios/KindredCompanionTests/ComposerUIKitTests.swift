@@ -265,6 +265,27 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             XCTAssertTrue(session.glassControls.voiceTray === tray)
             XCTAssertEqual(tray.model?.key, callKey, "changing motion must retain the current call identity")
         }
+        let meter = try XCTUnwrap(tray.material.contentView.subviews.flatMap { $0.layer.sublayers ?? [] }
+            .compactMap { $0 as? CAShapeLayer }.first)
+        _ = try await js("const mute=document.querySelector('.voice-mute');mute.setAttribute('aria-pressed','false');mute.setAttribute('aria-label','Mute microphone');true")
+        try await waitFor("native input speaker is unmuted") { tray.model?.muted == false }
+        for speaker in ["output", "input"] {
+            let previousInk = meter.fillColor
+            _ = try await js("document.querySelectorAll('.voice-wave>span').forEach(part=>part.querySelectorAll('i').forEach((bar,i)=>bar.dataset.level=part.classList.contains('voice-wave-\(speaker)')?String((i%7+1)/8):'0'));true")
+            try await waitFor("native \(speaker) speaker ink changes through the meter bridge") {
+                meter.fillColor != previousInk && (meter.path?.boundingBox.height ?? 0) > 16
+            }
+            XCTAssertEqual(meter.fillColor?.alpha, 1)
+            let snapshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+            let shot = XCTAttachment(image: snapshot)
+            shot.name = "Native call Liquid Glass \(speaker) speaker"; shot.lifetime = .keepAlways; add(shot)
+        }
+        let accessibility: [String: Any] = ["systemReduceMotion": UIAccessibility.isReduceMotionEnabled,
+            "systemReduceTransparency": UIAccessibility.isReduceTransparencyEnabled,
+            "appReduceMotion": tray.model?.reduceMotion ?? false,
+            "nativeGlass": tray.material.effect is UIGlassEffect, "botColor": tray.model?.color ?? ""]
+        let flags = XCTAttachment(data: try JSONSerialization.data(withJSONObject: accessibility, options: [.prettyPrinted, .sortedKeys]), uniformTypeIdentifier: "public.json")
+        flags.name = "native-call-accessibility"; flags.lifetime = .keepAlways; add(flags)
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
         let attachment = XCTAttachment(image: image); attachment.name = "Native call Liquid Glass over retained chat"; attachment.lifetime = .keepAlways; add(attachment)
         tray.buttons["end"]?.sendActions(for: .primaryActionTriggered)
