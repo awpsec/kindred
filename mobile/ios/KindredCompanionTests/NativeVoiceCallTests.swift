@@ -556,6 +556,7 @@ final class NativeVoiceCallTests: XCTestCase {
         audio.capture?(Data(count: 1920))
         try await wait { opened == 1 && socket.receiving }
         XCTAssertFalse(events.contains { $0["type"] as? String == "started" })
+        XCTAssertEqual(audio.cues, [.connecting], "Opening the transport must not play the connected chime")
         socket.push(["type": "started"])
         try await wait { audio.cues.contains(.connected) }
         socket.push(["type": "started"])
@@ -814,6 +815,32 @@ final class NativeVoiceCallTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testStartingToneIsDistinctFromTheConnectedChime() throws {
+        func bursts(_ cue: VoiceCallCue) -> [[Float]] {
+            let samples = cue.samples(), audible = samples.indices.filter { abs(samples[$0]) > 0.004 }
+            var ranges: [ClosedRange<Int>] = []
+            for index in audible {
+                if let last = ranges.last, index - last.upperBound < 360 {
+                    ranges[ranges.count - 1] = last.lowerBound...index
+                } else { ranges.append(index...index) }
+            }
+            return ranges.map { Array(samples[$0]) }
+        }
+        func frequency(_ samples: [Float]) throws -> Double {
+            let crossings = samples.indices.dropFirst().filter { samples[$0 - 1] <= 0 && samples[$0] > 0 }
+            let first = try XCTUnwrap(crossings.first), last = try XCTUnwrap(crossings.last)
+            return Double(crossings.count - 1) * 24_000 / Double(last - first)
+        }
+        let waiting = bursts(.connecting), connected = bursts(.connected)
+        XCTAssertEqual(waiting.count, 1, "Starting is one soft waiting tone")
+        XCTAssertEqual(connected.count, 2, "Only an established call gets a rising chime")
+        let low = try frequency(XCTUnwrap(waiting.first))
+        let first = try frequency(XCTUnwrap(connected.first)), last = try frequency(XCTUnwrap(connected.last))
+        XCTAssertLessThan(low, first)
+        XCTAssertLessThan(first, last)
+        XCTAssertLessThan(try XCTUnwrap(waiting.first).map(abs).max() ?? 0, try XCTUnwrap(connected.first).map(abs).max() ?? 0)
     }
 
     func testCueBuffersAreShortQuietAndHaveSoftEdges() {
