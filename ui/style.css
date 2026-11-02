@@ -6364,3 +6364,4 @@ html[data-motion=off] .voice-wave i,html[data-motion=off] .voice-settings summar
 html[data-system-text-size] :is(.settings-dialog,.voice-call-options,.app-detail-dialog) :is(input,textarea,select) {font-size:calc(16px * var(--text-scale,1));}
 /* Primary chat actions share the user's message accent and contrasting ink. */
 #composer :is(#send,.voice-start) {--button:var(--user-bubble);--button-fg:var(--user-fg);color:var(--button-fg);}
+#composer .voice-start {background:var(--user-bubble);color:var(--user-fg);}
