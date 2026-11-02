@@ -41,6 +41,12 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
   editor.focus=options=>active?request(true):originalFocus(options);
   editor.blur=()=>active?request(false):originalBlur();
   const symbol=node=>node.id==='composer-actions'?'plus':node.id==='send'?'arrow.up':node.classList.contains('voice-start')?'waveform':node.classList.contains('dictation-button')?(node.classList.contains('is-recording')?'stop.fill':'mic'):node.classList.contains('composer-image-open')?'photo':/cancel|remove|close/i.test(node.getAttribute('aria-label')||node.title||'')?'xmark':'';
+  const rgb=value=>{const match=value.match(/^rgba?\(([^)]+)\)$/);if(!match)return undefined;const parts=match[1].split(/[,\s/]+/).filter(Boolean).map(Number);return parts.length>=3&&parts.slice(0,3).every(Number.isFinite)?parts.slice(0,3).map(n=>Math.max(0,Math.min(255,n))/255):undefined;};
+  const actionColors=button=>{
+    if(button.id!=='send'&&!button.classList.contains('voice-start'))return {};
+    const css=getComputedStyle(button),surface=button.id==='send'&&document.documentElement.hasAttribute('data-mobile')?getComputedStyle(button,'::before').backgroundColor:css.backgroundColor;
+    return {background:rgb(surface),foreground:rgb(css.color)};
+  };
   const snapshot=covered=>{
     if(covered||!allowed()||!visible(form))return null;
     const next=contextKey();if(!next)return null;
@@ -50,7 +56,7 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
     const suggestions=[form.querySelector('#mention-options:not([hidden])'),commandMenu?.hidden?null:commandMenu].find(visible);
     for(const button of form.querySelectorAll('button')){
       if(!visible(button)||button.closest('#mention-options,.command-options'))continue;
-      const id=key(button);actions.set(id,button);items.push({id,kind:'button',text:(button.getAttribute('aria-label')||button.title||button.textContent).slice(0,4000),symbol:symbol(button),rect:rect(button),font:parseFloat(getComputedStyle(button).fontSize)||16,enabled:!button.disabled,primary:button.id==='send'||button.classList.contains('voice-start')||button.classList.contains('is-primary')&&!form.classList.contains('voice-ready')});
+      const id=key(button);actions.set(id,button);items.push({id,kind:'button',...actionColors(button),text:(button.getAttribute('aria-label')||button.title||button.textContent).slice(0,4000),symbol:symbol(button),rect:rect(button),font:parseFloat(getComputedStyle(button).fontSize)||16,enabled:!button.disabled,primary:button.id==='send'||button.classList.contains('voice-start')||button.classList.contains('is-primary')&&!form.classList.contains('voice-ready')});
     }
     // Non-editing foreground (reply excerpts, filenames and dictation status).
     const walker=document.createTreeWalker(form,NodeFilter.SHOW_TEXT);
