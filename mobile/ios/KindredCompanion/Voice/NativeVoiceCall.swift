@@ -433,20 +433,21 @@ enum VoiceCallCue: Hashable, CaseIterable {
     /// Original soft tones shared with the desktop call UI. These play locally
     /// through the voice-processing graph; they aren't inserted into sent PCM.
     func samples(rate: Double = 24000) -> [Float] {
-        let notes: (Double, Double, Double)
+        let notes: [Double], duration: Double, volume: Double
         switch self {
-        case .connecting: notes = (392, 494, 0.09)
-        case .connected: notes = (523, 659, 0.11)
-        case .ended: notes = (494, 330, 0.12)
-        case .error: notes = (330, 262, 0.14)
+        // A single low waiting tone must not sound like the success chime.
+        case .connecting: notes = [392]; duration = 0.14; volume = 0.045
+        case .connected: notes = [523, 659]; duration = 0.11; volume = 0.065
+        case .ended: notes = [494, 330]; duration = 0.12; volume = 0.065
+        case .error: notes = [330, 262]; duration = 0.14; volume = 0.065
         }
-        let count = Int(notes.2 * rate), gap = Int(0.025 * rate)
-        var output = [Float](repeating: 0, count: count * 2 + gap)
-        for (note, frequency) in [notes.0, notes.1].enumerated() {
+        let count = Int(duration * rate), gap = Int(0.025 * rate)
+        var output = [Float](repeating: 0, count: count * notes.count + gap * (notes.count - 1))
+        for (note, frequency) in notes.enumerated() {
             for frame in 0..<count {
                 let t = Double(frame) / rate
                 let envelope = min(1, min(t / 0.008, Double(count - 1 - frame) / rate / 0.035))
-                output[note * (count + gap) + frame] = Float(sin(2 * .pi * frequency * t) * envelope * 0.065)
+                output[note * (count + gap) + frame] = Float(sin(2 * .pi * frequency * t) * envelope * volume)
             }
         }
         return output

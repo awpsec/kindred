@@ -1,6 +1,6 @@
 // The server owns credentials, the call transcript, private work session and one recap.
 // Tones are original, short state cues, never recordings from another application.
-const callTones={connecting:[[392,0,.09],[494,.12,.09]],connected:[[523,0,.11],[659,.13,.11]],ended:[[494,0,.12],[330,.14,.12]],error:[[330,0,.14],[262,.17,.14]]};
+const callTones={connecting:[[392,0,.14]],connected:[[523,0,.11],[659,.13,.11]],ended:[[494,0,.12],[330,.14,.12]],error:[[330,0,.14],[262,.17,.14]]};
 // Each position has a fixed profile. Only current PCM energy changes its height;
 // this is a meter, never a scrolling recording of previous audio samples.
 export function voiceWaveLevels(input,output,count,reduceMotion=false){
@@ -162,7 +162,7 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     if(op?.native)return;try{
       const {context,ready}=effectsContext();stopTones();const version=cueRevision;
       void ready.then(()=>{if(version!==cueRevision||effects!==context||context.state!=='running'||(operation!==op&&!['ended','error'].includes(kind)))return;
-        for(const [frequency,delay,duration] of callTones[kind]){const source=context.createOscillator(),gain=context.createGain(),at=context.currentTime+.015+delay;source.type='sine';source.frequency.value=frequency;gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(.055,at+.012);gain.gain.exponentialRampToValueAtTime(.0001,at+duration);source.connect(gain).connect(context.destination);cueNodes.set(source,gain);source.onended=()=>{cueNodes.delete(source);source.disconnect();gain.disconnect();idleEffects();};source.start(at);source.stop(at+duration+.015);}
+        for(const [frequency,delay,duration] of callTones[kind]){const source=context.createOscillator(),gain=context.createGain(),at=context.currentTime+.015+delay;source.type='sine';source.frequency.value=frequency;gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(kind==='connecting'?.035:.055,at+.012);gain.gain.exponentialRampToValueAtTime(.0001,at+duration);source.connect(gain).connect(context.destination);cueNodes.set(source,gain);source.onended=()=>{cueNodes.delete(source);source.disconnect();gain.disconnect();idleEffects();};source.start(at);source.stop(at+duration+.015);}
       }).catch(()=>{});
     }catch{} // A cue must never prevent ending or starting a call.
   }
