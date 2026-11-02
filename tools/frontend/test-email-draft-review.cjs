@@ -10,7 +10,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  await page.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
  await page.route(origin+'/api/chats/dm-piper*',r=>r.fulfill({json:{chat:{id:'dm-piper',name:'Piper',members:['piper']},messages:messages(),page:{has_before:false,has_after:false}}}));
  await page.route(origin+'/api/chats/dm-piper/messages*',r=>r.fulfill({json:{messages:messages(),page:{has_before:false,has_after:false}}}));
- await page.route(origin+'/api/connector-artifacts/*',r=>{const v=r.request().postDataJSON();actions.push(v);assert.equal(v.revision,card.revision);if(v.action==='remove_attachments')card.input.attachments=[];else if(v.action==='edit'){Object.assign(card.input,v.fields);fields();}else throw new Error('Preview must never approve a send');card.revision++;return r.fulfill({json:card});});
+ let rejectEdit=true;await page.route(origin+'/api/connector-artifacts/*',r=>{const v=r.request().postDataJSON();actions.push(v);assert.equal(v.revision,card.revision);if(v.action==='edit'&&rejectEdit){rejectEdit=false;return r.fulfill({status:409,json:{error:'This draft changed. Review the current card.'}});}if(v.action==='remove_attachments')card.input.attachments=[];else if(v.action==='edit'){Object.assign(card.input,v.fields);fields();}else if(v.action==='changes')card.status='changes_requested';else if(v.action==='approve')card.status='ready';else throw new Error('Unexpected action');card.revision++;return r.fulfill({json:card});});
  await page.route(origin+'/api/approvals',r=>r.fulfill({json:[{id:'approval-email',run_id:'preview',tool:'claude_connector',status:'pending',args:{artifact_id:card.id},connector_artifact:card}]}));
  await page.route(origin+'/api/runs/preview',r=>r.fulfill({json:{run:{id:'preview',bot_id:'piper',chat_id:'dm-piper',status:'awaiting_approval',prompt:'Review email',output:'',error:'',depth:0,created:1789050000},events:[],attachments:[],approvals:[]}}));
  await page.route(origin+'/api/runs',r=>r.fulfill({json:[{id:'preview',bot_id:'piper',chat_id:'dm-piper',status:'awaiting_approval',prompt:'Review email',output:'',error:'',depth:0,created:1789050000}]}));
@@ -25,7 +25,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  ];});
  assert.deepEqual(senders,['casey@example.invalid','Connected account','casey@example.invalid','Casey <casey@example.invalid>','Connected account']);
  const view=page.locator('[data-connector-artifact="email-review"]');await view.getByText('Email draft · Not sent',{exact:true}).waitFor();assert.equal(await view.locator('.email-notice-recipient').textContent(),'To jordan@example.invalid · 1 attachment');
- await view.locator('.email-notice-preview .email-notice-edit').click();await view.getByRole('form',{name:'Edit email draft'}).getByRole('button',{name:'Close',exact:true}).click();
+ assert(await view.getByRole('button',{name:'Send email',exact:true}).isVisible(),'Send is first-class before Review');await view.locator('.email-notice-preview .email-notice-edit').click();await view.getByRole('form',{name:'Edit email draft'}).getByRole('button',{name:'Close',exact:true}).click();
  assert.equal(await view.locator('.connector-email-subject').count(),0,'Subject appears once in the email header');assert.equal(actions.length,0,'Opening and closing the editor does not save or send');
  await view.getByRole('button',{name:'Close',exact:true}).click();await view.getByRole('button',{name:'Review',exact:true}).click();assert.equal(await view.getByText('<sender.user>',{exact:true}).count(),0);assert.equal(await view.getByText('casey@example.invalid',{exact:true}).count(),1);
  assert.equal(await page.locator('[data-approval="approval-email"]').count(),1,'Only the email card owns this approval');
@@ -34,9 +34,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  await view.getByRole('button',{name:'Edit draft',exact:true}).click();const editor=view.getByRole('form',{name:'Edit email draft'});
  assert(await view.getByRole('button',{name:'Send email',includeHidden:true,exact:true}).isDisabled());
  await view.screenshot({path:path.join(output,'email-editor-light.png')});
- await editor.getByLabel('Message',{exact:true}).fill('Updated draft, still not sent.');await editor.getByRole('button',{name:'Save edits',exact:true}).click();await view.getByText('Updated draft, still not sent.',{exact:true}).waitFor();
+ await editor.getByLabel('Message',{exact:true}).fill('Updated draft, still not sent.');await editor.getByRole('button',{name:'Save edits',exact:true}).click();await editor.getByRole('alert').waitFor();assert.equal(await editor.getByLabel('Message',{exact:true}).inputValue(),'Updated draft, still not sent.','A revision conflict preserves the unsaved draft');await editor.getByRole('button',{name:'Save edits',exact:true}).click();await view.getByText('Updated draft, still not sent.',{exact:true}).waitFor();
  await view.getByRole('button',{name:'Remove attachments',exact:true}).click();await view.getByText('project-summary.pdf',{exact:true}).waitFor({state:'detached'});
- assert.equal(card.status,'pending');assert.deepEqual(actions.map(a=>a.action),['edit','remove_attachments']);
+ assert.equal(card.status,'pending');assert.deepEqual(actions.map(a=>a.action),['edit','edit','remove_attachments']);
  for(const width of [390,1000])for(const scale of [1,1.5]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.setProperty('--text-scale',scale),scale);await page.waitForTimeout(400);const close=await view.getByRole('button',{name:'Close',exact:true}).boundingBox(),send=await view.getByRole('button',{name:'Send email',exact:true}).boundingBox();assert(close&&send);assert(Math.abs(close.y+close.height/2-send.y-send.height/2)<=2,'Email Close and Send stay on the same final row');assert(close.x+close.width<send.x,'Email Send remains right of Close');const secondary=await view.getByRole('button',{name:'Edit draft',exact:true}).boundingBox();assert(secondary.y+secondary.height<=Math.min(close.y,send.y),'Secondary email actions stay above final row');}await page.evaluate(()=>document.documentElement.style.removeProperty('--text-scale'));await page.setViewportSize({width:390,height:900});await view.screenshot({path:path.join(output,'email-draft-mobile.png')});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  // Explicit Save repairs a pre-upgrade stale alternative even when the visible
  // text is unchanged; merely opening/closing still writes nothing.
@@ -58,5 +58,19 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  assert.equal(await view.getByText('opaque-draft-id',{exact:true}).count(),0);
  assert.equal(await page.locator('[data-approval="approval-email"]').count(),1);
  await view.screenshot({path:path.join(output,'email-preview-unavailable.png')});
+ await view.getByRole('button',{name:'Load preview',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.email-load-preview'));
+ assert.equal(actions.at(-1).action,'changes');assert.match(actions.at(-1).feedback,/Do not send it yet/);
+ card.status='pending';card.remote_draft_preview=true;card.body_resave_required=false;
+ card.email={bcc:{text:'review@example.invalid',editable:false},subject:{text:'Draft loaded from connected account',editable:false},body:{text:'The complete message is ready for your review.',editable:false},attachments:[{filename:'report.docx'}]};
+ await page.reload();const send=view.getByRole('button',{name:'Send email',exact:true});await send.waitFor();assert(await send.isEnabled());
+ assert.match(await view.locator('.email-notice-recipient').textContent(),/Bcc review@example.invalid · 1 attachment/);
+ card.email.to={text:'primary@example.invalid',editable:false};card.email.cc={text:'copy@example.invalid',editable:false};await page.reload();await send.waitFor();assert.match(await view.locator('.email-notice-recipient').textContent(),/To primary@example.invalid · Cc copy@example.invalid · Bcc review@example.invalid/);
+ assert.equal(await view.getByRole('button',{name:'Edit draft',exact:true}).count(),0);
+ for(const width of [390,1000,1260]){await page.setViewportSize({width,height:900});await view.screenshot({path:path.join(output,'remote-draft-compact-'+width+'.png')});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
+ await view.getByRole('button',{name:'Review',exact:true}).click();await view.getByText('report.docx',{exact:true}).waitFor();assert.equal(await view.getByRole('button',{name:'Remove attachments',exact:true}).count(),0);
+ await view.getByRole('button',{name:'Close',exact:true}).click();
+ await send.evaluate(b=>{b.click();b.click();});await view.getByText('Sending…',{exact:true}).waitFor();
+ assert.equal(actions.filter(a=>a.action==='approve').length,1,'Double tap sends one approval');
+ assert.deepEqual(card.input,{draft_id:'opaque-draft-id'},'Preview never rewrites provider draft reference');
  console.log('Email draft: saving and removing attachments never send; pending state, light/dark/mobile previews passed');
 }finally{await browser.close();server.closeAllConnections();server.close();}})().catch(e=>{console.error(e);process.exit(1)});

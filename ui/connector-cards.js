@@ -49,7 +49,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  const emailNotice=card.email_send||(!inline&&card.kind==='email'&&(card.email?.body||card.email?.subject));
  const request=!inline&&!emailNotice,leaf=String(card.tool||'').split('__').at(-1),actionTitle=actionTitles[leaf]||leaf||'Connector action';
  const root=el('section','connector-artifact connector-kind-'+card.kind);if(inline)root.classList.add('connector-inline');if(request){root.classList.add('connector-request');root.classList.toggle('connector-request-write',card.read_only!==true&&card.display_read_only!==true);root.classList.toggle('connector-request-pending',card.status==='pending');root.setAttribute('role','group');}root.dataset.connectorArtifact=card.id;if(card.approval_id)root.dataset.approval=card.approval_id;root.setAttribute('aria-label',request?`Approval request: ${actionTitle}`:`${card.connection||card.connector}: ${card.title}`);cardSignatures.set(root,JSON.stringify([card,botName,inline]));
- const previewMissing=card.email_send&&!(card.email?.to?.text&&card.email?.body);
+ const previewMissing=card.email_send&&!(['to','cc','bcc'].some(k=>card.email?.[k]?.text?.trim())&&card.email?.body);
  const header=el('header','connector-artifact-header');const brand=heading(card.connection||card.connector,request?'':card.source,card.tool);
  if(request){const title=el('h3','connector-request-title',actionTitle),logo=brand.querySelector('.connector-logo');if(logo)header.append(logo);header.append(title);}else header.append(brand);
  const status=card.email_send? (card.status==='cancelled'?'Cancelled · Not sent':card.status==='completed'?'Email sent':card.status==='failed'&&card.delivery_state==='not_sent'?'Not sent: the call did not dispatch':['failed','interrupted'].includes(card.status)?'Delivery unknown. Check your Sent folder before sending again.':['approved','ready','executing'].includes(card.status)?'Sending…':'Email draft · Not sent'):card.status==='pending'&&card.email_send?'Draft · not sent':card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
@@ -67,12 +67,12 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   if(Array.isArray(email.attachments)&&email.attachments.length)attachmentValues['attachments']=safeRelated(email.attachments);
   if(Array.isArray(card.input?.message?.attachments))attachmentValues['message.attachments']=safeRelated(card.input.message.attachments);
   if(Object.keys(attachmentValues).length){
-   const list=el('div','connector-email-attachments');const attachments=[...(Array.isArray(card.input?.attachments)?card.input.attachments:[]),...(Array.isArray(card.input?.attachment_ids)?card.input.attachment_ids:[]),...(Array.isArray(card.input?.message?.attachments)?card.input.message.attachments:[])];
-   if(attachments.length){list.append(el('span','muted','Attachments'));for(const item of attachments)list.append(el('span','connector-attachment-chip',typeof item==='string'?'Attached file':item.filename||item.name||item.file_name||'Attached file'));if(pending)list.append(button('Remove attachments',async()=>{try{await act('remove_attachments');}catch(error){showError(list,error);}},'subtle-button'));content.append(list);}
+   const list=el('div','connector-email-attachments');const attachments=card.remote_draft_preview&&Array.isArray(email.attachments)?email.attachments:[...(Array.isArray(card.input?.attachments)?card.input.attachments:[]),...(Array.isArray(card.input?.attachment_ids)?card.input.attachment_ids:[]),...(Array.isArray(card.input?.message?.attachments)?card.input.message.attachments:[])];
+   if(attachments.length){list.append(el('span','muted','Attachments'));for(const item of attachments)list.append(el('span','connector-attachment-chip',typeof item==='string'?'Attached file':item.filename||item.name||item.file_name||'Attached file'));if(pending&&!card.remote_draft_preview)list.append(button('Remove attachments',async()=>{try{await act('remove_attachments');}catch(error){showError(list,error);}},'subtle-button'));content.append(list);}
    else if(Object.values(attachmentValues).some(v=>v&&(!Array.isArray(v)||v.length))){const extra=el('details','connector-extra');extra.append(el('summary','','Attachments and related fields'),details(attachmentValues));content.append(extra);}
   }
  }else if(previewMissing){
-  content.append(el('h3','','Email preview unavailable'),el('p','muted','The connector supplied a draft reference without the recipients or message. Ask your bot to load the draft before sending.'));
+  content.append(el('h3','','Email preview unavailable'),el('p','muted','Load the complete draft to review its recipients and message before sending.'));
  }else{
   if(!request&&(!inline||shown.length===1&&shown[0].title!==card.title))content.append(el('h3','',shown.length===1?shown[0].title:card.title));
   if(!shown.length||request){content.append(details(card.input,undefined,inline,request));if(!content.querySelector('dd'))content.append(el('p','muted','This tool provides no displayable item fields.'));
@@ -112,6 +112,8 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   if(sending)return;const restore=request&&(root.contains(document.activeElement)||document.activeElement===document.body);sending=true;for(const b of root.querySelectorAll('button'))b.disabled=true;
   try{const next=await api('/connector-artifacts/'+encodeURIComponent(card.id),'POST',{action,revision:card.revision,...values});await onChange(next);
    if(restore&&['approve','deny','changes'].includes(action)&&(document.activeElement===document.body||root.contains(document.activeElement))){const current=document.querySelector('[data-connector-artifact="'+CSS.escape(card.id)+'"]');const target=[current?.querySelector('.decision-receipt-summary'),current?.closest('.connector-call')?.querySelector(':scope > summary'),current?.closest('.connector-stack')?.querySelector(':scope > summary'),current?.querySelector('.connector-card-status')].find(n=>n&&n.getClientRects().length);if(target){if(!target.matches('summary'))target.tabIndex=-1;target.focus({preventScroll:true});}}}catch(error){
+   // Keep unsaved editor text when another device changed this revision.
+   if(action==='edit')throw error;
    if(/draft changed|no longer pending|no longer waiting/i.test(error.message||'')){
     await onChange();
     const current=document.querySelector('[data-connector-artifact="'+CSS.escape(card.id)+'"]')||root;
@@ -165,15 +167,15 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   const close=button('Close',()=>{model.open=false;paint();toggle.focus({preventScroll:true});},'subtle-button');close.classList.add('email-review-close');footer.prepend(close);
   const send=[...footer.children].find(b=>b.classList.contains('primary')),secondary=el('div','connector-card-actions email-review-secondary'),final=el('div','email-review-final');
   for(const action of [...footer.children])if(action!==close&&action!==send)secondary.append(action);
-  final.append(close);if(send)final.append(send);footer.replaceChildren(secondary,final);footer.classList.add('email-review-footer');
+  final.append(close);if(pending&&previewMissing)final.append(button('Load preview',()=>act('changes',{feedback:'Load the full email draft using this same connection, then present it for my review again. Do not send it yet.'}),'outline-button email-load-preview'));if(send)final.append(send);footer.replaceChildren(secondary,final);footer.classList.add('email-review-footer');
   if(card.retry_unknown){const warning=el('p','connector-outcome-warning','This may already have been sent. Check your Sent folder before sending again.');footer.before(warning);}
   let disclosureMotion=null;
   function paint(){
    const before=root.isConnected?root.getBoundingClientRect().height:0;disclosureMotion?.cancel();
-   content.hidden=!model.open;footer.hidden=!model.open;root.classList.toggle('email-review-open',model.open);toggle.textContent=model.open?'Hide details':card.status==='completed'?'Details':'Review';toggle.setAttribute('aria-expanded',String(model.open));
+   content.hidden=!model.open;footer.hidden=!model.open&&!(pending&&card.email_send);secondary.hidden=!model.open;close.hidden=!model.open;root.classList.toggle('email-review-open',model.open);toggle.textContent=model.open?'Hide details':card.status==='completed'?'Details':'Review';toggle.setAttribute('aria-expanded',String(model.open));
    preview.replaceChildren();preview.hidden=model.open||card.status==='completed';
    if(!preview.hidden){
-    const to=email.to?.text;if(to)preview.append(el('p','email-notice-recipient',`To ${to}${attachmentCount?' · '+attachmentCount+' '+(attachmentCount===1?'attachment':'attachments'):''}`));
+    const recipients=['to','cc','bcc'].filter(k=>email[k]?.text?.trim()).map(k=>`${fieldNames[k]} ${email[k].text}`).join(' · ');if(recipients)preview.append(el('p','email-notice-recipient',`${recipients}${attachmentCount?' · '+attachmentCount+' '+(attachmentCount===1?'attachment':'attachments'):''}`));if(previewMissing)preview.append(el('p','muted email-preview-missing','The draft needs to be loaded before you can send it.'));
     if(previewText)preview.append(el('p','email-notice-excerpt',previewText.slice(0,360)+(previewText.length>360?'…':'')));
     if(editAction)preview.append(button('Edit draft',()=>{model.open=true;paint();editAction.click();},'subtle-button email-notice-edit'));
    }
