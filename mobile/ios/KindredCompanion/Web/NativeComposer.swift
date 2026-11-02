@@ -10,6 +10,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
             let id: String, kind: String, text: String, symbol: String
             let frame: CGRect, font: CGFloat
             let enabled: Bool, primary: Bool
+            let background: UIColor?, foreground: UIColor?
             let image: Data?
             let title: String?, detail: String, badge: String
             let selected: Bool
@@ -42,6 +43,10 @@ final class NativeComposer: UIView, UITextViewDelegate {
                   let insets=value["inset"] as? [Double],insets.count==4,insets.allSatisfy({$0.isFinite && (0...64).contains($0)}),
                   let dark=value["dark"] as? Bool,let ack=value["ack"] as? Int,ack>=0,
                   let rows=value["items"] as? [[String:Any]],rows.count<=80 else { return nil }
+            func color(_ value: Any?) -> UIColor? {
+                guard let a=value as? [Double],a.count==3,a.allSatisfy({$0.isFinite && (0...1).contains($0)}) else { return nil }
+                return UIColor(red:a[0],green:a[1],blue:a[2],alpha:1)
+            }
             var items:[Item]=[]
             for row in rows {
                 guard let id=row["id"] as? String,id.count<=80,let kind=row["kind"] as? String,["button","suggestion","suggestion-label","label","image"].contains(kind),
@@ -49,7 +54,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
                       let r=rect(row["rect"]),let size=row["font"] as? Double,size.isFinite,(8...64).contains(size) else { return nil }
                 let title=row["title"] as? String,detail=row["detail"] as? String ?? "",badge=row["badge"] as? String ?? ""
                 guard (title?.count ?? 0)<=128,detail.count<=2000,badge.count<=128 else { return nil }
-                items.append(Item(id:id,kind:kind,text:text,symbol:symbol,frame:r,font:size,enabled:row["enabled"] as? Bool != false,primary:row["primary"] as? Bool == true,image:(row["image"] as? String).flatMap { $0.count<=180000 ? Data(base64Encoded:$0) : nil },title:title,detail:detail,badge:badge,selected:row["selected"] as? Bool == true))
+                items.append(Item(id:id,kind:kind,text:text,symbol:symbol,frame:r,font:size,enabled:row["enabled"] as? Bool != false,primary:row["primary"] as? Bool == true,background:color(row["background"]),foreground:color(row["foreground"]),image:(row["image"] as? String).flatMap { $0.count<=180000 ? Data(base64Encoded:$0) : nil },title:title,detail:detail,badge:badge,selected:row["selected"] as? Bool == true))
             }
             guard Set(items.map(\.id)).count==items.count else { return nil }
             if let range=value["selection"] as? [Int] {
@@ -230,11 +235,11 @@ final class NativeComposer: UIView, UITextViewDelegate {
             if node.superview !== parent { node.removeFromSuperview();parent.addSubview(node) }
             if let button=node as? CommandButton { button.apply(item) }
             else if let button=node as? UIButton {
-                let key=[item.symbol,item.text,String(item.primary),String(Double(item.font)),String(next.dark)]
+                let key=[item.symbol,item.text,String(item.primary),String(Double(item.font)),String(next.dark),item.background?.description ?? "",item.foreground?.description ?? ""]
                 if contentKeys[item.id] != key {
                 var config=item.primary ? UIButton.Configuration.filled() : .plain()
-                config.baseBackgroundColor = item.primary ? .label : .clear
-                config.baseForegroundColor = item.primary ? .systemBackground : .label
+                config.baseBackgroundColor = item.primary ? (item.background ?? .label) : .clear
+                config.baseForegroundColor = item.primary ? (item.foreground ?? .systemBackground) : .label
                 config.cornerStyle = .capsule;config.contentInsets = .zero
                 if item.kind=="suggestion" { config.titleAlignment = .leading }
                 if item.primary { config.background.backgroundInsets = NSDirectionalEdgeInsets(top:4,leading:4,bottom:4,trailing:4) }
@@ -249,7 +254,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
                     // The filled primary circle needs opaque contrasting ink.
                     // Glass vibrancy must not turn its template glyph into
                     // the same color as that circle.
-                    config.image=item.primary ? symbol?.withTintColor(next.dark ? .black : .white,renderingMode:.alwaysOriginal) : symbol
+                    config.image=item.primary ? symbol?.withTintColor(item.foreground ?? (next.dark ? .black : .white),renderingMode:.alwaysOriginal) : symbol
                 }
                 button.configuration=config;button.titleLabel?.numberOfLines=item.kind=="suggestion" ? 3 : 1;contentKeys[item.id]=key
                 }
