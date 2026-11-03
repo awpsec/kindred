@@ -60,7 +60,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  await view.screenshot({path:path.join(output,'email-preview-unavailable.png')});
  await view.getByRole('button',{name:'Load preview',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.email-load-preview'));
  assert.equal(actions.at(-1).action,'changes');assert.match(actions.at(-1).feedback,/Do not send it yet/);
- card.status='pending';card.remote_draft_preview=true;card.body_resave_required=false;
+ card.status='pending';card.remote_draft_preview=true;card.body_resave_required=false;card.review_digest='a'.repeat(64);
  card.email={bcc:{text:'review@example.invalid',editable:false},subject:{text:'Draft loaded from connected account',editable:false},body:{text:'The complete message is ready for your review.',editable:false},attachments:[{filename:'report.docx'}]};
  await page.reload();const send=view.getByRole('button',{name:'Send email',exact:true});await send.waitFor();assert(await send.isEnabled());
  assert.match(await view.locator('.email-notice-recipient').textContent(),/Bcc review@example.invalid · 1 attachment/);
@@ -69,7 +69,10 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  for(const width of [390,1000,1260]){await page.setViewportSize({width,height:900});await view.screenshot({path:path.join(output,'remote-draft-compact-'+width+'.png')});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
  await view.getByRole('button',{name:'Review',exact:true}).click();await view.getByText('report.docx',{exact:true}).waitFor();assert.equal(await view.getByRole('button',{name:'Remove attachments',exact:true}).count(),0);
  await view.getByRole('button',{name:'Close',exact:true}).click();
+ card.draft_contract_changed=true;await page.reload();await send.waitFor();assert(await send.isDisabled(),'A changed provider draft cannot be sent from the old review');await view.getByRole('button',{name:'Review',exact:true}).click();await view.getByText('This draft changed after review. Load the updated preview before sending.',{exact:true}).waitFor();
+ card.draft_contract_changed=false;await page.reload();await send.waitFor();
  await send.evaluate(b=>{b.click();b.click();});await view.getByText('Sending…',{exact:true}).waitFor();
+ assert.equal(actions.at(-1).review_digest,card.review_digest,'Approval binds the exact reviewed draft');
  assert.equal(actions.filter(a=>a.action==='approve').length,1,'Double tap sends one approval');
  assert.deepEqual(card.input,{draft_id:'opaque-draft-id'},'Preview never rewrites provider draft reference');
  console.log('Email draft: saving and removing attachments never send; pending state, light/dark/mobile previews passed');

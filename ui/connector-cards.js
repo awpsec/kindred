@@ -49,7 +49,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  const emailNotice=card.email_send||(!inline&&card.kind==='email'&&(card.email?.body||card.email?.subject));
  const request=!inline&&!emailNotice,leaf=String(card.tool||'').split('__').at(-1),actionTitle=actionTitles[leaf]||leaf||'Connector action';
  const root=el('section','connector-artifact connector-kind-'+card.kind);if(inline)root.classList.add('connector-inline');if(request){root.classList.add('connector-request');root.classList.toggle('connector-request-write',card.read_only!==true&&card.display_read_only!==true);root.classList.toggle('connector-request-pending',card.status==='pending');root.setAttribute('role','group');}root.dataset.connectorArtifact=card.id;if(card.approval_id)root.dataset.approval=card.approval_id;root.setAttribute('aria-label',request?`Approval request: ${actionTitle}`:`${card.connection||card.connector}: ${card.title}`);cardSignatures.set(root,JSON.stringify([card,botName,inline]));
- const previewMissing=card.email_send&&!(['to','cc','bcc'].some(k=>card.email?.[k]?.text?.trim())&&card.email?.body);
+ const previewMissing=card.email_send&&(card.draft_contract_changed===true||!(['to','cc','bcc'].some(k=>card.email?.[k]?.text?.trim())&&card.email?.body));
  const header=el('header','connector-artifact-header');const brand=heading(card.connection||card.connector,request?'':card.source,card.tool);
  if(request){const title=el('h3','connector-request-title',actionTitle),logo=brand.querySelector('.connector-logo');if(logo)header.append(logo);header.append(title);}else header.append(brand);
  const status=card.email_send? (card.status==='cancelled'?'Cancelled · Not sent':card.status==='completed'?'Email sent':card.status==='failed'&&card.delivery_state==='not_sent'?'Not sent: the call did not dispatch':['failed','interrupted'].includes(card.status)?'Delivery unknown. Check your Sent folder before sending again.':['approved','ready','executing'].includes(card.status)?'Sending…':'Email draft · Not sent'):card.status==='pending'&&card.email_send?'Draft · not sent':card.status==='completed'&&card.email_send?'Sent · connector confirmed':labels[card.status]||card.status;
@@ -103,6 +103,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   if(card.created)fields['Requested at']=new Date(card.created*1000).toISOString();
   provenance.append(details(fields));content.append(provenance);
  }
+ if(card.draft_contract_changed)content.prepend(el('p','connector-outcome-warning','This draft changed after review. Load the updated preview before sending.'));
  if(card.feedback)content.append(el('p','connector-feedback','Your feedback: '+card.feedback));
  if(!card.email_send&&['failed','interrupted'].includes(card.status))content.append(el('p','connector-outcome-warning',card.read_only===true||card.display_read_only===true?'This lookup did not finish.': 'The final external state is unconfirmed. Check the connected service before retrying a change.'));
  if(card.edited_by_user)content.append(el('p','connector-edit-receipt','Includes your saved edits'));
@@ -110,7 +111,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  const syncActionState=()=>{for(const b of root.querySelectorAll('button'))b.disabled=sending||b.dataset.previewBlocked==='true'||b.dataset.reviewRequested==='true'||(editorOpen&&!b.closest('.connector-card-editor'));};
  const act=async(action,values={})=>{
   if(sending)return;const restore=request&&(root.contains(document.activeElement)||document.activeElement===document.body);sending=true;for(const b of root.querySelectorAll('button'))b.disabled=true;
-  try{const next=await api('/connector-artifacts/'+encodeURIComponent(card.id),'POST',{action,revision:card.revision,...values});await onChange(next);
+  try{const next=await api('/connector-artifacts/'+encodeURIComponent(card.id),'POST',{action,revision:card.revision,...(card.review_digest?{review_digest:card.review_digest}:{}),...values});await onChange(next);
    if(restore&&['approve','deny','changes'].includes(action)&&(document.activeElement===document.body||root.contains(document.activeElement))){const current=document.querySelector('[data-connector-artifact="'+CSS.escape(card.id)+'"]');const target=[current?.querySelector('.decision-receipt-summary'),current?.closest('.connector-call')?.querySelector(':scope > summary'),current?.closest('.connector-stack')?.querySelector(':scope > summary'),current?.querySelector('.connector-card-status')].find(n=>n&&n.getClientRects().length);if(target){if(!target.matches('summary'))target.tabIndex=-1;target.focus({preventScroll:true});}}}catch(error){
    // Keep unsaved editor text when another device changed this revision.
    if(action==='edit')throw error;

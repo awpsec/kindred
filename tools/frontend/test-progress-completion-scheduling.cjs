@@ -29,6 +29,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    c=await reset();finish('cancelled');await pause(380);result.cancelled={closed:!c.details.open,label:c.summary.textContent,calls:c.calls()};
    // Old callbacks cannot act on a replacement revision even before its timer.
    c=await reset();finish();const stale=held.at(-1);show();run={...run,id:'newer-'+serial,status:'running'};show();stale(performance.now());await pause(380);result.staleRevision={open:c.details.open,run:c.group._progressRunId,expected:run.id,calls:c.calls()};
+   // A pending question can be outside the loaded transcript page. Its durable
+   // projection must keep a completed producer awaiting the user's answer.
+   c=await reset();finish();entry.waitingStates=[{run_id:run.id,kind:'question',label:'Waiting for your answer',reasons:[{kind:'question',ids:['offscreen-question']}]}];show();
+   result.offscreenQuestion={finished:c.group.dataset.progressFinished,label:c.group.textContent};
+   entry.waitingStates=[];show();result.dismissedQuestion={finished:c.group.dataset.progressFinished};
+   delete entry.waitingStates;
    window.requestAnimationFrame=raf;return result;
   });
   fs.writeFileSync(path.join(out,engine+'-completion-observed.json'),JSON.stringify({engine,results,errors},null,2));
@@ -40,6 +46,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   assert.deepEqual(results.currentState,{open:true,calls:0});assert.deepEqual(results.detached,{open:true,calls:0,pending:true});
   assert(results.cancelled.closed&&results.cancelled.label.includes('Stopped')&&!results.cancelled.label.includes('Finished')&&results.cancelled.calls===1);
   assert(results.staleRevision.open&&results.staleRevision.run===results.staleRevision.expected&&results.staleRevision.calls===0);
+  assert.equal(results.offscreenQuestion.finished,'false');assert.match(results.offscreenQuestion.label,/Waiting for your answer/);assert.equal(results.dismissedQuestion.finished,'true');
   assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,engine+'-completion.json'),JSON.stringify({engine,results,errors},null,2));console.log(JSON.stringify({passed:true,engine,results}));
  }finally{await browser.close();server.closeAllConnections?.();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

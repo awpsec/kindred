@@ -1329,13 +1329,18 @@ function renderHeader() {
 }
 function installedClientVersion(){return typeof window.__KINDRED_DESKTOP_VERSION==='string'?window.__KINDRED_DESKTOP_VERSION:null;}
 function renderVersions(){
-  const client=installedClientVersion(),desktop=!!window.__KINDRED_DESKTOP;
+  const client=installedClientVersion(),desktop=!!window.__KINDRED_DESKTOP,ios=window.__KINDRED_IOS_APP_VERSION;
+  const installed=client||(typeof ios==='string'?ios.match(/^iOS (\d+\.\d+\.\d+)/)?.[1]:null);
   $('version').textContent=(desktop?'Client ':'Browser UI ')+(desktop?(client||'Unknown'):UI_VERSION);
   $('server-version').textContent='Server '+(state.status.version||'Connecting…');
-  for(const n of document.querySelectorAll('[data-client-version]'))n.textContent=desktop?(client||'Unknown'):('Browser UI '+UI_VERSION);
+  for(const n of document.querySelectorAll('[data-client-version]'))n.textContent=desktop?(client||'Unknown'):(ios||('Browser UI '+UI_VERSION));
   for(const n of document.querySelectorAll('[data-server-version]'))n.textContent=state.status.version||'Connecting…';
   for(const n of document.querySelectorAll('[data-client-update-status]')){
     n.textContent=state.updateRelease?'Desktop app '+state.updateRelease.version+' is available.':desktop&&client&&newerVersion(state.status.version,client)?'The connected server is newer than this desktop app. Check for an app update.':'';
+  }
+  for(const n of document.querySelectorAll('[data-installation-status]')){
+    n.textContent=installed&&newerVersion(installed,state.status.version)?'This server is older than your app. Update this connected server in Server admin → Updates; updating another server does not update this workspace.':installed&&newerVersion(state.status.version,installed)?'This device uses an older app than the connected server. Update this device separately.':'';
+    n.hidden=!n.textContent;
   }
   for(const n of document.querySelectorAll('[data-client-update-action]')){n.hidden=!state.updateRelease;n.textContent=canInstallClientUpdate()?'Update desktop app':'Download app update';}
 }
@@ -2478,7 +2483,8 @@ async function settingsGeneral(revision) {
   if(!window.KindredReadingSize.systemManaged){textSize.setAttribute('aria-label','Text size');textSize.onchange=()=>window.KindredReadingSize.set(textSize.value);}
   const textRow=settingRow('Text size',textSize);textRow.classList.toggle('system-text-size',window.KindredReadingSize.systemManaged);textRow.dataset.devicePreference='true';appearance.body.append(textRow);
   const versions=settingsPane('Versions');versions.root.dataset.devicePreference='true';
-  const clientVersion=node('span'),serverVersion=node('span'),updateStatus=node('p','muted small');
+  const clientVersion=node('span'),serverVersion=node('span'),updateStatus=node('p','muted small'),installationStatus=node('p','muted small');
+  installationStatus.dataset.installationStatus='';installationStatus.setAttribute('role','status');
   clientVersion.dataset.clientVersion='';serverVersion.dataset.serverVersion='';updateStatus.dataset.clientUpdateStatus='';
   const updateActions=node('div','version-actions');
   if(window.__KINDRED_DESKTOP){
@@ -2486,7 +2492,7 @@ async function settingsGeneral(revision) {
     const updateAction=button('Update desktop app',()=>clientUpdateAction(),'outline-button','download');updateAction.dataset.clientUpdateAction='';updateActions.append(updateAction);
   }
   if(!window.__KINDRED_DESKTOP)updateActions.append(button('Check for updates',()=>browserUpdater.open(),'outline-button','refresh'));
-  versions.body.append(settingRow(window.__KINDRED_DESKTOP?'Desktop app on this device':'Browser interface',clientVersion),settingRow('Connected server',serverVersion,location.host),updateStatus,updateActions);
+  versions.body.append(settingRow(window.__KINDRED_DESKTOP?'Desktop app on this device':window.__KINDRED_IOS_APP_VERSION?'iOS app on this device':'Browser interface',clientVersion),settingRow('Connected server',serverVersion,location.host),installationStatus,updateStatus,updateActions);
   if(window.__KINDRED_DESKTOP&&!window.__KINDRED_NATIVE_UPDATER&&!window.__KINDRED_SERVER_UPDATER)versions.body.append(node('p','muted small','This installed client predates in-app updates. Download the client from this server and install it once to enable future in-place updates.'));
   const system=settingsPane('System');system.root.dataset.devicePreference='true';
   if(window.__KINDRED_DESKTOP?.platform==='linux'&&window.__KINDRED_LINUX_UPDATER){
@@ -5317,12 +5323,13 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   const currentRunId=memberRuns.at(-1)||first.run_id,run=[...runs,...state.allRuns].find(r=>r.id===currentRunId)||state.details.get(currentRunId)?.run;
   const activity=items.map(m=>m.progress.activity).filter(Boolean).at(-1);
   const phaseFinal=entry.messages.findLast(m=>m.progress?.group_id===key&&m.progress.phase==='final_answer'&&m.run_id===currentRunId);
-  const waiting=questions.some(m=>m.question.status==='pending');
+  const projectedWait=entry.waitingStates?.find(w=>w.run_id===currentRunId),humanWait=projectedWait?.reasons?.some(w=>['approval','user','question'].includes(w.kind));
+  const waiting=entry.waitingStates?!!humanWait:questions.some(m=>m.question.status==='pending');
   entry.progressOpen??=new Set();entry.progressClosed??=new Set();entry.taskTerminalRuns??=new Map();
   // Terminal state is sticky for this phase. A delayed reconnect snapshot must
   // not resurrect it; an explicit continuation has its own live run evidence.
   const terminalKey=JSON.stringify([key,currentRunId]),terminal=entry.taskTerminalRuns.get(terminalKey),endedEvent=state.details.get(run?.id)?.events?.findLast(e=>e.kind==='run_finished');
-  const finished=!!terminal||(!waiting&&(!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued')));
+  const finished=!waiting&&(!!terminal||!!phaseFinal||!!(run&&!active(run)&&run.status!=='queued'));
   // Parent-only history pages must not erase a child's terminal receipt. Keep
   // recent phase/run pairs within the existing conversation-window bound.
   if(finished){
@@ -5346,7 +5353,7 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
     if(finished)delete avatar.dataset.botId;
     avatar.setAttribute('aria-hidden','true');title.append(avatar,node('span','summary-progress-author',bot.name));
   }
-  const status=finished?({completed:'Finished',failed:'Failed',cancelled:'Stopped',interrupted:'Interrupted'}[(terminal?.status||run?.status)]||'Finished'):!run?'Recorded activity':(waiting||run?.status==='awaiting_user')?(pendingHumanTask(run.bot_id)?.run_id===run.id?'Needs you':'Waiting for your answer'):(run?.status==='cancelling'||stoppingTasks.has(run?.id))?'Stopping':run?.status==='awaiting_approval'?'Waiting for your approval':run?.status==='queued'?'Queued':null;
+  const status=finished?({completed:'Finished',failed:'Failed',cancelled:'Stopped',interrupted:'Interrupted'}[(terminal?.status||run?.status)]||'Finished'):!run?'Recorded activity':humanWait?projectedWait.label:(waiting||run?.status==='awaiting_user')?(pendingHumanTask(run.bot_id)?.run_id===run.id?'Needs you':'Waiting for your answer'):(run?.status==='cancelling'||stoppingTasks.has(run?.id))?'Stopping':run?.status==='awaiting_approval'?'Waiting for your approval':run?.status==='queued'?'Queued':null;
   const live=!finished&&run&&(active(run)||run.status==='queued')&&ownsRun(run.id,run.bot_id,key);
   const waits=live?ownedWaits.filter(w=>w.parent_run_id===currentRunId):[];
   group._progressWaits=waits;
@@ -5826,7 +5833,7 @@ function messagePage(entry,query={},signal){
   return api('/chats/'+entry.id+'?'+new URLSearchParams({limit:CHAT_PAGE_SIZE,...query}),'GET',undefined,{signal});
 }
 function acceptHistoryPage(entry,data){
-  entry.pendingWaits=data.pending_waits||[];entry.commands=data.commands||[];entry.sharedWorkers=data.workers||[];
+  entry.pendingWaits=data.pending_waits||[];entry.waitingStates=data.waiting_states;entry.commands=data.commands||[];entry.sharedWorkers=data.workers||[];
   entry.messages=data.messages.slice(-CHAT_WINDOW_SIZE);entry.loaded=true;
   entry.hasBefore=!!data.page?.has_before;entry.hasAfter=!!data.page?.has_after;entry.error=null;entry.wantLatest=false;
 }
@@ -5843,7 +5850,7 @@ async function syncChatHistory(entry,signal){
   entry.pending=(async()=>{
     const data=await messagePage(entry,query,signal);
     if(opening)boundary.fetched=true;
-    entry.pendingWaits=data.pending_waits||[];entry.commands=data.commands||[];
+    entry.pendingWaits=data.pending_waits||[];entry.waitingStates=data.waiting_states;entry.commands=data.commands||[];
     // A reading gesture during a tail refresh takes precedence over removing its anchor.
     const anchor=chatScroll.view===entry.id && !chatScroll.follow && chatScroll.anchor?.key;
     const members=new Set(chatScroll.anchor?.members||[anchor]);
