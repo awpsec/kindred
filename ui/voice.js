@@ -29,7 +29,7 @@ export function voiceWaveColors(color,dark=true){
   const hex=values=>'#'+values.map(v=>v.toString(16).padStart(2,'0')).join('');
   return {output:hex(output),input:hex(output.map(v=>Math.round(v*.82+background*.18))),quiet:hex(output.map(v=>Math.round(v*.5+background*.5)))};
 }
-export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,notice,openSettings,cancelDictation,onEnded=()=>{}}){
+export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,notice,openSettings,cancelDictation,microphone=()=> 'default',onEnded=()=>{}}){
   const node=(tag,cls='',text='')=>{const n=document.createElement(tag);n.className=cls;n.textContent=text;return n;};
   const button=(label,symbol,run,cls='')=>{const b=node('button','voice-control '+cls);b.type='button';b.title=label;b.setAttribute('aria-label',label);b.append(icon(symbol,18));b.onclick=run;return b;};
   let config=null,settings=null,callOptions=null,revision=0,operation=null,clock=null,preview=null,effects=null,effectsIdle=null,cueRevision=0,trayMotion=null,trayClosing=false,positionFrame=0,waveCount=0;
@@ -269,7 +269,10 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     // WebKit needs activation in the click, not after the permission prompt. Use
     // the device's rate; the worklet converts every supported rate to 24 kHz.
     op.audio=audioContext();const unlocked=op.audio.resume();unlocked.catch(()=>{});
-    op.stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});
+    // Calls and dictation share the device-local input selection. An explicit
+    // device must fail visibly when unavailable, never capture another input.
+    const selected=microphone();
+    op.stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true,...(selected&&selected!=='default'?{deviceId:{exact:selected}}:{})},video:false});
     if(operation!==op){releaseAudio(op);return;}
     await bounded(unlocked,3000,'Microphone audio is paused. Call again to reconnect.');
     await bounded(op.audio.resume(),3000,'Microphone audio is paused. Call again to reconnect.');
@@ -313,7 +316,7 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
       const socket=op.socket=new WebSocket(url);socket.onmessage=e=>{try{event(op,JSON.parse(e.data));}catch{void endCall('The call connection returned unreadable data.');}};
       socket.onclose=()=>{if(operation===op)complete(op,op.phase==='ending'?op.error:'Call disconnected. The transcript so far is kept.');};socket.onerror=()=>{op.error='Could not connect the call. Check your OpenAI API key and connection.';};
       socket.onopen=()=>{if(operation!==op){socket.close();return;}op.ping=setInterval(()=>{if(socket.readyState===1)socket.send(JSON.stringify({type:'ping'}));},10000);};
-    }catch(e){if(operation===op)complete(op,e.name==='NotAllowedError'?'Allow microphone access to make a call.':e.message||'The call could not start.');else releaseAudio(op);}
+    }catch(e){if(operation===op)complete(op,e.name==='NotAllowedError'?'Allow microphone access to make a call.':['NotFoundError','OverconstrainedError'].includes(e.name)?'The selected microphone is unavailable. Choose another microphone or System Default in General settings.':e.message||'The call could not start.');else releaseAudio(op);}
   }
   function setMuted(value){const op=operation;if(!op||op.phase!=='active')return;op.muted=value;op.lastFrame=Date.now();if(value){op.visualInput=0;paintWave(op);tray.dataset.hearing='false';}if(op.native)postNative('mute',{id:op.id,muted:value});else{op.capture?.port.postMessage({muted:value});op.stream?.getAudioTracks().forEach(t=>t.enabled=!value);if(op.socket?.readyState===1)op.socket.send(JSON.stringify({type:'mute',muted:value}));}render();}
   async function endCall(message){const op=operation;if(!op||op.phase==='ending')return;op.phase='ending';op.endedAt=Date.now();op.error=message;finalCue(op,message);releaseAudio(op);render();if(op.native&&op.id)postNative('end',{id:op.id});else if(op.socket?.readyState===1)op.socket.send(JSON.stringify({type:'end'}));else{complete(op,message);return;}op.timeout=setTimeout(()=>complete(op,message),16000);}

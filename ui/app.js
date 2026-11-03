@@ -9735,7 +9735,7 @@ initPaneResizing();
 
 new MutationObserver(()=>{if(questionComposerMode())syncQuestionComposer();}).observe($('send'),{attributes:true,attributeFilter:['disabled']});
 dictationUI=createDictationUI({editor:$("prompt"),send:$("send"),composer:$("composer"),api,nativeInvoke,chatId:composerChatId,hasFiles:()=>!!pendingFiles.get(composerChatId())?.length,notice,icon,openrouterConfigured:()=>state.connections?.openrouter_configured===true,accountId:()=>{try{return JSON.parse(sessionStorage.getItem('kindred-signin-identity')||'{}').profileId||window.__KINDRED_INITIAL_PROFILE||'legacy';}catch{return 'legacy';}}});
-voiceUI=createVoiceUI({api,composer:$("composer"),editor:$("prompt"),send:$("send"),bot:()=>state.bot,chatId:composerChatId,icon,avatar:b=>character(b.profile,36),notice,openSettings,cancelDictation:()=>dictationUI.cancel(),onEnded:()=>void refresh(true)});
+voiceUI=createVoiceUI({api,composer:$("composer"),editor:$("prompt"),send:$("send"),bot:()=>state.bot,chatId:composerChatId,icon,avatar:b=>character(b.profile,36),notice,openSettings,cancelDictation:()=>dictationUI.cancel(),microphone:()=>dictationUI.microphone(),onEnded:()=>void refresh(true)});
 $("composer").addEventListener("kindred-voice-layout",()=>updateComposerLayout());
 
 function workflowOptions(chatId,panel){return {
