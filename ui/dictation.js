@@ -531,7 +531,7 @@ export function createDictationUI({editor,send,composer,nativeInvoke,api,chatId,
     }catch(e){if(settings===root&&root.isConnected){statusMessage.textContent=e.message;statusMessage.hidden=false;retry.hidden=false;}}};
     retry.onclick=()=>void check();renderSettingsStatus();if(available()&&!usesCloud())void check();if(usesCloud())void loadCloudModels();return root;
   }
-  render();return {init:()=>{loadCloud();return configure().catch(fail);},cancel,render,settingsSection,microphoneControl};
+  render();return {init:()=>{loadCloud();return configure().catch(fail);},cancel,render,settingsSection,microphoneControl,microphone:()=>preferences.microphone};
 }
 
 export function encodeWav(chunks,rate){
