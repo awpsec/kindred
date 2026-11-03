@@ -59,6 +59,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   assert.equal(await p.locator('[data-user-task="login"]').count(),1,'Finishing the job preserves one handoff receipt');assert(!await row.isVisible(),'Finished job keeps the resolved handoff in its collapsed history');
   finished=false;messages.pop();
   pending=true;await p.reload();await row.waitFor();await p.emulateMedia({reducedMotion:'reduce'});pending=false;await p.evaluate(()=>window.attentionRefresh());assert.equal(await p.locator('.connector-transfer-ghost,.connector-transfer-space').count(),0,'Reduced motion settles directly');
+  // Brief work still exposes a needed human action, without a long-job shell.
+  pending=true;progress.presentation={mode:'compact',stages:[],promoted:false};progress.activity={completed:1,seconds:50,recent:[]};
+  await p.reload();await row.waitFor();assert.equal(await p.locator('.summary-progress').count(),0);assert(await row.getByRole('button',{name:'Take over',exact:true}).isVisible());assert(await legacy.isVisible());
   assert.deepEqual(errors,[]);results.push({width,mobile,expanded,pendingVisible:true,resolvedNested:true,noReplay:true,reducedMotion:true});
   await context.close();
  }

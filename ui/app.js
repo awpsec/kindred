@@ -5119,7 +5119,18 @@ function reminderWhen(reminder){
 function isProgressMember(m){
   return ['assistant','task_progress'].includes(m.kind)&&m.progress?.mode==='summaries'&&m.progress.phase==='commentary'&&m.progress.work_qualified!==false&&m.progress.run_id===m.run_id&&m.progress.group_id&&!m.status_notice;
 }
-function progressGroups(messages){
+// Tool use establishes ownership, not the need for a long-job disclosure.
+// Use the recorded work span rather than queue age or a client-side timer, and
+// retain an earned disclosure through partial refreshes of the same group.
+function substantialProgress(items){
+  if(items.some(m=>{const p=m.progress?.presentation;return Array.isArray(p?.stages)&&p.stages.length>=2&&p.stages.length<=8&&p.stages.every(s=>typeof s==='string'&&s.trim());}))return true;
+  const evidence=items.map(m=>m.progress?.activity).filter(a=>a&&Number.isFinite(a.seconds)&&Number.isFinite(a.completed));
+  // Older servers did not supply activity evidence. Preserve their persisted
+  // disclosures instead of inventing a classification from message prose.
+  if(!evidence.length)return true;
+  return evidence.some(a=>a.seconds>=180&&a.completed>=3);
+}
+function progressGroups(messages,entry=null){
   const groups=new Map();
   for(const m of messages)if(isProgressMember(m)){const items=groups.get(m.progress.group_id)||[];items.push(m);groups.set(m.progress.group_id,items);}
   for(const [key,items] of groups){
@@ -5132,6 +5143,12 @@ function progressGroups(messages){
     const marker=source.progress.marker;
     const owned=items.filter(m=>m.sender===marker.sender);groups.set(key,owned);
     owned.unshift({seq:marker.seq,created:marker.created,sender:marker.sender,run_id:marker.run_id,kind:'task_progress',text:'',projectedProgress:true,progress:{...source.progress,run_id:marker.run_id,task_title:marker.task_title||source.progress.task_title}});
+  }
+  // Only validated, same-bot group members can supply work evidence.
+  for(const [key,items] of groups){
+    const substantial=substantialProgress(items);
+    if(!substantial&&!entry?.trackedProgressGroups?.has(key)){groups.delete(key);continue;}
+    if(substantial&&entry){entry.trackedProgressGroups??=new Set();entry.trackedProgressGroups.add(key);while(entry.trackedProgressGroups.size>CHAT_WINDOW_SIZE)entry.trackedProgressGroups.delete(entry.trackedProgressGroups.values().next().value);}
   }
   return groups;
 }
@@ -6005,7 +6022,7 @@ function renderRequestTray(chat,entry){
   const title=heading?.textContent||'Review request';
   tray.classList.toggle('is-answering',isAnswering);tray.classList.toggle('is-minimized',model.minimized&&!isAnswering);
   tray.setAttribute('aria-label',isAnswering?'Answering: '+title:'Pending requests');
-  if(model.minimized&&!isAnswering&&requests.length===1&&item.q&&[...progressGroups(entry.messages||[]).values()].some(items=>taskQuestions(items,entry).some(m=>m.question.id===item.q.id))){tray.hidden=true;if(focused)focusTaskQuestion(item.q.id);return;}
+  if(model.minimized&&!isAnswering&&requests.length===1&&item.q&&[...progressGroups(entry.messages||[],entry).values()].some(items=>taskQuestions(items,entry).some(m=>m.question.id===item.q.id))){tray.hidden=true;if(focused)focusTaskQuestion(item.q.id);return;}
   if(model.minimized&&!isAnswering){
     const expand=button('',()=>{model.minimized=false;renderRequestTray(chat,entry);},'request-tray-expand');
     expand.setAttribute('aria-label',requests.length+' pending request'+(requests.length===1?'':'s'));
@@ -6289,7 +6306,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   const remainingAttachments=files=>(files||[]).filter(file=>{if(attachmentPlan.projected.has(file.id)||fallbackAttachments.has(file.id))return false;fallbackAttachments.add(file.id);return true;});
   const transcript=data.messages.flatMap((m,i)=>[...(attachmentPlan.rows.get(i)||[]).map(attachment=>({kind:'shared_attachment',text:'Shared file',attachment})),m]);
   transcript.push(...(attachmentPlan.rows.get(data.messages.length)||[]).map(attachment=>({kind:'shared_attachment',text:'Shared file',attachment})));
-  const batches=connectorBatches(transcript,boundary,runs),artifactBatches=artifactUpdateBatches(transcript),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
+  const batches=connectorBatches(transcript,boundary,runs),artifactBatches=artifactUpdateBatches(transcript),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages,entry),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
   // A run/bot pair must name exactly one persisted task. Ambiguous or absent
   // ownership keeps the standalone status instead of hiding unrelated work.
   const taskOwners=new Map();
