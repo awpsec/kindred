@@ -27,7 +27,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
       window.WebSocket=class{constructor(){this.readyState=0;this.bufferedAmount=0;setTimeout(()=>{this.readyState=1;this.onopen?.();this.onmessage?.({data:JSON.stringify({type:'started',started_ms:Date.now()})})},0)}send(text){const v=JSON.parse(text);sends.push(v);if(v.type==='end')setTimeout(()=>this.onmessage?.({data:JSON.stringify({type:'ended',saved:true})}),0)}close(){this.readyState=3;this.onclose?.()}};
     },token);
     await page.goto(origin);await page.getByRole('button',{name:'Start voice call',exact:true}).waitFor();
-    const start=async()=>{await page.getByRole('button',{name:'Start voice call',exact:true}).click();await page.getByRole('button',{name:'Mute microphone',exact:true}).waitFor();};
+    const start=async()=>{await page.getByRole('button',{name:'Start voice call',exact:true}).click();await page.getByRole('button',{name:'Mute microphone',exact:true}).waitFor();await page.waitForFunction(()=>document.querySelector('.voice-mute')?.disabled===false);};
     const end=async()=>{await page.getByRole('button',{name:'End call',exact:true}).click();await page.getByRole('button',{name:'Start voice call',exact:true}).waitFor();};
     await start();assert.deepEqual(await page.evaluate(()=>mediaRequests.at(-1).audio.deviceId),{exact:'hyperx-fixture'},'call must capture the saved explicit input, not system default');
     await page.waitForFunction(()=>sends.filter(m=>m.type==='audio').length>=3);assert(await page.getByRole('button',{name:'End call',exact:true}).isVisible(),'valid silent PCM must keep the call connected');await end();
