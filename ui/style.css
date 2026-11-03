@@ -1533,13 +1533,13 @@ input[type="checkbox"]:checked::after {
   justify-self: start;
 }
 .identity-row { display:flex; align-items:center; gap:4px; }
-.identity-row .identity-button { flex:1; min-width:0; }
-.update-slot { position:relative; width:32px; height:32px; flex:none; }
-.client-update { position:absolute; right:0; top:0; height:30px; width:30px; display:flex; align-items:center; gap:6px; padding:0 7px; border-radius:16px; overflow:hidden; background:var(--button); color:var(--button-fg); transition:width .2s ease,background .15s; white-space:nowrap; }
+.identity-row .identity-button { flex:1; min-width:49px; }
+.update-slot { display:flex; align-items:center; min-width:30px; height:32px; flex:0 1 auto; }
+.client-update { height:30px; min-width:30px; max-width:100%; display:flex; align-items:center; gap:0; padding:0 7px; border-radius:16px; overflow:hidden; background:var(--button); color:var(--button-fg); transition:background .15s; white-space:nowrap; }
 .client-update .icon { width:16px; height:16px; flex:none; }
-.client-update span { opacity:0; transition:opacity .15s; font-size:calc(12px * var(--text-scale, 1)); }
-.client-update:hover, .client-update:focus-visible { width:84px; background:var(--button) !important; }
-.client-update:hover span, .client-update:focus-visible span { opacity:1; }
+.client-update span { min-width:0; max-width:0; overflow:hidden; text-overflow:ellipsis; opacity:0; margin-left:0; transition:max-width .2s ease,margin-left .2s ease,opacity .15s; font-size:calc(12px * var(--text-scale, 1)); }
+.client-update:hover, .client-update:focus-visible { background:var(--button) !important; }
+.client-update:hover span, .client-update:focus-visible span { max-width:12em; margin-left:6px; opacity:1; }
 .preference-status { margin-top:18px; font-size:calc(12px * var(--text-scale, 1)); color:var(--muted); min-height:20px; }
 .preference-status.error { color:var(--danger, #db7b7b); }
 
@@ -3607,7 +3607,7 @@ html[data-motion="off"] #composer,html[data-motion="off"] .composer-reply .icon-
   .ai-account-summary>svg{grid-column:3;grid-row:1 / span 2;align-self:center;}
 }
 .identity-row {display:flex;align-items:center;gap:4px;}
-.identity-row .identity-button {flex:1;min-width:0;}
+.identity-row .identity-button {flex:1;min-width:49px;}
 .profile-switch-button {position:relative;flex:0 0 32px;width:32px;height:32px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:calc(21px * var(--text-scale, 1));cursor:pointer;}
 .profile-switch-button:hover {background:var(--hover);color:var(--fg);}
 .profile-switch-button.has-profile-activity::after {content:'';position:absolute;right:2px;top:2px;width:7px;height:7px;border-radius:50%;background:#4d9df7;box-shadow:0 0 0 2px var(--panel);}
@@ -5148,6 +5148,8 @@ html.pane-resizing .shell :is(.sidebar,.details-panel,.computer-panel,.conversat
  .sidebar-rail:not(.sidebar-peek)>.sidebar .identity-button{flex:none;width:46px;height:46px;padding:0;justify-content:center;border-radius:11px}
  .sidebar-rail:not(.sidebar-peek)>.sidebar .identity-button .user-avatar{width:34px;height:34px;font-size:calc(13px * var(--text-scale, 1))}
  .sidebar-rail:not(.sidebar-peek)>.sidebar .client-update:is(:hover,:focus-visible){width:30px}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .identity-row .identity-button{min-width:0}
+ .sidebar-rail:not(.sidebar-peek)>.sidebar .client-update span{max-width:0;margin-left:0}
  .sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-entry.pin-drop-before::before,.sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-entry.pin-drop-after::after{left:6px;right:6px;top:auto;bottom:auto;width:auto;height:2px}
  .sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-entry.pin-drop-before::before{top:-3px}
  .sidebar-rail:not(.sidebar-peek)>.sidebar .pinned-entry.pin-drop-after::after{bottom:-3px}
@@ -6381,3 +6383,6 @@ html[data-system-text-size] :is(.settings-dialog,.voice-call-options,.app-detail
 .document-grid thead th:first-child{z-index:3}
 
 .document-grid table{min-width:0}
+
+html[data-motion="off"] .client-update span{transition:none}
+@media(prefers-reduced-motion:reduce){.client-update span{transition:none}}
