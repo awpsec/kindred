@@ -259,7 +259,7 @@ pub fn discover_with_diagnostics(
     _root: &std::path::Path,
 ) -> Result<Vec<Interface>, DiscoveryFailure> {
     let start = std::time::Instant::now();
-    let script = "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $adapters=@(Get-NetAdapter -IncludeHidden); ConvertTo-Json -Depth 4 -Compress -InputObject @((Get-NetIPAddress | Group-Object InterfaceIndex | ForEach-Object { $index=[int]$_.Name; $a=$adapters|Where-Object { $_.ifIndex -eq $index }|Select-Object -First 1; [pscustomobject]@{id=$_.Group[0].InterfaceAlias; addresses=@($_.Group.IPAddress); description=$a.InterfaceDescription; up=($a.Status -eq 'Up')} }))";
+    let script = "$ErrorActionPreference='Stop';\n[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);\n$rows = @(foreach ($adapter in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {\n    $addresses = @(foreach ($entry in $adapter.GetIPProperties().UnicastAddresses) {\n        $entry.Address.ToString().Split('%')[0]\n    });\n    if ($addresses.Count -gt 0) {\n        [pscustomobject]@{\n            id=$adapter.Name;\n            addresses=$addresses;\n            description=$adapter.Description;\n            up=($adapter.OperationalStatus -eq [System.Net.NetworkInformation.OperationalStatus]::Up)\n        }\n    }\n});\nConvertTo-Json -Depth 4 -Compress -InputObject $rows";
     let mut command = std::process::Command::new("powershell.exe");
     command.args(["-NoProfile", "-NonInteractive", "-Command", script]);
     let (bytes, removed) = read_command(_root, command)?;

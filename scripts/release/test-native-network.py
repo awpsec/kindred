@@ -67,3 +67,24 @@ fn main() {
  receipt['passed']=result.returncode==0 and receipt.get('actual_native_discovery_passed') is True and receipt.get('explicit_compose_generation_passed') is True
  (out/'network-validation.json').write_text(json.dumps(receipt,indent=2)+'\n')
  if not receipt['passed']:raise SystemExit(result.returncode or 1)
+ # Fixture-only .NET mapping checks follow the original cold production gate.
+ # They must not prewarm Windows enumeration or replace native acceptance.
+ if os.name == 'nt':
+  contract=out/'windows-contract.json'
+  receipt.update(passed=False,windows_contract_passed=False)
+  (out/'network-validation.json').write_text(json.dumps(receipt,indent=2)+'\n')
+  checked=subprocess.run([os.sys.executable,str(repo/'scripts/release/test-windows-network-contract.py'),'--source',str(repo),'--output',str(contract)],timeout=60)
+  receipt['windows_contract_passed']=checked.returncode==0 and json.loads(contract.read_text()).get('passed') is True
+  receipt['passed']=receipt['windows_contract_passed']
+  (out/'network-validation.json').write_text(json.dumps(receipt,indent=2)+'\n')
+  if not receipt['passed']:raise SystemExit(checked.returncode or 1)
+  # The strict unaffected-target proof is part of this corrected native run.
+  # It uses disposable Git repositories and does not enumerate host networks.
+  receipt.update(passed=False,unaffected_reuse_tests_passed=False)
+  (out/'network-validation.json').write_text(json.dumps(receipt,indent=2)+'\n')
+  with (out/'native-reuse-tests.log').open('w') as log:
+   reuse=subprocess.run([os.sys.executable,str(repo/'scripts/release/test_native_reuse.py'),'-v'],stdout=log,stderr=subprocess.STDOUT,timeout=120)
+  receipt['unaffected_reuse_tests_passed']=reuse.returncode==0
+  receipt['passed']=receipt['windows_contract_passed'] and receipt['unaffected_reuse_tests_passed']
+  (out/'network-validation.json').write_text(json.dumps(receipt,indent=2)+'\n')
+  if not receipt['passed']:raise SystemExit(reuse.returncode or 1)
