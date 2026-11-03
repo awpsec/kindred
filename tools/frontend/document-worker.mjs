@@ -29,11 +29,20 @@ self.onmessage=async({data:{buffer,extension}})=>{try{
    const rows=[];const rowCount=Math.min(sheet.rowCount,200),columnCount=Math.min(sheet.columnCount,40),merges=(sheet.model.merges||[]).map(range=>{const parts=range.split(':').map(ref=>{const m=/^([A-Z]+)([0-9]+)$/.exec(ref);let col=0;for(const ch of m[1])col=col*26+ch.charCodeAt(0)-64;return {row:Number(m[2]),col};});return {top:parts[0].row,left:parts[0].col,bottom:parts[1]?.row||parts[0].row,right:parts[1]?.col||parts[0].col};}).filter(m=>m.top<=rowCount&&m.left<=columnCount);
    for(let r=1;r<=rowCount;r++){const row=[];for(let c=1;c<=columnCount;c++){
     const cell=sheet.getCell(r,c);let value=cell.value;
-    if(value&&typeof value==='object'&&!(value instanceof Date))value=value.result??value.text??(value.richText?value.richText.map(t=>t.text).join(''):value.formula?'='+value.formula:'');
+    // Formula source is metadata, never a displayed value. ExcelJS does not
+    // calculate workbooks; an absent cache must not masquerade as a result.
+    const formula=!!value&&typeof value==='object'&&('formula' in value||'sharedFormula' in value);
+    // cell.value copies only truthy formula fields in ExcelJS; cell.result
+    // preserves cached zero, false and empty strings.
+    const result=formula?cell.result:undefined;
+    const missingResult=formula&&(result===undefined||result===null);
+    if(formula)value=missingResult?'—':result;
+    if(value&&typeof value==='object'&&!(value instanceof Date))value=value.error??value.text??(value.richText?value.richText.map(t=>t.text).join(''):'');
+    if(typeof value==='boolean')value=value?'TRUE':'FALSE';
     let text=value instanceof Date?value.toISOString().slice(0,10):String(value??'');
-    if((typeof value==='number'||value instanceof Date)&&cell.numFmt){try{text=SSF.format(cell.numFmt,value instanceof Date?value.getTime()/86400000+25569:value);}catch{}}
+    if((typeof value==='number'||value instanceof Date)&&cell.numFmt){try{text=SSF.format(cell.numFmt,value instanceof Date?value.getTime()/86400000+25569-(book.properties.date1904?1462:0):value,{date1904:!!book.properties.date1904});}catch{}}
     const merge=merges.find(m=>r>=m.top&&r<=m.bottom&&c>=m.left&&c<=m.right),color=v=>v?.argb&&/^[0-9a-f]{8}$/i.test(v.argb)?'#'+v.argb.slice(2):null;
-    row.push({text:text.slice(0,4000),bold:!!cell.font?.bold,wrap:!!cell.alignment?.wrapText,italic:!!cell.font?.italic,underline:!!cell.font?.underline,fontSize:Math.max(8,Math.min(36,cell.font?.size||11)),color:color(cell.font?.color),fill:cell.fill?.type==='pattern'&&cell.fill?.pattern==='solid'?color(cell.fill.fgColor):null,align:['left','center','right'].includes(cell.alignment?.horizontal)?cell.alignment.horizontal:typeof value==='number'||value instanceof Date?'right':'left',vertical:['top','middle','bottom'].includes(cell.alignment?.vertical)?cell.alignment.vertical:'top',rowSpan:merge?Math.min(merge.bottom,rowCount)-merge.top+1:1,colSpan:merge?Math.min(merge.right,columnCount)-merge.left+1:1,covered:!!merge&&(r!==merge.top||c!==merge.left)});
+    row.push({text:text.slice(0,4000),missingResult,bold:!!cell.font?.bold,wrap:!!cell.alignment?.wrapText,italic:!!cell.font?.italic,underline:!!cell.font?.underline,fontSize:Math.max(8,Math.min(36,cell.font?.size||11)),color:color(cell.font?.color),fill:cell.fill?.type==='pattern'&&cell.fill?.pattern==='solid'?color(cell.fill.fgColor):null,align:['left','center','right'].includes(cell.alignment?.horizontal)?cell.alignment.horizontal:typeof value==='number'||value instanceof Date?'right':'left',vertical:['top','middle','bottom'].includes(cell.alignment?.vertical)?cell.alignment.vertical:'top',rowSpan:merge?Math.min(merge.bottom,rowCount)-merge.top+1:1,colSpan:merge?Math.min(merge.right,columnCount)-merge.left+1:1,covered:!!merge&&(r!==merge.top||c!==merge.left)});
    }rows.push(row);}
    return{name:sheet.name,rows,widths:Array.from({length:columnCount},(_,i)=>Math.max(40,Math.min(480,(sheet.getColumn(i+1).width||12)*7+12))),heights:Array.from({length:rowCount},(_,i)=>Math.max(20,Math.min(120,(sheet.getRow(i+1).height||15)*4/3))),totalRows:sheet.rowCount,totalColumns:sheet.columnCount};
   });self.postMessage({sheets,truncatedSheets:book.worksheets.filter(s=>s.state==='visible').length>30});

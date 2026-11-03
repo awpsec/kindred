@@ -334,13 +334,14 @@
   const artifactDocumentRoute = () => /^\/artifacts\/[^/]+\/?$/.test(location.pathname) || new URLSearchParams(location.hash.slice(1)).has('artifact');
   // Artifact panes use the same measured native geometry as chat. Keep the
   // preview mounted: a fold changes frames, never the selected document.
-  const artifactFrames = ({hidden=false,single=false}={}) => {
+  const artifactFrames = ({hidden=false,single=false,fullCover=false}={}) => {
     const layout = window.__KINDRED_IOS_LAYOUT || {}, geometry = window.__KINDRED_NATIVE_GEOMETRY || {};
     const width = innerWidth, height = Math.min(innerHeight, nativeHeight || innerHeight);
     const finite = value => Number.isFinite(value) ? Math.max(0,value) : 0;
     const left = Math.min(width,finite(layout.leftInset)), right = Math.min(width-left,finite(layout.rightInset));
     const top = Math.min(height,finite(layout.topInset)), bottom = Math.min(height-top,finite(layout.bottomInset));
-    const frame = {x:left,y:top,width:width-left-right,height:height-top-bottom};
+    const cover=fullCover&&nativeDuo&&layout.isDuoInner!==true;
+    const frame = {x:cover?0:left,y:top,width:cover?width:width-left-right,height:height-top-bottom};
     const sx = width/(geometry.width || width), sy = height/(geometry.height || height);
     const regions = (Array.isArray(geometry.reservedRegions) ? geometry.reservedRegions : [])
       .filter(r => r.active !== false && ['division','occlusion'].includes(r.kind) && ['x','y','width','height'].every(k=>Number.isFinite(r[k])) && r.width>0 && r.height>0)
@@ -379,7 +380,10 @@
       documentFrame=avoid({...frame,x:frame.x+listWidth,width:frame.width-listWidth},exclusions);
       if((hidden||library.width>=76)&&documentFrame.width>=minDocument) { mode='split';resizable=true; }
     }
-    if(mode==='single') library=documentFrame=avoid(frame,regions);
+    if(mode==='single') {
+      library=avoid({x:left,y:top,width:width-left-right,height:height-top-bottom},regions);
+      documentFrame=avoid(frame,cover?regions.filter(r=>r.kind==='division'):regions);
+    }
     return {mode,library,document:documentFrame,resizable,maximum};
   };
   const artifactButton = (label, path) => {
@@ -468,8 +472,12 @@
     };
     page.layout = () => {
       const documentView=root.dataset.iosArtifactView==='document';
-      const frames = nativeDuo ? artifactFrames({hidden:documentView&&artifactSidebarHidden}) : {mode:'single'};
+      const frames = nativeDuo ? artifactFrames({hidden:documentView&&artifactSidebarHidden,fullCover:true}) : {mode:'single'};
       const hidden=frames.resizable&&documentView&&artifactSidebarHidden;
+      const controls=artifactFrames({single:true}).document;
+      setContentInset(workbench,'--ios-artifact-controls-top',Math.max(0,controls.y-(frames.document?.y||0)));
+      setContentInset(workbench,'--ios-artifact-controls-left',Math.max(0,controls.x-(frames.document?.x||0)));
+      setContentInset(workbench,'--ios-artifact-controls-right',Math.max(0,(frames.document?.x||0)+(frames.document?.width||0)-controls.x-controls.width));
       root.dataset.iosArtifactLibraryHidden=String(hidden);
       root.dataset.iosArtifactCompact=String(frames.resizable&&!hidden&&frames.library.width<128);
       root.dataset.iosArtifactToggleAvailable=String(frames.resizable&&documentView);
@@ -1548,11 +1556,14 @@
   let messageReadingEpoch = 0, messageGeometryEpoch = 0, messageReadingActive = false;
   function updateNativeContentClearance() {
     updateNativeSheets();
-    // A preview is one retained surface, even across folds. Fit it inside one
-    // usable rectangle, excluding native rail, camera/status and active hinges.
-    const previewFrame = artifactFrames({single:true}).document;
+    // Cover content extends beneath glass navigation; controls keep their safe frame.
+    const previewFrame = artifactFrames({single:true,fullCover:true}).document;
+    const previewControls = artifactFrames({single:true}).document;
     for (const dialog of document.querySelectorAll('.document-dialog[open],.workspace-artifact-dialog[open],.screenshot-dialog[open],.chat-media-dialog[open]')) {
       for (const [key,value] of Object.entries(previewFrame)) setContentInset(dialog,'--ios-preview-'+key,value);
+      setContentInset(dialog,'--ios-artifact-controls-top',previewControls.y-previewFrame.y);
+      setContentInset(dialog,'--ios-artifact-controls-left',previewControls.x-previewFrame.x);
+      setContentInset(dialog,'--ios-artifact-controls-right',previewFrame.x+previewFrame.width-previewControls.x-previewControls.width);
       dialog.toggleAttribute('data-ios-preview-fit',true);
     }
     updateAvatarPickers();
