@@ -27,11 +27,30 @@ export function composerText(root) {
   return read(root).replaceAll('\u00a0',' ');
 }
 
+// Highlight registry changes invalidate text painting across the document in
+// WebKit. Keep ordinary typing and caret moves out of that path. Live ranges
+// already track native edits; only replace a highlight when its endpoints differ.
+export function createComposerHighlight(name) {
+  const registry=globalThis.CSS?.highlights;
+  let highlight=null;
+  return ranges=>{
+    if(!globalThis.Highlight||!registry)return;
+    if(!ranges.length){
+      if(highlight){if(registry.get(name)===highlight)registry.delete(name);highlight=null;}
+      return;
+    }
+    const current=highlight?[...highlight]:[];
+    if(registry.get(name)===highlight&&current.length===ranges.length&&current.every((r,i)=>
+      r.startContainer===ranges[i].startContainer&&r.startOffset===ranges[i].startOffset&&
+      r.endContainer===ranges[i].endContainer&&r.endOffset===ranges[i].endOffset))return;
+    highlight=new Highlight(...ranges);registry.set(name,highlight);
+  };
+}
+
 // Inline URL icons are native autoformat transactions, like automatic lists.
 // Native Undo first removes formatting; text editing and Redo stay browser-owned.
 export function createComposerLinks(editor,{createIcon}={}) {
-  const highlight=globalThis.Highlight&&globalThis.CSS?.highlights?new Highlight():null;
-  if(highlight)CSS.highlights.set('kindred-composer-link',highlight);
+  const highlight=createComposerHighlight('kindred-composer-link');
   const sites=Object.assign(Object.create(null),{'github.com':'github','www.github.com':'github','mail.google.com':'gmail','drive.google.com':'googledrive','calendar.google.com':'googlecalendar','notion.so':'notion','www.notion.so':'notion','notion.com':'notion','www.notion.com':'notion','trello.com':'trello','www.trello.com':'trello'});
   const images=new Map(),suppressed=new Set(),blocks=new Set(['DIV','P','LI','UL','OL']);
   let frame=0,timer=0,composing=false,formatting=false;
@@ -88,8 +107,8 @@ export function createComposerLinks(editor,{createIcon}={}) {
   }
   function paint(){
     frame=0;if(composing)return;
-    highlight?.clear();const matches=scan(),seen=new Set();
-    for(const match of matches){highlight?.add(match.range);if(match.owner){seen.add(match.owner);match.owner.dataset.site=match.site;match.owner.style.setProperty('--composer-link-icon',iconImage(match.site));}}
+    const matches=scan(),seen=new Set();highlight(matches.map(match=>match.range));
+    for(const match of matches){if(match.owner){seen.add(match.owner);match.owner.dataset.site=match.site;match.owner.style.setProperty('--composer-link-icon',iconImage(match.site));}}
     // Only attributes change outside native editing transactions. This keeps
     // browser history references, selection, and IME text nodes intact.
     for(const span of editor.querySelectorAll('[data-composer-url]'))if(!seen.has(span)){span.removeAttribute('data-site');span.style.removeProperty('--composer-link-icon');}
@@ -118,7 +137,7 @@ export function createComposerLinks(editor,{createIcon}={}) {
     if(e.inputType==='historyRedo'||composing||e.isComposing)return;
     timer=setTimeout(autoformat,80);
   });
-  editor.addEventListener('compositionstart',()=>{composing=true;clearTimeout(timer);highlight?.clear();});
+  editor.addEventListener('compositionstart',()=>{composing=true;clearTimeout(timer);highlight([]);});
   editor.addEventListener('compositionend',()=>{composing=false;schedule();timer=setTimeout(autoformat,80);});
   editor.addEventListener('kindred-composer-reset',()=>{clearTimeout(timer);suppressed.clear();schedule();timer=setTimeout(autoformat,80);});
   editor.addEventListener('focus',()=>{clearTimeout(timer);timer=setTimeout(autoformat,80);});

@@ -30,8 +30,8 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   assert.deepEqual(await p.evaluate(()=>[...CSS.highlights.get('kindred-command')].map(r=>r.toString())),['/domain-review']);
   await editor.fill('Compare /summarize and /skills with /made-up and //summarize.');
   assert.deepEqual(await p.evaluate(()=>[...CSS.highlights.get('kindred-command')].map(r=>r.toString())),['/summarize','/skills']);
-  await editor.fill('/summarize-fake');assert.equal(await p.evaluate(()=>CSS.highlights.get('kindred-command').size),0);
-  await editor.fill('/summarize/path');assert.equal(await p.evaluate(()=>CSS.highlights.get('kindred-command').size),0);
+  await editor.fill('/summarize-fake');assert.equal(await p.evaluate(()=>(CSS.highlights.get('kindred-command')?.size||0)),0);
+  await editor.fill('/summarize/path');assert.equal(await p.evaluate(()=>(CSS.highlights.get('kindred-command')?.size||0)),0);
   await editor.evaluate(n=>{n.innerHTML='First line<div>/summarize this</div><div>/made-up</div>';n.dispatchEvent(new Event('input',{bubbles:true}));});
   assert.deepEqual(await p.evaluate(()=>[...CSS.highlights.get('kindred-command')].map(r=>r.toString())),['/summarize']);
   await editor.fill('/domain-review ');

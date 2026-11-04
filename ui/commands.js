@@ -1,4 +1,4 @@
-import {composerText} from './composer-text.js';
+import {composerText,createComposerHighlight} from './composer-text.js';
 
 // Commands are resolved and snapshotted by the server. This module only assists
 // editing; the grey parameter hints are CSS content, never part of the message.
@@ -25,6 +25,9 @@ export function createCommandsUI({editor,composer,api,connected,unavailable=()=>
   const node=(tag,classes,text)=>{const n=document.createElement(tag);n.className=classes||'';if(text!==undefined)n.textContent=text;return n;};
   function close(){menu.hidden=true;items=[];editor.removeAttribute('aria-activedescendant');}
   function completion(){
+    // Most messages contain no command. Avoid cloning the editor's DOM on
+    // every key, input and selection change in this overwhelmingly common case.
+    if(!editor.textContent.includes('/'))return null;
     const selection=getSelection();
     if(!selection?.rangeCount||!selection.isCollapsed)return null;
     const caret=selection.getRangeAt(0);
@@ -64,11 +67,10 @@ export function createCommandsUI({editor,composer,api,connected,unavailable=()=>
     finally{if(requestGeneration===generation)pending=null;}})();return pending;
   }
   // Native text highlights preserve caret movement, IME, copy/paste and undo.
-  const commandHighlight=globalThis.Highlight&&globalThis.CSS?.highlights?new Highlight():null;
+  const commandHighlight=createComposerHighlight('kindred-command');
   function markCommands(){
-    if(!commandHighlight)return;
-    commandHighlight.clear();CSS.highlights.set('kindred-command',commandHighlight);
-    if(!connected()||unavailable()||error)return;
+    if(!connected()||unavailable()||error||!commands.length||!editor.textContent.includes('/')){commandHighlight([]);return;}
+    const ranges=[];
     const names=new Set(commands.map(c=>c.name)),nodes=[],walker=document.createTreeWalker(editor,NodeFilter.SHOW_TEXT|NodeFilter.SHOW_ELEMENT);
     let text='';while(walker.nextNode()){const n=walker.currentNode;if(n.nodeType===Node.ELEMENT_NODE){if(['BR','DIV','P','LI'].includes(n.tagName))text+='\n';continue;}nodes.push({node:n,start:text.length,end:text.length+n.length});text+=n.textContent;}
     const pattern=/(^|[\s([{"'`])\/([a-z][a-z0-9_-]{0,47})(?![a-z0-9_/-])/g;
@@ -77,8 +79,9 @@ export function createCommandsUI({editor,composer,api,connected,unavailable=()=>
       const start=match.index+match[1].length,end=start+match[2].length+1;
       const first=nodes.find(n=>n.end>start),last=nodes.find(n=>n.end>=end);
       if(!first||!last||first.node.parentElement.closest('[data-mention]'))continue;
-      const range=document.createRange();range.setStart(first.node,start-first.start);range.setEnd(last.node,end-last.start);commandHighlight.add(range);
+      const range=document.createRange();range.setStart(first.node,start-first.start);range.setEnd(last.node,end-last.start);ranges.push(range);
     }
+    commandHighlight(ranges);
   }
   function updateHint(){
     markCommands();const p=parsed();editor.removeAttribute('data-command-params');editor.removeAttribute('data-command-active');
@@ -163,7 +166,7 @@ export function createCommandsUI({editor,composer,api,connected,unavailable=()=>
     if(cursor<parts.length)throw Error('Too many parameters. '+p.command.usage+'. Quote values containing spaces.');
     close();return p.command.action==='library';
   }
-  function reset(){generation++;commands=[];items=[];selected=0;dismissed=null;lastCompletion=null;updated=0;pending=null;error='';commandHighlight?.clear();close();editor.removeAttribute('data-command-params');editor.removeAttribute('data-command-active');}
+  function reset(){generation++;commands=[];items=[];selected=0;dismissed=null;lastCompletion=null;updated=0;pending=null;error='';commandHighlight([]);close();editor.removeAttribute('data-command-params');editor.removeAttribute('data-command-active');}
   function invalidate(){generation++;pending=null;updated=0;void load(true).then(show).catch(()=>{});}
   editor.addEventListener('input',update);
   editor.addEventListener('focus',update);

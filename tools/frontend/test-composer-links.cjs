@@ -11,10 +11,15 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await page.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
   await page.route(origin+'/api/chats/dm-piper/messages',r=>{sent.push(r.request().postDataJSON());return r.fulfill({json:{runs:[]}});});
   await page.goto(origin,{waitUntil:'domcontentloaded'});const editor=page.locator('#prompt');await editor.waitFor();
-  const marked=()=>page.evaluate(()=>[...CSS.highlights.get('kindred-composer-link')].map(r=>r.toString()));
-  const waitLinks=expected=>page.waitForFunction(expected=>JSON.stringify([...CSS.highlights.get('kindred-composer-link')].map(r=>r.toString()))===JSON.stringify(expected),expected);
+  const marked=()=>page.evaluate(()=>[...(CSS.highlights.get('kindred-composer-link')||[])].map(r=>r.toString()));
+  const waitLinks=expected=>page.waitForFunction(expected=>JSON.stringify([...(CSS.highlights.get('kindred-composer-link')||[])].map(r=>r.toString()))===JSON.stringify(expected),expected);
   await editor.fill('Review https://example.test/report_(draft), then www.example.org.');
   await waitLinks(['https://example.test/report_(draft)','www.example.org']);
+  await page.waitForFunction(()=>document.querySelectorAll('#prompt [data-composer-url]').length===2);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  await page.evaluate(()=>window.savedLinkHighlight=CSS.highlights.get('kindred-composer-link'));
+  await editor.press('ArrowLeft');await editor.press('ArrowRight');await editor.dispatchEvent('input');await page.waitForTimeout(60);
+  assert(await page.evaluate(()=>CSS.highlights.get('kindred-composer-link')===savedLinkHighlight),'Unchanged links retain their highlight on caret movement');
   assert.equal(await editor.locator('a').count(),0,'Styling must not insert navigable anchors into editable text');
   const draft=await editor.evaluate(n=>n.value);await editor.focus();await editor.press('ControlOrMeta+End');await page.keyboard.insertText(' More');await editor.press('ControlOrMeta+z');assert.equal(await editor.evaluate(n=>n.value),draft,'Link styling preserves native undo');
   await editor.evaluate(n=>{n.innerHTML='<ul><li>See <span>https://exam</span>ple.test/a?x=1&amp;y=2</li><li><span data-mention="piper" data-name="Piper" contenteditable="false">www.mention.test</span> www.example.org</li></ul>';});
