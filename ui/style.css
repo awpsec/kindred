@@ -3492,10 +3492,10 @@ html:not([data-input-modality=pointer]) .message-group:focus-visible > .message-
 html[data-motion="off"] .message-actions {transition:none;}
 @media(prefers-reduced-motion:reduce){.message-actions {transition:none;}}
 
-/* The composer opens upward, with a quiet highlight that follows attention. */
-#composer {position:relative;align-content:end;transition:border-color 200ms ease,background-color 200ms ease,box-shadow 200ms ease,border-radius 320ms cubic-bezier(.22,1,.36,1);}
-#composer:hover {border-color:color-mix(in srgb,var(--fg) 23%,var(--surface));}
-#composer:focus-within {border-color:color-mix(in srgb,var(--fg) 37%,var(--surface));box-shadow:none;}
+/* The composer opens upward. The text caret marks editing; the surface stays quiet on hover and focus.
+   Retain the transparent border width so entering text never shifts the layout. */
+#composer,#composer:is(:hover,:focus-within,.is-replying,.has-files) {border-color:transparent;outline:none;box-shadow:none;}
+#composer {position:relative;align-content:end;transition:background-color 200ms ease,border-radius 320ms cubic-bezier(.22,1,.36,1);}
 #composer.is-replying,#composer.has-files {background:var(--surface);}
 #composer.is-morphing {overflow:clip;}
 .composer-reply-ghost {position:absolute;pointer-events:none;}
