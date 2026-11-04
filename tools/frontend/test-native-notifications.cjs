@@ -27,6 +27,7 @@ async function until(fn,limit=300){for(let i=0;i<limit;i++){try{const v=await fn
    if(p==='/identity/switch')return send({token,profile_id:profile});
    return send({});
   }
+  if(p==='/api/notification-target/1'){assert.equal(req.headers.authorization,'Bearer '+token);return send({chat_id:destination.id,bot_id:botId});}
   if(p==='/api/notifications'){if(!u.searchParams.has('after'))baseline=true;return send({cursor:notified?1:0,items:notified&&u.searchParams.has('after')&&Number(u.searchParams.get('after'))<1?[item]:[]});}
   if(p==='/api/bots/'+botId+'/avatar.png'){assert.equal(req.headers.authorization,'Bearer '+token);downloads++;res.writeHead(200,{'Content-Type':'image/png'});return res.end(avatar);}
   if(p==='/api/bots')return send([bot]);if(p==='/api/chats')return send([current,destination]);if(p==='/api/runs')return send([]);if(p==='/api/activity')return send({});

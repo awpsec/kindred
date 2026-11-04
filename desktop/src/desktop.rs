@@ -2,6 +2,7 @@ use serde_json::{Value, json};
 use std::{io::Read, sync::Mutex, time::Duration};
 use tauri::Manager;
 
+#[cfg(windows)]
 const APP_ID: &str = "dev.kindred.personal";
 pub fn register_notifications() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
@@ -15,23 +16,44 @@ pub fn register_notifications() -> Result<(), Box<dyn std::error::Error>> {
         )?;
     }
     #[cfg(target_os = "macos")]
-    notify_rust::set_application(APP_ID)?;
+    mac_usernotifications::check_bundle()?;
     Ok(())
 }
 pub(crate) fn open_notification(app: &tauri::AppHandle, destination: &Option<(u64, Value)>) {
-    use tauri::Emitter;
-    if !current_destination(app, destination) {
-        return;
-    }
-    if let Some(window) = crate::surface::Surface::main(app) {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-        if let Some((_, item)) = destination {
-            let _ = window.emit("kindred-notification-open", item);
-        }
-    }
+    activate_notification(app, destination, None);
 }
+pub(crate) fn activate_notification(app: &tauri::AppHandle, destination: &Option<(u64, Value)>, activation: Option<String>) {
+    let handle = app.clone();
+    let destination = destination.clone();
+    // OS callbacks run off the UI thread. Check the profile again after dispatch.
+    let _ = app.run_on_main_thread(move || {
+        use tauri::Emitter;
+        if !current_destination(&handle, &destination) { return; }
+        if let Some(window) = crate::surface::Surface::main(&handle) {
+            let _ = window.unminimize();
+            let _ = window.show();
+            #[cfg(target_os = "linux")]
+            if let Ok(native) = window.gtk_window() {
+                use gtk::prelude::*;
+                if let Some(token) = activation.as_deref() { native.set_startup_id(token); }
+                native.present();
+            }
+            #[cfg(not(target_os = "linux"))]
+            let _ = activation;
+            #[cfg(target_os = "macos")]
+            if let Some(mtm) = objc2::MainThreadMarker::new() {
+                #[allow(deprecated)]
+                objc2_app_kit::NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+            }
+            #[cfg(not(target_os = "linux"))]
+            let _ = window.set_focus();
+            if let Some((_, item)) = destination {
+                let _ = window.emit("kindred-notification-open", item);
+            }
+        }
+    });
+}
+
 pub(crate) fn current_destination(
     app: &tauri::AppHandle,
     destination: &Option<(u64, Value)>,
@@ -107,57 +129,35 @@ pub(crate) fn show_system_notification(
             crate::notification_sound::name(),
             || crate::notification_sound::file(app).map(|_| ()),
         );
-        return crate::macos_notification::send(title, body, portrait, sound);
+        let notification = crate::macos_notification::send(title, body, portrait, sound)?;
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            match notification.response().await {
+                Ok(response) if response.is_default_action() => open_notification(&app, &destination),
+                Ok(_) => {},
+                Err(error) => app.state::<Desktop>().notification_error(error.to_string()),
+            }
+        });
+        return Ok(());
     }
     #[cfg(all(not(windows), not(target_os = "macos")))]
     {
-        let mut notification = notify_rust::Notification::new();
-        notification.summary(title).body(body).appname("Kindred");
         let sound = if crate::notification_sound::allow(test) {
             crate::notification_sound::file(app).ok()
-        } else {
-            None
-        };
-        #[cfg(target_os = "linux")]
+        } else { None };
         let daemon_sound = notify_rust::get_capabilities()
             .map(|caps| caps.iter().any(|cap| cap == "sound")).unwrap_or(true);
-        #[cfg(not(target_os = "macos"))]
-        if let Some(path) = &sound {
-            if daemon_sound {
-                notification.hint(notify_rust::Hint::SoundFile(path.to_string_lossy().into_owned()));
-            } else {
-                notification.hint(notify_rust::Hint::SuppressSound(true));
-            }
-        } else {
-            notification.hint(notify_rust::Hint::SuppressSound(true));
-        }
-        if let Some(path) = portrait {
-            notification.icon(&path.to_string_lossy());
-        }
-        #[cfg(not(target_os = "macos"))]
-        notification
-            // Match the installed/bundled Kindred.desktop file so Plasma can
-            // associate notifications with its per-application settings/history.
-            .hint(notify_rust::Hint::DesktopEntry("Kindred".into()))
-            .action("default", "Open Kindred");
-        let handle = notification.show().map_err(|e| e.to_string())?;
-        #[cfg(target_os = "linux")]
+        let listener = crate::linux_notification::send(title, body, portrait,
+            if daemon_sound { sound.as_deref() } else { None })?;
         if !daemon_sound && current_destination(app, &destination) {
             if let Some(path) = sound { crate::notification_sound::play_linux_fallback(path); }
         }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let app = app.clone();
-            std::thread::spawn(move || {
-                handle.wait_for_action(move |action| {
-                    if action == "open" || action == "default" {
-                        open_notification(&app, &destination);
-                    }
-                })
-            });
-        }
-        #[cfg(target_os = "macos")]
-        let _ = (handle, destination, app);
+        let app = app.clone();
+        std::thread::spawn(move || {
+            if let Some(activation) = listener.clicked() {
+                activate_notification(&app, &destination, activation);
+            }
+        });
         Ok(())
     }
 }
@@ -430,7 +430,7 @@ pub fn watch(app: tauri::AppHandle) {
                             portraits.get(index).and_then(|p| p.as_deref()),
                             Some((
                                 generation,
-                                json!({"chat_id":item["chat_id"],"bot_id":item["bot_id"],"avatar":item["avatar"],"reduced_motion":item["reduced_motion"]}),
+                                json!({"id":item["id"],"chat_id":item["chat_id"],"bot_id":item["bot_id"],"avatar":item["avatar"],"reduced_motion":item["reduced_motion"]}),
                             )),
                             false,
                         )

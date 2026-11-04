@@ -24,25 +24,21 @@ pub fn prepare_sound<E>(
     }
 }
 
-pub fn send(title: &str, body: &str, portrait: Option<&Path>, sound: Sound) -> Result<(), String> {
-    // The previous NS bridge did not forward Notification.icon to the system
-    // banner. Keep that appearance; notch portraits use their separate path.
+pub fn send(title: &str, body: &str, portrait: Option<&Path>, sound: Sound) -> Result<mac_usernotifications::NotificationHandle, String> {
+    // Regular banners use Notification Center, with Kindred's real bundle identity.
+    // The notch remains a separate, explicitly selected presentation.
     let _ = portrait;
-    let mut notification = mac_notification_sys::Notification::default();
-    notification.title(title).message(body).asynchronous(true);
-    match sound {
-        Sound::Silent => {}
-        Sound::Custom(name) => {
-            notification.sound(name);
-        }
-        Sound::Default => {
-            notification.default_sound();
-        }
+    if !mac_usernotifications::blocking::request_auth().map_err(|e| e.to_string())? {
+        return Err("Notifications are disabled for Kindred. Enable them in System Settings → Notifications → Kindred.".into());
     }
-    // The OS owns playback, including Focus and the application's sound setting.
-    // Do not add an afplay fallback or retry a possibly delivered notification.
-    notification
-        .send()
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+    let notification = mac_usernotifications::Notification::new()
+        .title(title).message(body).timeout(std::time::Duration::from_secs(86400));
+    let notification = match sound {
+        Sound::Silent => notification,
+        Sound::Custom(name) => notification.sound(name),
+        Sound::Default => notification.default_sound(),
+    };
+    // Keep the response handle: discarding it loses the conversation on click.
+    // Notification Center owns sound playback and respects Focus/system settings.
+    notification.send_blocking().map_err(|error| error.to_string())
 }
