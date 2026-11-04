@@ -819,7 +819,7 @@ function updateWorkLabel(label) {
   const starting=pending&&queue.starting?.id===run.id;
   // The first scheduler hop is part of sending, not a queue behind other work.
   label.hidden=!!(starting&&!run?.delegation&&!stale&&now-run.created<10);
-  const retry=current&&run?.status==='running'&&a.provider_retry?.phase==='retrying'?a.provider_retry:null;
+  const retry=current&&run?.status==='running'&&a.provider_retry?.phase==='retrying'&&a.provider_retry.scope!=='routine'?a.provider_retry:null;
   label.classList.toggle('provider-retrying',!!retry&&!stale);
   if(retry&&!stale){
     label.hidden=false;label.classList.remove('working-glimmer');
@@ -5325,12 +5325,12 @@ function updateTaskStatus(label){
   let text=label.dataset.taskStatusFixed||label.dataset.taskStatusFallback||'Working';
   if(!label.dataset.taskStatusFixed&&current){
     text=activity.label||text;
-    if(run.status==='running'&&activity.provider_retry?.phase==='retrying')text=`Connection issue - retrying (${activity.provider_retry.attempt}/5)`;
+    if(run.status==='running'&&activity.provider_retry?.phase==='retrying'&&activity.provider_retry.scope!=='routine')text=`Connection issue - retrying (${activity.provider_retry.attempt}/5)`;
     if(state.activityReadAt&&(Date.now()-state.activityReadAt)/1000>15)text='Connection lost · last known: '+text;
   }
   if(label.textContent!==text)label.textContent=text;
   const stale=state.activityReadAt&&(Date.now()-state.activityReadAt)/1000>15;
-  label.classList.toggle('working-glimmer',run?.status==='running'&&!label.dataset.taskStatusFixed&&!stale&&!(current&&activity.provider_retry?.phase==='retrying'));
+  label.classList.toggle('working-glimmer',run?.status==='running'&&!label.dataset.taskStatusFixed&&!stale&&!(current&&activity.provider_retry?.phase==='retrying'&&activity.provider_retry.scope!=='routine'));
   label.title=text;
 }
 function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
