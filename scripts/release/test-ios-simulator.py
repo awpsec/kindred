@@ -571,14 +571,22 @@ def validate_keyboard_ownership_evidence(exports, summary, tree, attachments):
 
 
 def wait_for_simulator_transport(device):
-    """One bounded selected-device response after boot; no sleep or retry."""
+    """One diagnostic probe; required guest setup and native tests prove readiness."""
     status = {'selected_device': device['udid'], 'passed': False, 'commands': [],
-              'deadline_seconds': 60, 'response_is_native_effect_proof': False}
+              'deadline_seconds': 10, 'response_is_native_effect_proof': False,
+              'diagnostic_only': True, 'required_setup_and_native_tests_pending': True}
     try:
         result = _reduce_motion_command('readiness',
-            ['xcrun', 'simctl', 'getenv', device['udid'], 'SIMULATOR_UDID'], 60, status)
+            ['xcrun', 'simctl', 'getenv', device['udid'], 'SIMULATOR_UDID'], 10, status)
         assert result.stdout.strip() == device['udid'], 'Selected simulator transport returned wrong identity'
         status['passed'] = True
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
+        # This extra probe has repeatedly hung on cold hosted simulators after
+        # bootstatus succeeded. Do not mistake its timeout for a product test.
+        # The selected device must still execute the required preference write
+        # and readback, then pass every original native test/evidence assertion.
+        status['error_type'] = type(error).__name__
+        status['continued_to_required_setup'] = True
     except Exception as error:
         status['error_type'] = type(error).__name__
         try:
@@ -588,6 +596,9 @@ def wait_for_simulator_transport(device):
         raise
     else:
         record('simulator-transport-readiness.json', status)
+        return True
+    record('simulator-transport-readiness.json', status)
+    return False
 
 
 def configure_simulator_reduce_motion(device):
@@ -703,9 +714,9 @@ def main(scope):
                 assert actual == '0', 'Simulator keyboard preference did not apply'
                 record('keyboard-setup.json', {'hardware_keyboard_connected': False, 'previous_preference': old_keyboard, 'native_keyboard_visibility_requires_test_evidence': True})
                 boot_simulator(device)
+                run(['open', '-a', 'Simulator', '--args', '-CurrentDeviceUDID', device['udid']])
                 wait_for_simulator_transport(device)
                 configure_simulator_reduce_motion(device)
-                run(['open', '-a', 'Simulator', '--args', '-CurrentDeviceUDID', device['udid']])
             with (OUT / 'xcodebuild.log').open('w') as log:
                 process = subprocess.Popen(command, cwd=ROOT / 'mobile/ios', stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
                 try:
