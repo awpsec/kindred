@@ -150,6 +150,7 @@ class AppearanceEvidenceTests(unittest.TestCase):
   (root/'mobile/ios/KindredCompanionUITests').mkdir()
   (root/'mobile/ios/KindredCompanionUITests/AccountsAppearanceUIKitTests.swift').write_text('test fixture')
   out=root/'ios-validation';source='0'*40
+  developer=root/'Xcode selected.app/Contents/Developer';(developer/'Applications/Simulator.app').mkdir(parents=True)
   fixture=MagicMock();fixture.poll.return_value=None
   native=MagicMock();native.wait.return_value=0
   captured=[];setup_processes=[]
@@ -167,7 +168,7 @@ class AppearanceEvidenceTests(unittest.TestCase):
   def run(command,**kwargs):
    if command[0]=='openssl':Path(command[command.index('-keyout')+1]).write_text('test-only')
    return subprocess.CompletedProcess([],0,'1' if 'ReduceMotionEnabled' in command and 'read' in command else '0','')
-  with patch.object(m,'ROOT',root),patch.object(m,'OUT',out),patch.dict(m.os.environ,EXPECTED_SOURCE=source),patch.object(m.subprocess,'run',side_effect=run),patch.object(m.subprocess,'check_output',side_effect=output),patch.object(m.subprocess,'Popen',side_effect=popen),patch.object(m.ssl,'create_default_context'),patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps({'origin':'https://localhost:8765','ui_sha256':{}}).encode())):
+  with patch.object(m,'ROOT',root),patch.object(m,'OUT',out),patch.dict(m.os.environ,EXPECTED_SOURCE=source,DEVELOPER_DIR=str(developer)),patch.object(m.subprocess,'run',side_effect=run),patch.object(m.subprocess,'check_output',side_effect=output),patch.object(m.subprocess,'Popen',side_effect=popen),patch.object(m.ssl,'create_default_context'),patch.object(m.urllib.request,'urlopen',return_value=io.BytesIO(json.dumps({'origin':'https://localhost:8765','ui_sha256':{}}).encode())):
    with self.assertRaises(SystemExit):m.main(scope)
   if hasattr(m,'_simulator_command'):
    self.assertEqual(len(setup_processes),3)

@@ -570,6 +570,27 @@ def validate_keyboard_ownership_evidence(exports, summary, tree, attachments):
     return 4
 
 
+def open_selected_simulator(device):
+    """Launch the selected SDK's app without relying on LaunchServices names."""
+    developer = os.environ.get('DEVELOPER_DIR', '')
+    app = Path(developer) / 'Applications' / 'Simulator.app'
+    status = {'selected_device': device['udid'], 'developer_directory': developer,
+              'application': str(app), 'deadline_seconds': 90, 'passed': False}
+    try:
+        assert developer and Path(developer).is_absolute(), 'Selected DEVELOPER_DIR must be an absolute path'
+        assert app.is_dir(), 'Simulator.app is missing from the selected DEVELOPER_DIR; no default-toolchain fallback'
+        command = ['open', '-a', str(app), '--args', '-CurrentDeviceUDID', device['udid']]
+        status['command'] = command
+        result = run(command, capture_output=True, text=True)
+        status.update(passed=True, exit_code=result.returncode)
+    except Exception as error:
+        status.update(error_type=type(error).__name__, exit_code=getattr(error, 'returncode', None),
+                      stderr=str(getattr(error, 'stderr', '') or ''))
+        raise
+    finally:
+        record('simulator-open.json', status)
+
+
 def wait_for_simulator_transport(device):
     """One diagnostic probe; required guest setup and native tests prove readiness."""
     status = {'selected_device': device['udid'], 'passed': False, 'commands': [],
@@ -714,7 +735,7 @@ def main(scope):
                 assert actual == '0', 'Simulator keyboard preference did not apply'
                 record('keyboard-setup.json', {'hardware_keyboard_connected': False, 'previous_preference': old_keyboard, 'native_keyboard_visibility_requires_test_evidence': True})
                 boot_simulator(device)
-                run(['open', '-a', 'Simulator', '--args', '-CurrentDeviceUDID', device['udid']])
+                open_selected_simulator(device)
                 wait_for_simulator_transport(device)
                 configure_simulator_reduce_motion(device)
             with (OUT / 'xcodebuild.log').open('w') as log:

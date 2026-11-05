@@ -66,11 +66,47 @@ class ReadinessTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 m.wait_for_simulator_transport(self.device)
 
+    def test_selected_toolchain_absolute_app_path_and_device_are_used(self):
+        developer = self.root / 'Xcode Selected.app/Contents/Developer'
+        app = developer / 'Applications/Simulator.app'
+        app.mkdir(parents=True)
+        with patch.dict(m.os.environ, DEVELOPER_DIR=str(developer)), \
+             patch.object(m.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as launch:
+            m.open_selected_simulator(self.device)
+        self.assertEqual(launch.call_count, 1)
+        self.assertEqual(launch.call_args.args[0], ['open', '-a', str(app), '--args', '-CurrentDeviceUDID', 'selected-only'])
+        self.assertEqual(launch.call_args.kwargs['timeout'], 90)
+        self.assertTrue(json.loads((self.root / 'simulator-open.json').read_text())['passed'])
+
+    def test_missing_selected_app_fails_without_launchservices_fallback(self):
+        for developer in ['', 'relative/path', str(self.root / 'missing/Contents/Developer')]:
+            with self.subTest(developer=developer), patch.dict(m.os.environ, DEVELOPER_DIR=developer), \
+                 patch.object(m.subprocess, 'run') as launch:
+                with self.assertRaises(AssertionError):
+                    m.open_selected_simulator(self.device)
+                launch.assert_not_called()
+                self.assertFalse(json.loads((self.root / 'simulator-open.json').read_text())['passed'])
+
+    def test_launch_failure_preserves_selected_app_error(self):
+        developer = self.root / 'Xcode.app/Contents/Developer'
+        (developer / 'Applications/Simulator.app').mkdir(parents=True)
+        failure = subprocess.CalledProcessError(1, ['open'], stderr='Synthetic launch failure')
+        with patch.dict(m.os.environ, DEVELOPER_DIR=str(developer)), \
+             patch.object(m.subprocess, 'run', side_effect=failure) as launch:
+            with self.assertRaises(subprocess.CalledProcessError):
+                m.open_selected_simulator(self.device)
+        self.assertEqual(launch.call_count, 1)
+        receipt = json.loads((self.root / 'simulator-open.json').read_text())
+        self.assertFalse(receipt['passed'])
+        self.assertEqual(receipt['stderr'], 'Synthetic launch failure')
+
     def orchestrate(self, probe, preference='1'):
         """Run real orchestration with synthetic subprocesses, never an Apple simulator."""
         root = self.root / 'repo'
         (root / 'mobile/ios/KindredCompanionTests').mkdir(parents=True)
         (root / 'mobile/ios/KindredCompanionTests/ComposerUIKitTests.swift').write_text('fixture')
+        developer = root / 'Xcode selected.app/Contents/Developer'
+        (developer / 'Applications/Simulator.app').mkdir(parents=True)
         out = root / 'ios-validation'
         source = '0' * 40
         fixture, native = MagicMock(), MagicMock()
@@ -104,7 +140,7 @@ class ReadinessTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0, '0', '')
 
         with patch.object(m, 'ROOT', root), patch.object(m, 'OUT', out), \
-             patch.dict(m.os.environ, EXPECTED_SOURCE=source), \
+             patch.dict(m.os.environ, EXPECTED_SOURCE=source, DEVELOPER_DIR=str(developer)), \
              patch.object(m, '_simulator_command', side_effect=execute), \
              patch.object(m.subprocess, 'run', side_effect=execute), \
              patch.object(m.subprocess, 'check_output', side_effect=output), \
@@ -126,6 +162,8 @@ class ReadinessTests(unittest.TestCase):
         tests = [c for c in calls if c[0] == 'xcodebuild']
         self.assertTrue(boot < opened < probe < write < read)
         self.assertEqual(calls[opened][-2:], ['-CurrentDeviceUDID', 'selected-only'])
+        self.assertTrue(Path(calls[opened][2]).is_absolute())
+        self.assertTrue(calls[opened][2].endswith('/Xcode selected.app/Contents/Developer/Applications/Simulator.app'))
         self.assertEqual(len(tests), 1)
         command = tests[0]
         self.assertEqual(command[command.index('-destination') + 1], 'platform=iOS Simulator,id=selected-only')
