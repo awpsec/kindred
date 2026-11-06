@@ -9,6 +9,9 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::Manager;
+#[path = "profile_migration.rs"]
+mod migration;
+
 type Result<T> = std::result::Result<T, String>;
 
 #[derive(Default)]
@@ -17,6 +20,8 @@ pub struct Host {
     pub entries: Mutex<Value>,
     pub intent: Mutex<Value>,
     pub transfer: Mutex<Value>,
+    pub migration_session: Mutex<Value>,
+    pub migration_cancel: std::sync::atomic::AtomicBool,
 }
 pub fn hardware_acceleration() -> bool {
     static ACTIVE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -475,7 +480,12 @@ fn finish_saved_transfer(directory: &mut Value, server: &str, profile: &str) {
     let request=&directory["transfer_request"];
     if request["completed"]==true && request["destination"]==server && request["destination_profile"]==profile {
         let source=request["source"].clone();
-        if let Some(entries)=directory["entries"].as_array_mut(){entries.retain(|entry|entry["key"]!=source);}
+        if let Some(entries)=directory["entries"].as_array_mut(){
+            for entry in entries.iter_mut().filter(|entry|entry["key"]==source){
+                entry["migration_state"]=json!("recovery");
+                entry["moved_to"]=json!({"server":server,"profile_id":profile});
+            }
+        }
         directory.as_object_mut().unwrap().remove("transfer_request");
     }
 }
@@ -1257,7 +1267,7 @@ async fn transfer_json(
     body: Option<Value>,
 ) -> Result<Value> {
     let url = validate_url(server)?.join(route).map_err(error)?;
-    let copying = body.is_some() && matches!(route, "/identity/transfer" | "/identity/transfer/import");
+    let copying = body.is_some() && matches!(route, "/identity/transfer" | "/identity/transfer/import" | "/identity/migration");
     let mut request = if let Some(body) = body {
         client.post(url).json(&body)
     } else {
@@ -1266,7 +1276,7 @@ async fn transfer_json(
     if !token.is_empty() {
         request = request.bearer_auth(token);
     }
-    request = request.timeout(Duration::from_secs(if copying { 1800 } else { 30 }));
+    request = request.timeout(Duration::from_secs(if copying { 2700 } else { 30 }));
     let mut response = request.send().await.map_err(|_| {
         "Could not reach the server. Your original workspace is retained; retry the transfer."
             .to_owned()
@@ -1343,7 +1353,7 @@ impl<'a> TransferOperation<'a> {
     fn begin(host: &'a Host, stage: &str) -> Result<Self> {
         let mut status=host.transfer.lock().map_err(error)?;
         if status["state"]=="working" {return Err("A workspace move is already in progress".into());}
-        *status=json!({"state":"working","stage":stage,"completed":0,"total":6});
+        *status=json!({"state":"working","stage":stage,"completed":0,"total":8});
         Ok(Self(host))
     }
 }
@@ -1355,12 +1365,28 @@ impl Drop for TransferOperation<'_> {
     }
 }
 fn transfer_stage(host: &Host, stage: &str, completed: u8) {
-    *host.transfer.lock().unwrap() = json!({"state":"working","stage":stage,"completed":completed,"total":6});
+    let progress = json!({"state":"working","stage":stage,"completed":completed,"total":8});
+    *host.transfer.lock().unwrap() = progress.clone();
+    if let Ok(mut directory) = host.entries.lock() {
+        if directory["transfer_request"].is_object() {
+            directory["transfer_request"]["progress"] = progress;
+            // A failure to persist progress does not change server authority.
+            let _ = save(&directory);
+        }
+    }
 }
 #[tauri::command]
 pub fn profile_transfer_status(window: crate::surface::Surface, host: tauri::State<'_, Host>) -> Result<Value> {
     native(&window)?;
-    Ok(host.transfer.lock().map_err(error)?.clone())
+    let status = host.transfer.lock().map_err(error)?.clone();
+    if !status.is_null() { return Ok(status); }
+    let directory = host.entries.lock().map_err(error)?;
+    let mut progress = directory["transfer_request"]["progress"].clone();
+    if progress.is_object() {
+        progress["state"] = json!("error");
+        progress["error"] = json!("Move interrupted. Sign in to the same destination and resume, or cancel to restore the original. Both server copies are retained.");
+    }
+    Ok(progress)
 }
 #[tauri::command]
 pub async fn transfer_profile(
@@ -1373,7 +1399,8 @@ pub async fn transfer_profile(
     let result=transfer_profile_inner(&window,&host,address,username,password,register,remember,invite).await;
     let mut status=host.transfer.lock().map_err(error)?;
     match &result {
-        Ok(_) => *status=json!({"state":"complete","stage":"Workspace moved","completed":6,"total":6}),
+        Ok(result) if result["cancelled"] == true => *status=json!({"state":"cancelled","stage":"Original workspace restored","completed":0,"total":8}),
+        Ok(_) => *status=json!({"state":"complete","stage":"Workspace moved","completed":8,"total":8}),
         Err(message) => {status["state"]=json!("error");status["error"]=json!(message);}
     }
     result
@@ -1382,189 +1409,14 @@ async fn transfer_profile_inner(
     window: &crate::surface::Surface, host: &Host,
     address: String, username: String, password: String, register: bool, remember: bool, invite: Option<String>,
 ) -> Result<Value> {
-    let source = source_entry(&window, &host)?;
-    let source_server = source["server"].as_str().ok_or("Missing source server")?;
-    let source_token = source["token"].as_str().unwrap();
-    let destination = validate_url(&address)?.origin().ascii_serialization();
-    if source_server == destination || (crate::local_server::is_origin(source_server) && crate::local_server::is_origin(&destination)) {
-        return Err(
-            "Choose a different destination server."
-                .into(),
-        );
-    }
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(20))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(error)?;
-    let verified = transfer_json(
-        &client,
-        source_server,
-        "/identity/profiles",
-        source_token,
-        None,
-    )
-    .await?;
-    if verified["active"] != source["profile_id"] || verified["legacy"] == true {
-        return Err("Sign in to the account that owns this exact profile before moving it".into());
-    }
-    let previous = transfer_json(
-        &client,
-        source_server,
-        "/identity/transfer",
-        source_token,
-        None,
-    )
-    .await?;
-    if previous["state"] == "moved" && previous["destination"] != destination {
-        return Err(format!(
-            "This workspace was already moved to {}",
-            previous["destination"].as_str().unwrap_or("another server")
-        ));
-    }
-    let transfer_id = {
-        let mut directory = host.entries.lock().map_err(error)?;
-        let pending = &directory["transfer_request"];
-        let id = transfer_request_id(&previous,pending,&source["key"],&destination,&username)?;
-        directory["transfer_request"] =
-            json!({"source":source["key"],"destination":destination,"username":username,"id":id});
-        save(&directory)?;
-        id
-    };
-    let name = verified["profiles"]
-        .as_array()
-        .and_then(|items| items.iter().find(|p| p["active"] == true))
-        .and_then(|p| p["name"].as_str())
-        .unwrap_or("Kindred");
-    transfer_stage(host,"Signing in to destination",1);
-    let meta=transfer_json(&client,&destination,"/identity/meta","",None).await?;
-    let register=register || meta["first_user"] == true;
-    let mut credentials = json!({"login":username,"password":password,"request_id":transfer_id,"invite":invite.unwrap_or_default()});
-    if register {
-        credentials["name"] = json!(name);
-    } else {
-        credentials["new_profile_name"] = json!(name);
-    }
-    let signed_in = transfer_json(&client,&destination,if register {"/identity/register"} else {"/identity/login"},"",Some(credentials.clone())).await;
-    // Registration may have succeeded before the connection failed. Reuse the
-    // same request ID through authenticated login; never create a second copy.
-    let account = match signed_in {
-        Ok(value) => value,
-        Err(original) if register => {
-            credentials["new_profile_name"]=json!(name);
-            transfer_json(&client,&destination,"/identity/login","",Some(credentials)).await.map_err(|_| original)?
-        }
-        Err(message) => return Err(message),
-    };
-    let token = account["token"]
-        .as_str()
-        .ok_or("Destination sign-in returned no session")?;
-    let profile = account["profile_id"]
-        .as_str()
-        .ok_or("Destination returned no profile")?;
-    crate::local_access::cancel_for_profile_change(window.app_handle())?;
-    transfer_stage(host,"Preparing workspace",2);
-    let package = transfer_json(
-        &client,
-        source_server,
-        "/identity/transfer",
-        source_token,
-        Some(json!({"id":transfer_id})),
-    )
-    .await?;
-    let encoded = serde_json::to_vec(&package).map_err(error)?;
-    let expected: String = ring::digest::digest(&ring::digest::SHA256, &encoded)
-        .as_ref()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    transfer_stage(host,"Copying workspace",3);
-    let result = transfer_json(
-        &client,
-        &destination,
-        "/identity/transfer/import",
-        token,
-        Some(package),
-    )
-    .await?;
-    transfer_stage(host,"Verifying copy",4);
-    if result["receipt"]["id"] != transfer_id
-        || result["receipt"]["digest"] != expected
-        || result["profile_id"] != profile
-    {
-        return Err(
-            "Destination did not confirm this workspace transfer; the source remains paused."
-                .into(),
-        );
-    }
-    transfer_json(
-        &client,
-        source_server,
-        "/identity/transfer/finish",
-        source_token,
-        Some(json!({"id":transfer_id,"destination":destination})),
-    )
-    .await?;
-    let identity = transfer_json(&client, &destination, "/identity/profiles", token, None).await?;
-    {
-        let mut directory = host.entries.lock().map_err(error)?;
-        let entries = directory["entries"].as_array_mut().unwrap();
-        let new_key = key(&destination, profile);
-        entries.retain(|e| e["key"] != new_key);
-        entries.push(json!({"key":new_key,"server":destination,"profile_id":profile,"name":result["name"],"account":identity["account_id"],"username":username,"token":if remember{token}else{""},"legacy":false}));
-        directory["last"] = json!(new_key);
-        // Retire the source bookmark only after the new process authenticates.
-        // A failed launch can still retry from the retained source and receipt.
-        directory["transfer_request"]["completed"]=json!(true);
-        directory["transfer_request"]["destination_profile"]=json!(profile);
-        save(&directory)?;
-    }
-    transfer_stage(host,"Opening workspace",5);
-    restart(window.app_handle(), &destination, token, profile)?;
-    Ok(json!({"moved":true}))
+    migration::run(window,host,address,username,password,register,remember,invite).await
 }
 #[tauri::command]
 pub async fn cancel_profile_transfer(
-    window: crate::surface::Surface,
-    host: tauri::State<'_, Host>,
-) -> Result<()> {
+    window: crate::surface::Surface, host: tauri::State<'_, Host>, password: Option<String>,
+) -> Result<Value> {
     native(&window)?;
-    let _operation=TransferOperation::begin(&host,"Cancelling move")?;
-    let source = source_entry(&window, &host)?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(error)?;
-    let status = transfer_json(
-        &client,
-        source["server"].as_str().unwrap(),
-        "/identity/transfer",
-        source["token"].as_str().unwrap(),
-        None,
-    )
-    .await?;
-    if status["state"] == "moved" {
-        return Err("The transfer is complete. Reconnect to its destination server.".into());
-    }
-    if status["state"] == "prepared" {
-        transfer_json(
-            &client,
-            source["server"].as_str().unwrap(),
-            "/identity/transfer/cancel",
-            source["token"].as_str().unwrap(),
-            Some(json!({"id":status["id"]})),
-        )
-        .await?;
-    }
-    let mut directory = host.entries.lock().map_err(error)?;
-    directory
-        .as_object_mut()
-        .unwrap()
-        .remove("transfer_request");
-    save(&directory)?;
-    *host.transfer.lock().map_err(error)?=json!({"state":"idle"});
-    Ok(())
+    migration::cancel(&window,&host,password).await
 }
 
 #[cfg(test)]
@@ -1591,7 +1443,10 @@ mod transfer_operation_tests {
         finish_saved_transfer(&mut directory,"https://next.example","other");
         assert!(directory.get("transfer_request").is_some());
         finish_saved_transfer(&mut directory,"https://next.example","p");
-        assert_eq!(directory["entries"],json!([{"key":"destination"}]));
+        assert_eq!(directory["entries"].as_array().unwrap().len(),2);
+        assert_eq!(directory["entries"][0]["migration_state"],"recovery");
+        assert_eq!(directory["entries"][0]["moved_to"],json!({"server":"https://next.example","profile_id":"p"}));
+        assert_eq!(directory["entries"][1],json!({"key":"destination"}));
         assert!(directory.get("transfer_request").is_none());
     }
     #[test]

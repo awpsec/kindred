@@ -58,7 +58,7 @@ async function load(){
   const pending=data.transfer_request,localOption=$('transfer-target').querySelector('[value=local]');localOption.disabled=localServer(transferSource);
   transferDestinationKey=null;$('transfer-submit').hidden=false;$('transfer-open').hidden=true;
   if(pending?.source===data.intent.source){$('transfer-address').value=pending.destination;$('transfer-username').value=pending.username;$('transfer-target').value=localServer(pending.destination)?'local':'server';$('transfer-cancel').hidden=false;if(pending.completed){const entry=data.entries.find(p=>p.server===pending.destination&&p.profile_id===pending.destination_profile);if(entry){transferDestinationKey=entry.key;$('transfer-open').hidden=false;$('transfer-submit').hidden=true;$('transfer-cancel').hidden=true;$('transfer-fields').hidden=true;$('transfer-error').textContent='Your workspace has moved.';return;}}}
-  $('transfer-fields').hidden=false;await transferTarget();const progress=await invoke('profile_transfer_status');if(progress?.state==='working'){setTransferBusy(true);pollTransferProgress();}return;
+  $('transfer-fields').hidden=false;await transferTarget();const progress=await invoke('profile_transfer_status');if(progress?.state==='working'){setTransferBusy(true);pollTransferProgress();}else if(progress?.stage){renderTransferStatus(progress);if(progress.error)$('transfer-error').textContent=progress.error;}return;
  }
  const connection=data.intent?.mode==='connection'?data.intent:null;document.documentElement.toggleAttribute('data-connecting',!!connection&&!connection.failed);$('connection-recovery').hidden=!connection;
  if(connection){$('connection-title').textContent=connection.failed?'Couldn’t open your workspace':'Opening your workspace…';$('connection-address').textContent=connection.server;$('connection-help').textContent=connection.failed?'Check your connection and that the server is running, then try again. '+(data.entries.length?'You can also choose another account below.':'You can also connect to another server below.'):'Connecting to your saved server.';$('connection-retry').hidden=!connection.failed;$('connection-retry').dataset.profileServer=connection.server;$('connection-retry').onclick=()=>perform(()=>connection.key?invoke('switch_native_profile',{key:connection.key}):invoke('connect_profile_server',{address:connection.server}),$('connection-retry'));}
@@ -76,7 +76,7 @@ async function load(){
  known.onchange=selectServer;selectServer();
  for(const entry of savedAccounts(data.entries,data.last)){const row=document.createElement('div');row.className='saved-profile';const button=document.createElement('button');button.type='button';button.className='select';button.dataset.key=entry.key;button.dataset.profileServer=entry.server;button.dataset.keys=JSON.stringify(entry.workspaces.map(p=>p.key));
  const initial=document.createElement('span');initial.className='profile-initial';initial.textContent=(entry.username||entry.name).split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
- const text=document.createElement('span'),name=document.createElement('span'),server=document.createElement('span'),status=document.createElement('span');name.className='name';name.textContent=entry.username||entry.name;server.className='server';server.textContent=entry.workspaces.length+' profile'+(entry.workspaces.length===1?'':'s');status.className='session-state';status.textContent=entry.session_available===true?'Saved sign-in':entry.session_available===false?'Sign-in required':'Saved account';button.dataset.sessionState=status.textContent;const progress=document.createElement('progress');progress.className='profile-setup-progress';progress.setAttribute('aria-label',entry.name+' setup');progress.hidden=true;text.className='saved-profile-copy';text.title=entry.name+' · '+entry.server;text.append(name,server,status,progress);button.append(initial,text);
+ const text=document.createElement('span'),name=document.createElement('span'),server=document.createElement('span'),status=document.createElement('span');name.className='name';name.textContent=entry.username||entry.name;server.className='server';server.textContent=entry.workspaces.length+' profile'+(entry.workspaces.length===1?'':'s');status.className='session-state';status.textContent=entry.workspaces.every(p=>p.migration_state==='recovery')?'Recovery copy · paused':entry.workspaces.some(p=>p.migration_state==='staging')?'Migration in progress':entry.workspaces.every(p=>p.migration_state==='cancelled')?'Cancelled copy · inactive':entry.session_available===true?'Saved sign-in':entry.session_available===false?'Sign-in required':'Saved account';button.dataset.sessionState=status.textContent;const progress=document.createElement('progress');progress.className='profile-setup-progress';progress.setAttribute('aria-label',entry.name+' setup');progress.hidden=true;text.className='saved-profile-copy';text.title=entry.name+' · '+entry.server;text.append(name,server,status,progress);button.append(initial,text);
  button.onclick=()=>perform(()=>invoke('switch_native_profile',{key:entry.key}),button);row.append(button);
  const forget=document.createElement('button');forget.className='forget';forget.type='button';forget.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';forget.title='Account options';forget.setAttribute('aria-label','Options for '+entry.name);forget.onclick=()=>profileOptions(entry,forget);row.append(forget);groups.get(entry.server).append(row);
  }
@@ -146,10 +146,16 @@ function profileOptions(entry,trigger){
  const title=document.createElement('h2');title.textContent=entry.name;const server=document.createElement('p');server.textContent=entry.server;
  const actions=document.createElement('div');actions.className='dialog-actions';const done=document.createElement('button');done.textContent='Done';done.onclick=()=>dialog.close();
  const forget=document.createElement('button');forget.className='danger';forget.textContent='Forget on this computer';forget.onclick=()=>{dialog.close();confirmForget(entry,trigger);};actions.append(done,forget);dialog.append(title,server);
- if(entry.workspaces?.length>1){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Existing workspaces';details.append(summary);for(const workspace of entry.workspaces){const button=document.createElement('button');button.dataset.profileServer=workspace.server||entry.server;button.textContent=workspace.name;button.onclick=()=>perform(()=>invoke('switch_native_profile',{key:workspace.key}),button);details.append(button);}dialog.append(details);}
+ if(entry.workspaces?.length>1){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Existing workspaces';details.append(summary);for(const workspace of entry.workspaces){const button=document.createElement('button');button.dataset.profileServer=workspace.server||entry.server;button.textContent=workspace.name+(workspace.migration_state==='recovery'?' · Recovery copy':workspace.migration_state==='staging'?' · Migration in progress':workspace.migration_state==='cancelled'?' · Cancelled copy':'');button.onclick=()=>perform(()=>invoke('switch_native_profile',{key:workspace.key}),button);details.append(button);}dialog.append(details);}
  dialog.append(actions);document.body.append(dialog);dialog.addEventListener('close',()=>{dialog.remove();if(!document.querySelector('dialog[open]'))trigger.focus({preventScroll:true});},{once:true});dialog.showModal();profileReadiness();done.focus();
 }
-function setTransferBusy(busy){transferBusy=busy;$('transfer-fields').disabled=busy;$('transfer-submit').disabled=busy||($('transfer-target').value==='local'&&!transferLocalReady);$('transfer-cancel').disabled=busy;}
+function setTransferBusy(busy){
+ transferBusy=busy;$('transfer-fields').disabled=busy;$('transfer-fields').hidden=busy||!!transferDestinationKey;
+ $('transfer-submit').disabled=busy||($('transfer-target').value==='local'&&!transferLocalReady);$('transfer-submit').hidden=busy||!!transferDestinationKey;
+ const summary=$('transfer-destination-summary');summary.hidden=!busy;summary.textContent='Moving to '+($('transfer-target').value==='local'?'Standalone on this computer':$('transfer-address').value)+' · '+$('transfer-username').value;
+ $('transfer-cancel').disabled=false;if(busy)$('transfer-cancel').hidden=false;
+}
+
 async function transferTarget(){
  const local=$('transfer-target').value==='local';$('transfer-remote').hidden=local;$('transfer-address').required=!local;$('transfer-local').hidden=!local;
  clearTimeout(transferSetupTimer);transferSetupEpoch++;if(local)await checkTransferLocal(transferSetupEpoch);else setTransferBusy(transferBusy);
@@ -169,12 +175,28 @@ async function checkTransferLocal(epoch=transferSetupEpoch){
 }
 $('transfer-target').onchange=()=>transferTarget().catch(e=>$('transfer-error').textContent=String(e.message||e));
 $('transfer-prepare').onclick=async()=>{const button=$('transfer-prepare');button.disabled=true;clearTimeout(transferSetupTimer);const epoch=++transferSetupEpoch;try{await invoke('start_standalone');await checkTransferLocal(epoch);}catch(e){$('transfer-local-state').textContent=String(e.message||e);button.disabled=false;}};
+const migrationSteps=['Check servers','Connect to destination','Save original workspace','Reserve destination','Copy workspace and computer','Verify the copy','Switch active workspace','Save profiles and open'];
+function renderTransferStatus(status){
+ if(!status?.stage)return;
+ $('transfer-progress-panel').hidden=false;$('transfer-stage').textContent=status.stage;
+ const total=status.total||8,completed=Math.min(total,status.completed||0);$('transfer-progress').max=total;$('transfer-progress').value=completed;
+ const list=$('transfer-steps');list.replaceChildren();
+ migrationSteps.forEach((label,index)=>{const row=document.createElement('li');row.textContent=label;row.dataset.state=index<completed?'complete':index===completed?(status.state==='error'?'error':'working'):'pending';list.append(row);});
+ const bytes=$('transfer-bytes');bytes.hidden=!status.total_bytes;
+ if(status.total_bytes){const mb=n=>(n/1048576).toLocaleString(undefined,{maximumFractionDigits:1});bytes.textContent=mb(status.copied_bytes||0)+' of '+mb(status.total_bytes)+' MB copied';}
+}
+function transferCancelled(){
+ $('transfer-error').textContent='Move cancelled. Your original workspace is active again. Any destination copy remains inactive; nothing was deleted.';
+ $('transfer-progress-panel').hidden=true;$('transfer-cancel').hidden=true;$('transfer-submit').textContent='Move workspace';
+}
 async function pollTransferProgress(epoch=transferPollEpoch){
  clearTimeout(transferTimer);
- try{const status=await invoke('profile_transfer_status');if(epoch!==transferPollEpoch)return;if(status?.stage&&(!transferOperationPending||status.state==='working')){$('transfer-progress-panel').hidden=false;$('transfer-stage').textContent=status.stage;$('transfer-progress').max=status.total||6;$('transfer-progress').value=status.completed||0;}
-  if(!transferOperationPending&&status?.state==='error'){setTransferBusy(false);$('transfer-error').textContent=status.error||'The move stopped. Retry or cancel.';return;}
+ try{const status=await invoke('profile_transfer_status');if(epoch!==transferPollEpoch)return;
+  if(!transferOperationPending||status?.state==='working')renderTransferStatus(status);
+  if(!transferOperationPending&&status?.state==='error'){setTransferBusy(false);$('transfer-error').textContent=status.error||'The move stopped. Resume or cancel.';return;}
+  if(!transferOperationPending&&status?.state==='cancelled'){setTransferBusy(false);transferCancelled();return;}
   if(!transferOperationPending&&status?.state==='complete'){setTransferBusy(false);$('transfer-stage').textContent='Workspace moved';return;}
- }catch{/* The operation owns its result; a missed status poll must not cancel it. */}
+ }catch{/* A missed poll cannot determine which server owns the workspace. */}
  if(transferBusy&&epoch===transferPollEpoch)transferTimer=setTimeout(()=>pollTransferProgress(epoch),700);
 }
 $('transfer-form').onsubmit=async event=>{
@@ -184,12 +206,19 @@ $('transfer-form').onsubmit=async event=>{
  transferOperationPending=true;transferPollEpoch++;transferSetupEpoch++;clearTimeout(transferSetupTimer);
  const operation=invoke('transfer_profile',{address,username:$('transfer-username').value.trim(),password:$('transfer-password').value,register:$('transfer-register').checked,invite:$('transfer-invite').value.trim(),remember:$('transfer-remember').checked});
  void pollTransferProgress();
- try{await operation;$('transfer-stage').textContent='Workspace moved';$('transfer-progress').value=6;}
- catch(e){$('transfer-error').textContent=String(e.message||e);$('transfer-cancel').hidden=false;$('transfer-submit').textContent='Retry move';await load().catch(()=>{});}
+ try{const result=await operation;if(result?.cancelled)transferCancelled();else{$('transfer-stage').textContent='Workspace moved';$('transfer-progress').value=8;}}
+ catch(e){$('transfer-error').textContent=String(e.message||e);$('transfer-cancel').hidden=false;$('transfer-submit').textContent='Resume move';await load().catch(()=>{});}
  finally{transferOperationPending=false;transferPollEpoch++;clearTimeout(transferTimer);$('transfer-password').value='';$('transfer-invite').value='';setTransferBusy(false);if($('transfer-target').value==='local')void checkTransferLocal();}
 };
 $('transfer-open').onclick=()=>perform(()=>invoke('switch_native_profile',{key:transferDestinationKey}),$('transfer-open'));
 $('transfer-register').onchange=()=>{$('transfer-invite-row').hidden=!$('transfer-register').checked;$('transfer-password').autocomplete=$('transfer-register').checked?'new-password':'current-password';};
-$('transfer-cancel').onclick=async()=>{setTransferBusy(true);try{await invoke('cancel_profile_transfer');$('transfer-error').textContent='Move cancelled. The original workspace can run again. If a copy reached the destination, it remains there with routines paused.';$('transfer-progress-panel').hidden=true;$('transfer-cancel').hidden=true;$('transfer-submit').textContent='Move workspace';}catch(e){$('transfer-error').textContent=String(e.message||e);}finally{setTransferBusy(false);}};
+$('transfer-cancel').onclick=async()=>{
+ const wasBusy=transferBusy,button=$('transfer-cancel');button.disabled=true;
+ try{const result=await invoke('cancel_profile_transfer',{password:$('transfer-password').value||null});
+  if(result?.requested){$('transfer-stage').textContent='Cancelling safely — checking the destination first';button.textContent='Cancellation requested';}
+  else{setTransferBusy(false);transferCancelled();}
+ }catch(e){$('transfer-error').textContent=String(e.message||e);if(!wasBusy)setTransferBusy(false);}
+ finally{button.disabled=false;}
+};
 window.addEventListener('pagehide',()=>{clearTimeout(transferTimer);clearTimeout(transferSetupTimer);transferSetupEpoch++;});
 window.addEventListener('kindred-dialog-refresh',()=>perform(load));

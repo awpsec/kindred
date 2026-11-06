@@ -15,6 +15,7 @@
 <main id="transfer-view" hidden>
 <h1>Move workspace</h1><p class="intro" id="transfer-source"></p>
 <form id="transfer-form">
+<p id="transfer-destination-summary" class="hint" hidden></p>
 <fieldset id="transfer-fields">
 <label for="transfer-target">Destination</label><select id="transfer-target"><option value="server">Another server</option><option value="local">This computer · Standalone</option></select>
 <div id="transfer-remote"><label for="transfer-address">Server address</label><input id="transfer-address" type="url" placeholder="https://kindred.example.com" required autocomplete="url"></div>
@@ -24,9 +25,9 @@
 <label class="check-row"><input id="transfer-register" type="checkbox">Create an account on the destination</label>
 <div id="transfer-invite-row" hidden><label for="transfer-invite">Invitation code (if needed)</label><input id="transfer-invite" autocomplete="off"></div>
 <label class="check-row"><input id="transfer-remember" type="checkbox" checked>Keep this computer connected</label>
-<details class="transfer-summary"><summary>What moves</summary><p>Bots, chats, artifacts, files attached in Kindred, memories, skills and routines.</p><p>Provider and connector sign-ins, and bot computer files, stay on the source. Routines arrive paused. The original workspace is kept as a read-only backup.</p></details>
+<details class="transfer-summary"><summary>What moves</summary><p>Your bots, conversations, memory, files, skills, routines, monitoring history, provider sign-ins and the complete bot computer move together.</p><p>Kindred checks both servers, pauses new work, copies and verifies the workspace, then switches to the destination. Both profiles stay saved in this app. The source remains a paused recovery copy; nothing is deleted automatically.</p><p>Finish active tasks and calls first. Local-computer access and other devices need pairing again. Gmail push monitoring continues through its fast history check until push is connected to the new address.</p></details>
 </fieldset>
-<div id="transfer-progress-panel" hidden><span id="transfer-stage" role="status"></span><progress id="transfer-progress" max="6" value="0" aria-label="Workspace move"></progress></div>
+<div id="transfer-progress-panel" hidden><span id="transfer-stage" role="status"></span><progress id="transfer-progress" max="8" value="0" aria-label="Workspace move"></progress><p id="transfer-bytes" class="hint" hidden></p><ol id="transfer-steps" aria-label="Migration steps"></ol><p class="hint">If the connection drops, reopen this page to resume. Cancel restores the source before activation; after activation, Kindred reconnects to the destination instead of undoing new work.</p></div>
 <output id="transfer-error" role="alert"></output>
 <div class="transfer-actions"><button class="primary" id="transfer-submit" type="submit">Move workspace</button><button id="transfer-open" type="button" hidden>Open moved workspace</button><button id="transfer-cancel" type="button" hidden>Cancel move</button></div>
 </form>

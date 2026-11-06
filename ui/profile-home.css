@@ -167,3 +167,5 @@ html[data-account-section=accounts] .dialog-actions .danger{color:#e49c9c;}
 html[data-account-section=accounts][data-theme=light] .dialog-actions .danger{color:#b23939;}
 html[data-account-section=accounts] .confirm-dialog details{border:0;}
 @media(max-width:450px){html[data-account-section=accounts] main,html[data-embedded] main{padding-inline:20px;}.saved-profile-copy .session-state{overflow-wrap:anywhere;}}
+
+#transfer-steps{list-style:none;padding:0;display:grid;gap:10px;margin:18px 0;font-size:13px}#transfer-steps li{display:flex;align-items:center;gap:10px;opacity:.5}#transfer-steps li::before{content:"";width:14px;height:14px;flex:none;border:1px solid currentColor;border-radius:50%}#transfer-steps li[data-state=complete]{opacity:.85}#transfer-steps li[data-state=complete]::before{content:"✓";border:0;text-align:center}#transfer-steps li[data-state=working]{opacity:1;font-weight:600}#transfer-steps li[data-state=working]::before{border-width:3px}#transfer-steps li[data-state=error]{opacity:1;color:#c64c42}#transfer-bytes{font-variant-numeric:tabular-nums}
