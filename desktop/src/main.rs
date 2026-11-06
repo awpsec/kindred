@@ -486,8 +486,12 @@ fn main() {
                 let css = gtk::CssProvider::new();
                 css.load_from_data(b"* { min-height: 0; padding: 0; margin: 0; border: 0; }")?;
                 titlebar.style_context().add_provider(&css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
-                titlebar.show();
+                // Even a zero-request GTK widget receives a one-pixel
+                // allocation while visible. Keep the CSD titlebar installed
+                // for resizing, but hidden so tiled content reaches the top.
+                titlebar.set_no_show_all(true);
                 window.gtk_window()?.set_titlebar(Some(&titlebar));
+                titlebar.hide();
             }
 
             #[cfg(target_os = "macos")]

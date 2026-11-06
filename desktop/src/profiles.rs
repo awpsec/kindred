@@ -1350,7 +1350,7 @@ impl<'a> TransferOperation<'a> {
 impl Drop for TransferOperation<'_> {
     fn drop(&mut self) {
         if let Ok(mut status)=self.0.transfer.lock() {
-            if status["state"]=="working" {status["state"]=json!("error");status["error"]=json!("Move interrupted. Retry or cancel to return to the original workspace.");}
+            if status["state"]=="working" {status["state"]=json!("error");status["error"]=json!("Move interrupted. Reopen Move workspace to check its state. A pending move can be cancelled; a completed move must reconnect to its destination.");}
         }
     }
 }

@@ -55,8 +55,8 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   },{action,controlled});
   const border=()=>p.locator('#composer').evaluate(n=>getComputedStyle(n).borderColor);
   await prompt.evaluate(n=>n.blur());await p.mouse.move(2,2);await p.waitForTimeout(240);const idle=await border();
-  await p.locator('#composer').hover();await p.waitForTimeout(240);const hovered=await border();assert.notEqual(hovered,idle);
-  await prompt.focus();await p.waitForTimeout(240);assert.notEqual(await border(),hovered);
+  await p.locator('#composer').hover();await p.waitForTimeout(240);const hovered=await border();assert.equal(hovered,idle,'Hover retains the approved borderless composer');
+  await prompt.focus();await p.waitForTimeout(240);assert.equal(await border(),hovered,'Focus retains the approved borderless composer');
   const expanding=await sample('[data-message="1"] [data-message-action="reply"]');
   const quoteHeight=await p.locator('#composer-reply').evaluate(n=>n.getBoundingClientRect().height);
   assert(expanding.at(-1).height>=expanding[0].height+quoteHeight-2,'Reply adds its own row above the unchanged writing area');

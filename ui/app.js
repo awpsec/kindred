@@ -1,4 +1,5 @@
 import {nativeFileDelivery,responseFileBlob} from './file-downloads.js';
+import {installComposerResizeMotion} from './composer-resize-motion.js';
 import {mountSlackMonitoring,slackSetupCard} from './slack-monitoring.js';
 import {mountGmailMonitoring,openGmailConnection} from './gmail-monitoring.js';
 import {createNavigationSearch} from './navigation-search.js';
@@ -4335,12 +4336,13 @@ $("composer").onsubmit = (e) => {
     await refresh(true);
   }, $("send"));
 };
-function resizeComposer() {
+function resizeComposer(refit=false) {
   const editor=$('prompt'),form=$('composer');
   const text=composerText(editor).replace(/\u200b/g,'');
+  const previousText=form._layoutText||'';form._layoutText=text;
   editor.dataset.empty=String(!text.trim());
   editor.style.height='auto';dictationUI?.render();voiceUI?.render();syncQuestionComposer();
-  // Desktop expansion is sticky for this draft; IME owns layout until commit.
+  // IME owns layout until commit. Shortened drafts can return to one row.
   // Native adapters retain their existing compact/expanded policy.
   if(!document.documentElement.hasAttribute('data-mobile')){
     const chat=state.token+':'+composerChatId();
@@ -4348,7 +4350,14 @@ function resizeComposer() {
     if(editor.dataset.composing==='true')return;
     if(!text){form.classList.remove('is-multiline');return;}
     if(!form.getClientRects().length||form.matches('.is-replying,.has-files,.is-dictating'))return;
-    if(form.classList.contains('is-multiline'))return;
+    if(form.classList.contains('is-multiline')){
+      // Adding to the end cannot make this draft fit a smaller row. Avoid
+      // compact/expanded probes on every key while typing a wrapped line.
+      if(!refit&&previousText&&text.startsWith(previousText))return;
+      const expanded=getComputedStyle(editor);
+      if(text.includes('\n')||editor.scrollHeight>Math.ceil(parseFloat(expanded.minHeight))+1)return;
+      form.classList.remove('is-multiline');
+    }
     const css=getComputedStyle(editor),line=parseFloat(css.lineHeight)+parseFloat(css.paddingTop)+parseFloat(css.paddingBottom);
     form.classList.toggle('is-multiline',text.includes('\n')||editor.scrollHeight>Math.ceil(line)+1);
     return;
@@ -4371,17 +4380,17 @@ function updateComposerLayout(){
   const form=$('composer'),width=form.clientWidth,font=getComputedStyle($('prompt')).fontSize,
     mode=['is-replying','has-files','is-dictating','dictation-enabled','dictation-empty','is-voice-calling'].filter(c=>form.classList.contains(c)).join(' ');
   if(width===composerWidth&&font===composerFont&&mode===composerMode)return;
-  composerWidth=width;composerFont=font;composerMode=mode;resizeComposer();
+  composerWidth=width;composerFont=font;composerMode=mode;resizeComposer(true);
 }
 let composerLayoutFrame=0;
 const composerLayout=new ResizeObserver(()=>{
-  if(window.__KINDRED_MOBILE_PLATFORM!=='ios'){updateComposerLayout();return;}
   // Changing the composer height inside observer delivery can resize the
   // earlier chat observations in WebKit. Refit in the next rendering phase.
   cancelAnimationFrame(composerLayoutFrame);composerLayoutFrame=requestAnimationFrame(updateComposerLayout);
 });
 new MutationObserver(updateComposerLayout).observe($('composer'),{attributes:true,attributeFilter:['class']});
 composerLayout.observe($('composer'));document.fonts.ready.then(resizeComposer);
+installComposerResizeMotion($('composer'),$('prompt'),{allowed:motionAllowed,chat:()=>state.token+':'+composerChatId()});
 // Align the desktop reading column with its composer on overlay and classic
 // scrollbar platforms. Height-only composer changes do no measurement or style
 // work here; native mobile retains its existing layout entirely.
@@ -4432,7 +4441,7 @@ const composerClearance=new ResizeObserver(()=>{
   // padding change. A line wrap needs one adjustment, not a second layout loop
   // competing with typing and avatar motion. Native mobile owns its spacing.
   // Reply morphs already change height on each frame; don't animate them twice.
-  if(window.__KINDRED_DESKTOP?.platform==='linux'||!sameChat||Math.abs(to-from)<1||!chatScroll.follow||chatOpening||$('composer').classList.contains('is-morphing')||!motionAllowed())return setComposerClearance(to);
+  if(!document.documentElement.hasAttribute('data-mobile')||!sameChat||Math.abs(to-from)<1||!chatScroll.follow||chatOpening||$('composer').classList.contains('is-morphing')||!motionAllowed())return setComposerClearance(to);
   const start=performance.now(),duration=180;
   const step=now=>{
     if(!motionAllowed()||composerChatId()!==chat)return settleComposerClearance();

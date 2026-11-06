@@ -4445,6 +4445,12 @@ details.command-progress>summary{padding-left:0}
 .collaboration-wait-row>.collaboration-open{color:var(--soft)}
 .collaboration-wait-row>.collaboration-stop{opacity:.45}
 .collaboration-wait-row>.collaboration-stop:is(:hover,:focus-visible){opacity:1}
+@media(hover:hover) and (pointer:fine){
+  html:not([data-mobile]) .collaboration-wait-row>.collaboration-stop{opacity:0;pointer-events:none;transition:opacity 130ms ease-out}
+  html:not([data-mobile]) .collaboration-wait-row:is(:hover,:focus-within)>.collaboration-stop{opacity:1;pointer-events:auto}
+}
+html[data-motion="off"] .collaboration-wait-row>.collaboration-stop{transition:none}
+@media(prefers-reduced-motion:reduce){.collaboration-wait-row>.collaboration-stop{transition:none}}
 .composer-area{width:100%;max-width:992px;margin-inline:auto;align-self:center}
 
 .default-model-form{display:grid;gap:16px;padding:16px 0;min-width:0}
@@ -6299,6 +6305,10 @@ html:not([data-mobile]) #prompt {grid-column:2;grid-row:4;min-height:22px;paddin
 html:not([data-mobile]) #prompt[data-empty="true"]::before {display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 html:not([data-mobile]) #composer:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) {grid-template-rows:auto auto minmax(40px,auto) 32px;min-height:98px;padding:10px 12px;border-radius:24px;}
 html:not([data-mobile]) #composer:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) #prompt {grid-column:1/-1;grid-row:3;min-height:40px;padding:2px 4px;margin-bottom:9px;align-self:stretch;}
+.composer-resize-surface{display:none;pointer-events:none;}
+html:not([data-mobile]) #composer.has-resize-surface{isolation:isolate;background:transparent;}
+html:not([data-mobile]) #composer>.composer-resize-surface{display:block;position:absolute;inset:0;z-index:-1;border-radius:inherit;background:var(--surface);transform-origin:center bottom;}
+html:not([data-mobile]) #composer.is-morphing{min-height:0;}
 
 /* Inline link icons reserve space next to the URL within native text flow. */
 #prompt .composer-url[data-site]>.composer-url-prefix{white-space:nowrap}
