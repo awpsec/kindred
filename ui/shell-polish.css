@@ -99,6 +99,20 @@ html[data-kindred-ios][data-ios-duo-pose=tabletop] #computer-panel>.bot-center-h
 
 html[data-kindred-ios] #heading { font-size:calc(15px * var(--text-scale,1)); line-height:calc(20px * var(--text-scale,1)); }
 
+/* A shared desktop reading column: bubbles, work cards and the composer use
+   the same 960px boundaries. Keep scrolling at the edge of the conversation.
+   Classic scrollbars consume space inside the transcript; subtract their
+   measured gutter on that side so the right edges still align. */
+html:not([data-mobile]):not([data-kindred-ios]) .conversation .messages {
+  --chat-column-gutter:max(16px,calc((100% - 960px) / 2));
+  padding-left:var(--chat-column-gutter);
+  padding-right:max(0px,calc(var(--chat-column-gutter) - var(--chat-scrollbar-width,0px)));
+}
+html:not([data-mobile]):not([data-kindred-ios]) .conversation>.composer-area {
+  max-width:992px;
+  padding-inline:16px;
+}
+
 /* Desktop identity floats over the transcript; mobile keeps its native header. */
 @media(min-width:761px){
 html:not([data-mobile]) .conversation{position:relative;}

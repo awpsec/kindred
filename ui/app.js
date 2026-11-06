@@ -4382,6 +4382,23 @@ const composerLayout=new ResizeObserver(()=>{
 });
 new MutationObserver(updateComposerLayout).observe($('composer'),{attributes:true,attributeFilter:['class']});
 composerLayout.observe($('composer'));document.fonts.ready.then(resizeComposer);
+// Align the desktop reading column with its composer on overlay and classic
+// scrollbar platforms. Height-only composer changes do no measurement or style
+// work here; native mobile retains its existing layout entirely.
+if(window.__KINDRED_MOBILE_PLATFORM!=='ios'){
+  let widths='',gutter=-1,frame=0;
+  const content=$('content');
+  new ResizeObserver(([entry])=>{
+    const next=[entry.borderBoxSize?.[0]?.inlineSize,entry.contentRect.width].join(':');
+    if(next===widths)return;
+    widths=next;cancelAnimationFrame(frame);
+    frame=requestAnimationFrame(()=>{
+      const size=content.offsetWidth-content.clientWidth;
+      if(size===gutter)return;
+      gutter=size;content.style.setProperty('--chat-scrollbar-width',size+'px');
+    });
+  }).observe(content);
+}
 window.addEventListener('kindred-interface-font-change',()=>requestAnimationFrame(()=>{$('composer').classList.remove('is-multiline');resizeComposer();}));
 // The composer remains a floating surface. Reserve space for all chat rows,
 // including working avatars and collaboration waits.
