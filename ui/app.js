@@ -1,3 +1,4 @@
+import {createNametagStatus} from './nametag-status.js';
 import {nativeFileDelivery,responseFileBlob} from './file-downloads.js';
 import {installComposerResizeMotion} from './composer-resize-motion.js';
 import {mountSlackMonitoring,slackSetupCard} from './slack-monitoring.js';
@@ -698,6 +699,7 @@ const avatarCache = new Map(),
   botArrivals = new Map();
 function delegationContext(run) {
   if(!run?.delegation||!['queued','running','awaiting_user','awaiting_approval','completed'].includes(run.status))return null;
+  if(run.status==='completed'&&!run.delegation.waiting_on_bot_ids?.length)return null;
   const requesterBot=state.bots.find(b=>b.id===run.delegation.requester_bot_id);
   const target=state.chats.find(c=>c.id===run.delegation.source_chat_id&&!c.archived&&!c.bot_only)||state.chats.find(c=>c.id==='dm-'+requesterBot?.id&&!c.archived&&!c.bot_only);
   const requester=target&&requesterBot,waiting=run.status==='completed';
@@ -1266,6 +1268,23 @@ function renderSidebar() {
   navigationSearch?.refresh();
   restoreSidebarFocus(focus);glideSidebar(places);continueLoops($("bots"));
 }
+let nametagStatus;
+function renderNametagStatus(){
+  nametagStatus??=createNametagStatus({heading:$('bot-details'),onStop:work=>perform(async()=>{
+    const results=await Promise.allSettled(work.runIds.map(id=>api('/runs/'+id+'/cancel','POST',{})));
+    await refresh(true);
+    const failure=results.find(result=>result.status==='rejected');
+    if(failure)notice(failure.reason?.message||String(failure.reason));
+  })});
+  const chat=state.chat,id=currentConversationId(),entry=chatHistory.get(id),bot=state.bot;
+  let work=null;
+  if(bot&&!chat?.shared&&id==='dm-'+bot.id){
+    const waits=(entry?.pendingWaits||[]).filter(w=>w.requester_bot_id===bot.id&&state.bots.some(b=>b.id===w.bot_id));
+    if(waits.length)work={label:'Waiting on '+[...new Set(waits.map(w=>state.bots.find(b=>b.id===w.bot_id).name))].join(', '),runIds:[...new Set(waits.map(w=>w.parent_run_id))]};
+    else {const helper=helperWork(bot.id);if(helper&&helper.run.chat_id!==id)work={label:helper.caption,runIds:[helper.run.id],stopping:stoppingTasks.has(helper.run.id)};}
+  }
+  nametagStatus.update(work,id);
+}
 function renderHeader() {
   syncBotCenter();
   renderPendingFiles();
@@ -1284,6 +1303,7 @@ function renderHeader() {
     );
     $("prompt").placeholder = b ? "Message " + b.name : "Message";
   }
+  renderNametagStatus();
   let chatActions=$('chat-actions');
   if(!chatActions){chatActions=iconButton('more','Chat actions',()=>{const bounds=chatActions.getBoundingClientRect();if(state.chat&&!state.chat.id.startsWith('dm-'))showChatMenu(state.chat,chatActions,bounds.right-200,bounds.bottom+6);else if(state.bot)showBotMenu(state.bot,chatActions,bounds.right-200,bounds.bottom+6);});chatActions.id='chat-actions';chatActions.setAttribute('aria-haspopup','menu');$('show-computer').before(chatActions);}
   chatActions.hidden=!(group||b);
@@ -6222,6 +6242,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   const id=chat.id,entry=conversationHistory(id),liveArea=$('content'),area=node('div');
   if(mode==='sync')await syncChatHistory(entry,signal);
   if(currentConversationId()!==id || !entry.loaded)return;
+  renderNametagStatus();
   renderRequestTray(chat,entry);
   const data={messages:entry.messages.filter(m=>!withdrawnQueueMessage(m,id))},visibleRuns=new Set(data.messages.filter(m=>['assistant','result','task_progress'].includes(m.kind)).map(m=>m.run_id).filter(Boolean));
   const listedRuns=state.allRuns.filter(r=>r.chat_id===id && (visibleRuns.has(r.id) || entry.workingRuns?.has(r.id) || (!entry.hasAfter && (active(r)||r.status==='queued'))));
@@ -9505,7 +9526,7 @@ function initDesktopChrome() {
   if(!linux)bar.append(title);
   bar.append(controls);document.body.prepend(bar);
   const chatDrag=node('div','chat-window-drag');chatDrag.setAttribute('aria-hidden','true');
-  $('bot-details').after(chatDrag);
+  $('bot-details').closest('.conversation-header').append(chatDrag);
   const computerDrag=node('div','computer-window-drag');computerDrag.setAttribute('aria-hidden','true');
   $('computer-panel').querySelector('.panel-header').firstElementChild.after(computerDrag);
   // Delegate so headers mounted after startup (such as Artifacts) also work.
