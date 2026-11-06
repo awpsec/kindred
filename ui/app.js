@@ -8711,7 +8711,7 @@ function saveAvatarChoice(bot,patch){
 }
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.avatar-menu'))closeAvatarMenus();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAvatarMenus();$('new-menu').hidden=true;}});
-const chatScroll={view:null,follow:true,anchor:null,top:0,rendering:false,frame:0,layout:null,disclosure:null,disclosureSummary:null,disclosureFrame:0};
+const chatScroll={view:null,follow:true,direction:0,touchY:null,anchor:null,top:0,rendering:false,frame:0,layout:null,disclosure:null,disclosureSummary:null,disclosureFrame:0};
 // Width changes can clamp scrollTop and dispatch a scroll event before the
 // resize observer runs. Preserve reading intent through the entire pane motion;
 // browser layout corrections must never be mistaken for a person's scroll.
@@ -8792,6 +8792,7 @@ function beginChatRender(view){
   messageActionFocus=chatScroll.view===view && focused?.dataset.messageFocus && focused.closest('[data-message]') ? {seq:focused.closest('[data-message]').dataset.message,control:focused.dataset.messageFocus}:null;
   questionFocus=focused?.closest('.question-card') && chatScroll.view===view?{id:focused.closest('.question-card').dataset.questionId,target:focused.dataset.questionFocus,start:focused.selectionStart,end:focused.selectionEnd}:null;
   if(chatScroll.view!==view){
+    chatScroll.direction=0;chatScroll.touchY=null;
     chatScroll.layout=null;chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
     const saved=chatHistory.get(view)?.scroll;
     chatScroll.view=view;chatScroll.follow=saved?.follow??true;chatScroll.anchor=saved?.anchor??null;chatScroll.top=saved?.top??0;
@@ -8814,7 +8815,8 @@ function endChatRender(){
   chatResize.observe($('content'));
   for(const child of $('content').children)chatResize.observe(child);
   restoreChatPosition();
-  if(!chatHistory.get(currentConversationId())?.hasAfter&&$('content').scrollHeight-$('content').scrollTop-$('content').clientHeight<80)chatScroll.follow=true;
+  // A refresh must preserve reading intent, even a few pixels from the end.
+  // Only an explicit return or a downward scroll can resume following.
   chatScroll.rendering=false;
   scheduleChatPosition();
   requestAnimationFrame(loadVisibleHistoryEdge);
@@ -8824,7 +8826,7 @@ function endChatRender(){
 }
 function followChatLatest(){
   chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
-  chatScroll.follow=true;chatScroll.anchor=null;
+  chatScroll.follow=true;chatScroll.direction=0;chatScroll.anchor=null;
   const entry=chatHistory.get(currentConversationId());if(entry)entry.wantLatest=true;
   scheduleChatPosition();
 }
@@ -8839,7 +8841,11 @@ $('content').addEventListener('scroll',()=>{
   if(Math.abs(area.scrollTop-chatScroll.top)<1)return;
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
   const entry=chatHistory.get(currentConversationId());
-  chatScroll.follow=!entry?.hasAfter && area.scrollHeight-area.scrollTop-area.clientHeight<80;
+  // WebKit eases a wheel gesture through small initial steps. An upward step
+  // inside the near-bottom threshold must not re-enable following and let a
+  // pane resize (or the next refresh) pull the reader back to the end.
+  const towardLatest=chatScroll.direction>0 || chatScroll.direction===0&&area.scrollTop>chatScroll.top;
+  chatScroll.follow=!entry?.hasAfter && area.scrollHeight-area.scrollTop-area.clientHeight<80 && (chatScroll.follow||towardLatest);
   captureChatAnchor();
   if(entry?.loaded && !entry.error){
     if(area.scrollTop<180 && entry.hasBefore)void perform(()=>loadHistoryPage('older',true));
@@ -8854,6 +8860,17 @@ function readingGesture(e){
   if(e.type==='wheel'||e.type==='touchmove'||e.type==='keydown')requestAnimationFrame(loadVisibleHistoryEdge);
   if((e.type==='pointerdown'||e.type==='keydown'&&e.key===' ')&&chatScroll.follow&&e.target.closest('summary,button[aria-expanded]')===chatScroll.disclosureSummary)return;
   if(e.type==='keydown'&&(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(e.key)||e.target.closest('input,textarea,[contenteditable=true]')))return;
+  // ScrollTop can also increase when a narrowing pane reflows text. Preserve
+  // the gesture's direction rather than mistaking that layout shift for a
+  // deliberate return to latest. Pointer dragging still uses scroll deltas.
+  if(e.type==='wheel')chatScroll.direction=Math.sign(e.deltaY);
+  else if(e.type==='keydown')chatScroll.direction=['ArrowUp','PageUp','Home'].includes(e.key)||e.key===' '&&e.shiftKey?-1:1;
+  else if(e.type==='touchstart'){chatScroll.direction=0;chatScroll.touchY=e.touches[0]?.clientY??null;}
+  else if(e.type==='touchmove'){
+    const y=e.touches[0]?.clientY;
+    if(y!==undefined&&chatScroll.touchY!==null&&y!==chatScroll.touchY)chatScroll.direction=Math.sign(chatScroll.touchY-y);
+    chatScroll.touchY=y??null;
+  }else if(e.type==='pointerdown')chatScroll.direction=0;
   chatScroll.layout=null;chatScroll.disclosure=null;chatScroll.disclosureSummary=null;chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
 }

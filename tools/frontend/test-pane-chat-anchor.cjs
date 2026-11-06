@@ -16,7 +16,7 @@ const assert=require('node:assert/strict');
    await page.route(origin+'/api/computer/screen-state*',r=>r.fulfill({json:{state:'ready'}}));
    await page.route(origin+'/api/computer/resources',r=>r.fulfill({status:404,json:{error:'none'}}));
    const messages=Array.from({length:55},(_,i)=>({seq:i+1,sender:i%3?'piper':'user',kind:'message',text:`Message ${i+1}. `+'A conversation with enough wrapping text to change height as the computer pane opens. '.repeat(3+(i%4)),created:1700000000+i}));
-   await page.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:require('node:fs').readFileSync(require('node:path').resolve(__dirname,'../../ui/app.js'),'utf8')+'\nexport {setComputerExpanded};'}));
+   await page.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:require('node:fs').readFileSync(require('node:path').resolve(__dirname,'../../ui/app.js'),'utf8')+'\nexport {setComputerExpanded,renderChat,chatScroll};'}));
    await page.route(origin+'/api/runs',r=>r.fulfill({json:[]}));
    await page.route(origin+'/api/chats/dm-piper*',r=>r.fulfill({json:{chat:{id:'dm-piper',members:['piper']},messages,page:{has_before:false,has_after:false}}}));
    await page.goto(origin);await page.locator('#content [data-message="55"]').waitFor();await page.locator('#chat-loading').waitFor({state:'detached'});await page.waitForTimeout(400);
@@ -43,6 +43,17 @@ const assert=require('node:assert/strict');
    await page.locator('.jump-latest').click();await page.waitForTimeout(150);
    await page.locator('#bot-details').click();await page.mouse.move(500,350);await page.mouse.wheel(0,-450);await page.waitForTimeout(500);
    assert(await gap()>100,'reader can leave bottom during pane motion');
+   await page.getByRole('button',{name:'Close bot center',exact:true}).click();await page.waitForTimeout(450);
+   await page.mouse.move(500,350);await page.mouse.wheel(0,2000);await page.waitForTimeout(400);assert(await gap()<2,'return to latest after pane closes');
+   // A small upward gesture remains a reading choice through a history refresh.
+   await page.mouse.move(500,350);await page.mouse.wheel(0,-35);await page.waitForTimeout(400);
+   const smallGap=await gap();assert(smallGap>2&&smallGap<80,'small gesture stays inside the old snap threshold');
+   assert.equal(await page.evaluate(async()=>(await import('/app.js')).chatScroll.follow),false,'upward gesture disables follow');
+   await page.evaluate(async()=>(await import('/app.js')).renderChat(true,'cached'));await page.waitForTimeout(200);
+   assert(Math.abs(await gap()-smallGap)<2,'refresh preserves small upward gesture');
+   await page.mouse.wheel(0,450);await page.waitForTimeout(400);
+   assert(await gap()<2,'downward gesture returns to latest');
+   assert.equal(await page.evaluate(async()=>(await import('/app.js')).chatScroll.follow),true,'downward gesture resumes follow');
    assert.deepEqual(errors,[]);console.log(JSON.stringify({engine:process.env.WEBKIT?'webkit':'chromium',native,reduced,bottom:true,readerAnchor:true,userGesture:true}));await page.close();
   }
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
