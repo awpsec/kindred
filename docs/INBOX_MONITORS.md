@@ -1,67 +1,28 @@
 # Gmail inbox monitors
 
-Kindred supports scheduled reviews through an existing Claude Gmail connection,
-as well as direct Gmail activity detection. These have different timing and usage.
-
-## Reuse Gmail connected through Claude
-
-When a Claude bot's connector inventory reports connected Gmail from its Claude
-account, ask it to monitor that inbox or choose **Settings → Routines → Set up
-Gmail through Claude**. Choose a review frequency and alert criteria. You do not
-need to reconnect Gmail in Kindred. Existing connector permission prompts apply.
-
-Each review runs Claude and uses the provider allowance, even when nothing changed.
-This path supports timed schedules, not Constant activity detection or native push.
-Kindred binds the routine to that Claude account and Gmail connector, prevents a
-duplicate routine for the same connection, and permits supported Gmail read/search
-operations only. A changed or unavailable connection fails visibly rather than
-switching mailbox sources. Success requires a recorded successful connector read;
-a failed read cannot quietly claim an empty inbox. Initial checks start at setup
-time; later checks start from the previous verified review with overlap.
-
-Saving confirms configuration, not that mail was read. No check runs immediately
-from the setup form. Inspect the first scheduled result. Workspace transfer includes
-the account binding but imports routines paused; the destination still needs the
-same available Claude account. No OAuth credentials are copied. These paths have
-fixture coverage; this change has not read the owner's live mailbox.
-
-Claude documents availability of existing account connectors in
-[Claude Code MCP connections](https://code.claude.com/docs/en/mcp#use-mcp-servers-from-claude-ai).
-
-## Direct Gmail activity detection
-
-Kindred wakes an assigned bot when its Gmail watcher finds new inbox messages.
-The watcher runs in the server, independently of the bot VM and AI provider. An
-unchanged inbox creates no model request. A browser sign-in alone cannot supply
-these events; this direct activity detector needs **Marketplace → Gmail**.
+Gmail monitoring uses the same Connections screen and teammate-scoped controls as Slack. It works with Claude, Codex, OpenRouter and other bot providers. Background checks do not start a model when no new mail arrives.
 
 ## Start monitoring
 
-Ask a bot, “Can you monitor my Gmail inbox?” It uses `inbox_monitor_setup` to show
-persistent setup choices: connect Gmail if missing, choose an inbox when several
-are connected, then choose **Monitor activity**, every 5 minutes, every 15 minutes,
-every hour, or a custom schedule. A custom response is always available. The bot
-resumes from your saved answer; it does not create work before you choose timing.
-If you already specified timing, it uses that request without asking again.
+Open **Settings → Connections → Gmail**, or open a teammate's **Connections** and expand Gmail. Connect an account, choose **Add monitor**, assign the bot and describe when it should alert you. Saved monitors show their health and last successful check, with Edit, Pause, Resume and Remove controls. The save button remains visible on small screens while fields scroll. Existing inbox monitors remain available in Routines too.
 
-**Monitor activity** creates a routine named **Monitor EMAIL inbox** with frequency
-**Constant**. “Constant” describes the activity trigger; it does not promise instant
-notification. Timed choices use the existing scheduler; custom days and hours use
-its actual weekly schedule and timezone. Both types appear in **Routines** and in
-the assigned bot's computer panel. Existing monitors appear there automatically,
-without creating a duplicate scheduled job.
+You can also ask a bot to set up monitoring. `inbox_monitor_setup` returns existing accounts or a secure connection card. After you choose the verified mailbox, the bot resumes the original request, reads existing monitors and uses `inbox_monitor_save`. Connecting alone creates no monitor and grants no send permission. Declining or dismissing setup does not create a polling routine. Repeated setup/confirmation reuses the same question and continuation.
 
-For manual setup, open **Settings → Routines → Add routine**, choose
-**Monitor activity** under Schedule, then select Gmail, the bot and alert criteria.
-Edit, pause, resume, check status or remove a paused activity routine from Routines.
-The bot saves activity choices through `routine_create` with `trigger=activity`,
-subject to the normal approval setting. Read-only Gmail access is sufficient. Monitoring does
-not grant permission to send, reply, archive, delete, or modify mail.
+### Connect directly to Google
+
+Choose **Connect Gmail**. The collapsed setup guide explains how to enable Gmail API, create a Web application OAuth client and register the displayed redirect address. Enter its client ID and secret in the secure form, continue to Google, then choose **Check connection**. Use a server address your browser can reach. Remote addresses require HTTPS; local HTTP loopback is supported.
+
+The requested scope is `https://www.googleapis.com/auth/gmail.readonly`. Authorization uses PKCE and a single-use, ten-minute state bound to the workspace. Credentials stay in the private server credential store, not chat or database metadata. Access tokens are reused until expiry. Reconnecting the same mailbox retains its monitor identity and paused state. Pause the account's monitors before disconnecting.
+
+This background authorization is separate from Gmail connected inside Claude or ChatGPT. Kindred does not extract those providers' private credentials. The chat connectors keep working as before. Existing Kindred/Composio Gmail accounts can also be used without reconnecting. Every bot can read the specific new messages assigned to its monitor through `inbox_message_read`, regardless of its chat provider. The tool cannot read arbitrary message IDs or send/modify mail.
+
+### Preserve scheduled reviews
+
+Explicitly scheduled Claude connector reviews remain supported, with their original account binding, timing, permissions and alert criteria. They use model allowance even when no mail changed. The legacy `source=claude` and `source=kindred` setup choices remain compatible with unfinished setups. New setup defaults to event monitoring rather than repeated model polling. Existing scheduled jobs are not silently converted or disabled; preserve business-hour and review semantics when replacing one.
 
 **Fast checks**, the default, query Gmail history every 15 seconds. These are API
 reads, not AI runs. After detection the bot's queue, provider and processing add
-latency; the interval is not an end-to-end notification guarantee. This mode works
-with Composio-managed Gmail OAuth and does not need a public callback.
+latency; the interval is not an end-to-end notification guarantee. This mode works with direct Google authorization and Composio-managed Gmail OAuth. It needs no public Pub/Sub callback.
 
 Kindred begins at the current mailbox history cursor. It does not assign the old
 inbox as a backlog. New messages receive durable, account-bound receipts. Repeated
@@ -79,13 +40,12 @@ must remain open with notification permission, to show device notifications.
 
 Choose **Gmail push** when the following Google Cloud setup is available:
 
-1. Use a custom Gmail OAuth client and Composio auth configuration in your own
-   Google Cloud project. Set the requested scope explicitly to
+1. Use the direct Google OAuth client configured in Connections → Gmail, or a custom Composio auth configuration in your own Google Cloud project. Set the requested scope explicitly to
    `https://www.googleapis.com/auth/gmail.readonly` for read-only access. Kindred
    exposes **Use a custom auth configuration** in Gmail's connection form and
    verifies the configured scopes match the chosen access; it does not accept
    broader Gmail grants under a read-only label. Optional identity scopes are
-   allowed. Configure the OAuth client and secret in Composio, not in bot chat.
+   allowed. Configure credentials in the secure connection form (or Composio for that route), never bot chat.
 2. Enable Gmail and Pub/Sub APIs. Create a topic in that same OAuth client's
    project and grant `gmail-api-push@system.gserviceaccount.com` Pub/Sub Publisher
    permission on it. A topic in your project cannot be used with a different

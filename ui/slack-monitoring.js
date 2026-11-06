@@ -1,10 +1,10 @@
 const historyScopes=['channels:history','groups:history','im:history','mpim:history'];
 function refreshSlackSetupCards(){document.querySelectorAll('[data-connection-toolkit="slack_events"]').forEach(card=>card.refreshConnection?.());}
 export function slackSetupCard(request,env){
-  const {api,node,button,field,modal,state,openMonitoring,logo}=env,token=state.token;
-  const card=node('section','chat-connection-card slack-setup-card');card.dataset.connectionToolkit='slack_events';
+  const {api,node,button,field,modal,state,openMonitoring,logo}=env,token=state.token, gmail=env.service==='gmail', service=gmail?'Gmail':'Slack', toolkit=gmail?'gmail_events':'slack_events';
+  const card=node('section','chat-connection-card slack-setup-card');card.dataset.connectionToolkit=toolkit;
   const head=node('div','chat-connection-head'),copy=node('div','chat-connection-copy'),description=node('p','muted small'),status=node('span','connection-state','Checking');
-  copy.append(button('Slack monitoring',()=>openMonitoring(request.bot_id),'chat-connection-title'),description);head.append(logo(),copy,status);
+  copy.append(button(service+' monitoring',()=>openMonitoring(request.bot_id),'chat-connection-title'),description);head.append(logo(),copy,status);
   const footer=node('div','chat-connection-accounts'),feedback=node('p','run-error small');feedback.setAttribute('role','status');card.append(head,footer,feedback);
   const current=()=>state.token===token&&card.isConnected;
   const call=(...args)=>{if(!current())throw new Error('Workspace changed. Open the conversation again.');return api(...args);};
@@ -23,28 +23,29 @@ export function slackSetupCard(request,env){
   function connect(){
     if(!current())return;
     const account=accounts.find(a=>request.account_id?a.id===request.account_id:request.account_name&&a.name.toLowerCase()===request.account_name.toLowerCase());
+    if(gmail)return env.openConnection({api:call,isCurrent:current,onConnected:async()=>{if(current())await render();}});
     openSlackConnection({node,button,field,modal,request:call,accountName:request.account_name,onConnected:async()=>{if(current())await render();refreshSlackSetupCards();}},account);
   }
   function actions(){
-    footer.append(button('Connect Slack',connect,'subtle-button','plus'),button('Check again',()=>render(),'subtle-button','refresh'));
+    footer.append(button('Connect '+service,connect,'subtle-button','plus'),button('Check again',()=>render(),'subtle-button','refresh'));
     if(request.question_id)footer.append(button('Not now',()=>act(async()=>{await call('/questions/'+encodeURIComponent(request.question_id)+'/answer','POST',{selected:1});if(current())completed(true);}), 'subtle-button'));
   }
   async function render(){
     if(!current()||busy||card.dataset.completed==='true')return;
     clearTimeout(timer);const ticket=++generation;
     try{
-      const data=await call('/slack-monitoring');if(!current()||ticket!==generation||busy||card.dataset.completed==='true')return;
+      const data=await call(gmail?'/inbox-monitors':'/slack-monitoring');if(!current()||ticket!==generation||busy||card.dataset.completed==='true')return;
       accounts=data.connections||[];const choices=accounts.filter(a=>!request.account_id||a.id===request.account_id),ready=choices.filter(a=>a.status==='connected');
       status.textContent=ready.length?'Choose account':choices.some(a=>a.status==='connecting')?'Connecting':'Connection needed';
-      description.textContent=request.account_name?`Connect ${request.account_name}, then select its account to continue setup.`:'Connect Slack, then select an account. Your bot will finish the monitoring rules.';
+      description.textContent=request.account_name?`Connect ${request.account_name}, then select its account to continue setup.`:'Connect '+service+', then select an account. Your bot will finish the monitoring rules.';
       footer.replaceChildren();
       for(const account of ready){
-        const label=`Use ${account.name} · ${account.user_name} · ${account.team_name}`;
-        footer.append(button(label,()=>act(async()=>{await call('/slack-setup/'+encodeURIComponent(request.question_id)+'/complete','POST',{account_id:account.id});if(current())completed();}),'connection-account-chip connected','check'));
+        const label=gmail?`Use ${account.name}${account.email?' · '+account.email:''}`:`Use ${account.name} · ${account.user_name} · ${account.team_name}`;
+        footer.append(button(label,()=>act(async()=>{await call((gmail?'/gmail-setup/':'/slack-setup/')+encodeURIComponent(request.question_id)+'/complete','POST',{account_id:account.id});if(current())completed();}),'connection-account-chip connected','check'));
       }
       actions();
       if(choices.some(a=>a.status==='connecting'))timer=setTimeout(()=>void render(),2000);
-    }catch(error){if(!current()||ticket!==generation)return;status.textContent='Unavailable';description.textContent='Couldn’t load Slack connections.';feedback.textContent=error.message;footer.replaceChildren();actions();}
+    }catch(error){if(!current()||ticket!==generation)return;status.textContent='Unavailable';description.textContent='Couldn’t load '+service+' connections.';feedback.textContent=error.message;footer.replaceChildren();actions();}
   }
   card.refreshConnection=render;
   if(request.completed)completed(request.declined,request.dismissed);
@@ -133,7 +134,7 @@ export async function mountSlackMonitoring(root,env){
     const identity=node('p','muted small'),rules=node('div','slack-rule-editor');rules.setAttribute('aria-label','Monitoring rules');
     const instructions=field('What should your bot do?',watch?.instructions||'Help with requests. Reply when useful; stay quiet otherwise.','textarea');
     const feedback=node('p','run-error small');feedback.setAttribute('role','status');
-    const save=button(watch?'Save monitor':'Create monitor',()=>{},'primary');save.type='submit';
+    const save=button(watch?'Save monitor':'Create monitor',()=>{},'primary');save.type='submit';save.onclick=null;
     let rows=[],channels=[],cursor='',generation=0;
     const channelMore=button('Load more channels',()=>loadChannels(false),'subtle-button');channelMore.hidden=true;
     const add=button('Add rule',()=>addRule({event:'all_messages',scope:'channel',channel_id:''}),'subtle-button','plus');
@@ -192,7 +193,7 @@ export function openSlackConnection(env,account=null){
     const manifest=node('textarea','slack-manifest');manifest.value=JSON.stringify(slackAppManifest(kind.value),null,2);manifest.readOnly=true;manifest.hidden=true;manifest.setAttribute('aria-label','Slack app manifest');
     kind.onchange=()=>{manifest.value=JSON.stringify(slackAppManifest(kind.value),null,2);copy.textContent='Copy app manifest';access.input.placeholder=kind.value==='user'?'xoxp-…':'xoxb-…';};kind.onchange();
     const link=node('a','detail-link','Open Slack app setup');link.href='https://api.slack.com/apps';link.target='_blank';link.rel='noopener noreferrer';guide.append(steps,copy,link,manifest);
-    const feedback=node('p','run-error small');feedback.setAttribute('role','status');const save=button(account?'Update connection':'Connect',()=>{},'primary');save.type='submit';
+    const feedback=node('p','run-error small');feedback.setAttribute('role','status');const save=button(account?'Update connection':'Connect',()=>{},'primary');save.type='submit';save.onclick=null;
     installForm(dialog,form,[intro,labeled('Monitor as',kind),guide,name.label,app.label,access.label,node('p','muted small','An incoming webhook only posts messages; it cannot subscribe to them. ChatGPT’s Slack connection is separate from this event connection.'),feedback],save);
     form.onsubmit=async event=>{event.preventDefault();feedback.textContent='';save.disabled=true;try{if(!access.input.value.trim().startsWith(kind.value==='user'?'xoxp-':'xoxb-'))throw new Error(kind.value==='user'?'Use the User OAuth Token for this Slack account.':'Use the Bot User OAuth Token for this Slack app.');const saved=await request('/slack-connections','POST',{id:account?.id||'',name:name.input.value,app_token:app.input.value,access_token:access.input.value});app.input.value='';access.input.value='';dialog.close();await onConnected(saved);}catch(error){feedback.textContent=error.message;}finally{save.disabled=false;}};
   }

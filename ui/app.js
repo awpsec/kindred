@@ -1,5 +1,6 @@
 import {nativeFileDelivery,responseFileBlob} from './file-downloads.js';
 import {mountSlackMonitoring,slackSetupCard} from './slack-monitoring.js';
+import {mountGmailMonitoring,openGmailConnection} from './gmail-monitoring.js';
 import {createNavigationSearch} from './navigation-search.js';
 import {createBotCenter,libraryItems} from './bot-center.js';
 import {createComputerPopout} from './computer-popout.js';
@@ -2707,6 +2708,7 @@ async function settingsConnections(revision) {
   revision??=++settingsRevision;
   const root=$('settings-content'),apps=section('Apps'),ai=section('AI accounts');root.replaceChildren(apps,ai);
   settingsSlackConnection(apps,connectionView);
+  settingsGmailConnection(apps,connectionView);
   let connections,providers;
   try{[connections,providers]=await Promise.all([api('/connections'),loadProviderAccounts(true)]);}
   catch(error){if(settingsRevision===revision&&ai.isConnected)ai.append(node('p','run-error',error.message),button('Try again',()=>settingsConnections(),'subtle-button'));return;}
@@ -2970,6 +2972,15 @@ async function checkAccount(element) {
       : "Not signed in with an Codex (Subscription).";
 }
 let monitorRefreshTimer;
+function settingsGmailConnection(root,{botId='',showGmail=false}={}) {
+  const row=accountCard({name:'Gmail'}),token=state.token;row.card.classList.add('gmail-account');row.card.open=showGmail;
+  row.card.querySelector('.account-check').replaceWith(connectorLogo(connectorBrand('Gmail')));root.append(row.card);
+  const bots=state.bots.filter(b=>!profile(b).archived),filter=select([['','All bots'],...bots.map(b=>[b.id,b.name])],botId),label=node('label','','Show monitors for');filter.setAttribute('aria-label','Show Gmail monitors for');label.append(filter);row.body.append(label);
+  let revision=0,timer;
+  const current=()=>state.token===token&&row.card.isConnected&&state.settings==='connections'&&$('settings-dialog').open;
+  const refresh=async()=>{clearTimeout(timer);const ticket=++revision,scope=filter.value;if(!current())return;await mountGmailMonitoring(row.body,{api,node,button,field,modal,state,routineAssignee,botId:scope,isCurrent:()=>current()&&filter.value===scope,isLatest:()=>current()&&revision===ticket,onChanged:refresh,onStatus:data=>row.status((data.connections||[]).some(a=>a.status==='connected'),`${(data.connections||[]).filter(a=>a.status==='connected').length} accounts · ${data.items.filter(w=>!filter.value||w.bot_id===filter.value).length} monitors`),editMonitor:(w,data,draft={})=>editInboxMonitor(w,data,{},draft,refresh)});if(current()&&revision===ticket&&row.card.open)timer=setTimeout(refresh,15000);};
+  filter.onchange=()=>void refresh();row.card.addEventListener('toggle',()=>{clearTimeout(timer);if(row.card.open)void refresh();});settingsRequest?.signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});void refresh();
+}
 function settingsSlackConnection(root,{botId='',showSlack=false}={}) {
   const token=state.token,row=accountCard({name:'Slack'}),bots=state.bots.filter(b=>!profile(b).archived);
   row.card.classList.add('slack-account');row.card.open=showSlack;
@@ -3058,21 +3069,7 @@ async function settingsRoutines(revision) {
 function inboxWatchInput(w,overrides={}){
   const value={};for(const k of ['id','bot_id','account_id','name','instructions','mode','topic','service_account','public_url','enabled'])if(w[k]!==undefined)value[k]=w[k];return {...value,...overrides};
 }
-function chooseInboxRoutine(data,connections,draft={}){
-  if(!(data.provider_sources||[]).length)return editInboxMonitor(null,data,connections,draft);
-  const d=modal('Inbox routine','inbox-monitor-dialog'),form=node('form','inbox-monitor-form');
-  const bots=state.bots.filter(b=>!profile(b).archived),assigned=node('label','','Assigned bot'),bot=select(bots.map(b=>[b.id,b.name]),draft.bot_id||state.bot?.id||bots[0]?.id);bot.setAttribute('aria-label','Assigned bot');assigned.append(bot);
-  const sourceLabel=node('label','','Inbox connection'),source=select([],'');source.setAttribute('aria-label','Inbox connection');sourceLabel.append(source);
-  const help=node('p','muted small'),next=button('Continue',()=>{},'primary');next.type='submit';next.onclick=null;
-  let options=[];
-  const update=()=>{
-    options=[{id:'kindred',name:'Gmail connected to Kindred',kind:'kindred'},...(data.provider_sources||[]).filter(s=>s.bot_id===bot.value).map((s,i)=>({...s,id:'provider-'+i,kind:'provider'}))];
-    source.replaceChildren(...options.map(s=>new Option(s.name,s.id)));source.value=options.length>1?options[1].id:'kindred';describe();
-  };
-  const describe=()=>{const choice=options.find(s=>s.id===source.value);help.textContent=choice?.kind==='provider'?'Scheduled AI reviews using this bot’s existing provider connection. Every check uses AI.':'Activity checks work with any provider and use AI only when new mail arrives. You can connect Gmail in the next step.';};
-  bot.onchange=update;source.onchange=describe;update();form.append(assigned,sourceLabel,help,next);d.append(form);
-  form.onsubmit=e=>{e.preventDefault();const choice=options.find(s=>s.id===source.value);d.close();const selected={...draft,bot_id:bot.value};if(choice.kind==='provider')editProviderInbox({provider_sources:[choice]},selected);else editInboxMonitor(null,data,connections,selected);};
-}
+function chooseInboxRoutine(data,connections,draft={}){return editInboxMonitor(null,data,connections,draft);}
 function editProviderInbox(data,draft={}){
   const sources=data.provider_sources||[];if(!sources.length)return;
   const d=modal('Scheduled inbox reviews','inbox-monitor-dialog'),form=node('form','inbox-monitor-form');
@@ -3090,11 +3087,11 @@ function editProviderInbox(data,draft={}){
     catch(e){error.textContent=e.message;error.hidden=false;}finally{save.disabled=false;}
   };
 }
-function editInboxMonitor(w,data,connections,draft={}){
-  const d=modal(w?'Edit routine':'New routine','inbox-monitor-dialog'),form=node('form','inbox-monitor-form');
-  const accounts=(connections.apps||[]).filter(a=>a.id==='gmail').flatMap(a=>a.accounts||[]).filter(a=>a.status==='ACTIVE');
+function editInboxMonitor(w,data,connections,draft={},onSaved=()=>{}){
+  const d=modal(w?'Edit Gmail monitor':'New Gmail monitor','inbox-monitor-dialog slack-monitor-dialog'),form=node('form','inbox-monitor-form slack-monitor-form');
+  const accounts=data.connections?data.connections.filter(a=>a.status==='connected'):(connections.apps||[]).filter(a=>a.id==='gmail').flatMap(a=>a.accounts||[]).filter(a=>a.status==='ACTIVE');
   const bots=state.bots.filter(b=>!profile(b).archived);
-  const name=field('Routine name',w?.name||draft.name||'Monitor Gmail inbox','input',{required:true,maxLength:320});
+  const name=field('Monitor name',w?.name||draft.name||'Monitor Gmail inbox','input',{required:true,maxLength:320});
   const assigned=node('label','', 'Assigned bot'),bot=select(bots.map(b=>[b.id,b.name]),w?.bot_id||draft.bot_id||state.bot?.id||bots[0]?.id);bot.required=true;bot.setAttribute('aria-label','Assigned bot');assigned.append(bot);
   const source=node('label','','Gmail account'),account=select(accounts.map(a=>[a.id,a.name||a.id]),w?.account_id||accounts[0]?.id);account.required=true;account.setAttribute('aria-label','Gmail account');source.append(account);
   if(w){bot.disabled=true;account.disabled=true;}
@@ -3109,15 +3106,15 @@ function editInboxMonitor(w,data,connections,draft={}){
   advanced.append(node('p','muted small','Native Gmail push requires a Pub/Sub topic in the same Google Cloud project as your Gmail OAuth client. Composio-managed OAuth cannot use a topic in your own project. Use a custom Gmail OAuth configuration with read-only Gmail scope. Your callback must be publicly reachable; a tailnet-only address will not work.'),publicUrl.label,topic.label,identity.label);
   const update=()=>{const push=mode.value==='push';advanced.hidden=!push;advanced.disabled=!push;for(const x of [publicUrl,topic,identity])x.input.required=push;help.textContent=push?'Gmail signals changes; Kindred fetches the new message IDs and wakes this bot. Fast checks remain active until the first verified push, then a five-minute backup check catches missed events.':'A lightweight Gmail history check runs every 15 seconds. AI work starts only when new mail is detected. Response time also includes the bot’s queue and processing.';};mode.onchange=update;update();
   const error=node('p','run-error');error.setAttribute('role','alert');error.hidden=true;
-  const save=node('button','primary',w?'Save routine':'Create routine');save.type='submit';save.disabled=!accounts.length||!bots.length;
-  form.append(name.label,assigned,source,frequency,instructions.label,modeLabel,help,advanced,error,save);d.append(form);
+  const save=node('button','primary',w?'Save monitor':'Create monitor');save.type='submit';save.disabled=!accounts.length||!bots.length;
+  const fields=node('div','slack-monitor-fields');fields.append(name.label,assigned,source,frequency,instructions.label,modeLabel,help,advanced,error);form.append(fields,save);d.append(form);
   if(!accounts.length){
     const connect=node('div','monitor-connect');
-    connect.append(node('p','muted small','Connect a Gmail account before creating this routine. Read-only access is enough.'),button('Connect Gmail',()=>{d.close();$('settings-dialog').close();openMarketplace();},'outline-button','link'));
-    form.prepend(connect);
+    connect.append(node('p','muted small','Connect a Gmail account before creating this routine. Read-only access is enough.'),button('Connect Gmail',()=>{d.close();openSettings('connections',{showGmail:true});},'outline-button','link'));
+    fields.prepend(connect);
   }
   form.onsubmit=async e=>{e.preventDefault();if(!form.reportValidity())return;save.disabled=true;error.hidden=true;
-    try{const saved=await api('/inbox-monitors','POST',{id:w?.id||'',bot_id:bot.value,account_id:account.value,name:name.input.value,instructions:instructions.input.value,mode:mode.value,topic:topic.input.value,service_account:identity.input.value,public_url:publicUrl.input.value,enabled:w?.enabled??true});d.close();await refresh(true);if(state.settings==='routines'&&$('settings-dialog').open)await settingsRoutines();if(saved.status==='error')notice('Routine saved, but needs attention. Check its status.');else if(saved.status==='waiting_for_push')notice('Finish Google Cloud delivery setup using the saved push endpoint.');else notice(w?.enabled===false?'Monitor updated and remains paused.':'Constant inbox routine started.');}
+    try{const saved=await api('/inbox-monitors','POST',{id:w?.id||'',bot_id:bot.value,account_id:account.value,name:name.input.value,instructions:instructions.input.value,mode:mode.value,topic:topic.input.value,service_account:identity.input.value,public_url:publicUrl.input.value,enabled:w?.enabled??true});d.close();await onSaved();await refresh(true);if(state.settings==='routines'&&$('settings-dialog').open)await settingsRoutines();if(saved.status==='error')notice('Routine saved, but needs attention. Check its status.');else if(saved.status==='waiting_for_push')notice('Finish Google Cloud delivery setup using the saved push endpoint.');else notice(w?.enabled===false?'Monitor updated and remains paused.':'Gmail monitor started.');}
     catch(e){error.textContent=e.message;error.hidden=false;}finally{save.disabled=false;}
   };
 }
@@ -7253,6 +7250,7 @@ let connectionCardAccounts;
 function validConnectionCard(raw){try{const value=JSON.parse(raw);return !!value&&/^[a-zA-Z0-9_-]{1,160}$/.test(value.toolkit||'');}catch{return /^[a-zA-Z0-9_-]{1,160}$/.test(raw);}}
 function chatConnectionCard(raw){
   let request={};try{request=JSON.parse(raw);}catch{}const toolkit=request.toolkit||raw;
+  if(toolkit==='gmail_events')return slackSetupCard(request,{api,node,button,field,modal,state,service:'gmail',openMonitoring:botId=>openSettings('connections',{botId,showGmail:true}),logo:()=>connectorLogo(connectorBrand('gmail')),openConnection:async options=>{const data=await options.api('/inbox-monitors');if(!options.isCurrent())return;openGmailConnection({api,node,button,field,modal,publicUrl:data.public_url,...options});}});
   if(toolkit==='slack_events')return slackSetupCard(request,{api,node,button,field,modal,state,openMonitoring:openSlackMonitoring,logo:()=>connectorLogo(connectorBrand('slack'))});
   const complete=request.question_id?async account=>{await api('/composio/'+toolkit+'/complete-connection','POST',{account_id:account.id,question_id:request.question_id});card.dataset.completed='true';status.textContent='Connected';status.className='connection-state connected';footer.replaceChildren(node('span','muted small','Connected · setup continuing'));}:null;
   const onboarding={accountName:request.account_name||'',onConnected:complete};
@@ -9775,7 +9773,8 @@ function animateWorkflowDetails(root){for(const details of root.querySelectorAll
 
 async function decisionsConnection() {
   const root=node('div','provider-catalog connection-section decisions-connection'),heading=node('div','connection-section-heading');
-  heading.append(node('strong','','OpenAI API'),node('span','muted small','Optional'));root.append(heading);
+  heading.append(node('strong','','OpenAI API'),node('span','muted small','Optional'),button('Usage',()=>openProviderUsage({id:'openai-api',name:'OpenAI API',kind:'api'}),'subtle-button'));root.append(heading);
+  root.append(node('p','muted small','Recorded usage includes call tool work, follow-ups and Decisions requests. Live audio and voice previews may not report tokens here; check OpenAI for complete billing.'));
   const status=node('p','muted small');status.setAttribute('role','status');
   const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'Paste your OpenAI API key'}),actions=node('div','row-actions');
   key.input.spellcheck=false;key.input.autocapitalize='off';
