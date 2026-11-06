@@ -731,10 +731,11 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
 
     func testNativeDictationComposerStatesKeepDraftAndKeyboard() async throws {
         for theme in ["dark", "light"] {
+            try await setFixtureAppearance(theme)
             for scale in [1.0, 1.5] {
                 for keyboard in [false, true] {
                     let prefix = "dictation-" + theme + (scale == 1 ? "-100" : "-150") + (keyboard ? "-open" : "-closed")
-                    _ = try await js("document.documentElement.dataset.theme='\(theme)';window.__KINDRED_SYSTEM_TEXT_SCALE=\(scale);window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:\(scale)}}));const p=document.querySelector('#prompt');p.textContent='';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.\(keyboard ? "focus({preventScroll:true})" : "blur()");true")
+                    _ = try await js("window.__KINDRED_SYSTEM_TEXT_SCALE=\(scale);window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:\(scale)}}));const p=document.querySelector('#prompt');p.textContent='';p.dispatchEvent(new InputEvent('input',{bubbles:true}));p.\(keyboard ? "focus({preventScroll:true})" : "blur()");true")
                     if !keyboard { window.endEditing(true) }
                     try await waitFor("native keyboard state " + prefix) { self.keyboardVisible == keyboard }
                     try await waitFor("native capability reconciled") {
