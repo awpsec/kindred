@@ -8711,7 +8711,7 @@ function saveAvatarChoice(bot,patch){
 }
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.avatar-menu'))closeAvatarMenus();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAvatarMenus();$('new-menu').hidden=true;}});
-const chatScroll={view:null,follow:true,direction:0,touchY:null,anchor:null,top:0,rendering:false,frame:0,layout:null,disclosure:null,disclosureSummary:null,disclosureFrame:0};
+const chatScroll={view:null,follow:true,direction:0,touchY:null,gestureUntil:0,anchor:null,top:0,rendering:false,frame:0,layout:null,disclosure:null,disclosureSummary:null,disclosureFrame:0};
 // Width changes can clamp scrollTop and dispatch a scroll event before the
 // resize observer runs. Preserve reading intent through the entire pane motion;
 // browser layout corrections must never be mistaken for a person's scroll.
@@ -8736,10 +8736,14 @@ function captureChatAnchor(){
 }
 function restoreChatPosition(){
   const area=$('content');
+  // Let native wheel/touch scrolling finish. Writing scrollTop during WebKit's
+  // eased gesture cancels it, even when a resize just wants the old anchor.
+  if(!chatScroll.follow&&performance.now()<chatScroll.gestureUntil)return;
   if(chatScroll.follow){
     const summary=chatScroll.disclosureSummary;
     const ceiling=summary?.isConnected?area.scrollTop+summary.getBoundingClientRect().top-area.getBoundingClientRect().top-8:Infinity;
-    area.scrollTop=Math.min(area.scrollHeight-area.clientHeight,ceiling);
+    const top=Math.min(area.scrollHeight-area.clientHeight,ceiling);
+    if(Math.abs(area.scrollTop-top)>.5)area.scrollTop=top;
   }
   else {
     const a=chatScroll.anchor;
@@ -8754,7 +8758,8 @@ function restoreChatPosition(){
         :n.dataset.run===candidate.run);
       if(target){matched=candidate;break;}
     }
-    area.scrollTop=target?area.scrollTop+target.getBoundingClientRect().top-area.getBoundingClientRect().top-matched.offset:chatScroll.top;
+    const top=target?area.scrollTop+target.getBoundingClientRect().top-area.getBoundingClientRect().top-matched.offset:chatScroll.top;
+    if(Math.abs(area.scrollTop-top)>.5)area.scrollTop=top;
   }
   chatScroll.top=area.scrollTop;updateJumpLatest();
 }
@@ -8792,7 +8797,7 @@ function beginChatRender(view){
   messageActionFocus=chatScroll.view===view && focused?.dataset.messageFocus && focused.closest('[data-message]') ? {seq:focused.closest('[data-message]').dataset.message,control:focused.dataset.messageFocus}:null;
   questionFocus=focused?.closest('.question-card') && chatScroll.view===view?{id:focused.closest('.question-card').dataset.questionId,target:focused.dataset.questionFocus,start:focused.selectionStart,end:focused.selectionEnd}:null;
   if(chatScroll.view!==view){
-    chatScroll.direction=0;chatScroll.touchY=null;
+    chatScroll.direction=0;chatScroll.touchY=null;chatScroll.gestureUntil=0;
     chatScroll.layout=null;chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
     const saved=chatHistory.get(view)?.scroll;
     chatScroll.view=view;chatScroll.follow=saved?.follow??true;chatScroll.anchor=saved?.anchor??null;chatScroll.top=saved?.top??0;
@@ -8826,12 +8831,13 @@ function endChatRender(){
 }
 function followChatLatest(){
   chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
-  chatScroll.follow=true;chatScroll.direction=0;chatScroll.anchor=null;
+  chatScroll.follow=true;chatScroll.direction=0;chatScroll.gestureUntil=0;chatScroll.anchor=null;
   const entry=chatHistory.get(currentConversationId());if(entry)entry.wantLatest=true;
   scheduleChatPosition();
 }
 $('content').addEventListener('scroll',()=>{
   if(chatOpening||chatScroll.rendering)return;
+  if(performance.now()<chatScroll.gestureUntil)chatScroll.gestureUntil=performance.now()+150;
   if(chatScroll.layout?.view===chatScroll.view){restoreChatPosition();return;}
   const area=$('content');
   // Measuring a collapsed disclosure can temporarily clamp scrollTop before
@@ -8856,10 +8862,16 @@ $('content').addEventListener('scroll',()=>{
 function readingGesture(e){
   if(chatOpening)return;
   if(e.type==='wheel'&&e.deltaY===0)return;
-  // At a clamped edge a wheel/key gesture may produce no scroll event.
-  if(e.type==='wheel'||e.type==='touchmove'||e.type==='keydown')requestAnimationFrame(loadVisibleHistoryEdge);
   if((e.type==='pointerdown'||e.type==='keydown'&&e.key===' ')&&chatScroll.follow&&e.target.closest('summary,button[aria-expanded]')===chatScroll.disclosureSummary)return;
   if(e.type==='keydown'&&(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(e.key)||e.target.closest('input,textarea,[contenteditable=true]')))return;
+  // At a clamped edge a wheel/key gesture may produce no scroll event.
+  if(e.type==='wheel'||e.type==='touchmove'||e.type==='keydown')requestAnimationFrame(()=>{
+    loadVisibleHistoryEdge();
+    const area=$('content');
+    if(chatScroll.direction>0&&!chatHistory.get(currentConversationId())?.hasAfter&&area.scrollHeight-area.scrollTop-area.clientHeight<80){
+      chatScroll.follow=true;chatScroll.anchor=null;
+    }
+  });
   // ScrollTop can also increase when a narrowing pane reflows text. Preserve
   // the gesture's direction rather than mistaking that layout shift for a
   // deliberate return to latest. Pointer dragging still uses scroll deltas.
@@ -8871,6 +8883,7 @@ function readingGesture(e){
     if(y!==undefined&&chatScroll.touchY!==null&&y!==chatScroll.touchY)chatScroll.direction=Math.sign(chatScroll.touchY-y);
     chatScroll.touchY=y??null;
   }else if(e.type==='pointerdown')chatScroll.direction=0;
+  chatScroll.gestureUntil=['wheel','touchmove','keydown'].includes(e.type)?performance.now()+150:0;
   chatScroll.layout=null;chatScroll.disclosure=null;chatScroll.disclosureSummary=null;chatScroll.follow=false;chatScroll.rendering=false;captureChatAnchor();
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
 }
