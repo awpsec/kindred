@@ -76,13 +76,18 @@ def wait_report(folder,phase,child):
    if match:return match
   time.sleep(.2)
  raise AssertionError('Native UI did not report '+phase)
-def capture(child,name,required_words,render_wait=0,window_title=None):
+def capture(child,name,required_words,render_wait=0,window_title=None,allow_transition=False):
  deadline=time.monotonic()+render_wait
  observations=[]
  while True:
   assert child.poll() is None,'Native app exited'
   r=command([out/'window-proof',child.pid,out/name]+([window_title] if window_title else []),name+'.log',required=False)
-  if r.returncode==2:
+  if r.returncode==3 and allow_transition and render_wait>0:
+   try:observation=json.loads(r.stdout)
+   except json.JSONDecodeError:raise AssertionError(f'{name}: Invalid transition observation')
+   assert set(observation)=={'observation','pid','window_id','status'} and observation['observation']=='test_app_window_capture_pending' and observation['pid']==child.pid and type(observation['window_id']) is int and observation['window_id']>0 and observation['status']==1 and not r.stderr.strip(),f'{name}: Invalid transition observation'
+   rows=[]
+  elif r.returncode==2:
    try:observation=json.loads(r.stdout)
    except json.JSONDecodeError:raise AssertionError(f'{name}: Invalid absent-window observation')
    assert observation=={'observation':'no_visible_test_app_window','pid':child.pid} and not r.stderr.strip(),f'{name}: Invalid absent-window observation'
@@ -96,7 +101,7 @@ def capture(child,name,required_words,render_wait=0,window_title=None):
   rendered=bool(rows) and all(word.lower() in text for word in required_words)
   if rendered or time.monotonic()>=deadline:break
   time.sleep(min(.5,max(0,deadline-time.monotonic())))
- assert rendered,f'{name}: No visible test-app window by render deadline' if r.returncode==2 else f'{name}: expected UI text missing from captured windows'
+ assert rendered,f'{name}: No visible test-app window by render deadline' if r.returncode in (2,3) else f'{name}: expected UI text missing from captured windows'
  return rows
 child=server=None;mounted=False
 try:
@@ -239,7 +244,7 @@ try:
      with urllib.request.urlopen(request) as response:response.read()
      frame=wait_report(fixture,phase,child)
      assert frame['nativeControls'] and frame['width']>=640 and frame['height']>=400
-     windows=capture(child,phase,['Piper'])
+     windows=capture(child,phase,['Piper'],render_wait=3 if mode in ['fullscreen','windowed','maximize','restore'] else 0,allow_transition=mode in ['fullscreen','windowed','maximize','restore'])
      frames.append({'phase':phase,'width':frame['width'],'height':frame['height'],'windows':windows})
     proof['native_window_frame_checks']=frames
    gui_failures=[]

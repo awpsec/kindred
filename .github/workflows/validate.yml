@@ -129,6 +129,24 @@ jobs:
             extra+=(--reuse-installation-validation previous-validation/macos-validation.json)
           fi
           python validation-tools/scripts/release/test-macos-package.py --directory "$PACKAGE_DIRECTORY" --source application-source --version "$PACKAGE_VERSION" --source-commit "$PACKAGE_SOURCE" --target "$PACKAGE_TARGET" --output results "${extra[@]}"
+      - name: Verify embedded native disclosure, Library and computer popout
+        env:
+          PACKAGE_DIRECTORY: ${{ inputs.repair_signature && 'repaired-packages' || 'packages' }}
+          PACKAGE_VERSION: ${{ inputs.version }}
+          PACKAGE_SOURCE: ${{ inputs.source_commit }}
+        run: |
+          mkdir -p /tmp/kindred-native-ui-volume
+          hdiutil attach -readonly -nobrowse -mountpoint /tmp/kindred-native-ui-volume "$PACKAGE_DIRECTORY"/*.dmg
+          trap 'hdiutil detach /tmp/kindred-native-ui-volume' EXIT
+          node validation-tools/scripts/release/native-ui-smoke/run-native.cjs --source application-source --binary /tmp/kindred-native-ui-volume/Kindred.app/Contents/MacOS/kindred-desktop --output native-ui-validation --version "$PACKAGE_VERSION" --source-commit "$PACKAGE_SOURCE"
+      - name: Preserve embedded native UI validation
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-ui-${{ inputs.version }}-${{ matrix.target }}
+          path: native-ui-validation/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Retain the unchanged package after successful validation
         if: ${{ success() && inputs.preserved_package && !inputs.repair_signature }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

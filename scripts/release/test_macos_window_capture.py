@@ -14,7 +14,7 @@ SOURCE = Path(__file__).with_name('test-macos-package.py')
 
 
 class CaptureTests(unittest.TestCase):
-    def invoke(self, samples, wait=1.0, exited=False, words=None):
+    def invoke(self, samples, wait=1.0, exited=False, words=None, transition=False):
         tree = ast.parse(SOURCE.read_text())
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'capture')
         clock = SimpleNamespace(value=0.0)
@@ -32,6 +32,8 @@ class CaptureTests(unittest.TestCase):
                     result = SimpleNamespace(returncode=2, stdout=json.dumps({'observation':'no_visible_test_app_window','pid':999}), stderr='')
                 elif sample == 'malformed':
                     result = SimpleNamespace(returncode=2, stdout='not json', stderr='')
+                elif sample in ('transition','bad_transition'):
+                    result = SimpleNamespace(returncode=3, stdout=json.dumps({'observation':'test_app_window_capture_pending','pid':123 if sample=='transition' else 999,'window_id':456,'status':1}), stderr='')
                 elif sample == 'error':
                     result = SimpleNamespace(returncode=1, stdout='', stderr='Window capture failed')
                 elif sample == 'old_fatal':
@@ -49,7 +51,31 @@ class CaptureTests(unittest.TestCase):
             child = SimpleNamespace(pid=123, poll=lambda: 1 if exited else None)
             self.calls = calls
             self.clock = clock
-            return ns['capture'](child,'preview',['sent you a message'] if words is None else words,render_wait=wait,window_title='Kindred notification')
+            return ns['capture'](child,'preview',['sent you a message'] if words is None else words,render_wait=wait,window_title='Kindred notification',allow_transition=transition)
+
+    def test_frame_transition_requires_actual_capture_before_deadline(self):
+        self.invoke(['transition','visible'], transition=True)
+        self.assertEqual(self.calls, [0.0,0.5])
+
+    def test_frame_transition_cannot_bypass_capture(self):
+        with self.assertRaisesRegex(AssertionError, 'render deadline'):
+            self.invoke(['transition'], transition=True)
+        self.assertEqual(self.clock.value, 1.0)
+
+    def test_transition_is_not_allowed_outside_frame_changes(self):
+        with self.assertRaisesRegex(AssertionError, 'command failed'):
+            self.invoke(['transition','visible'])
+        self.assertEqual(self.calls, [0.0])
+
+    def test_transition_without_budget_is_not_retried(self):
+        with self.assertRaisesRegex(AssertionError, 'command failed'):
+            self.invoke(['transition','visible'], transition=True, wait=0)
+        self.assertEqual(self.calls, [0.0])
+
+    def test_transition_wrong_pid_fails_immediately(self):
+        with self.assertRaisesRegex(AssertionError, 'Invalid transition observation'):
+            self.invoke(['bad_transition','visible'], transition=True)
+        self.assertEqual(self.calls, [0.0])
 
     def test_window_appears_before_deadline(self):
         rows = self.invoke(['absent','visible'])

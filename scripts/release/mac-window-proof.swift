@@ -20,7 +20,18 @@ for window in windows {
     let screenshot = folder.appendingPathComponent("window-\(id).png")
     let task = Process(); task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
     task.arguments = ["-x", "-l", String(id), screenshot.path]
+    let errors = Pipe(); task.standardError = errors
     try task.run(); task.waitUntilExit()
+    let detail = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if task.terminationStatus == 1 && detail == "could not create image from window" {
+        // CoreGraphics can list a window while its fullscreen Space is moving.
+        // The caller permits a bounded observation only during frame changes.
+        let observation: [String: Any] = ["observation": "test_app_window_capture_pending", "pid": pid, "window_id": id, "status": 1]
+        let data = try JSONSerialization.data(withJSONObject: observation, options: [.sortedKeys])
+        print(String(data: data, encoding: .utf8)!)
+        exit(3)
+    }
+    if !detail.isEmpty { FileHandle.standardError.write(Data((detail + "\n").utf8)) }
     guard task.terminationStatus == 0 else { throw NSError(domain: "Window capture failed", code: 1) }
     let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate
     try VNImageRequestHandler(url: screenshot).perform([request])
