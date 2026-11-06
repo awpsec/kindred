@@ -49,6 +49,9 @@ jobs:
           # an existing toolchain; never download one or weaken the Duo gate.
           choices=[]
           for developer in Path('/Applications').glob('Xcode*.app/Contents/Developer'):
+              # SDK-only installations cannot run the required native UI checks.
+              if not (developer / 'Applications' / 'Simulator.app').is_dir():
+                  continue
               env=dict(os.environ,DEVELOPER_DIR=str(developer))
               try:
                   sdk=subprocess.check_output(['xcrun','--sdk','iphonesimulator','--show-sdk-version'],env=env,text=True,stderr=subprocess.DEVNULL,timeout=20).strip()
@@ -59,7 +62,7 @@ jobs:
           result={'source_commit':actual,'unsigned_simulator_only':True,'available_developer_directories':[{'sdk':'.'.join(map(str,version)),'path':path} for version,path in sorted(choices)]}
           version,developer=max(choices,default=((0,),''))
           Path('ios-validation/environment.json').write_text(json.dumps(result,indent=2)+'\n')
-          assert version >= (27,1), 'An installed iOS 27.1+ SDK is required for the reserved-region bridge; no automatic retry.'
+          assert version >= (27,1), 'A complete Xcode installation with Simulator.app and iOS 27.1+ SDK is required; no automatic retry.'
           os.environ['DEVELOPER_DIR']=developer
           with open(os.environ['GITHUB_ENV'],'a') as output: output.write('DEVELOPER_DIR='+developer+'\n')
           result.update(xcode=subprocess.check_output(['xcodebuild','-version'],text=True),developer_directory=developer,sdk_identity=subprocess.check_output(['xcodebuild','-showsdks'],text=True),selected_sdk='.'.join(map(str,version)))
