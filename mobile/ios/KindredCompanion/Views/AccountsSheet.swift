@@ -234,6 +234,8 @@ private struct AccountRow: View {
             Button(action: details) {
                 Image(systemName: "info.circle")
                     .font(.title3)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)

@@ -70,10 +70,10 @@ struct RootView: View {
             if let banner = model.banner {
                 BannerView(banner: banner) { model.banner = nil }
                     .safeAreaPadding(.top)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.snappy, value: model.banner)
+        .animation(.easeOut(duration: reduceMotion ? 0.1 : 0.2), value: model.banner)
     }
 
     @ViewBuilder

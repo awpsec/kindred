@@ -43,24 +43,25 @@ struct BannerView: View {
     let dismiss: () -> Void
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: banner.isError ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                .foregroundStyle(banner.isError ? Color.red : Theme.accent)
-            Text(banner.message)
-                .font(.footnote)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+        Button(action: dismiss) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: banner.isError ? "exclamationmark.triangle.fill" : "info.circle.fill")
+                    .foregroundStyle(banner.isError ? Color.red : Theme.accent)
+                Text(banner.message)
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+            .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+        .buttonStyle(.plain)
         .padding(.horizontal, 12)
-        .onTapGesture(perform: dismiss)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
         .accessibilityHint("Dismiss")
     }
 }
