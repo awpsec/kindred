@@ -417,11 +417,12 @@ final class WebSession: NSObject {
     }
 
     func computerHostAttachmentChanged() {
-        ComputerOrientation.shared.update(webView: webView, active: computerInputWanted && webView.window != nil, isSlab: layoutIsSlab)
+        ComputerOrientation.shared.update(webView: webView, active: computerInputWanted && webView.window != nil,
+                                          isSlab: layoutIsSlab, isDuo: presentation.isDuo)
     }
 
     func restoreComputerKeyboard(force: Bool = false) {
-        guard computerInputWanted, (!layoutIsSlab || layoutIsPortrait), webView.window != nil,
+        guard computerInputWanted, (presentation.isDuo || !layoutIsSlab || layoutIsPortrait), webView.window != nil,
               !nativeNavigationBlocked, webView.window?.windowScene?.activationState == .foregroundActive,
               origin.matches(webView.url), !computerFocusPending else { return }
         computerFocusPending = true

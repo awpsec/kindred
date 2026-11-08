@@ -37,8 +37,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
-/// Remote typing on slab phones is portrait-only. Duo's inner display and
-/// keyboard adapt to the scene's available space without forcing a pose.
+/// Remote typing on slab phones is portrait-only. Both Duo displays adapt to
+/// the scene's available space without forcing an orientation.
 @MainActor
 final class ComputerOrientation {
     static let shared = ComputerOrientation()
@@ -48,8 +48,8 @@ final class ComputerOrientation {
         return window?.traitCollection.userInterfaceIdiom == .phone ? .allButUpsideDown : .all
     }
 
-    func update(webView: WKWebView, active: Bool, isSlab: Bool) {
-        let lock = active && isSlab
+    func update(webView: WKWebView, active: Bool, isSlab: Bool, isDuo: Bool = false) {
+        let lock = active && isSlab && !isDuo
         if lock {
             guard owner !== webView else { return }
             owner = webView
@@ -61,7 +61,7 @@ final class ComputerOrientation {
         let root = webView.window?.rootViewController
         root?.setNeedsUpdateOfSupportedInterfaceOrientations()
         root?.presentedViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-        // Retract the explicit portrait preference when an inner display or
+        // Retract the explicit portrait preference when a Duo display or
         // returned control releases the lock. UIKit chooses the current pose.
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: lock ? .portrait : mask(for: webView.window)))
     }
