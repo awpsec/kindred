@@ -315,9 +315,11 @@ a server update alone cannot add this phone transport support.
   the animated handoff follows the cached account appearance.
   Slab phones use the entire computer screen without an expansion button; in
   landscape, watching keeps controls/resources beside the desktop. Taking
-  control on a slab phone or closed Duo outer display rotates the app upright
-  and locks portrait until control is returned or the pane is closed. The open
-  Duo inner display permits typing in either orientation. The keyboard stays available while the
+  control on a slab phone rotates the app upright and locks portrait until
+  control is returned or the pane is closed. Both Duo displays permit typing
+  in either orientation. Screen touches retain the native text input rather
+  than moving focus to noVNC's canvas, keeping touch coordinates stable through
+  the entire gesture. The keyboard stays available while the
   controlled screen is visible; reopening restores it. View-only screen taps
   have no expansion or remote-input action. UIKit's keyboard layout guide
   sizes the web view once, keeping the composer at the real keyboard edge

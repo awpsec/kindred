@@ -62,6 +62,9 @@ final class AppModelSignInTests: XCTestCase {
         policy.update(webView: first, active: true, isSlab: false)
         XCTAssertTrue(policy.mask(for: window).contains(.landscapeLeft), "Duo control must release a slab lock when its capability changes")
         XCTAssertTrue(policy.mask(for: window).contains(.landscapeRight))
+        policy.update(webView: first, active: true, isSlab: true, isDuo: true)
+        XCTAssertTrue(policy.mask(for: window).contains(.landscapeLeft), "Duo's cover is slab-sized but must not acquire a portrait lock")
+        XCTAssertTrue(policy.mask(for: window).contains(.landscapeRight))
         policy.update(webView: first, active: false, isSlab: false)
     }
 

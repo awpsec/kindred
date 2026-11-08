@@ -938,10 +938,11 @@
       if (!restoringFocus && canvas()) window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'computer-keyboard'});
     });
     let awaitingControl = false, controlTimeout, hadControl = false, inputWanted = false;
-    const portrait = () => html.dataset.iosDuoInner === 'true' || (nativePortrait ?? (window.innerHeight >= window.innerWidth));
+    const allowsKeyboard = () => window.__KINDRED_IOS_LAYOUT?.isDuo === true ||
+      window.__KINDRED_IOS_LAYOUT?.isSlab === false || (nativePortrait ?? (window.innerHeight >= window.innerWidth));
     window.__kindredComputerInput = {
       focus(force = false) {
-        if (!canvas() || !portrait()) return;
+        if (!canvas() || !allowsKeyboard()) return;
         // A fold can resize the computer behind a sheet or a second editor.
         // Keep that editor's keyboard and caret instead of stealing focus.
         if (document.querySelector('dialog[open]') ||
@@ -968,7 +969,12 @@
     // Remote clicks may focus the canvas; restore native entry after the click.
     let restoreKeyboard = false;
     computer.addEventListener('pointerdown', event => {
-      if (event.target.matches('.desktop-canvas canvas')) restoreKeyboard = computer.classList.contains('ios-keyboard-active');
+      if (!event.target.matches('.desktop-canvas canvas') || !canvas()) return;
+      // Let noVNC receive the touch gesture without transferring focus from
+      // native text entry to its canvas. A blur would hide the keyboard and
+      // reflow the screen between touch-down and noVNC's touch-up mapping.
+      event.preventDefault();
+      restoreKeyboard = computer.classList.contains('ios-keyboard-active');
     },true);
     computer.addEventListener('pointerup', event => {
       if (event.target.matches('.desktop-canvas canvas') && restoreKeyboard && canvas()) window.__kindredComputerInput.focus();
@@ -1009,7 +1015,13 @@
         } else if (!action.disabled && /^(Take control|Stop task & take control)$/.test(label)) resumeScreen = null;
       }
       const screen = computer.querySelector('.desktop-canvas canvas');
-      if (screen?.width > 0 && screen?.height > 0) computer.style.setProperty('--ios-screen-ratio',screen.width / screen.height);
+      // noVNC explicitly focuses its tabindex canvas on touch-start, before
+      // its gesture handler maps touch-up. Native text entry already owns the
+      // keyboard; an unfocusable canvas keeps that focus and geometry intact.
+      screen?.removeAttribute('tabindex');
+      const screenWidth = Number(screen?.dataset.framebufferWidth) || screen?.width;
+      const screenHeight = Number(screen?.dataset.framebufferHeight) || screen?.height;
+      if (screenWidth > 0 && screenHeight > 0) computer.style.setProperty('--ios-screen-ratio',screenWidth / screenHeight);
     };
     observeUI(updateControl).observe(computer,{attributes:true,attributeFilter:['class','hidden','width','height'],childList:true,subtree:true});
     updateControl();
