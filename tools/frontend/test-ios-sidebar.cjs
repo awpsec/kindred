@@ -68,7 +68,11 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
       await assertFill();
       await relay(true,[{kind:'division',active:true,x:600,y:0,width:24,height:720}]);
       assert.equal(await width(),210,'book pose cannot widen the native sidebar');
-      const foldedForm=await page.locator('#composer').boundingBox();assert(foldedForm.x>=624,'narrow legacy sidebar retains fold-safe composer controls');
+      // Since d4113d3 the writing surface spans book pose; the identity
+      // remains on one leaf. A fold must not shrink the user's draft area.
+      await assertFill();
+      const foldedIdentity=await page.locator('#bot-details').boundingBox();
+      assert(foldedIdentity.x>=624||foldedIdentity.x+foldedIdentity.width<=600,'identity stays clear of the active fold');
       await relay(true);await action('chats');await page.waitForFunction(()=>document.querySelector('.sidebar').getClientRects().length===0);await assertFill();
       await action('chats');await settled();assert.equal(await width(),210);
       await begin(-180);await page.mouse.up();await clean();assert.equal(await width(),76);
