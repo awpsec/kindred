@@ -4,7 +4,7 @@ const path=require('node:path');
 const runtime=path.dirname(require.resolve(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright'));
 const core=path.dirname(require.resolve('playwright-core/package.json',{paths:[runtime]}));
 const {wsServer:WebSocketServer}=require(path.join(core,'lib/utilsBundle.js'));
-exports.attachComputerStream=server=>{
+exports.attachComputerStream=(server,{width,height}={})=>{
  const sockets=new Set(),tickets=new Map(),connections=[],inputs=[];let serial=0;
  const wss=new WebSocketServer({noServer:true});
  server.on('upgrade',(req,socket,head)=>{
@@ -12,7 +12,7 @@ exports.attachComputerStream=server=>{
   if(url.pathname!=='/vnc'||!bot){socket.destroy();return;}
   tickets.delete(url.searchParams.get('ticket'));
   wss.handleUpgrade(req,socket,head,ws=>{
-   const entry={ws,bot,width:320,height:bot==='piper'?180:200,color:bot==='piper'?[18,184,198]:[255,156,60],format:{big:false,red:16,green:8,blue:0},ready:false,sent:false};sockets.add(entry);connections.push(bot);
+   const entry={ws,bot,width:width||320,height:height||(bot==='piper'?180:200),color:bot==='piper'?[18,184,198]:[255,156,60],format:{big:false,red:16,green:8,blue:0},ready:false,sent:false};sockets.add(entry);connections.push(bot);
    ws.on('close',()=>sockets.delete(entry));let stage=0,buffer=Buffer.alloc(0);
    const frame=color=>{
     if(ws.readyState!==1||!entry.ready)return;
@@ -42,7 +42,7 @@ exports.attachComputerStream=server=>{
      else {ws.close();return;}
      if(buffer.length<size)return;
      if(kind===0)entry.format={big:!!buffer[6],red:buffer[14],green:buffer[15],blue:buffer[16]};
-     if([4,5,6].includes(kind))inputs.push({bot,kind});
+     if([4,5,6].includes(kind))inputs.push({bot,kind,...(kind===5?{buttons:buffer[1],x:buffer.readUInt16BE(2),y:buffer.readUInt16BE(4)}:{})});
      buffer=buffer.subarray(size);
      if(kind===3&&!entry.sent){entry.sent=true;frame(entry.color);}
     }

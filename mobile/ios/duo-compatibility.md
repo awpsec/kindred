@@ -43,8 +43,10 @@ restriction while typing on a remote computer remain in place.
   the server's original Back closure. Version 2 owns both animations itself.
 - Maximize is available on the inner display and hidden on the outer display.
   Closing an expanded inner computer also clears expansion through its existing
-  controller, without replacing the connection. Outer remote typing uses the
-  slab portrait policy; releasing it retracts the explicit orientation preference.
+  controller, without replacing the connection. Both Duo displays permit remote
+  typing in either orientation; the portrait lock applies only to slab phones.
+  Remote screen touches retain native text-entry focus, so the keyboard and
+  screen do not reflow between touch-down and remote coordinate mapping.
 - Document, workspace-artifact and screenshot previews have safe-area-aware
   headers with circular glass controls. Original dismissal and cleanup handlers
   remain intact. Touching Paste or Return control keeps keyboard geometry stable
