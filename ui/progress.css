@@ -68,3 +68,8 @@ progress::-moz-progress-bar{background:var(--progress-accent)}
 @media(prefers-reduced-motion:reduce){
   #content .task-activity,.task-activity .summary-progress-heading{transition:none}
 }
+
+/* Short work keeps commentary available without a long-job identity or timer. */
+.summary-progress.brief-progress{margin-block:6px;--task-header-inset:0px}
+.brief-progress .summary-progress-heading{color:var(--muted);width:fit-content}
+.brief-progress .summary-progress-task{flex:none}

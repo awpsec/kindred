@@ -2443,7 +2443,7 @@ async function defaultModelSettings(root,current) {
     };
   }catch(error){if(current())pane.body.append(node('p','muted small',error.message||String(error)));}
 }
-const progressModes=[['calm','Calm','Mostly quiet, with occasional updates during longer tasks.'],['balanced','Balanced','Useful updates at meaningful milestones.'],['frequent','Frequent','More frequent updates, without narrating every step.'],['summaries','Summaries','Group updates on longer jobs; keep every update available.']];
+const progressModes=[['calm','Calm','Mostly quiet, with occasional updates during longer tasks.'],['balanced','Balanced','Useful updates at meaningful milestones.'],['frequent','Frequent','More frequent updates, without narrating every step.'],['summaries','Summaries','Keep interim updates in Activity; show progress headers only for longer jobs.']];
 function progressChoices(value='summaries'){
   const root=node('fieldset','progress-choices'),legend=node('legend','','Progress updates'),tiles=node('div','progress-choice-tiles'),description=node('p','progress-choice-description');
   description.id='progress-choice-description';description.setAttribute('aria-live','polite');
@@ -5190,7 +5190,8 @@ function progressGroups(messages,entry=null){
   // Only validated, same-bot group members can supply work evidence.
   for(const [key,items] of groups){
     const substantial=substantialProgress(items);
-    if(!substantial&&!entry?.trackedProgressGroups?.has(key)){groups.delete(key);continue;}
+    // Brief work still owns its commentary; it must not fall back to chat bubbles.
+    if(!substantial&&!entry?.trackedProgressGroups?.has(key)&&!items.some(m=>m.kind==='assistant')){groups.delete(key);continue;}
     if(substantial&&entry){entry.trackedProgressGroups??=new Set();entry.trackedProgressGroups.add(key);while(entry.trackedProgressGroups.size>CHAT_WINDOW_SIZE)entry.trackedProgressGroups.delete(entry.trackedProgressGroups.values().next().value);}
   }
   return groups;
@@ -5377,7 +5378,7 @@ function updateTaskStatus(label){
   label.title=text;
 }
 function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
-  const first=items.find(m=>m.kind==='task_progress'),key=first.progress.group_id,presentation=taskPresentation(items,entry),staged=presentation.mode==='staged',questions=taskQuestions(items,entry);
+  const first=items.find(m=>m.kind==='task_progress'),key=first.progress.group_id,brief=!substantialProgress(items)&&!entry.trackedProgressGroups?.has(key),presentation=taskPresentation(items,entry),staged=presentation.mode==='staged',questions=taskQuestions(items,entry);
   const rootRun=runs.find(r=>r.id===first.run_id)||state.allRuns.find(r=>r.id===first.run_id)||state.details.get(first.run_id)?.run;
   const memberRuns=[...new Set([...items.map(m=>m.run_id),...questions.map(m=>m.question.continuation_run_id).filter(Boolean)])];
   const currentRunId=memberRuns.at(-1)||first.run_id,run=[...runs,...state.allRuns].find(r=>r.id===currentRunId)||state.details.get(currentRunId)?.run;
@@ -5399,7 +5400,7 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   }
   if(finished&&!terminal){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
   // A persisted marker retains a compact completion receipt without inventing stages.
-  const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
+  const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact')+(brief?' brief-progress':''));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
   if(first.projectedProgress){group.dataset.message='progress:'+key;group.dataset.scrollMessages=String(items.find(m=>!m.projectedProgress).seq);}
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
   const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open&&!previous.querySelector('details').classList.contains('is-collapsing');
@@ -5407,7 +5408,7 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   const details=node('details','summary-progress-disclosure');details.open=completing||manual||(staged&&!finished&&!entry.progressClosed.has(key));
   const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender);
   const chevron=node('span','summary-progress-chevron','⌄');chevron.setAttribute('aria-hidden','true');title.append(chevron);
-  if(bot){
+  if(bot&&!brief){
     // A completed receipt belongs to this task, not the bot's next activity.
     const avatar=finished?character({...portrait(bot),animated:false},22):buddy(bot,22);
     if(finished)delete avatar.dataset.botId;
@@ -5415,19 +5416,19 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   }
   const status=finished?({completed:'Finished',failed:'Failed',cancelled:'Stopped',interrupted:'Interrupted'}[(terminal?.status||run?.status)]||'Finished'):!run?'Recorded activity':humanWait?projectedWait.label:(waiting||run?.status==='awaiting_user')?(pendingHumanTask(run.bot_id)?.run_id===run.id?'Needs you':'Waiting for your answer'):(run?.status==='cancelling'||stoppingTasks.has(run?.id))?'Stopping':run?.status==='awaiting_approval'?'Waiting for your approval':run?.status==='queued'?'Queued':null;
   const live=!finished&&run&&(active(run)||run.status==='queued')&&ownsRun(run.id,run.bot_id,key);
-  const waits=live?ownedWaits.filter(w=>w.parent_run_id===currentRunId):[];
+  const waits=live&&!brief?ownedWaits.filter(w=>w.parent_run_id===currentRunId):[];
   group._progressWaits=waits;
   const helpers=[...new Set(waits.map(w=>w.bot_id))].map(id=>state.bots.find(b=>b.id===id)).filter(Boolean);
   const waitingLabel=helpers.length?'Waiting on '+helpers.map(b=>b.name).join(', '):'';
   const phase={preparing:'Preparing the next action',thinking:'Thinking through the next step',writing:'Writing a response',waiting:'Waiting for the model'}[activity?.phase];
   const current=activity?.current?.label||activity?.current_label;
   const taskName=(first.progress.task_title||rootRun?.task_title||'').trim();
-  const label=staged?(taskName||'Task progress'):finished?(taskName?taskName+' · '+status:status):(taskName||current||phase||'Activity');
+  const label=brief?'Activity':staged?(taskName||'Task progress'):finished?(taskName?taskName+' · '+status:status):(taskName||current||phase||'Activity');
   const task=node('span','summary-progress-task'),text=node('span','summary-progress-name',label);task.title=label;task.append(text);title.append(task);
   const started=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
   const ended=terminal?.ended||phaseFinal?.created||(finished?(endedEvent?.created||activity?.last_at||items.at(-1).created):run?Math.floor(Date.now()/1000):(activity?.last_at||items.at(-1).created));
-  if(started&&ended>=started){const timer=node('span','muted small summary-progress-time',elapsedTime(ended-started));if(!finished&&run)timer.dataset.groupStarted=String(started);title.append(timer);}
-  if(live){
+  if(!brief&&started&&ended>=started){const timer=node('span','muted small summary-progress-time',elapsedTime(ended-started));if(!finished&&run)timer.dataset.groupStarted=String(started);title.append(timer);}
+  if(live&&!brief){
     group.dataset.taskStatus='live';
     const stateLabel=node('span','muted small summary-progress-count summary-progress-live-status');
     stateLabel.dataset.taskStatusRun=run.id;
@@ -5442,7 +5443,7 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   else receipt.append(node('div','muted small','No recorded actions yet.'));
   if(activity||!live)body.append(receipt);
   details.append(title,body);group.append(details);
-  if(live&&bot)group.append(taskStopButton(bot,run));
+  if(live&&bot&&!brief)group.append(taskStopButton(bot,run));
   animateChatDisclosure(details,body);
   title.addEventListener('click',()=>{cancelProgressCompletion(group);const opening=!details.open||details.classList.contains('is-collapsing');if(opening){entry.progressOpen.add(key);entry.progressClosed.delete(key);}else{entry.progressOpen.delete(key);entry.progressClosed.add(key);}setTaskCommentaryExpanded(key,opening);},{capture:true});
   for(const event of ['pointerdown','keydown'])group.addEventListener(event,()=>cancelProgressCompletion(group),{capture:true});
@@ -6368,7 +6369,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   const ownedWaits=new Set([...taskTrackers.values()].flatMap(t=>t._progressWaits||[]));
   const workerTask=run=>{
     const key=taskOwners.get(JSON.stringify([run.id,run.bot_id||run.participant])),tracker=key&&taskTrackers.get(key);
-    return tracker?._progressRunId===run.id&&tracker.dataset.progressFinished==='false'?key:null;
+    return tracker?._progressRunId===run.id&&!tracker.classList.contains('brief-progress')&&tracker.dataset.progressFinished==='false'?key:null;
   };
   // Emit at the first owned transcript row, even when persisted commentary
   // precedes its marker. Keep the marker identity and every message in order.
@@ -6821,6 +6822,7 @@ function retainConversationSelection(target){
 function preserveProgressGroup(previous,next){
   if(!previous.classList.contains('summary-progress')||!next.classList.contains('summary-progress')||previous.dataset.progressGroup!==next.dataset.progressGroup||previous.classList.contains('task-staged')!==next.classList.contains('task-staged'))return false;
   const details=previous.querySelector('.summary-progress-disclosure'),body=details.querySelector('.summary-progress-body'),restarting=previous.dataset.progressFinished==='true'&&next.dataset.progressFinished==='false';
+  previous.classList.toggle('brief-progress',next.classList.contains('brief-progress'));
   previous.dataset.message=next.dataset.message;previous.dataset.scrollMessages=next.dataset.scrollMessages;previous.dataset.progressFinished=next.dataset.progressFinished;
   if(next.dataset.taskStatus)previous.dataset.taskStatus=next.dataset.taskStatus;else delete previous.dataset.taskStatus;
   const oldStop=previous.querySelector(':scope>.work-stop'),newStop=next.querySelector(':scope>.work-stop'),stopFocused=oldStop===document.activeElement;
