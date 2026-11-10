@@ -16,7 +16,7 @@ SHARED = ('ui/navigation-search.js', 'ui/navigation-search.css', 'ui/bot-center.
 
 SHARED += ('ui/favicon.svg', 'ui/brand-icon.svg', 'ui/brand-icon-light.svg', 'ui/brand-icon-dark.svg', 'ui/brand-icon.png', 'ui/brand-wordmark.svg', 'ui/apple-touch-icon.png')
 
-SHARED += ('ui/file-downloads.js', 'ui/computer-popout.js', 'ui/computer-popout.css', 'ui/voice.js', 'ui/voice-audio-worklet.js', 'ui/microphone-permission.js', 'ui/slack-monitoring.js', 'ui/gmail-monitoring.js')
+SHARED += ('ui/document-review.js', 'ui/file-downloads.js', 'ui/computer-popout.js', 'ui/computer-popout.css', 'ui/voice.js', 'ui/voice-audio-worklet.js', 'ui/microphone-permission.js', 'ui/slack-monitoring.js', 'ui/gmail-monitoring.js')
 
 def verify(desktop, server, desktop_source, server_source):
     for source in (desktop_source, server_source):

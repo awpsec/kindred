@@ -216,7 +216,11 @@ export function renderMarkdownSource(text,name){
  const lines=text.split(/\r\n|\n|\r/).length;gutter.textContent=Array.from({length:lines},(_,i)=>String(i+1)).join('\n');
  code.textContent=text;code.setAttribute('aria-label','Markdown source');source.append(gutter,code);return source;
 }
-export async function openDocumentPreview({card,name,extension,getBlob,getPagePreview,download,createDownloadButton,renderMarkdown,artifactPreview,mount=null,onMount=null,onUnavailable=()=>{}}){
+let documentPreviewHost=null;
+export function setDocumentPreviewHost(host){documentPreviewHost=host;}
+export async function openDocumentPreview(options){
+ const {card,name,extension:originalExtension,getBlob,getPagePreview,download,createDownloadButton,renderMarkdown,artifactPreview,mount=null,onMount=null,onUnavailable=()=>{},independent=false}=options;let extension=originalExtension;
+ if(!mount&&documentPreviewHost){const hosted=documentPreviewHost(options);if(hosted)return hosted;}
  const dialog=el(mount?'section':'dialog',mount?'document-inline':'document-dialog'),head=el('header','document-header'),body=el('div','document-body'),foot=el('footer','document-footer','Quick preview · Download for the original formatting.');
  const title=el('strong','',name);dialog.setAttribute('aria-label',name+' preview');
  const conversionAbort=new AbortController(),lifecycleAbort=new AbortController();let paginatedWord=false,conversionFailed=false;
@@ -226,7 +230,7 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
  // A modal is a reading session, not part of its transient transcript card.
  // Live progress may replace that card while the reader is on another page.
  // Inline studio previews still belong to their card and its lifecycle.
- const observer=new MutationObserver(()=>{if(!dialog.isConnected||(mount&&!card.isConnected))cleanup();});observer.observe(document.body,{childList:true,subtree:true});onMount?.(handle);
+ const observer=new MutationObserver(()=>{if(!dialog.isConnected||(mount&&!independent&&!card.isConnected))cleanup();});observer.observe(document.body,{childList:true,subtree:true});onMount?.(handle);
  const close=iconButton('Close','m6 6 12 12M6 18 18 6',()=>dialog.close());head.append(title,createDownloadButton?createDownloadButton({iconOnly:true}):iconButton('Download','M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5',download),close);if(!mount)dialog.append(head);dialog.append(body,foot);(mount||document.body).append(dialog);
  dialog.addEventListener('close',cleanup,{once:true});dialog.addEventListener('click',e=>{if(!mount&&e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();}});
  if(!mount){dialog.showModal();close.focus();}body.append(el('p','document-status','Preparing preview…'));
@@ -264,7 +268,7 @@ export async function openDocumentPreview({card,name,extension,getBlob,getPagePr
   }else if(['html','htm','jsx'].includes(extension)){
    if(blob.size>256*1024)throw Error('Interactive preview supports files up to 256 KB.');const text=await blob.text();if(closed)return;const preview=artifactPreview(text,extension==='jsx'?'jsx':'html',name);body.replaceChildren(preview);preview.querySelector('button').click();
   }else if(['png','jpg','jpeg','webp','gif'].includes(extension)){
-   const img=el('img','document-image');img.alt=name;const url=URL.createObjectURL(blob);img.onload=img.onerror=()=>URL.revokeObjectURL(url);dialog.addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});img.src=url;body.replaceChildren(img);
+   const img=el('img','document-image');img.alt=name;const url=URL.createObjectURL(blob);img.onload=img.onerror=()=>URL.revokeObjectURL(url);lifecycleAbort.signal.addEventListener('abort',()=>URL.revokeObjectURL(url),{once:true});img.src=url;body.replaceChildren(img);
   }else{
    if(blob.size>256*1024)throw Error('Text preview supports files up to 256 KB. Download to view the full file.');const text=await blob.text();if(closed)return;const markdownSource=['md','markdown'].includes(extension),content=markdownSource?renderMarkdownSource(text,name):el('pre','deliverable-text',text);if(!markdownSource)content.classList.add('document-prose');body.replaceChildren(content);if(markdownSource)foot.textContent='Markdown source · '+text.split(/\r\n|\n|\r/).length+' lines';
   }

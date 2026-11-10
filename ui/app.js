@@ -1,3 +1,4 @@
+import {createDocumentReview} from './document-review.js';
 import {createNametagStatus} from './nametag-status.js';
 import {nativeFileDelivery,responseFileBlob} from './file-downloads.js';
 import {installComposerResizeMotion} from './composer-resize-motion.js';
@@ -59,6 +60,7 @@ const chatHistory=new Map();
 let chatOpening=null;
 const stoppingTasks=new Set();
 const $ = (id) => document.getElementById(id);
+let documentReview=null;
 const state = {
   token:
     window.__KINDRED_NEW_ACCOUNT ? "" : sessionStorage.getItem("kindred-token") ||
@@ -1286,6 +1288,7 @@ function renderNametagStatus(){
   nametagStatus.update(work,id);
 }
 function renderHeader() {
+  documentReview?.sync();
   syncBotCenter();
   renderPendingFiles();
   const b = state.chat?.shared?null:state.bot,
@@ -7634,6 +7637,7 @@ let artifactWorkspace=null,artifactWorkspaceToken=null,artifactChatReturn=null,a
 function restoreArtifactChat(){const saved=artifactChatReturn;artifactChatReturn=null;if(!saved||saved.chat!==currentConversationId())return;requestAnimationFrame(()=>{const content=$('content');content.scrollTop=saved.scroll;content.querySelector('[data-workspace-artifact="'+CSS.escape(saved.id)+'"] .workspace-artifact-link')?.focus({preventScroll:true});});}
 function syncArtifactRoute(){
  const legacy=new URLSearchParams(location.hash.slice(1)).get('artifact'),match=location.pathname.match(/^\/artifacts(?:\/([^/]+))?\/?$/),requested=!!match||!!legacy;
+ if(requested)documentReview?.close({animate:false,restore:false});
  if(artifactWorkspace&&artifactWorkspaceToken!==state.token){artifactWorkspace.dispose();artifactWorkspace=null;}
  if(!state.token)return;
  if(!requested){if(artifactWorkspace){if(!artifactWorkspace.canLeave()){history.pushState({},'',artifactWorkspace.selected?'/artifacts/'+encodeURIComponent(artifactWorkspace.selected):'/artifacts');return;}artifactWorkspace.dispose();artifactWorkspace=null;restoreArtifactChat();}return;}
@@ -8220,6 +8224,7 @@ function transitionPaneLayout(change){
   for(const animation of animations.slice(1))animation.oncancel=()=>control.finish();
 }
 function showPane(panel){
+  documentReview?.close({animate:false,restore:false});
   if(!panel.hidden&&!panel.inert)return;
   transitionPaneLayout(()=>{panel.hidden=false;panel.inert=false;});
 }
@@ -10034,6 +10039,11 @@ async function openBotLibraryItem(item,origin){
 }
 
 if(window.__KINDRED_DESKTOP&&!window.__KINDRED_MOBILE&&!window.__KINDRED_MOBILE_PLATFORM){
+ documentReview=createDocumentReview({mount:document.querySelector('.conversation'),icon,
+  getContext:()=>({key:state.token+':'+currentConversationId(),enabled:!!state.token&&!$('app').hidden&&!document.querySelector('.conversation').inert&&!document.querySelector('.artifact-studio')}),
+  prepare:()=>{finishComputerTransition();for(const panel of rightPanes()){panel.hidden=true;panel.inert=true;}layoutPanes();},
+  beginLayout:beginChatLayoutChange,motionAllowed,returnFocus:()=>$('prompt').focus({preventScroll:true})
+ });
  computerPopout=createComputerPopout({mount:$('app'),bounds:document.querySelector('.conversation-history'),composer:$('composer-area'),header:document.querySelector('.conversation-header'),sourcePanel:$('computer-panel'),icon,connect:connectComputerPopout,
   getContext:()=>{const bot=state.bots.find(b=>b.id===screenBotId());return {scope:state.token,bot,available:!!state.token&&!!bot&&!profile(bot).archived&&!profilesUI.signedOut()&&chatScreenBots().some(b=>b.id===bot.id),visible:!$('app').hidden&&!document.querySelector('.conversation').inert&&!document.querySelector('.artifact-studio')&&!pageSuspended,normalOpen:!$('computer-panel').hidden&&!$('computer-panel').inert,disabled:!!state.teaching};},
   onDetach:()=>$('computer-close').click(),onOpen:()=>perform(()=>openComputer(false,true)),returnFocus:()=>$('bot-details').focus({preventScroll:true})
