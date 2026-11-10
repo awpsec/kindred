@@ -5166,6 +5166,8 @@ function isProgressMember(m){
 // Use the recorded work span rather than queue age or a client-side timer, and
 // retain an earned disclosure through partial refreshes of the same group.
 function substantialProgress(items){
+  const commentary=items.filter(m=>m.kind==='assistant'&&m.text?.trim());
+  if(new Set(commentary.map(m=>m.seq)).size>=4||items.some(m=>m.progress?.marker&&Number.isInteger(m.progress.commentary_count)&&m.progress.commentary_count>=4))return true;
   if(items.some(m=>{const p=m.progress?.presentation;return Array.isArray(p?.stages)&&p.stages.length>=2&&p.stages.length<=8&&p.stages.every(s=>typeof s==='string'&&s.trim());}))return true;
   const evidence=items.map(m=>m.progress?.activity).filter(a=>a&&Number.isFinite(a.seconds)&&Number.isFinite(a.completed));
   // Older servers did not supply activity evidence. Preserve their persisted
@@ -5190,8 +5192,8 @@ function progressGroups(messages,entry=null){
   // Only validated, same-bot group members can supply work evidence.
   for(const [key,items] of groups){
     const substantial=substantialProgress(items);
-    // Brief work still owns its commentary; it must not fall back to chat bubbles.
-    if(!substantial&&!entry?.trackedProgressGroups?.has(key)&&!items.some(m=>m.kind==='assistant')){groups.delete(key);continue;}
+    // The first three owned updates stay inline; the fourth gathers them once.
+    if(!substantial&&!entry?.trackedProgressGroups?.has(key)){groups.delete(key);continue;}
     if(substantial&&entry){entry.trackedProgressGroups??=new Set();entry.trackedProgressGroups.add(key);while(entry.trackedProgressGroups.size>CHAT_WINDOW_SIZE)entry.trackedProgressGroups.delete(entry.trackedProgressGroups.values().next().value);}
   }
   return groups;
@@ -5400,8 +5402,8 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   }
   if(finished&&!terminal){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
   // A persisted marker retains a compact completion receipt without inventing stages.
-  const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact')+(brief?' brief-progress':''));group.dataset.message=String(first.seq);group.dataset.scrollMessages=String(first.seq);group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
-  if(first.projectedProgress){group.dataset.message='progress:'+key;group.dataset.scrollMessages=String(items.find(m=>!m.projectedProgress).seq);}
+  const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact')+(brief?' brief-progress':''));group.dataset.message=String(first.seq);group.dataset.scrollMessages=items.map(m=>String(m.seq)).join(' ');group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
+  if(first.projectedProgress){group.dataset.message='progress:'+key;group.dataset.scrollMessages=items.filter(m=>!m.projectedProgress).map(m=>String(m.seq)).join(' ');}
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
   const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open&&!previous.querySelector('details').classList.contains('is-collapsing');
   group._progressCompleting=completing;group._progressEntry=entry;group._progressRunId=currentRunId;
@@ -6520,7 +6522,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       row.append(bubble);
     } else row.append(markdown(m.text));
     const bubble=row.lastElementChild;
-    if(!isUser&&m.kind==='assistant'&&isProgressMember(m)){group.classList.add('progress-commentary');if(summaries.get(m.progress.group_id)?.includes(m)){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker)group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
+    if(!isUser&&m.kind==='assistant'&&isProgressMember(m)){group.classList.add('progress-commentary');group.dataset.progressCandidate=m.progress.group_id;if(summaries.get(m.progress.group_id)?.includes(m)){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker)group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
     if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));
@@ -6783,6 +6785,13 @@ function patchConversationText(before,after){
   }
   for(const extra of old)extra.remove();
 }
+function preserveProgressCommentary(previous,next){
+  if(!previous.matches('.progress-commentary')||!next.matches('.progress-commentary')||previous.dataset.message!==next.dataset.message||previous.dataset.progressCandidate!==next.dataset.progressCandidate)return false;
+  if(previous.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media'))return false;
+  previous.className=next.className;previous.hidden=next.hidden;
+  if(next.dataset.taskCommentary)previous.dataset.taskCommentary=next.dataset.taskCommentary;else delete previous.dataset.taskCommentary;
+  return preserveOrdinaryMessage(previous,next);
+}
 function preserveOrdinaryMessage(previous,next){
   if(!previous.classList.contains('message-group')||!next.classList.contains('message-group'))return false;
   const before=previous.querySelector('.message-text-content'),after=next.querySelector('.message-text-content');
@@ -6790,8 +6799,8 @@ function preserveOrdinaryMessage(previous,next){
   // Iframes, previews and other live cards have separate ownership. Do not
   // move them merely because adjacent Markdown changed.
   if(before.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media')||after.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media'))return false;
-  const shell=n=>{const copy=n.cloneNode(true);copy.removeAttribute('aria-description');copy.classList.remove('message-menu-open','reply-arriving','same-author');if(previous.refreshTaskCommentary){copy.removeAttribute('hidden');copy.style.removeProperty('overflow');if(!copy.getAttribute('style'))copy.removeAttribute('style');}copy.querySelector('.mobile-message-time')?.remove();copy.querySelector('.message-text-content').replaceChildren();for(const a of copy.querySelectorAll('.message-actions'))a.replaceChildren();const viewport=copy.querySelector('.message-text-viewport');viewport.removeAttribute('style');viewport.classList.remove('is-truncated');const toggle=copy.querySelector('.message-expand');if(toggle)toggle.replaceWith(document.createElement('button'));return copy.outerHTML;};
-  if(shell(previous)!==shell(next))return false;
+  const shell=n=>{const copy=n.cloneNode(true);copy.removeAttribute('aria-description');copy.classList.remove('message-menu-open','reply-arriving','same-author');if(previous.refreshTaskCommentary){copy.removeAttribute('hidden');copy.style.removeProperty('overflow');if(!copy.getAttribute('style'))copy.removeAttribute('style');}copy.querySelector('.mobile-message-time')?.remove();copy.querySelector('.message-text-content').replaceChildren();for(const a of copy.querySelectorAll('.message-actions'))a.replaceChildren();const viewport=copy.querySelector('.message-text-viewport');viewport.removeAttribute('style');viewport.classList.remove('is-truncated');const toggle=copy.querySelector('.message-expand');if(toggle)toggle.replaceWith(document.createElement('button'));return copy;};
+  if(!shell(previous).isEqualNode(shell(next)))return false;
   const focused=document.activeElement,action=previous.contains(focused)?focused.dataset.messageAction:null,focusPath=[];
   if(before.contains(focused))for(let n=focused;n!==before;n=n.parentNode)focusPath.unshift([...n.parentNode.childNodes].indexOf(n));
   previous.classList.toggle('same-author',next.classList.contains('same-author'));
@@ -6845,8 +6854,8 @@ function preserveShardMessage(previous,next){
   if(!before||!after)return false;
   const oldShards=[...before.querySelectorAll('[data-shard-signature]')],newShards=[...after.querySelectorAll('[data-shard-signature]')];
   if(!oldShards.length||oldShards.length!==newShards.length||oldShards.some((s,i)=>s.parentElement!==before||newShards[i].parentElement!==after||s.dataset.shardSignature!==newShards[i].dataset.shardSignature))return false;
-  const shell=n=>{const copy=n.cloneNode(true);copy.removeAttribute('aria-description');copy.classList.remove('message-menu-open','reply-arriving');copy.querySelector('.mobile-message-time')?.remove();(copy.querySelector('.message-text-content')||copy.querySelector('.message-bubble')).replaceChildren();copy.querySelector('.message-reactions')?.remove();for(const actions of copy.querySelectorAll('.message-actions'))actions.replaceChildren();const viewport=copy.querySelector('.message-text-viewport');if(viewport){viewport.removeAttribute('style');viewport.classList.remove('is-truncated');}const toggle=copy.querySelector('.message-expand');if(toggle)toggle.replaceWith(document.createElement('button'));return copy.outerHTML;};
-  if(shell(previous)!==shell(next))return false;
+  const shell=n=>{const copy=n.cloneNode(true);copy.removeAttribute('aria-description');copy.classList.remove('message-menu-open','reply-arriving');copy.querySelector('.mobile-message-time')?.remove();(copy.querySelector('.message-text-content')||copy.querySelector('.message-bubble')).replaceChildren();copy.querySelector('.message-reactions')?.remove();for(const actions of copy.querySelectorAll('.message-actions'))actions.replaceChildren();const viewport=copy.querySelector('.message-text-viewport');if(viewport){viewport.removeAttribute('style');viewport.classList.remove('is-truncated');}const toggle=copy.querySelector('.message-expand');if(toggle)toggle.replaceWith(document.createElement('button'));return copy;};
+  if(!shell(previous).isEqualNode(shell(next)))return false;
   const focused=previous.contains(document.activeElement)?document.activeElement.dataset.messageFocus:null;
   // Never reparent an existing frame, including when prose is added before it.
   for(const child of [...before.childNodes])if(!oldShards.includes(child))child.remove();
@@ -6984,10 +6993,47 @@ function animateConnectorTaskTransfers(target,transfers){
   target.addEventListener('pointerdown',finish,true);target.addEventListener('keydown',finish,true);
   setTimeout(finish,duration+150);
 }
+function prepareProgressGather(target,desired,animate){
+  if(!animate||chatMotionReduced()||target.id!=='content')return ()=>{};
+  const gathers=[];
+  for(const header of desired.querySelectorAll(':scope > [data-progress-group]')){
+    const key=header.dataset.progressGroup;
+    if(target.querySelector('[data-progress-group="'+CSS.escape(key)+'"]'))continue;
+    const rows=[...target.querySelectorAll(':scope > .progress-commentary[data-progress-candidate]')].filter(n=>n.dataset.progressCandidate===key&&n.getClientRects().length);
+    // A live transition needs previously rendered inline updates. History loads
+    // and unrelated groups cannot create a gather animation.
+    if(!rows.length)continue;
+    const bounds=target.getBoundingClientRect();
+    const visible=rows.slice(-3).filter(row=>row.textContent.length<=12000&&!row.querySelector('iframe,video,audio,img,canvas,[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media')).map(row=>({ghost:row.cloneNode(true),rect:row.getBoundingClientRect()})).filter(({rect})=>rect.bottom>bounds.top&&rect.top<bounds.bottom);
+    if(!visible.length)continue;
+    gathers.push({key,visible});
+  }
+  return ()=>requestAnimationFrame(()=>{
+    // Chat anchoring has settled by this frame; never animate height/margins or
+    // measure the full transcript. Ghosts only explain the one-time regrouping.
+    if(!target.isConnected||chatMotionReduced())return;
+    for(const {key,visible} of gathers){
+      const header=target.querySelector('[data-progress-group="'+CSS.escape(key)+'"]');if(!header)continue;
+      const end=header.getBoundingClientRect();
+      if(end.bottom<target.getBoundingClientRect().top||end.top>target.getBoundingClientRect().bottom)continue;
+      const motion=header.animate([{opacity:.2,transform:'translateY(6px)'},{opacity:1,transform:'translateY(0)'}],{duration:220,easing:'cubic-bezier(.23,1,.32,1)'});trackMotion(motion,220);
+      for(const {ghost,rect} of visible){
+        ghost.hidden=false;ghost.inert=true;ghost.setAttribute('aria-hidden','true');ghost.classList.add('progress-gather-ghost');
+        for(const el of [ghost,...ghost.querySelectorAll('[id]')])el.removeAttribute('id');
+        for(const key of ['message','progressCandidate','taskCommentary','scrollMessages'])delete ghost.dataset[key];
+        Object.assign(ghost.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',margin:'0',pointerEvents:'none',zIndex:'20'});
+        target.append(ghost);
+        const effect=ghost.animate([{opacity:.8,transform:'translateY(0) scale(1)'},{opacity:0,transform:'translateY('+Math.max(-80,Math.min(80,end.top-rect.top))+'px) scale(.97)'}],{duration:220,easing:'cubic-bezier(.23,1,.32,1)',fill:'both'});
+        trackMotion(effect,220,()=>ghost.remove());
+      }
+    }
+  });
+}
 function reconcileConversation(target,desired,animate=true,priorCommentary=null){
-  const focusedCommentary=target.contains(document.activeElement)&&document.activeElement.closest('.task-commentary')?document.activeElement:null;
+  const focusedCommentary=target.contains(document.activeElement)&&document.activeElement.closest('.progress-commentary')?document.activeElement:null;
   const restoreSelection=retainConversationSelection(target);
   target.finishConnectorTransfers?.();
+  const progressGather=prepareProgressGather(target,desired,animate);
   const transfers=connectorTaskTransfers(target,desired),animateTransfers=animate&&motionAllowed();
   const focusedQuestion=target.contains(document.activeElement)?document.activeElement?.closest('[data-task-question]')?.dataset.taskQuestion:null;
   const formations=animate?connectorStackFormation(target,desired):[];
@@ -6997,7 +7043,7 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
   }
   const old=new Map(priorCommentary||[]);
   for(const n of target.children)if(n.dataset.message)old.set(n.dataset.message,n);
-  const commentary=new Map([...target.querySelectorAll('.task-commentary[data-message]')].map(n=>[n.dataset.message,n])),claimedBlocks=new Set();
+  const commentary=new Map([...target.querySelectorAll('.progress-commentary[data-message]')].map(n=>[n.dataset.message,n])),claimedBlocks=new Set();
   const nodes=[...desired.children].map(next=>{
     if(next.dataset.taskCommentaryBlock){
       const members=new Set(next.dataset.scrollMessages.split(' '));
@@ -7030,6 +7076,7 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
     if(previous&&preserveProgressGroup(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     const beforeHistory=previous?.querySelector('.task-recovery-history'),afterHistory=next.querySelector('.task-recovery-history');
     if(beforeHistory&&afterHistory){previous.dataset.message=next.dataset.message;reconcileConversation(beforeHistory.querySelector('.task-recovery-body'),afterHistory.querySelector('.task-recovery-body'),animate);beforeHistory.refreshDisclosure?.();conversationRenderSignatures.set(previous,signature);return previous;}
+    if(previous&&preserveProgressCommentary(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     if(previous&&preserveOrdinaryMessage(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     if(previous&&preserveShardMessage(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     conversationRenderSignatures.set(next,signature);return next;
@@ -7046,6 +7093,7 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
   const keep=new Set(nodes);for(const child of [...target.children])if(!keep.has(child))child.remove();
   let cursor=target.firstChild;
   for(const next of nodes){if(next===cursor){cursor=cursor.nextSibling;continue;}target.insertBefore(next,cursor);}
+  progressGather();
   for(const formation of formations)animateConnectorFormation(formation);
   for(const transfer of transfers)if(transfer.focused)connectorTransferArrival(target,transfer)?.focus({preventScroll:true});
   if(animateTransfers&&transfers.length)animateConnectorTaskTransfers(target,transfers);
@@ -7054,7 +7102,10 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
   // Moving an existing row between blocks preserves its DOM but clears native
   // keyboard focus. Restore only a surviving, visible commentary control;
   // pending reviews keep their separate focus-transfer rules above.
-  if(focusedCommentary?.isConnected&&target.contains(focusedCommentary)&&document.activeElement!==focusedCommentary&&focusedCommentary.getClientRects().length)focusedCommentary.focus({preventScroll:true});
+  if(focusedCommentary?.isConnected&&target.contains(focusedCommentary)){
+    if(focusedCommentary.getClientRects().length){if(document.activeElement!==focusedCommentary)focusedCommentary.focus({preventScroll:true});}
+    else {const key=focusedCommentary.closest('[data-progress-candidate]')?.dataset.progressCandidate;target.querySelector('[data-progress-group="'+CSS.escape(key||'')+'"]>details>summary')?.focus({preventScroll:true});}
+  }
   restoreSelection();
   continueLoops(target);
 }
@@ -8784,7 +8835,7 @@ function restoreChatPosition(){
     // not a stable identity; retain any surviving member, then a nearby row.
     for(const candidate of a?[a,...(a.backups||[])]:[]){
       const members=new Set(candidate.members||[candidate.key]);
-      const candidates=[...area.querySelectorAll(':scope > [data-message], :scope > [data-run], :scope > [data-task-commentary-block] > [data-message]')];
+      const candidates=[...area.querySelectorAll(':scope > [data-message], :scope > [data-run], :scope > [data-task-commentary-block] > [data-message]')].filter(n=>n.getClientRects().length);
       target=(candidate.key&&candidates.find(n=>n.dataset.message===candidate.key))||candidates.find(n=>candidate.key
         ?members.has(n.dataset.message)||n.dataset.scrollMessages?.split(' ').some(id=>members.has(id))
         :n.dataset.run===candidate.run);

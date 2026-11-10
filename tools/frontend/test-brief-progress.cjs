@@ -1,4 +1,4 @@
-// Short tool work keeps commentary out of the conversation without becoming a long job.
+// Brief work remains inline until there is enough evidence for a long job.
 const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
 const {server,token}=require('./fixtures/desktop.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
@@ -19,15 +19,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const messages=()=>[{seq:1,sender:'piper',kind:'task_progress',run_id:'short',created:now-90,text:'',progress:progress()},...(!quiet?[{seq:2,sender:'piper',kind:'assistant',run_id:'short',created:now-60,text:'Getting connector schemas.',progress:progress(),...(attention?{status_notice:{label:'Needs attention',text:'Getting connector schemas.'}}:{})},{seq:3,sender:'piper',kind:'assistant',run_id:'short',created:now-40,text:'Checking drafts next.',progress:progress()}]:[]),...(pendingKind==='question'?[{seq:5,sender:'piper',kind:'question',run_id:'short',created:question.created,text:question.question,question}]:[]),...(pendingKind==='approval'?[{seq:6,sender:'piper',kind:'approval',run_id:'short',created:approval.created,text:'Approve action',approval}]:[]),...(finished?[{seq:4,sender:'piper',kind:'result',run_id:'short',created:now,text:'The mailbox review is complete.',progress:{...progress(),phase:'final_answer'}}]:[])];
   await page.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nwindow.briefRefresh=()=>refresh(true);'}));
   await page.route(origin+'/api/**',r=>{const n=new URL(r.request().url()).pathname,send=json=>r.fulfill({json});if(n==='/api/runs')return send([run()]);if(n==='/api/runs/short')return send({run:run(),events:pendingKind==='handoff'?[{seq:10,kind:'user_action',body:{id:'brief-login'},created:handoff.created}]:[],attachments:[],approvals:[]});if(n==='/api/chats')return send([chat]);if(n==='/api/chats/'+chat.id)return send({chat,messages:messages(),page:{has_before:false,has_after:false}});if(n==='/api/questions')return send(pendingKind==='question'?[question]:[]);if(n==='/api/approvals')return send(pendingKind==='approval'?[approval]:[]);if(n==='/api/user-tasks')return send(pendingKind==='handoff'?[handoff]:[]);if(n==='/api/activity')return send({});return r.continue();});
-  await page.goto(origin);await page.locator('.brief-progress').waitFor();
-  assert.equal(await page.locator('.task-commentary:visible').count(),0);assert(await page.locator('.work-line').isVisible(),'brief work retains the normal live indicator');assert.equal(await page.locator('.brief-progress .summary-progress-author,.brief-progress .summary-progress-time,.brief-progress .work-stop').count(),0);
+  await page.goto(origin);await page.locator('.progress-commentary').first().waitFor();
+  assert.equal(await page.locator('.summary-progress').count(),0);assert.equal(await page.locator('.progress-commentary:visible').count(),2);assert(await page.locator('.work-line').isVisible(),'brief work retains the normal live indicator');passed++;
   if(out)await page.screenshot({path:path.join(out,engine+'-brief-'+width+'-running.png')});
-  await page.locator('.brief-progress summary').click();await page.locator('.task-commentary').filter({hasText:'Getting connector schemas.'}).waitFor({timeout:5000}).catch(async e=>{console.error(await page.locator('#content').innerHTML());throw e;});
-  await page.locator('.brief-progress summary').click();await page.waitForFunction(()=>[...document.querySelectorAll('.task-commentary')].every(n=>!n.getClientRects().length));passed++;
-  finished=true;await page.reload();await page.getByText('The mailbox review is complete.',{exact:true}).waitFor();assert.equal(await page.locator('.task-commentary:visible').count(),0);assert.equal(await page.locator('.brief-progress').count(),1);passed++;
+  finished=true;await page.reload();await page.getByText('The mailbox review is complete.',{exact:true}).waitFor();assert.equal(await page.locator('.progress-commentary:visible').count(),2);assert.equal(await page.locator('.summary-progress').count(),0);passed++;
   if(out)await page.screenshot({path:path.join(out,engine+'-brief-'+width+'-completed.png')});
-  // Reloading a brief task must never turn its commentary into bubbles.
-  await page.reload();await page.locator('.brief-progress').waitFor();assert.equal(await page.locator('.task-commentary:visible').count(),0);passed++;
+  await page.reload();await page.locator('.progress-commentary').first().waitFor();assert.equal(await page.locator('.summary-progress').count(),0);passed++;
   seconds=200;await page.reload();await page.locator('.summary-progress:not(.brief-progress)').waitFor();assert.equal(await page.locator('.summary-progress-author').innerText(),'Piper');passed++;
   seconds=90;staged=true;await page.reload();await page.locator('.task-staged').waitFor();assert.equal(await page.locator('.brief-progress').count(),0);passed++;
   staged=false;mode='balanced';await page.reload();await page.locator('.message-bubble').filter({hasText:'Getting connector schemas.'}).waitFor();assert.equal(await page.locator('.summary-progress').count(),0);passed++;
@@ -36,22 +33,20 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   // Each pending attention surface stays outside brief activity, including after refresh.
   attention=false;finished=false;seconds=90;
   for(const kind of ['question','approval','handoff']){
-   pendingKind=kind;await page.reload();await page.locator('.brief-progress').waitFor();
-   const control=page.locator(kind==='question'?'[data-task-question="brief-choice"]':kind==='approval'?'[data-message="6"]':'[data-message="human-task-brief-login"]');
-   await control.waitFor();assert.equal(await page.locator('.brief-progress details').getAttribute('open'),null);
+   pendingKind=kind;await page.reload();await page.locator('.progress-commentary').first().waitFor();
+   const control=page.locator(kind==='question'?'[data-question-id="brief-choice"]':kind==='approval'?'#request-tray':'[data-message="human-task-brief-login"]');
+   await control.waitFor();assert.equal(await page.locator('.summary-progress').count(),0);
    assert.equal(await control.getAttribute('data-task-commentary'),null,kind+' remains outside collapsed commentary');
    assert.equal(await page.locator('.task-commentary:visible').count(),0);
    if(kind==='handoff')assert(await control.getByRole('button',{name:'Take over',exact:true}).isVisible());
    await page.evaluate(()=>window.briefRefresh());await control.waitFor();assert.equal(await page.locator('.task-commentary:visible').count(),0);passed++;
   }
-  // Promotion during an active refresh retains disclosure and keyboard focus.
-  pendingKind='';await page.reload();await page.locator('.brief-progress').waitFor();
-  await page.locator('.brief-progress summary').click();await page.locator('.task-commentary').filter({hasText:'Checking drafts next.'}).waitFor();
-  await page.locator('.brief-progress summary').focus();seconds=200;
+  // Promotion moves keyboard focus from gathered commentary into the disclosure.
+  pendingKind='';await page.reload();await page.locator('.progress-commentary').first().waitFor();
+  await page.locator('.progress-commentary').first().focus();seconds=200;
   await page.evaluate(()=>window.briefRefresh());await page.locator('.summary-progress:not(.brief-progress)').waitFor();
-  assert(await page.locator('.summary-progress details').evaluate(n=>n.open),'Promotion preserves manual expansion');
-  assert(await page.locator('.summary-progress summary').evaluate(n=>n===document.activeElement),'Promotion preserves summary keyboard focus');
-  assert(await page.locator('.task-commentary').filter({hasText:'Checking drafts next.'}).isVisible());passed++;
+  assert(await page.locator('.summary-progress summary').evaluate(n=>n===document.activeElement),'Promotion preserves keyboard access');
+  assert.equal(await page.locator('.task-commentary:visible').count(),0);passed++;
   assert.deepEqual(errors,[]);await page.close();
  }console.log(JSON.stringify({passed,engine:process.env.WEBKIT?'webkit':'chromium'}));}finally{await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});
