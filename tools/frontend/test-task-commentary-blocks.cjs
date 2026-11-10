@@ -48,9 +48,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   messages.splice(messages.findIndex(m=>m.seq===10.5),1);await page.evaluate(m=>window.blockReplay(m),messages);await frame.getByRole('button',{name:'Kept',exact:true}).waitFor();
   // A poll during reversal must not revive the earlier animation or leak text.
   await heading.evaluate(n=>n.click());await page.waitForTimeout(40);await heading.evaluate(n=>n.click());await page.evaluate(m=>window.blockReplay(m),messages);await page.waitForTimeout(350);
-  assert.equal(await page.locator('.task-commentary:visible').count(),27);assert(await retained());
+  assert.equal(await page.locator('.task-commentary:visible').count(),26);assert(await retained());
   assert(await page.locator('[data-task-commentary-block]').evaluateAll(nodes=>nodes.every(n=>!n.finishTaskCommentary&&!n.refreshTaskCommentary&&!n.style.overflow)),'Transition cleans up block motion state');
-  await row.getByRole('button',{name:'Show less',exact:true}).focus();await heading.evaluate(n=>n.click());assert(await heading.evaluate(n=>n===document.activeElement),'Collapse returns focus from nested content to the header');await page.waitForTimeout(350);assert.equal(await page.locator('.task-commentary:visible').count(),0);
+  await row.getByRole('button',{name:'Show less',exact:true}).focus();await heading.evaluate(n=>n.click());assert(await heading.evaluate(n=>n===document.activeElement),'Collapse returns focus from nested content to the header');await page.waitForTimeout(350);assert.equal(await page.locator('.task-commentary:visible').count(),0);assert(await widget.isVisible(),'Live widget stays visible outside collapsed commentary');await frame.getByRole('button',{name:'Kept',exact:true}).waitFor();
   assert.deepEqual(errors,[]);await page.close();
  }
  console.log(JSON.stringify({passed:true,engine,desktopMobile:true,stableUpdates:true,splitMerge:true,paging:true,selection:true,longMessageFolding:true,widgetState:true,rapidReversalWithPoll:true,focus:true}));

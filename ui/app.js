@@ -6522,7 +6522,9 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       row.append(bubble);
     } else row.append(markdown(m.text));
     const bubble=row.lastElementChild;
-    if(!isUser&&m.kind==='assistant'&&isProgressMember(m)){group.classList.add('progress-commentary');group.dataset.progressCandidate=m.progress.group_id;if(summaries.get(m.progress.group_id)?.includes(m)){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker)group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
+    // Live previews keep their transcript ancestry and stay visible when text
+    // updates gather. Reparenting an iframe reloads it even if its node survives.
+    if(!isUser&&m.kind==='assistant'&&isProgressMember(m)){group.classList.add('progress-commentary');group.dataset.progressCandidate=m.progress.group_id;if(summaries.get(m.progress.group_id)?.includes(m)&&!m.files?.length&&!bubble.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media,iframe,video,audio')){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker)group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
     if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));
@@ -6999,7 +7001,8 @@ function prepareProgressGather(target,desired,animate){
   for(const header of desired.querySelectorAll(':scope > [data-progress-group]')){
     const key=header.dataset.progressGroup;
     if(target.querySelector('[data-progress-group="'+CSS.escape(key)+'"]'))continue;
-    const rows=[...target.querySelectorAll(':scope > .progress-commentary[data-progress-candidate]')].filter(n=>n.dataset.progressCandidate===key&&n.getClientRects().length);
+    const gatheredIds=new Set([...desired.querySelectorAll('.task-commentary[data-message]')].filter(n=>n.dataset.taskCommentary===key).map(n=>n.dataset.message));
+    const rows=[...target.querySelectorAll(':scope > .progress-commentary[data-progress-candidate]')].filter(n=>n.dataset.progressCandidate===key&&gatheredIds.has(n.dataset.message)&&n.getClientRects().length);
     // A live transition needs previously rendered inline updates. History loads
     // and unrelated groups cannot create a gather animation.
     if(!rows.length)continue;
