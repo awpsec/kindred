@@ -126,7 +126,7 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
  };
  const showError=(form,error)=>{form.querySelector('[role=alert]')?.remove();const notice=el('p','connector-outcome-warning',error.message||String(error));notice.setAttribute('role','alert');form.append(notice);};
  const clearPanel=()=>{if(sending)return;const panel=root.querySelector('.connector-card-editor'),restore=panel?.contains(document.activeElement);panel?.disposeEmailEditor?.();panel?.remove();editorOpen=false;root.classList.remove('connector-editing');syncActionState();if(restore&&editorOpener?.isConnected)editorOpener.focus({preventScroll:true});editorOpener=null;};
- const openEditor=(form)=>{if(form.getAttribute('aria-label')==='Edit email draft')form.classList.add('email-draft-editor');editorOpener=root.contains(document.activeElement)?document.activeElement:null;editorOpen=true;root.classList.add('connector-editing');form.addEventListener('keydown',e=>{if(e.key==='Escape'&&!sending){e.preventDefault();clearPanel();}});syncActionState();root.append(form);if(form.classList.contains('email-draft-editor')){const body=form.querySelector('textarea[name=body]');if(body){const resize=()=>{body.style.height='auto';body.style.height=body.scrollHeight+'px';};body.addEventListener('input',resize);resize();let width=body.clientWidth;let resizeFrame=0;const observer=new ResizeObserver(()=>{if(!form.isConnected){observer.disconnect();return;}if(body.clientWidth!==width){width=body.clientWidth;cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{resizeFrame=0;if(form.isConnected)resize();});}});observer.observe(body);form.disposeEmailEditor=()=>{observer.disconnect();cancelAnimationFrame(resizeFrame);body.removeEventListener('input',resize);};}}form.querySelector('input,textarea,select')?.focus();};
+ const openEditor=(form)=>{if(form.getAttribute('aria-label')==='Edit email draft')form.classList.add('email-draft-editor');editorOpener=root.contains(document.activeElement)?(root.querySelector('.email-options-panel:popover-open')?root.querySelector('.email-options-toggle'):document.activeElement):null;editorOpen=true;root.classList.add('connector-editing');form.addEventListener('keydown',e=>{if(e.key==='Escape'&&!sending){e.preventDefault();clearPanel();}});syncActionState();root.append(form);if(form.classList.contains('email-draft-editor')){const body=form.querySelector('textarea[name=body]');if(body){const resize=()=>{body.style.height='auto';body.style.height=body.scrollHeight+'px';};body.addEventListener('input',resize);resize();let width=body.clientWidth;let resizeFrame=0;const observer=new ResizeObserver(()=>{if(!form.isConnected){observer.disconnect();return;}if(body.clientWidth!==width){width=body.clientWidth;cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{resizeFrame=0;if(form.isConnected)resize();});}});observer.observe(body);form.disposeEmailEditor=()=>{observer.disconnect();cancelAnimationFrame(resizeFrame);body.removeEventListener('input',resize);};}}form.querySelector('input,textarea,select')?.focus();};
  const editDescriptors=()=>{
   // Email edits are keyed by alias (to, cc, subject…), in compose order.
   const rank=key=>{const i=['to','cc','bcc','subject','body'].indexOf(key);return i<0?5:i;};
@@ -161,29 +161,55 @@ export function connectorCard(card,{heading,button,api,onChange,onDiscuss,botNam
   root.classList.add('email-notice');header.firstChild?.remove();header.prepend(el('strong','email-notice-title',email.subject?.text||card.title));
   content.querySelector('.connector-email-subject')?.remove();
   const preview=el('div','email-notice-preview');header.after(preview);
-  const editAction=[...footer.querySelectorAll('button')].find(b=>b.textContent==='Edit draft');
   const previewText=content.querySelector('.connector-email-body')?.textContent?.replace(/\s+/g,' ').trim()||'';
   const attachmentCount=content.querySelectorAll('.connector-attachment-chip').length;
-  const toggle=button(card.status==='completed'?'Details':'Review',()=>{model.open=!model.open;paint();if(model.open)content.focus({preventScroll:true});},'subtle-button');header.append(toggle);
-  const close=button('Close',()=>{model.open=false;paint();toggle.focus({preventScroll:true});},'subtle-button');close.classList.add('email-review-close');footer.prepend(close);
-  const send=[...footer.children].find(b=>b.classList.contains('primary')),secondary=el('div','connector-card-actions email-review-secondary'),final=el('div','email-review-final');
-  for(const action of [...footer.children])if(action!==close&&action!==send)secondary.append(action);
-  final.append(close);if(pending&&previewMissing)final.append(button('Load preview',()=>act('changes',{feedback:'Load the full email draft using this same connection, then present it for my review again. Do not send it yet.'}),'outline-button email-load-preview'));if(send)final.append(send);footer.replaceChildren(secondary,final);footer.classList.add('email-review-footer');
+  const terminal=card.status==='completed',mounted=document.querySelector('[data-connector-artifact="'+CSS.escape(card.id)+'"]'),settling=terminal&&mounted?.dataset.emailStatus&&mounted.dataset.emailStatus!=='completed';root.classList.toggle('email-terminal',terminal);root.dataset.emailStatus=card.status;
+  const toggle=el('button','subtle-button email-review-toggle',terminal?'Details':'Review');toggle.type='button';toggle.onclick=event=>{model.open=!model.open;paint(event.detail!==0);if(model.open)content.focus({preventScroll:true});};
+  const send=[...footer.children].find(b=>b.classList.contains('primary'));
+  const options=el('div','email-options-panel');options.popover='auto';options.id='email-options-'+card.id;options.setAttribute('role','group');options.setAttribute('aria-label','Email options');
+  for(const action of [...footer.children])if(action!==send)options.append(action);
+  const more=button('',()=>{
+   if(options.matches(':popover-open')){options.hidePopover();return;}
+   options.showPopover();
+   const rect=more.getBoundingClientRect(),box=options.getBoundingClientRect();
+   options.style.left=Math.max(8,Math.min(rect.left,innerWidth-box.width-8))+'px';
+   options.style.top=Math.max(8,rect.top-box.height-8>=8?rect.top-box.height-8:Math.min(rect.bottom+8,innerHeight-box.height-8))+'px';
+   options.querySelector('button:not(:disabled)')?.focus({preventScroll:true});
+  },'icon-button email-options-toggle','more');
+  // Associate the trigger with the popover so light-dismiss does not close it
+  // before this same button can toggle it. The handler owns the default action.
+  more.popoverTargetElement=options;const toggleOptions=more.onclick;more.onclick=event=>{event.preventDefault();toggleOptions();};
+  more.setAttribute('aria-controls',options.id);more.setAttribute('aria-label','More email options');more.setAttribute('aria-expanded','false');
+  options.addEventListener('toggle',()=>more.setAttribute('aria-expanded',String(options.matches(':popover-open'))));
+  options.addEventListener('click',event=>{if(event.target.closest('button'))options.hidePopover();});
+  options.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();options.hidePopover();more.focus({preventScroll:true});}});
+  const final=el('div','email-review-final');final.append(toggle);if(options.children.length)final.append(more);root.append(options);
+  if(pending&&previewMissing)final.append(button('Load preview',()=>act('changes',{feedback:'Load the full email draft using this same connection, then present it for my review again. Do not send it yet.'}),'outline-button email-load-preview'));
+  if(send)final.append(send);footer.replaceChildren(final);footer.classList.add('email-review-footer');
+  if(terminal)header.append(toggle);
   if(card.retry_unknown){const warning=el('p','connector-outcome-warning','This may already have been sent. Check your Sent folder before sending again.');footer.before(warning);}
   let disclosureMotion=null;
-  function paint(){
+  function paint(animate=true){
    const before=root.isConnected?root.getBoundingClientRect().height:0;disclosureMotion?.cancel();
-   content.hidden=!model.open;footer.hidden=!model.open&&!(pending&&card.email_send);secondary.hidden=!model.open;close.hidden=!model.open;root.classList.toggle('email-review-open',model.open);toggle.textContent=model.open?'Hide details':card.status==='completed'?'Details':'Review';toggle.setAttribute('aria-expanded',String(model.open));
-   preview.replaceChildren();preview.hidden=model.open||card.status==='completed';
+   if(options.matches(':popover-open'))options.hidePopover();
+   content.hidden=!model.open;footer.hidden=terminal&&!model.open;
+   if(send)send.hidden=!card.email_send&&!model.open;
+   root.classList.toggle('email-review-open',model.open);toggle.textContent=model.open?'Hide details':terminal?'Details':'Review';toggle.setAttribute('aria-expanded',String(model.open));
+   preview.replaceChildren();preview.hidden=model.open||terminal;
    if(!preview.hidden){
     const recipients=['to','cc','bcc'].filter(k=>email[k]?.text?.trim()).map(k=>`${fieldNames[k]} ${email[k].text}`).join(' · ');if(recipients)preview.append(el('p','email-notice-recipient',`${recipients}${attachmentCount?' · '+attachmentCount+' '+(attachmentCount===1?'attachment':'attachments'):''}`));if(previewMissing)preview.append(el('p','muted email-preview-missing','The draft needs to be loaded before you can send it.'));
     if(previewText)preview.append(el('p','email-notice-excerpt',previewText.slice(0,360)+(previewText.length>360?'…':'')));
-    if(editAction)preview.append(button('Edit draft',()=>{model.open=true;paint();editAction.click();},'subtle-button email-notice-edit'));
+    const names=[...content.querySelectorAll('.connector-attachment-chip')].map(n=>n.textContent);
+    if(names.length)preview.append(el('p','email-notice-attachments',names.join(' · ')));
    }
    const after=root.getBoundingClientRect().height;
-   if(before&&before!==after&&document.documentElement.dataset.motion!=='off'&&!matchMedia('(prefers-reduced-motion: reduce)').matches)disclosureMotion=root.animate([{height:before+'px'},{height:after+'px'}],{duration:180,easing:'cubic-bezier(.2,.7,.2,1)'});
+   // Only the newly revealed content fades; layout is reserved once. Never
+   // animate a live editor or the full transcript height while reading a draft.
+   if(animate&&before&&before!==after&&document.documentElement.dataset.motion!=='off'&&!matchMedia('(prefers-reduced-motion: reduce)').matches)disclosureMotion=(model.open?content:preview).animate([{opacity:0},{opacity:1}],{duration:160,easing:'ease-out'});
   }
-  paint();return root;
+  paint();
+  if(settling)requestAnimationFrame(()=>{if(root.isConnected&&!document.hidden&&document.documentElement.dataset.motion!=='off'&&!matchMedia('(prefers-reduced-motion: reduce)').matches)root.animate([{opacity:0,transform:'translateY(4px)'},{opacity:1,transform:'none'}],{duration:180,easing:'cubic-bezier(.22,1,.36,1)'});});
+  return root;
  }
  if(!inline&&(card.approval_id||card.email_send||['pending','denied','cancelled'].includes(card.status)))return decisionReceipt(root,{key:'connector:'+card.id,title:request?actionTitle:card.title,outcome:status,terminal:['approved','executing','completed','denied','cancelled'].includes(card.status)});return root;
 }

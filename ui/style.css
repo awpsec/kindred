@@ -3999,7 +3999,7 @@ details.bot-connector-preferences>.bot-connectors-heading::before{top:50%;margin
 .connector-feedback,.connector-outcome-warning{font-size:calc(12px * var(--text-scale, 1));line-height:1.6;border-left:2px solid #b48035;padding-left:12px;margin-top:16px}.connector-edit-receipt{font-size:calc(11px * var(--text-scale, 1));color:var(--muted);margin:14px 0 0}.connector-send-policy,.connector-extra{font-size:calc(11px * var(--text-scale, 1));color:var(--muted);margin-top:18px}.connector-send-policy summary,.connector-extra summary{cursor:pointer}.connector-email-policy{display:grid;grid-template-columns:1fr 220px;align-items:center;gap:15px;font-size:calc(12px * var(--text-scale, 1));margin:0 0 7px;padding-left:44px}
 @media(max-width:620px){.connector-artifact-header{align-items:flex-start;padding:13px}.connector-artifact-content,.connector-card-editor{padding:15px}.connector-artifact>footer{padding:12px}.connector-operation{padding:10px 13px 0}.connector-card-status{white-space:normal;text-align:right}.connector-email-policy{grid-template-columns:1fr;padding-left:0}.connector-record-fields{grid-template-columns:85px minmax(0,1fr)}}
 
-.connector-record-excerpt{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;max-height:32rem;overflow:auto;margin:1rem 0}.connector-record-excerpt p{margin:.6em 0}.connector-table-scroll{max-width:100%;overflow:auto;margin:1rem 0}.connector-sheet-grid{border-collapse:collapse;width:100%;font-size:.85rem}.connector-sheet-grid th,.connector-sheet-grid td{border:1px solid var(--line);padding:.55rem .7rem;text-align:left;min-width:7rem;max-width:20rem;overflow-wrap:anywhere;vertical-align:top}.connector-sheet-grid th{font-weight:600;background:var(--surface)}.connector-proposed-label{font-size:.8rem;font-weight:600;color:var(--muted)}.connector-featured{margin:1rem 0}.connector-featured-choices{display:flex;flex-wrap:wrap;gap:.5rem;margin:.7rem 0}.connector-featured-choices button{display:inline-flex;align-items:center;gap:.4rem}.connector-featured-choices .connector-logo{width:1.2rem;height:1.2rem}.connector-featured-choices svg{width:1.2rem;height:1.2rem}
+.connector-record-excerpt{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;max-height:32rem;overflow:auto;margin:1rem 0}.connector-record-excerpt p{margin:.6em 0}.connector-table-scroll{max-width:100%;overflow:auto;margin:1rem 0}.connector-sheet-grid{border-collapse:collapse;width:100%;font-size:.85rem}.connector-sheet-grid th,.connector-sheet-grid td{border:1px solid var(--line);padding:.55rem .7rem;text-align:left;min-width:7rem;max-width:20rem;overflow-wrap:anywhere;vertical-align:top}.connector-sheet-grid th{font-weight:600;background:var(--surface)}.connector-proposed-label{font-size:.8rem;font-weight:600;color:var(--muted)}
 
 .artifact-library-toolbar,.artifact-library-pages{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0}.artifact-library-toolbar select{min-width:0;max-width:70%}.artifact-library-record{border-top:1px solid var(--line);padding:14px 0}.artifact-library-record>summary{cursor:pointer;overflow-wrap:anywhere}.artifact-record-title{font-weight:550}.artifact-library-record>summary>.small{display:block;margin-top:5px}.artifact-record-body{margin-top:16px;min-width:0}.artifact-record-body:empty{display:none}.artifact-library-record .artifact-frame{height:360px}.artifact-library .deliverable-heading{flex-wrap:wrap}
 /* Keep receipts compact while leaving approval actions outside the scroll area. */
@@ -6396,3 +6396,51 @@ html[data-system-text-size] :is(.settings-dialog,.voice-call-options,.app-detail
 
 html[data-motion="off"] .client-update span{transition:none}
 @media(prefers-reduced-motion:reduce){.client-update span{transition:none}}
+
+/* Outcome first: desktop answers read as prose. Identity, progress, handoffs,
+   decisions and mobile message surfaces retain their separate treatments. */
+:root:not([data-mobile]) #content .conversation-answer>.message-row.assistant>.message-bubble{background:transparent;border:0;box-shadow:none;border-radius:0;padding:4px 0;max-width:100%}
+
+/* One stable email action row, with optional actions in a local popover. */
+.connector-artifact.email-notice{border:1px solid var(--line);border-radius:16px;background:var(--panel);box-shadow:none}
+.email-notice>.connector-artifact-header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:16px 18px 10px;align-items:start}
+.email-notice-title{min-width:0;font-weight:600}
+.email-notice .connector-card-status{font-size:calc(11px * var(--text-scale,1));max-width:230px}
+.email-notice>.connector-artifact-content{padding:0 18px 12px}
+.email-notice-preview{padding:0 18px 12px}
+.email-notice-recipient{white-space:normal;overflow-wrap:anywhere;line-height:1.5}
+.email-notice-attachments{margin:9px 0 0;color:var(--muted);font-size:calc(12px * var(--text-scale,1));overflow-wrap:anywhere}
+.email-notice>footer.email-review-footer{display:block;padding:4px 18px 16px}
+.email-notice>footer.email-review-footer[hidden]{display:none}
+.email-review-final{justify-content:flex-start;gap:8px;flex-wrap:wrap}
+.email-review-final>.email-review-toggle{border:1px solid var(--line);border-radius:9px;padding:7px 12px;min-height:34px}
+.email-review-final>.primary{margin-left:auto;min-height:34px;padding:7px 14px}
+.email-review-final>.email-options-toggle{width:34px;height:34px;padding:7px;border-radius:9px}
+.email-options-panel{position:fixed;inset:auto;margin:0;padding:5px;box-sizing:border-box;width:max-content;max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--fg);box-shadow:0 7px 24px #0002}
+.email-options-panel:popover-open{display:grid;gap:2px}
+.email-options-panel>button{display:block;text-align:left;width:100%;border:0;border-radius:7px;padding:9px 12px;background:transparent;font-size:calc(13px * var(--text-scale,1));white-space:normal}
+.email-options-panel>button:hover{background:var(--hover)}
+.email-notice.email-terminal{border:0;border-radius:0;background:transparent}
+.email-terminal>.connector-artifact-header{display:flex;align-items:center;flex-wrap:wrap;padding:6px 0;color:var(--muted);font-size:calc(12px * var(--text-scale,1))}
+.email-terminal .email-notice-title{font-weight:400;flex:0 1 auto}
+.email-terminal .connector-card-status{margin-left:0}
+.email-terminal .email-review-toggle{margin-left:auto}
+@media(max-width:540px){.email-notice>.connector-artifact-header{grid-template-columns:minmax(0,1fr);gap:4px}.email-notice .connector-card-status{margin-left:0;text-align:left;max-width:none}}
+@media(pointer:coarse){.email-review-final>button{min-width:44px;min-height:44px}.email-options-panel>button{min-height:44px}}
+
+/* The live catalog is the browse surface; no second, hard-coded app list. */
+.marketplace-controls{display:flex;align-items:flex-end;gap:12px;margin:10px 0 18px}
+.marketplace-controls>label{flex:1;min-width:0;margin:0}
+.marketplace-controls .marketplace-connected{flex:none;min-height:38px;border-radius:10px;margin:0}
+.marketplace-connected[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:transparent}
+.marketplace-grid{gap:0 22px}
+.market-app{border-bottom:1px solid var(--line);gap:8px;padding:10px 0;align-items:center}
+.market-app>.market-app-open{padding:8px 5px;align-items:center;border-radius:10px}
+.market-app-text strong{display:block;overflow-wrap:anywhere;line-height:1.4}
+.market-app-text p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;font-size:calc(12px * var(--text-scale,1));line-height:1.5;margin-top:4px;overflow-wrap:anywhere}
+.market-app>button:not(.market-app-open){min-height:34px;font-size:calc(12px * var(--text-scale,1));padding:5px 12px}
+.marketplace-grid>.action-message,.marketplace-grid>.run-error,.marketplace-grid>p{grid-column:1/-1}
+@media(max-width:480px){.marketplace-controls{flex-wrap:wrap}.marketplace-controls>label{flex-basis:100%}.market-app{flex-wrap:wrap}.market-app>.market-app-open{flex-basis:100%}.market-app>button:not(.market-app-open){margin-left:auto}}
+@media(pointer:coarse){.market-app>button:not(.market-app-open){min-height:44px}}
+.email-notice.connector-editing .connector-card-editor{display:grid}
+.email-notice.connector-editing>.email-notice-preview{display:none}

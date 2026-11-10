@@ -6524,6 +6524,9 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       row.append(bubble);
     } else row.append(markdown(m.text));
     const bubble=row.lastElementChild;
+    // Outcomes read as prose; progress, handoffs and decisions keep their own
+    // surfaces. Group-chat bylines and avatars remain in place.
+    if(!isUser&&['message','assistant','result','voice_recap'].includes(m.kind)&&(!isProgressMember(m)||m.progress?.phase==='final_answer'))group.classList.add('conversation-answer');
     // Live previews keep their transcript ancestry and stay visible when text
     // updates gather. Reparenting an iframe reloads it even if its node survives.
     if(!isUser&&m.kind==='assistant'&&isProgressMember(m)){group.classList.add('progress-commentary');group.dataset.progressCandidate=m.progress.group_id;if(summaries.get(m.progress.group_id)?.includes(m)&&!m.files?.length&&!bubble.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media,iframe,video,audio')){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker)group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
@@ -6832,8 +6835,33 @@ function retainConversationSelection(target){
     const a=resolve(anchor),f=resolve(focus);if(a&&f)selection.setBaseAndExtent(...a,...f);
   };
 }
-function preserveProgressGroup(previous,next){
+// Completion changes layout once. A bounded inert header paints the outgoing
+// deck while the real, readable receipt is already at its final geometry.
+function prepareGatherSettlement(group,next,animate){
+  if(next.dataset.progressFinished!=='true'){group.finishGatherSettlement?.();return ()=>{};}
+  if(!animate||group.dataset.progressFinished!=='false'||!group.classList.contains('task-gather')||!motionAllowed()||!chatScroll.follow)return ()=>{};
+  const heading=group.querySelector('.summary-progress-heading'),before=heading.getBoundingClientRect();
+  if(before.bottom<0||before.top>innerHeight)return ()=>{};
+  const ghost=node('div','gather-settlement-ghost');for(const child of heading.childNodes)ghost.append(child.cloneNode(true));ghost.inert=true;ghost.setAttribute('aria-hidden','true');
+  for(const n of ghost.querySelectorAll('[id]'))n.removeAttribute('id');
+  // The live avatar remains owned by the task. Its departing copy is static.
+  for(const copy of ghost.querySelectorAll('.summary-progress-avatar,.summary-progress-author,.summary-progress-live-status'))copy.remove();
+  return ()=>{
+    if(!group.isConnected||group.dataset.progressFinished!=='true')return;
+    const summary=group.querySelector('.summary-progress-heading'),after=summary.getBoundingClientRect(),box=group.getBoundingClientRect();
+    Object.assign(ghost.style,{left:(before.left-box.left)+'px',top:(before.top-box.top)+'px',width:before.width+'px',height:before.height+'px'});group.append(ghost);
+    const duration=240,easing='cubic-bezier(.22,1,.36,1)';
+    const departure=ghost.animate([{opacity:.8,transform:'none'},{opacity:0,transform:`translate(${after.left-before.left}px,${after.top-before.top}px) scale(1,${Math.max(.45,after.height/before.height)})`}],{duration:180,easing,fill:'both'});
+    const arrival=summary.animate([{opacity:0,transform:'translateY(4px)'},{opacity:1,transform:'none'}],{duration,easing});
+    const interrupt=()=>group.finishGatherSettlement?.();
+    const finish=()=>{departure.cancel();ghost.remove();group.removeEventListener('pointerdown',interrupt,true);group.removeEventListener('keydown',interrupt,true);delete group.finishGatherSettlement;};
+    group.addEventListener('pointerdown',interrupt,true);group.addEventListener('keydown',interrupt,true);
+    const control=trackMotion(arrival,duration,finish);group.finishGatherSettlement=()=>control.finish();
+  };
+}
+function preserveProgressGroup(previous,next,animate=true){
   if(!previous.classList.contains('summary-progress')||!next.classList.contains('summary-progress')||previous.dataset.progressGroup!==next.dataset.progressGroup||previous.classList.contains('task-staged')!==next.classList.contains('task-staged'))return false;
+  const settle=prepareGatherSettlement(previous,next,animate);
   const details=previous.querySelector('.summary-progress-disclosure'),body=details.querySelector('.summary-progress-body'),restarting=previous.dataset.progressFinished==='true'&&next.dataset.progressFinished==='false';
   previous.classList.toggle('brief-progress',next.classList.contains('brief-progress'));
   previous.classList.toggle('task-gather',next.classList.contains('task-gather'));
@@ -6850,6 +6878,7 @@ function preserveProgressGroup(previous,next){
   cancelProgressCompletion(next);
   previous._progressEntry=next._progressEntry;previous._progressRunId=next._progressRunId;
   scheduleProgressCompletion(previous,next._progressCompleting);
+  settle();
   return true;
 }
 function preserveShardMessage(previous,next){
@@ -7083,7 +7112,7 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
       reconcileConversation(previous.querySelector('.connector-stack-current'),next.querySelector('.connector-stack-current'),animate);advance?.();
       conversationRenderSignatures.set(previous,signature);return previous;
     }
-    if(previous&&preserveProgressGroup(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
+    if(previous&&preserveProgressGroup(previous,next,animate)){conversationRenderSignatures.set(previous,signature);return previous;}
     const beforeHistory=previous?.querySelector('.task-recovery-history'),afterHistory=next.querySelector('.task-recovery-history');
     if(beforeHistory&&afterHistory){previous.dataset.message=next.dataset.message;reconcileConversation(beforeHistory.querySelector('.task-recovery-body'),afterHistory.querySelector('.task-recovery-body'),animate);beforeHistory.refreshDisclosure?.();conversationRenderSignatures.set(previous,signature);return previous;}
     if(previous&&preserveProgressCommentary(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
@@ -7227,25 +7256,15 @@ async function openMarketplace(initial = "") {
     d.append(empty);
     return;
   }
-  const head = node("div", "marketplace-controls"),
-    installed = button(
-      `${status.apps.length} added`,
-      async () => {
-        ++generation;clearTimeout(state.marketTimer);status=await api('/composio');
-        installed.textContent=status.apps.length+' added';results.removeAttribute('aria-busy');results.replaceChildren();
-        for (const app of status.apps) results.append(marketApp(app));
-        if(!status.apps.length)results.append(actionMessage('No connected apps yet.',[button('Browse all apps',()=>{search.input.value='';return load();},'outline-button')]));
-      },
-      "outline-button",
-    );
-  const search = field("Search apps", initial, "input", {
-    type: "search",
-    placeholder: "Search Composio apps…",
-  });
-  head.append(installed, search.label);
-  d.append(head);
-  const featured=node('details','connector-featured');featured.append(node('summary','','Popular apps with detailed chat cards'));
-  const choices=node('div','connector-featured-choices');for(const profile of connectorCatalog){const choice=button(profile.name,()=>{clearTimeout(state.marketTimer);search.input.value=profile.name;return load();},'outline-button');choice.prepend(connectorLogo({key:profile.id,name:profile.name}));choice.title=profile.description;choices.append(choice);}featured.append(node('p','muted small','Browse available connections. Each app needs its own connected account and permissions.'),choices);d.append(featured);
+  let installedOnly=false;
+  const head=node('div','marketplace-controls');
+  const installed=button(`Connected · ${status.apps.length}`,()=>{
+    installedOnly=!installedOnly;installed.setAttribute('aria-pressed',String(installedOnly));
+    clearTimeout(state.marketTimer);return load();
+  },'outline-button marketplace-connected');
+  installed.setAttribute('aria-pressed','false');
+  const search=field('Search apps',initial,'input',{type:'search',placeholder:'Search apps…'});
+  head.append(search.label,installed);d.append(head);
   const results = node("div", "marketplace-grid");
   d.append(results);
   let generation = 0;
@@ -7253,12 +7272,14 @@ async function openMarketplace(initial = "") {
     const g = ++generation;
     if (!append) {results.replaceChildren();for(let i=0;i<6;i++)results.append(node("div","market-skeleton"));results.setAttribute("aria-busy","true");}
     try {
-      const data = await api(
-        "/marketplace?search=" +
-          encodeURIComponent(search.input.value) +
-          "&cursor=" +
-          encodeURIComponent(cursor),
-      );
+      let data;
+      if(installedOnly){
+        const connected=await api('/composio');
+        if(g!==generation||!d.isConnected)return;
+        status=connected;installed.textContent='Connected · '+status.apps.length;
+        const query=search.input.value.trim().toLocaleLowerCase();
+        data={items:status.apps.filter(app=>[app.name,app.id,app.description].filter(Boolean).join(' ').toLocaleLowerCase().includes(query))};
+      }else data=await api('/marketplace?search='+encodeURIComponent(search.input.value)+'&cursor='+encodeURIComponent(cursor));
       if (g !== generation || !d.isConnected) return;
       if (!append) results.replaceChildren();
       results.querySelector(".market-more")?.remove();
@@ -7283,31 +7304,10 @@ async function openMarketplace(initial = "") {
       if(g===generation)results.removeAttribute('aria-busy');
     }
   }
-  if (!status.configured) {
-    results.append(
-      node(
-        "p",
-        "muted",
-        "Connect your Composio project to browse the live app catalog.",
-      ),
-      button(
-        "Set up Composio",
-        () => {
-          d.close();
-          return openSettings("connections");
-        },
-        "primary",
-      ),
-    );
-  } else {
-    search.input.oninput = () => {
-      ++generation;
-      clearTimeout(state.marketTimer);
-      state.marketTimer = setTimeout(() => load(), 250);
-    };
-    await load();
-  }
-  d.addEventListener('connections-changed',()=>perform(async()=>{status=await api('/composio');if(!d.isConnected)return;installed.textContent=status.apps.length+' added';await load();}));
+  search.input.oninput=()=>{++generation;clearTimeout(state.marketTimer);state.marketTimer=setTimeout(()=>load(),250);};
+  d.addEventListener('close',()=>{++generation;clearTimeout(state.marketTimer);},{once:true});
+  await load();
+  d.addEventListener('connections-changed',()=>perform(async()=>{status=await api('/composio');if(!d.isConnected)return;installed.textContent='Connected · '+status.apps.length;await load();}));
   function marketApp(app) {
     const box = node("article", "market-app"),
       logo = node(
@@ -7322,7 +7322,7 @@ async function openMarketplace(initial = "") {
         "p",
         "muted small",
         app.description ||
-          app.account?.status.toLowerCase() ||
+          app.account?.status?.toLowerCase() ||
           "Connect this app",
       ),
     );
@@ -7335,7 +7335,7 @@ async function openMarketplace(initial = "") {
           image.alt = "";
           image.loading = "lazy";
           image.referrerPolicy = "no-referrer";
-          image.onerror = () => image.remove();
+          image.onerror = () => logo.replaceChildren(document.createTextNode((app.name||app.id).slice(0,2).toUpperCase()));
           logo.replaceChildren(image);
         }
       } catch {}

@@ -1,3 +1,4 @@
+async function emailAction(view,name){const action=view.getByRole('button',{name,exact:true});if(!await action.isVisible())await view.getByRole('button',{name:'More email options',exact:true}).click();await action.click();}
 const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
 const {server,token}=require('./fixtures/desktop.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
@@ -25,23 +26,33 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  ];});
  assert.deepEqual(senders,['casey@example.invalid','Connected account','casey@example.invalid','Casey <casey@example.invalid>','Connected account']);
  const view=page.locator('[data-connector-artifact="email-review"]');await view.getByText('Email draft · Not sent',{exact:true}).waitFor();assert.equal(await view.locator('.email-notice-recipient').textContent(),'To jordan@example.invalid · 1 attachment');
- assert(await view.getByRole('button',{name:'Send email',exact:true}).isVisible(),'Send is first-class before Review');await view.locator('.email-notice-preview .email-notice-edit').click();await view.getByRole('form',{name:'Edit email draft'}).getByRole('button',{name:'Close',exact:true}).click();
+ assert(await view.getByRole('button',{name:'Send email',exact:true}).isVisible(),'Send is first-class before Review');
+ const more=view.getByRole('button',{name:'More email options',exact:true}),options=view.getByRole('group',{name:'Email options',exact:true});
+ await more.focus();await more.press('Enter');await options.waitFor();assert(await view.getByRole('button',{name:'Edit draft',exact:true}).evaluate(n=>n===document.activeElement),'Opening options focuses the first action');
+ await page.keyboard.press('Escape');await options.waitFor({state:'hidden'});assert(await more.evaluate(n=>n===document.activeElement),'Escape returns focus to the trigger');
+ await more.click();await more.click();await options.waitFor({state:'hidden'});
+ await more.click();await view.locator('.email-notice-title').click();await options.waitFor({state:'hidden'});assert.equal(actions.length,0,'Dismissing options cannot send or edit');
+await emailAction(view,'Edit draft');await view.getByRole('form',{name:'Edit email draft'}).getByRole('button',{name:'Close',exact:true}).click();
  assert.equal(await view.locator('.connector-email-subject').count(),0,'Subject appears once in the email header');assert.equal(actions.length,0,'Opening and closing the editor does not save or send');
- await view.getByRole('button',{name:'Close',exact:true}).click();await view.getByRole('button',{name:'Review',exact:true}).click();assert.equal(await view.getByText('<sender.user>',{exact:true}).count(),0);assert.equal(await view.getByText('casey@example.invalid',{exact:true}).count(),1);
+ await view.getByRole('button',{name:'Review',exact:true}).click();assert.equal(await view.getByText('<sender.user>',{exact:true}).count(),0);assert.equal(await view.getByText('casey@example.invalid',{exact:true}).count(),1);
  assert.equal(await page.locator('[data-approval="approval-email"]').count(),1,'Only the email card owns this approval');
  const output=process.env.KINDRED_TEST_ARTIFACTS||'/opt/kindred/testing/email-review';fs.mkdirSync(output,{recursive:true});
  for(const theme of ['dark','light']){await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);await view.screenshot({path:path.join(output,'email-draft-'+theme+'.png')});}
- await view.getByRole('button',{name:'Edit draft',exact:true}).click();const editor=view.getByRole('form',{name:'Edit email draft'});
+ await emailAction(view,'Edit draft');const editor=view.getByRole('form',{name:'Edit email draft'});
  assert(await view.getByRole('button',{name:'Send email',includeHidden:true,exact:true}).isDisabled());
  await view.screenshot({path:path.join(output,'email-editor-light.png')});
  await editor.getByLabel('Message',{exact:true}).fill('Updated draft, still not sent.');await editor.getByRole('button',{name:'Save edits',exact:true}).click();await editor.getByRole('alert').waitFor();assert.equal(await editor.getByLabel('Message',{exact:true}).inputValue(),'Updated draft, still not sent.','A revision conflict preserves the unsaved draft');await editor.getByRole('button',{name:'Save edits',exact:true}).click();await view.getByText('Updated draft, still not sent.',{exact:true}).waitFor();
  await view.getByRole('button',{name:'Remove attachments',exact:true}).click();await view.getByText('project-summary.pdf',{exact:true}).waitFor({state:'detached'});
  assert.equal(card.status,'pending');assert.deepEqual(actions.map(a=>a.action),['edit','edit','remove_attachments']);
- for(const width of [390,1000])for(const scale of [1,1.5]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.setProperty('--text-scale',scale),scale);await page.waitForTimeout(400);const close=await view.getByRole('button',{name:'Close',exact:true}).boundingBox(),send=await view.getByRole('button',{name:'Send email',exact:true}).boundingBox();assert(close&&send);assert(Math.abs(close.y+close.height/2-send.y-send.height/2)<=2,'Email Close and Send stay on the same final row');assert(close.x+close.width<send.x,'Email Send remains right of Close');const secondary=await view.getByRole('button',{name:'Edit draft',exact:true}).boundingBox();assert(secondary.y+secondary.height<=Math.min(close.y,send.y),'Secondary email actions stay above final row');}await page.evaluate(()=>document.documentElement.style.removeProperty('--text-scale'));await page.setViewportSize({width:390,height:900});await view.screenshot({path:path.join(output,'email-draft-mobile.png')});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ for(const width of [390,1000])for(const scale of [1,1.5]){await page.setViewportSize({width,height:900});await page.evaluate(scale=>document.documentElement.style.setProperty('--text-scale',scale),scale);await page.waitForTimeout(400);const review=await view.getByRole('button',{name:'Hide details',exact:true}).boundingBox(),send=await view.getByRole('button',{name:'Send email',exact:true}).boundingBox();assert(review&&send);assert(Math.abs(review.y+review.height/2-send.y-send.height/2)<=2,'Review and Send share one stable row');assert(review.x+review.width<send.x,'Send remains the trailing action');assert(await view.getByRole('button',{name:'Edit draft',exact:true}).isHidden(),'Secondary actions are disclosed on demand');}await page.evaluate(()=>document.documentElement.style.removeProperty('--text-scale'));await page.setViewportSize({width:390,height:900});await view.screenshot({path:path.join(output,'email-draft-mobile.png')});
+ await page.setViewportSize({width:320,height:900});await page.evaluate(()=>document.documentElement.style.setProperty('--text-scale',1.5));await more.click();await options.waitFor();
+ assert(await options.evaluate(n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight&&n.scrollWidth<=n.clientWidth;}),'Options fit the narrow viewport at larger text size');
+ await page.screenshot({path:path.join(output,'email-options-narrow.png')});await page.keyboard.press('Escape');await page.evaluate(()=>document.documentElement.style.removeProperty('--text-scale'));await page.setViewportSize({width:390,height:900});
+assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  // Explicit Save repairs a pre-upgrade stale alternative even when the visible
  // text is unchanged; merely opening/closing still writes nothing.
  card.body_resave_required=true;await page.reload();await view.getByRole('button',{name:'Review',exact:true}).click();
- await view.getByRole('button',{name:'Edit draft',exact:true}).click();
+ await emailAction(view,'Edit draft');
  await view.getByRole('form',{name:'Edit email draft'}).getByRole('button',{name:'Save edits',exact:true}).click();
  await page.waitForFunction(()=>!document.querySelector('.connector-card-editor'));
  assert.deepEqual(actions.at(-1).fields,{body:'Updated draft, still not sent.'});
@@ -68,7 +79,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  assert.equal(await view.getByRole('button',{name:'Edit draft',exact:true}).count(),0);
  for(const width of [390,1000,1260]){await page.setViewportSize({width,height:900});await view.screenshot({path:path.join(output,'remote-draft-compact-'+width+'.png')});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
  await view.getByRole('button',{name:'Review',exact:true}).click();await view.getByText('report.docx',{exact:true}).waitFor();assert.equal(await view.getByRole('button',{name:'Remove attachments',exact:true}).count(),0);
- await view.getByRole('button',{name:'Close',exact:true}).click();
+ await view.getByRole('button',{name:'Hide details',exact:true}).click();
  card.draft_contract_changed=true;await page.reload();await send.waitFor();assert(await send.isDisabled(),'A changed provider draft cannot be sent from the old review');await view.getByRole('button',{name:'Review',exact:true}).click();await view.getByText('This draft changed after review. Load the updated preview before sending.',{exact:true}).waitFor();
  card.draft_contract_changed=false;await page.reload();await send.waitFor();
  await send.evaluate(b=>{b.click();b.click();});await view.getByText('Sending…',{exact:true}).waitFor();

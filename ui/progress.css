@@ -120,3 +120,23 @@ progress::-moz-progress-bar{background:var(--progress-accent)}
   .task-activity.task-gather .summary-progress-time{grid-row:1;font-size:calc(10px * var(--text-scale,1))}
   .task-activity.task-gather .summary-progress-live-status{grid-column:2 / 4}
 }
+
+/* Finished work becomes a quiet receipt. The outcome and any pending review
+   stay outside it, and the complete history remains a native disclosure. */
+#content .task-activity.task-gather[data-progress-finished="true"]{margin-block:8px;position:relative}
+.task-activity.task-gather[data-progress-finished="true"] .summary-progress-heading{
+  display:flex;align-items:center;flex-wrap:nowrap;gap:7px;min-height:32px;
+  padding:4px 0;border:0;border-radius:0;background:transparent;box-shadow:none;
+  filter:none;transition:none;
+}
+.task-gather[data-progress-finished="true"] .summary-progress-avatar{display:none!important}
+.task-activity.task-gather[data-progress-finished="true"] .summary-progress-task{flex:0 1 auto;min-width:0;font-size:calc(12px * var(--text-scale,1));font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task-activity.task-gather[data-progress-finished="true"] .summary-progress-live-status{display:inline;flex:none;margin:0;font-size:calc(11px * var(--text-scale,1));white-space:nowrap}
+.task-gather[data-progress-finished="true"] .summary-progress-live-status::before{display:inline;content:'·';margin-inline-end:7px}
+.task-activity.task-gather[data-progress-finished="true"] .summary-progress-time{flex:none;margin:0;font-size:calc(11px * var(--text-scale,1))}
+.task-gather[data-progress-finished="true"] .summary-progress-time::before{content:'·';margin-inline-end:7px}
+.task-gather[data-progress-finished="true"] .summary-progress-chevron{order:-1;flex:none;width:14px}
+.gather-settlement-ghost{position:absolute;display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--line);border-radius:28px;background:var(--bubble);color:var(--muted);overflow:hidden;pointer-events:none;transform-origin:left top;z-index:2}
+.gather-settlement-ghost .summary-progress-author,.gather-settlement-ghost .summary-progress-live-status{display:none}
+.gather-settlement-ghost .summary-progress-task{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(hover:none){.task-activity.task-gather[data-progress-finished="true"] .summary-progress-heading{min-height:44px}}
