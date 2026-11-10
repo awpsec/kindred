@@ -5402,7 +5402,7 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   }
   if(finished&&!terminal){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
   // A persisted marker retains a compact completion receipt without inventing stages.
-  const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact')+(brief?' brief-progress':''));group.dataset.message=String(first.seq);group.dataset.scrollMessages=items.map(m=>String(m.seq)).join(' ');group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
+  const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact')+(brief?' brief-progress':' task-gather'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=items.map(m=>String(m.seq)).join(' ');group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
   if(first.projectedProgress){group.dataset.message='progress:'+key;group.dataset.scrollMessages=items.filter(m=>!m.projectedProgress).map(m=>String(m.seq)).join(' ');}
   const previous=[...$('content').querySelectorAll('[data-progress-group]')].find(n=>n.dataset.progressGroup===key),manual=entry.progressOpen.has(key);
   const completing=finished&&!manual&&previous?.dataset.progressFinished==='false'&&previous.querySelector('details')?.open&&!previous.querySelector('details').classList.contains('is-collapsing');
@@ -5412,7 +5412,8 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   const chevron=node('span','summary-progress-chevron','⌄');chevron.setAttribute('aria-hidden','true');title.append(chevron);
   if(bot&&!brief){
     // A completed receipt belongs to this task, not the bot's next activity.
-    const avatar=finished?character({...portrait(bot),animated:false},22):buddy(bot,22);
+    const avatar=finished?character({...portrait(bot),animated:false},32):buddy(bot,32);
+    avatar.classList.add('summary-progress-avatar');
     if(finished)delete avatar.dataset.botId;
     avatar.setAttribute('aria-hidden','true');title.append(avatar,node('span','summary-progress-author',bot.name));
   }
@@ -5425,7 +5426,7 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   const phase={preparing:'Preparing the next action',thinking:'Thinking through the next step',writing:'Writing a response',waiting:'Waiting for the model'}[activity?.phase];
   const current=activity?.current?.label||activity?.current_label;
   const taskName=(first.progress.task_title||rootRun?.task_title||'').trim();
-  const label=brief?'Activity':staged?(taskName||'Task progress'):finished?(taskName?taskName+' · '+status:status):(taskName||current||phase||'Activity');
+  const label=brief?'Activity':staged?(taskName||'Task progress'):finished?(taskName||status):(taskName||current||phase||'Activity');
   const task=node('span','summary-progress-task'),text=node('span','summary-progress-name',label);task.title=label;task.append(text);title.append(task);
   const started=[rootRun?.progress_started,rootRun?.created].find(value=>Number.isFinite(value)&&value>0);
   const ended=terminal?.ended||phaseFinal?.created||(finished?(endedEvent?.created||activity?.last_at||items.at(-1).created):run?Math.floor(Date.now()/1000):(activity?.last_at||items.at(-1).created));
@@ -5435,9 +5436,10 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
     const stateLabel=node('span','muted small summary-progress-count summary-progress-live-status');
     stateLabel.dataset.taskStatusRun=run.id;
     stateLabel.dataset.taskStatusFixed=status||waitingLabel||'';
-    stateLabel.dataset.taskStatusFallback=current||phase||(staged?presentation.stages[presentation.current_stage]:'Working');
+    const latestUpdate=items.findLast(m=>m.kind==='assistant'&&m.progress?.phase==='commentary'&&m.run_id===currentRunId);
+    stateLabel.dataset.taskStatusFallback=current||phase||plain(latestUpdate?.text||'').slice(0,320)||(staged?presentation.stages[presentation.current_stage]:'Working');
     updateTaskStatus(stateLabel);title.append(stateLabel);
-  }else if(staged)title.append(node('span','muted small summary-progress-count',status||presentation.stages[presentation.current_stage]));
+  }else if(!brief)title.append(node('span','muted small summary-progress-count summary-progress-live-status',status||(staged?presentation.stages[presentation.current_stage]:'Recorded activity')));
   const body=node('div','summary-progress-body');
   if(staged){const stages=node('ol','task-stages');stages.setAttribute('aria-label','Task stages');presentation.stages.forEach((label,index)=>{const stage=node('li','task-stage',label);if(index<presentation.current_stage)stage.dataset.state='done';else if(index===presentation.current_stage){stage.dataset.state=finished?'ended':'current';stage.setAttribute('aria-current','step');if(finished)stage.setAttribute('aria-label',label+' · '+status);}else stage.dataset.state='pending';stages.append(stage);});body.append(stages);}
   const receipt=node('div','summary-progress-activity');receipt.setAttribute('aria-label','Recorded activity');
@@ -6834,6 +6836,7 @@ function preserveProgressGroup(previous,next){
   if(!previous.classList.contains('summary-progress')||!next.classList.contains('summary-progress')||previous.dataset.progressGroup!==next.dataset.progressGroup||previous.classList.contains('task-staged')!==next.classList.contains('task-staged'))return false;
   const details=previous.querySelector('.summary-progress-disclosure'),body=details.querySelector('.summary-progress-body'),restarting=previous.dataset.progressFinished==='true'&&next.dataset.progressFinished==='false';
   previous.classList.toggle('brief-progress',next.classList.contains('brief-progress'));
+  previous.classList.toggle('task-gather',next.classList.contains('task-gather'));
   previous.dataset.message=next.dataset.message;previous.dataset.scrollMessages=next.dataset.scrollMessages;previous.dataset.progressFinished=next.dataset.progressFinished;
   if(next.dataset.taskStatus)previous.dataset.taskStatus=next.dataset.taskStatus;else delete previous.dataset.taskStatus;
   const oldStop=previous.querySelector(':scope>.work-stop'),newStop=next.querySelector(':scope>.work-stop'),stopFocused=oldStop===document.activeElement;
@@ -7020,14 +7023,18 @@ function prepareProgressGather(target,desired,animate){
       const end=header.getBoundingClientRect();
       if(end.bottom<target.getBoundingClientRect().top||end.top>target.getBoundingClientRect().bottom)continue;
       const motion=header.animate([{opacity:.2,transform:'translateY(6px)'},{opacity:1,transform:'translateY(0)'}],{duration:220,easing:'cubic-bezier(.23,1,.32,1)'});trackMotion(motion,220);
-      for(const {ghost,rect} of visible){
+      for(const [index,{ghost,rect}] of visible.entries()){
         ghost.hidden=false;ghost.inert=true;ghost.setAttribute('aria-hidden','true');ghost.classList.add('progress-gather-ghost');
         for(const el of [ghost,...ghost.querySelectorAll('[id]')])el.removeAttribute('id');
         for(const key of ['message','progressCandidate','taskCommentary','scrollMessages'])delete ghost.dataset[key];
         Object.assign(ghost.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',margin:'0',pointerEvents:'none',zIndex:'20'});
         target.append(ghost);
-        const effect=ghost.animate([{opacity:.8,transform:'translateY(0) scale(1)'},{opacity:0,transform:'translateY('+Math.max(-80,Math.min(80,end.top-rect.top))+'px) scale(.97)'}],{duration:220,easing:'cubic-bezier(.23,1,.32,1)',fill:'both'});
-        trackMotion(effect,220,()=>ghost.remove());
+        // At most three text-only notes converge toward the new deck. The real
+        // rows retain their identity; only these inert overlays move.
+        const duration=280,delay=index*20,dy=Math.max(-240,Math.min(240,end.top-rect.top));
+        ghost.style.transformOrigin='top left';
+        const effect=ghost.animate([{opacity:.8,transform:'translateY(0) scale(1)'},{opacity:0,transform:`translateY(${dy}px) scale(.88)`}],{duration,delay,easing:'cubic-bezier(.23,1,.32,1)',fill:'both'});
+        trackMotion(effect,duration+delay,()=>ghost.remove());
       }
     }
   });

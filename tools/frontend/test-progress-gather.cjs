@@ -37,7 +37,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const animations=await page.evaluate(()=>gatherAnimations);assert(animations.length>0,'Live promotion animates');assert(animations.every(a=>a.frames.every(f=>Object.keys(f).every(k=>['opacity','transform'].includes(k)))),'Only compositor properties animate');passed++;
   if(out)await page.screenshot({path:path.join(out,engine+'-'+width+'-attention.png')});
   await page.locator('[data-progress-group="client-review"] summary').click();await page.getByText(texts[0],{exact:false}).waitFor();assert.equal(await page.locator('[data-task-commentary="client-review"]:visible').count(),4);passed++;
-  await page.evaluate(()=>gatherAnimations=[]);count=5;await page.evaluate(()=>window.gatherRefresh());await page.getByText(texts[4],{exact:false}).waitFor();assert.equal(await page.evaluate(()=>gatherAnimations.length),0);passed++;
+  await page.evaluate(()=>gatherAnimations=[]);count=5;await page.evaluate(()=>window.gatherRefresh());await page.locator('.task-commentary').getByText(texts[4],{exact:false}).waitFor();assert.equal(await page.evaluate(()=>gatherAnimations.length),0);passed++;
   await page.locator('[data-progress-group="client-review"] summary').click();await page.waitForTimeout(260);finished=true;await page.evaluate(()=>window.gatherRefresh());await page.getByText('Review complete. All records checked.',{exact:true}).waitFor();assert.equal(await page.locator('[data-message="25"]').getAttribute('data-task-commentary'),null);passed++;
   // History and reconnect reconstruct grouping without replaying the gather.
   await page.reload();await page.locator('.summary-progress').waitFor();assert.equal(await page.evaluate(()=>gatherAnimations.length),0);passed++;
