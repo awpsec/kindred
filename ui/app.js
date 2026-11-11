@@ -1,6 +1,6 @@
 import {createDocumentReview} from './document-review.js';
 import {createNametagStatus} from './nametag-status.js';
-import {nativeFileDelivery,responseFileBlob} from './file-downloads.js';
+import {nativeFileDelivery,responseFileBlob,fileDownload} from './file-downloads.js';
 import {installComposerResizeMotion} from './composer-resize-motion.js';
 import {mountSlackMonitoring,slackSetupCard} from './slack-monitoring.js';
 import {mountGmailMonitoring,openGmailConnection} from './gmail-monitoring.js';
@@ -626,6 +626,7 @@ async function refresh(force = false) {
     routineFlights.observe(routines,routineRead);
     state.activities = activities;
     state.activityReadAt = Date.now();
+    activityResumeUntil=0;
     acceptAttention(attention);
     if (!state.restoredReload) {
       state.restoredReload = true;
@@ -687,7 +688,7 @@ async function refresh(force = false) {
     updateReactions();
     scheduleReadReceipt();
   } catch(error) {
-    if(signal.aborted||error==='foreground-refresh')return;
+    if(signal.aborted||error==='foreground-refresh'||error==='pagehide')return;
     failConversationOpening(renderingId||currentConversationId(),error);
     throw error;
   } finally {
@@ -842,13 +843,13 @@ function updateWorkLabel(label) {
   let caption=pending?(queue.pause?'Waiting for control':starting?'Waiting to start':helping?.name?'Waiting for '+(state.bots.find(b=>b.id===run.bot_id)?.name||'this bot')+' to finish work for '+helping.name:'Waiting for the current task'):current?r.label:'Waiting for the current task';
   if(run?.status==='awaiting_user'&&pendingHumanTask(run.bot_id)&&!pending)caption='Needs you';
   if(delegation)caption=delegation.caption+(!delegation.waiting&&!run.delegation.resuming&&caption&&!['Working','Idle','Resting'].includes(caption)?' · '+caption:'');
-  const text=node('span','',stale?'Connection lost · last known: '+(caption||'Waiting to start'):caption);
+  const text=node('span','',activityConnectionLost()?'Connection lost · last known: '+(caption||'Waiting to start'):caption);
   text.title=text.textContent;
   const timer=node('time','work-timer',elapsedTime(now-(current?(a.started_at||now):now)));
   timer.title='Elapsed time in this step';
   label.classList.toggle('working-glimmer',!stale&&a.status==='running'&&r.action!=='waiting'&&r.action!=='worry');
   label.replaceChildren(text,timer);continueLoops(label);
-  label.title=stale?'The server has not confirmed new activity. The timer is paused at the last received status.':a.run_created_at?'Task elapsed: '+elapsedTime(now-a.run_created_at):'';
+  label.title=activityConnectionLost()?'The server has not confirmed new activity. The timer is paused at the last received status.':a.run_created_at?'Task elapsed: '+elapsedTime(now-a.run_created_at):'';
 }
 function clientFocused(){return document.hasFocus()||(window.__KINDRED_MOBILE_PLATFORM==='ios'&&window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true);}
 const chatMotionReduced=()=>document.hidden||!clientFocused()||document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1072,7 +1073,7 @@ function updateSidebarActivity(preview){
   const labels={queued:'queued',awaiting_user:pendingHumanTask(id)?'Needs you':'waiting for you',awaiting_approval:'awaiting approval',cancelling:'stopping'};
   const steps={investigate:'searching',search:'searching',read:'reading',terminal:'running a command',hammer:'building',saw:'building',drill:'building',write:'writing'};
   const delegation=delegationContext(run);
-  const label=run?(stale?'Connection lost · last known: '+(delegation?.caption||'working'):labels[run.status]&&!(run.status==='queued'&&run.delegation?.resuming)?(labels[run.status]+(delegation?' · '+delegation.caption:'')):delegation?.caption||steps[activity.shape]||'working'):(activity.commands?(stale?'reconnecting':`${activity.commands} command${activity.commands===1?'':'s'} running`):'');
+  const label=run?(activityConnectionLost()?'Connection lost · last known: '+(delegation?.caption||'working'):labels[run.status]&&!(run.status==='queued'&&run.delegation?.resuming)?(labels[run.status]+(delegation?' · '+delegation.caption:'')):delegation?.caption||steps[activity.shape]||'working'):(activity.commands?(activityConnectionLost()?'reconnecting':`${activity.commands} command${activity.commands===1?'':'s'} running`):'');
   const key=label||preview.dataset.idlePreview;
   if(preview.dataset.activityText===key)return;
   preview.dataset.activityText=key;preview.classList.toggle('is-working',!!label);preview.classList.toggle('needs-you',!!pendingHumanTask(id)&&!stale);
@@ -4600,20 +4601,45 @@ matchMedia("(prefers-color-scheme:dark)").addEventListener(
   "change",
   applyGeneral,
 );
+// Background suspension is not evidence of a broken connection. Keep the last
+// status quiet during one bounded foreground recovery; never refresh its age.
+let activityWasHidden=document.hidden,activityResumeUntil=0;
+const ACTIVITY_RESUME_GRACE_MS=10000;
+function activityConnectionLost(){
+  return !!(state.activityReadAt&&Date.now()-state.activityReadAt>15000&&!document.hidden&&!pageHidden&&Date.now()>=activityResumeUntil);
+}
+function beginActivityResume(){
+  if(!activityWasHidden)return;
+  activityWasHidden=false;activityResumeUntil=Date.now()+ACTIVITY_RESUME_GRACE_MS;
+  updateReactions();
+}
+async function refreshActivityPoll(force=false){
+  try {await refresh(force);}
+  catch(error){
+    // Only automatic reads may recover silently. User actions and expired
+    // sessions continue through their usual error/reauthentication handling.
+    if(state.activityReadAt&&(document.hidden||Date.now()<activityResumeUntil)&&!error?.status)return;
+    if(state.activityReadAt&&(document.hidden||Date.now()<activityResumeUntil)&&error?.status>=500)return;
+    throw error;
+  }
+}
 let lastForegroundRefresh=-Infinity;
 function refreshOnForeground(){
+  if(!document.hidden)beginActivityResume();
   if(!state.token||document.hidden||pageSuspended||performance.now()-lastForegroundRefresh<400)return;
   lastForegroundRefresh=performance.now();
   // Discard a suspended polling snapshot, never an approval/send or other write.
   state.refreshController?.abort('foreground-refresh');
-  void perform(()=>refresh(true));
+  void perform(()=>refreshActivityPoll(true));
 }
 window.addEventListener('focus',refreshOnForeground);
 window.addEventListener('kindred-desktop-resume',refreshOnForeground);
 window.addEventListener('online',refreshOnForeground);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshOnForeground();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){activityWasHidden=true;updateReactions();}else refreshOnForeground();});
+window.addEventListener('pagehide',()=>{activityWasHidden=true;});
+window.addEventListener('pageshow',()=>{if(!document.hidden)beginActivityResume();});
 setInterval(() => {
-  if (state.token && !document.hidden) perform(() => refresh());
+  if (state.token && !document.hidden) perform(() => refreshActivityPoll());
 }, 2500);
 setInterval(() => {
   if (state.token && !document.hidden) updateReactions();
@@ -5378,7 +5404,7 @@ function updateTaskStatus(label){
   if(!label.dataset.taskStatusFixed&&current){
     text=activity.label||text;
     if(run.status==='running'&&activity.provider_retry?.phase==='retrying'&&activity.provider_retry.scope!=='routine')text=`Connection issue - retrying (${activity.provider_retry.attempt}/5)`;
-    if(state.activityReadAt&&(Date.now()-state.activityReadAt)/1000>15)text='Connection lost · last known: '+text;
+    if(activityConnectionLost())text='Connection lost · last known: '+text;
   }
   if(label.textContent!==text)label.textContent=text;
   const stale=state.activityReadAt&&(Date.now()-state.activityReadAt)/1000>15;
@@ -5892,6 +5918,7 @@ function clearConversationOpening(){
   const area=$('content');area.inert=false;area.removeAttribute('aria-busy');area.parentElement.classList.remove('is-loading');
 }
 function failConversationOpening(id,error){
+  if(error==='pagehide'||error==='foreground-refresh')return;
   if(!chatOpening||chatOpening.id!==id||currentConversationId()!==id||chatOpening.failed)return;
   chatOpening.failed=true;const loading=chatOpening.loading;
   loading.classList.add('is-error');loading.replaceChildren(node('span','','Could not load conversation.'),node('span','small',error.message||'Please try again.'),button('Retry',async()=>{
@@ -8102,7 +8129,7 @@ addEventListener('pagehide',()=>{
   for(const request of pendingApiRequests.keys())request.abort('pagehide');
 });
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&pageSuspended)invalidateNavigationRecovery();});
-addEventListener('pageshow',e=>{invalidateNavigationRecovery();pageHidden=false;pageSuspended=false;if(e.persisted&&state.token)void perform(()=>refresh(true));});
+addEventListener('pageshow',e=>{invalidateNavigationRecovery();pageHidden=false;pageSuspended=false;if(e.persisted&&state.token)void perform(()=>refreshActivityPoll(true));});
 
 // Every finite UI effect must settle even if a webview drops its finish event.
 // Cancellation for a new interaction discards the old destination; cancellation
@@ -9527,7 +9554,7 @@ function renderAttachments(target, attachments) {
     }
     let end=index+1;while(end<attachments.length&&attachments[end].kind==='file'&&!chatMediaType(attachments[end]))end++;
     if(end-index>3){
-      const stack=node('details','document-stack'),summary=node('summary','document-stack-summary'),copy=node('span','document-stack-copy'),body=node('div','document-stack-body chat-disclosure-body');
+      const stack=node('details','document-stack'+(!window.__KINDRED_MOBILE&&!window.__KINDRED_MOBILE_PLATFORM?' compact-file-stack':'')),summary=node('summary','document-stack-summary'),copy=node('span','document-stack-copy'),body=node('div','document-stack-body chat-disclosure-body');
       copy.append(node('strong','',(end-index)+' files'),node('span','muted',attachments.slice(index,end).map(a=>a.name||a.title||'File').join(' · ')));
       summary.append(icon('paperclip',18),copy,icon('chevron',16));stack.append(summary,body);
       for(let at=index;at<end;at++)renderAttachments(body,[attachments[at]]);
@@ -10049,15 +10076,22 @@ if(window.__KINDRED_MOBILE_PLATFORM==='ios'){
 function botLibraryFile(item){return item.kind==='attachment'&&item.file.kind!=='file'?{...item.file,name:item.file.title||'Screenshot.png',mime:'image/png'}:item.file;}
 function botLibraryReader(item){
  const token=state.token,file=botLibraryFile(item);
- return async(signal)=>{
+ return async(signal,onProgress)=>{
   if(state.token!==token)throw Error('Connection changed');
   const route=item.kind==='upload'?(file.shared?'/server-uploads/':'/uploads/'):item.file.kind==='file'?'/deliverables/':'/attachments/';
   const response=await fetch('/api'+route+encodeURIComponent(file.id),{headers:{Authorization:'Bearer '+token},cache:'no-store',signal});
   if(!response.ok)throw Error('This file is unavailable. Try again.');
-  const blob=await response.blob();if(state.token!==token)throw Error('Connection changed');
+  const blob=await responseFileBlob(response,{signal,onProgress});if(state.token!==token)throw Error('Connection changed');
   if(blob.size>8*1024*1024)throw Error('File exceeds the chat preview limit.');
   return new Blob([blob],{type:file.mime||blob.type});
  };
+}
+function botLibraryDownload(item){
+ const token=state.token,file=botLibraryFile(item),reader=botLibraryReader(item);
+ // Only deliverables have native receipt endpoints. Uploads/screenshots retain
+ // browser delivery, never borrowing a receipt from a different file namespace.
+ const native=item.kind==='attachment'&&item.file.kind==='file'?nativeFileDelivery(()=>state.token===token):{};
+ return fileDownload(file,{getBlob:(_id,options={})=>reader(options.signal,options.onProgress),...native,downloadScope:native.nativeSave?token:token+':'+item.kind,notice});
 }
 async function downloadBotLibraryItem(item){
  if(item.kind==='artifact')return;
@@ -10079,7 +10113,8 @@ async function openBotLibraryItem(item,origin){
   const blob=await response.blob();if(state.token!==token)throw Error('Connection changed');if(blob.size>32*1024*1024)throw Error('Preview exceeds limit');return blob;
  }:null;
  const {openDocumentPreview}=await import('./document-preview.js');
- await openDocumentPreview({card:origin,name,extension,getBlob,getPagePreview,download,renderMarkdown:markdown,artifactPreview});
+ const delivery=!window.__KINDRED_MOBILE&&!window.__KINDRED_MOBILE_PLATFORM?botLibraryDownload(item):null;
+ await openDocumentPreview({card:origin,name,extension,getBlob,getPagePreview,download,createDownloadButton:delivery?()=>delivery.createButton():undefined,renderMarkdown:markdown,artifactPreview});
 }
 
 if(window.__KINDRED_DESKTOP&&!window.__KINDRED_MOBILE&&!window.__KINDRED_MOBILE_PLATFORM){
@@ -10101,7 +10136,7 @@ botCenter=createBotCenter({
  onSettings:()=>openDetails('settings'),onClose:panel=>$(panel.id==='computer-panel'?'computer-close':'details-close').click(),
  readPage:(chatId,query,signal)=>api('/chats/'+encodeURIComponent(chatId)+'?'+new URLSearchParams(query),'GET',undefined,{signal}),
  seedItems:({chatId})=>[...libraryItems(chatHistory.get(chatId)?.messages||[]),...[...state.details.values()].filter(d=>d.run?.chat_id===chatId).flatMap(d=>(d.attachments||[]).map(file=>({key:'attachment:'+file.id,kind:'attachment',file,created:Number(file.created||d.run.created)||0,sender:d.run.bot_id})))],
- onOpenItem:(item,origin)=>perform(()=>openBotLibraryItem(item,origin)),onDownloadItem:item=>perform(()=>downloadBotLibraryItem(item)),getPreview:botLibraryPreview,
+ onOpenItem:(item,origin)=>perform(()=>openBotLibraryItem(item,origin)),onDownloadItem:item=>perform(()=>downloadBotLibraryItem(item)),createDownloadButton:(item,announcement)=>{const delivery=botLibraryDownload(item);delivery.watch(announcement);return delivery.createButton();},getPreview:botLibraryPreview,
 });
 for(const panel of [$('details-panel'),$('computer-panel')])followCharacterPointer(panel,()=>panel.querySelector('.bot-center-avatar .avatar-customize .character'));
 syncBotCenter();

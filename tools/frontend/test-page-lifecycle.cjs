@@ -17,7 +17,7 @@ const assert=require('node:assert/strict');
   await page.evaluate(()=>{dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true}));window.releaseStartupDigest();});
   await page.waitForTimeout(300);assert.equal(messages,0,'A suspended page must not start a new message fetch.');assert.deepEqual(errors,[]);
   await page.evaluate(()=>dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
-  await page.locator('.screenshot-attachment').waitFor();assert(messages>0);assert(await page.locator('#bot-details').isEnabled());assert.deepEqual(errors,[]);
+  await page.getByRole('button',{name:'Open image: Website screenshot',exact:true}).waitFor();assert(messages>0);assert(await page.locator('#bot-details').isEnabled());assert.deepEqual(errors,[]);
   await context.close();console.log(JSON.stringify({passed:true,engine,noFetchAfterPageHide:true,pageShowRefreshes:true,delayedStartup:true}));
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

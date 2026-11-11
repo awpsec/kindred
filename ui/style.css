@@ -6477,3 +6477,17 @@ html[data-motion="off"] .client-update span{transition:none}
  .document-review .document-header,.document-review-header{padding:8px}
 }
 @media(pointer:coarse){.document-review button{min-height:44px;min-width:44px}}
+
+/* Desktop file rows share a quiet baseline with the working Library pane. */
+.deliverable-card.is-compact{border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none;margin:0;}
+.deliverable-card.is-compact:hover,.deliverable-card.is-compact:focus-within{background:var(--hover);border-color:var(--line);box-shadow:none;}
+.deliverable-card.is-compact .deliverable-heading{padding:12px 0;gap:9px;}
+.deliverable-card.is-compact .deliverable-type{flex-basis:22px;width:22px;height:26px;background:transparent;color:var(--muted);}
+.deliverable-card.is-compact .deliverable-type svg{width:20px;height:20px;}
+.deliverable-card.is-compact .deliverable-name{font-weight:500;white-space:normal;overflow-wrap:anywhere;}
+.deliverable-card.is-compact .deliverable-actions{gap:1px;}
+.document-stack.compact-file-stack{border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none;}
+.document-stack.compact-file-stack .document-stack-summary{padding:12px 0;border-radius:0;}
+.document-stack.compact-file-stack .document-stack-body{padding:0;}
+.document-stack.compact-file-stack .deliverable-card{margin:0;}
+.document-stack.compact-file-stack .deliverable-card:last-child{border-bottom:0;}
