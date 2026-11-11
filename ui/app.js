@@ -9802,12 +9802,13 @@ function startMessageReply(chatId,message){
   closeMessageMenu();renderReplyDraft();$('prompt').focus({preventScroll:true});
 }
 function messageActions(chatId,message){
+  let copyResetTimer;
   const actions=node('div','message-actions');actions.setAttribute('role','toolbar');actions.setAttribute('aria-label','Message actions');
   const react=iconButton('smile','React to message',()=>openMessageMenu(chatId,message,'react')),
     reply=iconButton('reply','Reply to message',()=>startMessageReply(chatId,message)),
     copy=iconButton('copy','Copy message',async()=>{
-      await copyText(message.text);copy.replaceChildren(icon('check'));copy.title='Copied';copy.setAttribute('aria-label','Copied');notice('Copied.');
-      setTimeout(()=>{if(copy.isConnected){copy.replaceChildren(icon('copy'));copy.title='Copy message';copy.setAttribute('aria-label','Copy message');}},1600);
+      await copyText(message.text);clearTimeout(copyResetTimer);copy.replaceChildren(icon('check'));copy.title='Copied';copy.setAttribute('aria-label','Copied');
+      copyResetTimer=setTimeout(()=>{if(copy.isConnected){copy.replaceChildren(icon('copy'));copy.title='Copy message';copy.setAttribute('aria-label','Copy message');}},1600);
     });
   for(const [control,name] of [[react,'react'],[reply,'reply'],[copy,'copy']]){control.dataset.messageFocus=name;control.dataset.messageAction=name;}
   for(const control of [react]){control.setAttribute('aria-haspopup','menu');control.setAttribute('aria-expanded',String(messageMenuContext?.chatId===chatId&&messageMenuContext.seq===message.seq&&messageMenuContext.kind===control.dataset.messageAction));}

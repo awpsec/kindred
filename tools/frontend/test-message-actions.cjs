@@ -11,7 +11,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   const chat={id:'pair',name:'Piper, Izabella',members:['b0','b1'],pinned:true,archived:false},chats=[...bots.map(b=>({id:'dm-'+b.id,name:b.name,members:[b.id],archived:false})),chat];
   let settings={name:'CZ',theme:'dark',reduced_motion:false,approval_mode:'auto'},failSend=false;
   const now=Math.floor(Date.now()/1000),messages=[['b0','Good. Empty of real mail is the right first pass.'],['b1',"Thanks. I’ll ping the room if something real lands."],['user','Keep me posted.']].map(([sender,text],i)=>({seq:i+1,sender,text,kind:'message',created:now+i,reactions:[]}));
-  await context.addInitScript(t=>{sessionStorage.setItem('kindred-token',t);Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.fixtureCopied=text;}}});},token);
+  await context.addInitScript(t=>{sessionStorage.setItem('kindred-token',t);Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{if(window.fixtureCopyFails)throw new Error('Clipboard denied');window.fixtureCopied=text;}}});},token);
   await context.route(origin+'/api/**',async route=>{
    const req=route.request(),url=new URL(req.url()),name=url.pathname.slice(4),send=json=>route.fulfill({json});
    if(name==='/settings')return send(settings);if(name==='/bots')return send(bots);if(name==='/chats')return send(chats);if(name==='/runs')return send([]);if(name==='/activity')return send({});
@@ -29,10 +29,24 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   assert(await first().evaluate(n=>{const b=n.querySelector('.message-bubble').getBoundingClientRect(),a=n.querySelector('.message-actions').getBoundingClientRect();return a.left>=b.right&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2+8)<2;}));
   const timestamp=first().locator('.message-action-time');assert.equal(await timestamp.getAttribute('datetime'),new Date(now*1000).toISOString());assert(await timestamp.getAttribute('title'));assert(await timestamp.evaluate(n=>{const t=n.getBoundingClientRect(),a=n.parentElement.getBoundingClientRect();return t.top>=a.bottom-1;}));
   assert.equal(await first().getByRole('button',{name:'More message actions',exact:true}).count(),0);
+  const copyNotice=await p.locator('#notice').evaluate(n=>({hidden:n.hidden,text:n.textContent}));
   await first().getByRole('button',{name:'Copy message',exact:true}).click();
   assert.equal(await p.evaluate(()=>window.fixtureCopied),messages[0].text);
   await first().getByRole('button',{name:'Copied',exact:true}).waitFor();
   assert.equal(await p.getByRole('menu',{name:'Message options'}).count(),0);
+  assert.deepEqual(await p.locator('#notice').evaluate(n=>({hidden:n.hidden,text:n.textContent})),copyNotice,'Copy must not create or overwrite a global notice');
+  // A second copy keeps its own full confirmation interval.
+  await p.waitForTimeout(1000);await first().getByRole('button',{name:'Copied',exact:true}).click();await p.waitForTimeout(750);
+  assert(await first().getByRole('button',{name:'Copied',exact:true}).isVisible());
+  await first().getByRole('button',{name:'Copy message',exact:true}).waitFor();
+  await p.evaluate(()=>{window.fixtureCopyFails=true;window.fixtureExecCommand=document.execCommand;document.execCommand=()=>false;});
+  await first().getByRole('button',{name:'Copy message',exact:true}).click();
+  await p.locator('#notice.error').filter({hasText:'Could not copy.'}).waitFor();
+  assert.equal(await first().getByRole('button',{name:'Copied',exact:true}).count(),0,'Failed copy must not report success');
+  await p.evaluate(()=>{window.fixtureCopyFails=false;document.execCommand=window.fixtureExecCommand;});
+  if(process.env.KINDRED_TEST_SCENARIO==='copy'){
+   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,scenario:'copy',localCopyFeedback:true,repeatedCopyResetsConfirmation:true,copyFailureVisible:true,errors}));return;
+  }
 
   await first().getByRole('button',{name:'React to message',exact:true}).click();const picker=p.getByRole('menu',{name:'Choose a reaction'});assert.equal(await picker.getByRole('menuitemradio').count(),16);
   // A background message refresh must leave the open chooser and its focus intact.
@@ -53,6 +67,6 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   await p.reload();await tile().click();assert.equal(await second().count(),0);await quote.click();await second().waitFor();assert(await second().evaluate(n=>n.classList.contains('quoted-highlight')));
   await second().getByRole('button',{name:'Reply to message',exact:true}).click();await prompt.fill('A narrow-screen reply');await p.setViewportSize({width:390,height:844});await p.waitForTimeout(300);await second().scrollIntoViewIfNeeded();
   assert(await p.locator('#composer').evaluate(n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}));assert(await second().locator('.message-actions').evaluate(n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&getComputedStyle(n).opacity==='1';}));await p.screenshot({path:path.join(artifacts,engine+'-message-reply-mobile.png')});
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,hoverActions:true,directCopy:true,reactionAddRemoveReload:true,chooserSurvivesRefresh:true,replyDraftScopeAndFailure:true,quotedSendAndOldMessageJump:true,keyboardAndMobile:true,errors}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,hoverActions:true,directCopy:true,localCopyFeedback:true,repeatedCopyResetsConfirmation:true,copyFailureVisible:true,reactionAddRemoveReload:true,chooserSurvivesRefresh:true,replyDraftScopeAndFailure:true,quotedSendAndOldMessageJump:true,keyboardAndMobile:true,errors}));
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>server.close());

@@ -12,7 +12,7 @@ const assert=require('node:assert/strict');
   let settingsWrites=0;p.on('request',r=>{if(r.url().endsWith('/api/settings')&&r.method()==='PUT')settingsWrites++;});
   await p.goto(origin);await p.locator('#prompt').fill('Keep this draft while changing fonts.');
   const originalScale=await p.evaluate(()=>KindredReadingSize.get());
-  await p.locator('#settings-button').click();
+  await p.locator('#identity-button').click();await p.locator('#identity-menu').getByRole('menuitem',{name:'Settings',exact:true}).click();
   const chooser=p.getByRole('combobox',{name:'Interface font',exact:true});await chooser.waitFor();
   assert.equal(await chooser.inputValue(),'inter');
   const other=await context.newPage();await other.goto(origin);await other.waitForFunction(()=>window.KindredInterfaceFont);
@@ -30,8 +30,26 @@ const assert=require('node:assert/strict');
    assert(result.loaded);assert(result.body.startsWith(family)||result.body.startsWith('"'+family+'"'),JSON.stringify(result));
    assert.match(result.composer,new RegExp(family));assert.match(result.code,/Liberation Mono/);assert.match(result.doc,/^Inter/);assert.match(result.sheet,/^Inter/);assert.equal(result.size,originalScale);
    assert.equal(await p.locator('#prompt').innerText(),'Keep this draft while changing fonts.');
+   const theme=p.getByRole('combobox',{name:'Theme',exact:true});await theme.click();
+   const menu=p.getByRole('listbox');await menu.waitFor();
+   assert.match(await menu.evaluate(n=>getComputedStyle(n).fontFamily),new RegExp(family),'Opened dropdown must use the chosen interface font');
+   await theme.press('Escape');
+
   }
-  await chooser.selectOption('dm-sans');await p.reload();await p.waitForFunction(()=>window.KindredInterfaceFont);
+  await chooser.selectOption('dm-sans');await p.locator('#settings-close').click();
+  await p.locator('#bot-details').click();
+  for(const width of [1180,390,320]){
+   await p.setViewportSize({width,height:900});
+   for(const scale of [100,150]){
+    await p.evaluate(size=>KindredReadingSize.set(size),scale);
+    const typography=await p.locator('#details-panel .bot-center-heading').evaluate(n=>{
+     const name=n.querySelector('.bot-center-name'),tab=n.querySelector('.bot-center-tab'),bounds=n.getBoundingClientRect();
+     return {name:parseFloat(getComputedStyle(name).fontSize),tab:parseFloat(getComputedStyle(tab).fontSize),family:getComputedStyle(tab).fontFamily,fits:[...n.querySelectorAll('.bot-center-tab')].every(t=>{const r=t.getBoundingClientRect();return r.left>=bounds.left&&r.right<=bounds.right&&t.scrollWidth<=t.clientWidth+1;})};
+    });
+    assert.equal(typography.name,16*scale/100);assert.equal(typography.tab,13*scale/100);assert.match(typography.family,/DM Sans/);assert(typography.fits,JSON.stringify({width,scale,typography}));
+   }
+  }
+  await p.evaluate(size=>KindredReadingSize.set(size),originalScale);await p.setViewportSize({width:1280,height:900});await p.reload();await p.waitForFunction(()=>window.KindredInterfaceFont);
   assert.equal(await p.evaluate(()=>KindredInterfaceFont.get()),'dm-sans');
   await p.evaluate(()=>KindredInterfaceFont.set('untrusted-font'));assert.equal(await p.evaluate(()=>KindredInterfaceFont.get()),'dm-sans');
   await p.evaluate(()=>localStorage.setItem('kindred-interface-font','invalid'));await p.reload();await p.waitForFunction(()=>window.KindredInterfaceFont);assert.equal(await p.evaluate(()=>KindredInterfaceFont.get()),'inter');
@@ -47,10 +65,17 @@ const assert=require('node:assert/strict');
    await mobile.evaluate(()=>{KindredInterfaceFont.set('dm-sans');window.dispatchEvent(new StorageEvent('storage',{key:'kindred-interface-font',newValue:'dm-sans'}));});
    assert.equal(await mobile.evaluate(()=>document.documentElement.dataset.interfaceFont),'system');
    const family=await mobile.locator('#prompt').evaluate(n=>getComputedStyle(n).fontFamily);assert.match(family,/system-ui/);assert.doesNotMatch(family,/Inter|Manrope|DM Sans/);
+   await mobile.locator('#bot-details').evaluate(n=>n.click());
+   if(platform==='ios'){
+    await mobile.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:2.1}})));
+    const name=mobile.locator('#details-panel .bot-center-name');await name.waitFor();
+    assert(Math.abs(await name.evaluate(n=>parseFloat(getComputedStyle(n).fontSize))-33.6)<.01);
+    await mobile.evaluate(()=>window.dispatchEvent(new CustomEvent('kindred-system-text-size',{detail:{scale:1.7}})));
+   }
    await mobile.locator('#settings-button').evaluate(n=>n.click());await mobile.locator('.general-settings-form').waitFor();assert.equal(await mobile.getByRole('combobox',{name:'Interface font',exact:true}).count(),0);
    if(platform==='ios')assert.equal(await mobile.evaluate(()=>KindredReadingSize.get()),170);
    await ctx.close();
   }
-  console.log('PASS live fonts, offline faces, draft preservation, local persistence, storage sync, no account writes, mobile system families, stable document/code fonts');
+  console.log('PASS selected dropdown fonts, scaled pane labels and narrow tabs, iOS pane text updates, live fonts, offline faces, draft preservation, local persistence, storage sync, no account writes, mobile system families, stable document/code fonts');
  }finally{await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;server.close();});

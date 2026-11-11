@@ -8,9 +8,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  try{
   const context=await browser.newContext({viewport:{width:1440,height:980}}),p=await context.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
   await context.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);await p.goto(origin);await p.locator('#app').waitFor();
-  await p.locator('#settings-button').click();const theme=p.getByRole('combobox',{name:'Theme',exact:true});await theme.click();
+  await p.locator('#identity-button').click();await p.locator('#identity-menu').getByRole('menuitem',{name:'Settings',exact:true}).click();const theme=p.getByRole('combobox',{name:'Theme',exact:true});await theme.click();
   const menu=p.getByRole('listbox');await menu.waitFor();assert.equal(await theme.getAttribute('aria-expanded'),'true');
-  assert.equal(await menu.evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(19, 19, 19)');
+  assert.equal(await menu.evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(20, 20, 20)');
   await menu.getByRole('option',{name:'Light',exact:true}).click();assert.equal(await theme.inputValue(),'light');await p.waitForFunction(()=>document.documentElement.dataset.theme==='light');
   await theme.focus();await theme.press('ArrowDown');await menu.waitFor();await theme.press('Home');await theme.press('Enter');assert.equal(await theme.inputValue(),'system');
   await theme.click();await theme.press('Escape');assert(await menu.isHidden());assert(await p.locator('#settings-dialog').isVisible());
@@ -23,7 +23,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const user=await p.locator('.message-row.user .message-bubble').first().boundingBox(),bot=await p.locator('.message-row.assistant .message-bubble').first().boundingBox();
   assert(bot.x+bot.width>user.x+100,JSON.stringify({user,bot}));
   await p.screenshot({path:path.join(out,engine+'-overlapping-widths.png')});
-  await p.locator('#settings-button').click();await p.setViewportSize({width:390,height:844});await theme.click();await menu.waitFor();const bounds=await menu.boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=391);await theme.press('Escape');
+  await p.locator('#identity-button').click();await p.locator('#identity-menu').getByRole('menuitem',{name:'Settings',exact:true}).click();await p.setViewportSize({width:390,height:844});await theme.click();await menu.waitFor();const bounds=await menu.boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=391);await theme.press('Escape');
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,themedPointerSelection:true,keyboardSelection:true,escapePreservesSettings:true,tabDismisses:true,longBubbleOverlap:true,mobilePickerBounds:true}));
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});
