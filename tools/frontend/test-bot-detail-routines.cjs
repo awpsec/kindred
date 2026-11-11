@@ -59,22 +59,24 @@ fs.mkdirSync(artifacts,{recursive:true});
     await context.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
     await p.goto(origin);await p.locator('#bot-details').click();
     const section=p.getByRole('region',{name:'Routines',exact:true}),row=id=>section.locator('[data-routine-id="'+id+'"]');
+    const act=async(id,name)=>{await row(id).getByRole('button',{name:/^Options for /}).click();await p.getByRole('menuitem',{name,exact:true}).click();};
+    const paused=async(id,value)=>p.waitForFunction(({id,value})=>document.querySelector('#details-content [data-routine-id="'+id+'"]').classList.contains('is-paused')===value,{id,value});
     await row('mail').waitFor();assert.equal(await section.locator('li').count(),4);assert.equal(await section.getByText('Atlas only').count(),0);
     assert.equal(await p.locator('#details-content > .detail-link').allTextContents().then(v=>v.join('|')),'Connections|Skills|Artifacts');
-    assert.match(await row('weekly').textContent(),/Paused · Weekdays · Hourly · 09:00–17:00 · America\/New_York/);
-    assert.equal(await row('daily').locator('button').count(),3);assert.equal(await row('daily').locator('button svg').count(),3);
+    assert.match(await row('weekly').textContent(),/Weekdays · Hourly · 09:00–17:00 · America\/New_York/);
+    assert.equal(await row('daily').locator('button').count(),3);assert.equal(await row('daily').locator('button svg').count(),1);
     // Pause/resume, failed action recovery, and no double submits while pending.
     let releasePatch;delayPatch=new Promise(resolve=>releasePatch=resolve);
-    await row('daily').getByRole('button',{name:'Pause Morning review',exact:true}).click();
+    await act('daily','Pause');
     await p.waitForFunction(()=>[...document.querySelectorAll('[data-routine-id="daily"] button')].every(b=>b.disabled));
     releasePatch();delayPatch=null;
-    await row('daily').getByRole('button',{name:'Resume Morning review',exact:true}).waitFor();assert(!scheduled[0].enabled);
-    rejectPatch=true;await row('daily').getByRole('button',{name:'Resume Morning review',exact:true}).click();
+    await paused('daily',true);assert(!scheduled[0].enabled);
+    rejectPatch=true;await act('daily','Resume');
     await p.locator('#notice').getByText('Routine changed. Try again.',{exact:true}).waitFor();assert(!scheduled[0].enabled);
     await p.waitForFunction(()=>!document.querySelector('[data-routine-id="daily"] button').disabled);
-    rejectPatch=false;await row('daily').getByRole('button',{name:'Resume Morning review',exact:true}).click();await row('daily').getByRole('button',{name:'Pause Morning review',exact:true}).waitFor();
+    rejectPatch=false;await act('daily','Resume');await paused('daily',false);
     // Edit a paused weekly routine in place, preserving its bot and paused state.
-    await row('weekly').getByRole('button',{name:/^Edit /}).click();const editor=p.locator('#routine-dialog'),form=p.locator('#routine-form');
+    await act('weekly','Edit routine');const editor=p.locator('#routine-dialog'),form=p.locator('#routine-form');
     assert.equal(await form.getByLabel('Assigned bot',{exact:true}).inputValue(),'piper');assert(await form.getByLabel('Assigned bot',{exact:true}).isDisabled());
     assert.equal(await form.getByLabel('What should your bot do?').inputValue(),'Prepare the weekly plan.');
     await form.getByLabel('Name',{exact:true}).fill('Weekly plan');await form.getByLabel('What should your bot do?').fill('Review projects and send a concise plan.');
@@ -83,32 +85,32 @@ fs.mkdirSync(artifacts,{recursive:true});
     await editor.getByRole('button',{name:'Save routine'}).click();await editor.waitFor({state:'hidden'});await row('weekly').getByText('Weekly plan',{exact:true}).waitFor();
     assert(!scheduled[1].enabled);assert.equal(scheduled[1].prompt,'Review projects and send a concise plan.');assert.deepEqual(scheduled[1].schedule.days,[1,2,3,4,5]);
     assert(await p.locator('#details-panel').isVisible());assert(!await p.locator('#settings-dialog').isVisible());
-    const beforeOnce=writes.length;await row('once').getByRole('button',{name:'Resume Past check',exact:true}).click();await editor.waitFor();assert.equal(writes.length,beforeOnce);await editor.getByRole('button',{name:'Close routine'}).click();
+    const beforeOnce=writes.length;await act('once','Resume');await editor.waitFor();assert.equal(writes.length,beforeOnce);await editor.getByRole('button',{name:'Close routine'}).click();
     // Activity routines use the same compact controls and their existing editor.
-    await row('mail').getByRole('button',{name:'Pause Important inbox',exact:true}).click();await row('mail').getByRole('button',{name:'Resume Important inbox',exact:true}).waitFor();
-    await row('mail').getByRole('button',{name:'Edit Important inbox',exact:true}).click();const monitorEditor=p.locator('.inbox-monitor-dialog');
+    await act('mail','Pause');await paused('mail',true);
+    await act('mail','Edit routine');const monitorEditor=p.locator('.inbox-monitor-dialog');
     assert.equal(await monitorEditor.getByLabel('When should the bot alert you?').inputValue(),'Alert me only when mail needs my response.');
-    await monitorEditor.getByLabel('Routine name').fill('Urgent mail');await monitorEditor.getByLabel('When should the bot alert you?').fill('Alert me to urgent client mail.');
-    await monitorEditor.getByRole('button',{name:'Save routine',exact:true}).click();await monitorEditor.waitFor({state:'detached'});await row('mail').getByRole('button',{name:'Resume Urgent mail',exact:true}).waitFor();
+    await monitorEditor.getByLabel('Monitor name').fill('Urgent mail');await monitorEditor.getByLabel('When should the bot alert you?').fill('Alert me to urgent client mail.');
+    await monitorEditor.getByRole('button',{name:'Save monitor',exact:true}).click();await monitorEditor.waitFor({state:'detached'});await paused('mail',true);
     assert(!monitors[0].enabled);assert.equal(monitors[0].instructions,'Alert me to urgent client mail.');
-    await row('mail').getByRole('button',{name:'Resume Urgent mail',exact:true}).click();await row('mail').getByRole('button',{name:'Pause Urgent mail',exact:true}).waitFor();
+    await act('mail','Resume');await paused('mail',false);
     // Layout: narrow panes, reading scale, light/dark, and keyboard-visible actions.
     for(const [width,theme] of [[1280,'dark'],[390,'light']]){
       await p.setViewportSize({width,height:940});await p.evaluate(theme=>{document.documentElement.dataset.theme=theme;document.documentElement.style.setProperty('--text-scale','1.2');},theme);
-      await section.scrollIntoViewIfNeeded();await row('weekly').getByRole('button',{name:'Edit Weekly plan',exact:true}).focus();
-      assert(await row('weekly').getByRole('button',{name:'Edit Weekly plan',exact:true}).evaluate(b=>b===document.activeElement));
+      await section.scrollIntoViewIfNeeded();await row('weekly').getByRole('button',{name:'Options for Weekly plan',exact:true}).focus();
+      assert(await row('weekly').getByRole('button',{name:'Options for Weekly plan',exact:true}).evaluate(b=>b===document.activeElement));
       assert(await section.evaluate(el=>el.scrollWidth<=el.clientWidth+1));assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-      assert(await section.locator('button').evaluateAll(buttons=>buttons.every(b=>{const r=b.getBoundingClientRect();return r.width>=30&&r.height>=30&&r.left>=0&&r.right<=innerWidth;})));
+      assert(await section.locator('button').evaluateAll(buttons=>buttons.filter(b=>b.getClientRects().length).every(b=>{const r=b.getBoundingClientRect();return r.width>=30&&r.height>=30&&r.left>=0&&r.right<=innerWidth;})));
       await p.screenshot({path:path.join(artifacts,engine+'-bot-routines-'+width+'.png')});
     }
     await p.setViewportSize({width:1280,height:940});
     // Confirmation cancellation must not write. An active monitor is paused before deletion;
     // if delete fails, keep it visible as paused, ready to retry.
     const confirmation=p.locator('.routine-delete-dialog');
-    const deleteRoutine=async id=>{await row(id).locator('[data-routine-action=delete]').click();await confirmation.getByRole('button',{name:'Delete routine',exact:true}).click();};
-    const beforeCancel=writes.length;await row('daily').getByRole('button',{name:'Delete Morning review',exact:true}).click();await confirmation.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(writes.length,beforeCancel);
+    const deleteRoutine=async id=>{await act(id,'Delete routine');await confirmation.getByRole('button',{name:'Delete routine',exact:true}).click();};
+    const beforeCancel=writes.length;await act('daily','Delete routine');await confirmation.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(writes.length,beforeCancel);
     rejectDelete=true;await deleteRoutine('mail');
-    await p.locator('#notice').getByText('Unable to remove monitor. Try again.',{exact:true}).waitFor();await row('mail').getByRole('button',{name:'Resume Urgent mail',exact:true}).waitFor();assert(!monitors[0].enabled);
+    await p.locator('#notice').getByText('Unable to remove monitor. Try again.',{exact:true}).waitFor();await paused('mail',true);assert(!monitors[0].enabled);
     rejectDelete=false;await deleteRoutine('mail');await row('mail').waitFor({state:'detached'});
     await deleteRoutine('daily');await row('daily').waitFor({state:'detached'});assert(!scheduled.some(r=>r.id==='daily'));
     await p.locator('#bots').getByRole('button',{name:'Atlas',exact:true}).click();await row('other').waitFor();assert.equal(await section.locator('li').count(),1);

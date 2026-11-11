@@ -502,16 +502,10 @@ kbd {
 }
 .conversation-history { position:relative;display:flex;flex-direction:column;flex:1;min-height:0; }
 .conversation-history.is-loading > .messages { visibility:hidden;overflow:hidden; }
-.chat-loading { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;background:var(--bg);color:var(--muted);font-size:calc(12px * var(--text-scale,1)); }
-.chat-loading .character { animation:chat-loading-bob 1.5s ease-in-out infinite; }
-.chat-loading.is-error .character { animation:none; }
-/* A quick open never flashes the loading state; a slow one fades it in. */
-.chat-loading { animation:chat-loading-reveal .2s ease-out .16s both; }
-.chat-loading.is-error { animation:none; }
-@keyframes chat-loading-reveal { from { opacity:0; } to { opacity:1; } }
-@keyframes chat-loading-bob { 0%,100% { transform:translateY(2px); } 50% { transform:translateY(-3px); } }
-:root[data-motion="off"] .chat-loading .character { animation:none; }
-@media(prefers-reduced-motion:reduce) { .chat-loading .character { animation:none; } }
+.chat-loading {position:absolute;top:4px;left:16px;right:16px;display:flex;align-items:center;justify-content:center;gap:10px;padding:8px;text-align:center;color:var(--muted);font-size:calc(12px * var(--text-scale,1));pointer-events:none;animation:chat-loading-reveal .14s ease-out .25s both;}
+.chat-loading.is-error {top:auto;bottom:18px;flex-wrap:wrap;max-width:720px;margin:auto;pointer-events:auto;animation:none;background:var(--bg);border-radius:12px;}
+.chat-loading.is-error .small {max-width:100%;overflow-wrap:anywhere;}
+@keyframes chat-loading-reveal {from {opacity:0} to {opacity:1}}
 .message-group {
   max-width: none;
   margin: 0 0 17px;
@@ -6491,3 +6485,22 @@ html[data-motion="off"] .client-update span{transition:none}
 .document-stack.compact-file-stack .document-stack-body{padding:0;}
 .document-stack.compact-file-stack .deliverable-card{margin:0;}
 .document-stack.compact-file-stack .deliverable-card:last-child{border-bottom:0;}
+
+/* Shared menu rhythm: selectors, message actions and anchored context menus. */
+.chat-context-menu,.message-action-menu:not(.emoji-menu){border-radius:11px;padding:5px;box-shadow:0 8px 24px #0003;font:calc(12px * var(--text-scale,1))/1.4 var(--font-sans);}
+.chat-context-menu{width:min(220px,calc(100vw - 16px));}
+.chat-context-item,.message-menu-item{min-height:36px;padding:9px 10px;border-radius:6px;font:inherit;overflow-wrap:anywhere;}
+.chat-context-menu.keyboard-open,.message-action-menu.keyboard-open{animation:none;}
+/* Same compact hierarchy in bot Details, Computer and the existing catalogue. */
+.routine-card{display:flex;align-items:center;gap:12px;}
+.routine-card .routine-copy{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0;}
+.routine-card .routine-name{font-weight:500;overflow-wrap:anywhere;}
+.routine-card .routine-compact-actions,#settings-content .routine-card .routine-compact-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px;margin:0;max-width:48%;}
+.routine-compact-actions .routine-flight-status{font-size:calc(11px * var(--text-scale,1));}
+.routine-compact-actions .icon-button{width:32px;height:32px;flex:none;color:var(--muted);}
+.routine-review{background:var(--hover);padding:7px 10px;border-radius:8px;}
+.routine-incident-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.routine-review-dialog p{overflow-wrap:anywhere;}
+@media(pointer:coarse){.chat-context-item,.message-menu-item,.routine-compact-actions .icon-button,.routine-review{min-height:44px}.routine-compact-actions .icon-button{min-width:44px}}
+.routine-card .routine-name{min-height:30px;}
+@media(pointer:coarse){.routine-card .routine-name{min-height:44px;}}

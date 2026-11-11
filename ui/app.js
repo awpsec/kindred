@@ -1644,16 +1644,7 @@ function renderBotDetailRoutines(root,routines,focused){
   const keep=new Set();
   for(const value of routines){
     let row=old.get(value.id);
-    if(!row){
-      let r=value;row=node('li','bot-detail-routine');row.dataset.routineId=r.id;row.dataset.botId=r.bot_id;
-      const overview=node('div','bot-detail-routine-overview'),name=node('strong'),cadence=node('span','muted small'),status=node('span','small routine-flight-status'),error=node('span','small run-error');overview.append(name,cadence,status,error);
-      const actions=node('div','bot-detail-routine-actions');
-      const toggle=iconButton('pause','Pause '+r.name,()=>changeDetailRoutine(r,'toggle')),edit=iconButton('edit','Edit '+r.name,()=>editRoutine(r)),remove=iconButton('trash','Delete '+r.name,()=>changeDetailRoutine(r,'delete'));
-      for(const [control,action] of [[toggle,'toggle'],[edit,'edit'],[remove,'delete']]){control.dataset.routineAction=action;actions.append(control);}
-      row.append(overview,actions);
-      row.updateFlight=()=>{const flight=routineFlights.view(r),pending=routinePending(r);row.setAttribute('aria-busy',String(pending||flight.blocked));for(const control of actions.children)control.disabled=pending;status.textContent=flight.label;status.hidden=!flight.label;error.textContent=routineActionErrors.get(routineIdentity(r))||flight.error||r.monitor?.error||'';error.hidden=!error.textContent;};
-      row.updateRoutine=value=>{r=value;row.classList.toggle('is-paused',!r.enabled);routineText(name,r.name);routineText(cadence,(r.enabled?'':'Paused · ')+routineScheduleLabel(r));toggle.replaceChildren(icon(r.enabled?'pause':'play',16));for(const [control,label] of [[toggle,(r.enabled?'Pause ':'Resume ')+r.name],[edit,'Edit '+r.name],[remove,'Delete '+r.name]]){control.title=label;control.setAttribute('aria-label',label);}row.updateFlight();};
-    }
+    if(!row)row=scheduledRoutineCard(value,false,'li');
     row.updateRoutine(value);keep.add(row);if(list.children[[...keep].length-1]!==row)list.insertBefore(row,list.children[[...keep].length-1]||null);
   }
   for(const row of [...list.children])if(!keep.has(row))row.remove();
@@ -4837,6 +4828,9 @@ function muteMenuAction(kind,id){
     ['For 1 hour',()=>save(3600)],['For 24 hours',()=>save(86400)],['Indefinitely',()=>save(-1)]
   ]];
 }
+let lastMenuInput='keyboard';
+document.addEventListener('pointerdown',()=>{lastMenuInput='pointer';},true);
+document.addEventListener('keydown',()=>{lastMenuInput='keyboard';},true);
 function showConversationMenu(title,trigger,x,y,actions){
   closeChatMenu();chatContextTrigger=trigger;
   trigger.setAttribute('aria-expanded','true');
@@ -4858,7 +4852,7 @@ function showConversationMenu(title,trigger,x,y,actions){
           else if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();choices[e.key==='Home'?0:e.key==='End'?choices.length-1:(i+(e.key==='ArrowDown'?1:-1)+choices.length)%choices.length].focus();}
         });
       }
-      submenu.hidden=false;item.setAttribute('aria-expanded','true');
+      submenu.hidden=false;submenu.classList.toggle('keyboard-open',lastMenuInput==='keyboard');item.setAttribute('aria-expanded','true');
       const r=item.getBoundingClientRect(),w=submenu.offsetWidth;
       submenu.style.left=Math.max(8,r.right+w+8>innerWidth?r.left-w:r.right)+'px';
       submenu.style.top=Math.max(8,Math.min(r.top,innerHeight-submenu.offsetHeight-8))+'px';
@@ -4872,7 +4866,8 @@ function showConversationMenu(title,trigger,x,y,actions){
 
     item.setAttribute('role','menuitem');item.tabIndex=-1;menu.append(item);
   }
-  document.body.append(menu);chatContextMenu=menu;
+  (trigger.closest('dialog')||document.body).append(menu);chatContextMenu=menu;
+  menu.classList.toggle('keyboard-open',lastMenuInput==='keyboard');
   menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';
   menu.firstElementChild.focus({preventScroll:true});
   menu.addEventListener('contextmenu',e=>e.preventDefault());
@@ -5900,10 +5895,9 @@ function cachedConversationReady(entry,boundary=unreadBoundaries.get(entry?.id))
 function showConversationOpening(id){
   if(currentConversationId()!==id||chatOpening?.id===id)return;
   $('chat-loading')?.remove();
-  const area=$('content'),loading=node('div','chat-loading'),face=character(portrait(state.bot),42);
+  const area=$('content'),loading=node('div','chat-loading');
   loading.id='chat-loading';loading.setAttribute('role','status');loading.setAttribute('aria-live','polite');
-  setActivity(face,'working',{immediate:true});
-  loading.append(face,node('span','','Loading conversation…'));
+  loading.append(node('span','','Opening conversation…'));
   chatOpening={id,loading};chatResize.disconnect();cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
   area.replaceChildren();releaseScreenshotUrls();
   area.inert=true;area.setAttribute('aria-busy','true');area.parentElement.classList.add('is-loading');area.after(loading);
@@ -6426,6 +6420,13 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       renderAttachments(group,[file]);area.append(group);previousSender=null;continue;
     }
     const anchoredTracker=trackerAnchors.get(m.seq);
+    if(m.interruption_hidden||m.status_notice?.continued_by){
+      const files=node('article','message-group');files.dataset.message=String(m.seq);
+      if(m.files?.length)files.append(fileLinks(m.files));
+      renderAttachments(files,remainingAttachments(m.attachments||state.details.get(m.run_id)?.attachments));
+      if(files.children.length)area.append(files);
+      continue;
+    }
     if(stacked.has(m.seq)||m.kind==='continuation'||(!m.text?.trim()&&m.kind!=='task_progress')){
       if(anchoredTracker){appendTranscriptTimestamp(m.created);area.append(anchoredTracker);}
       continue;
@@ -6497,6 +6498,12 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     appendTranscriptTimestamp(m.created);
     const statusRun=runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run;
     const statusNotice=m.status_notice||(m.kind==='notice'?{label:'Status',text:m.text}:m.kind==='result'&&statusRun&&['failed','cancelled','interrupted'].includes(statusRun.status)?{label:statusRun.status==='cancelled'?'Task stopped':statusRun.status==='interrupted'?'Task interrupted':'Task failed',text:statusRun.error||m.text}:null);
+    if(statusNotice&&m.routine_incident){
+      const group=node('article','chat-status-group routine-incident');group.dataset.message=String(m.seq);group.dataset.run=m.run_id;group.dataset.routineId=m.routine_incident.routine_id;
+      group.append(routineIncidentCard(m.routine_incident,statusRun));
+      if(m.files?.length)group.append(fileLinks(m.files));renderAttachments(group,remainingAttachments(m.attachments||state.details.get(m.run_id)?.attachments));
+      area.append(group);previousSender=null;sequenceAvatar=null;continue;
+    }
     if(statusNotice){
       const recovered=!!statusNotice.continued_by;
       let group=recovered?[...area.querySelectorAll('.chat-status-group')].find(n=>n.dataset.recovery===m.run_id):null;
@@ -7214,7 +7221,7 @@ function taskRecoveryHistory(){
   history.append(summary,body);animateChatDisclosure(history,body);
   return history;
 }
-function showContinuationConfirmation(){notice('Continuing task');$('notice').classList.add('continuation-confirmation');}
+function showContinuationConfirmation(){/* The current task state is the acknowledgement. */}
 function continueTaskButton(run){
   if(run.error==='Connection issue - 5 retries failed.'){
     let sending=false;
@@ -8562,41 +8569,65 @@ function routineAssignee(id) {
 const routineFlights=createRoutineFlights({
   scope:()=>state.token,
   failed:error=>notice(error,true),
-  post:(r,signal)=>api('/routines/'+r.id+'/run','POST',{}, {signal}),
+  post:(r,signal)=>api('/routines/'+r.id+(r.recover?'/recover':'/run'),'POST',{}, {signal}),
   read:signal=>api('/routines','GET',undefined,{signal}),
   changed:()=>{for(const row of document.querySelectorAll('[data-routine-id]'))row.updateFlight?.();},
 });
 function routineIdentity(r){return JSON.stringify([state.token,r.bot_id,r.id]);}
 function routinePending(r){return pendingDetailRoutines.has(routineIdentity(r));}
-function scheduledRoutineCard(r,showBot=false){
-  const row=node('div','routine-card'),copy=node('div','routine-copy');
+function routineIncidentCard(incident,run){
+  const card=node('div','routine-incident-content'),count=incident.failures||1;
+  const title=incident.name+' · '+(incident.enabled?'Check failed':'Routine paused');
+  const detail=(count>1?count+' consecutive failed checks. ':'')+(incident.auto_paused?'Paused to prevent more failed checks. ':'')+(incident.error||'The check did not complete.');
+  card.append(chatStatusNotice(title,detail));
+  const actions=node('div','routine-incident-actions');
+  const retry=button(incident.enabled?'Retry check':'Resume routine',async()=>{
+    const current=state.routines.find(r=>r.id===incident.routine_id);
+    if(!current)throw new Error('This routine is no longer available.');
+    await routineFlights.run({...current,recover:true});await refresh(true);
+  },'outline-button','play');
+  const update=()=>{const r=state.routines.find(r=>r.id===incident.routine_id),flight=r&&routineFlights.view(r);retry.disabled=!r||!!flight?.blocked||routinePending(r);retry.setAttribute('aria-busy',String(!!flight?.blocked));};
+  card.updateFlight=update;card.dataset.routineId=incident.routine_id;update();actions.append(retry);
+  if(run)actions.append(button('Details',()=>{const r=state.routines.find(r=>r.id===incident.routine_id);if(r)routineReview(r);},'subtle-button'));
+  card.append(actions);return card;
+}
+function routineReview(r){
+  const d=modal(r.name,'text-dialog routine-review-dialog'),flight=routineFlights.view(r);
+  d.append(node('p','',routineScheduleLabel(r)));
+  if(r.provider_inbox)d.append(node('p','muted',(r.provider_inbox.name||'Connected inbox')+' · scheduled AI review'));
+  if(r.next_run&&r.enabled)d.append(node('p','muted','Next: '+new Date(r.next_run*1000).toLocaleString(undefined,{timeZone:r.schedule?.timezone||botTimezone(),timeZoneName:'short'})));
+  const incident=r.incident;
+  if(incident?.failures&&!incident.active)d.append(node('p','',incident.failures+' failed '+(incident.failures===1?'check':'checks')+(incident.auto_paused?' · Paused automatically':'')));
+  if(flight.error||r.monitor?.error||incident?.error&&!incident.active)d.append(node('p','run-error',flight.error||r.monitor?.error||incident.error));
+  else if(flight.label)d.append(node('p','muted',flight.label));
+  d.append(node('p','',r.prompt||r.monitor?.instructions||''));
+  const actions=node('div','dialog-actions');
+  if(r.trigger!=='activity'){const run=button(incident?.failures?(r.enabled?'Retry check':'Resume routine'):'Run now',async()=>{if(await routineFlights.run({...r,recover:!!incident?.failures})){d.close();await refresh(true);}},'primary','play');run.disabled=flight.blocked;actions.append(run);}
+  actions.append(button('Edit routine',()=>{d.close();editRoutine(r);},'subtle-button'));d.append(actions);
+}
+function scheduledRoutineCard(r,showBot=false,tag='div'){
+  const row=node(tag,'routine-card'+(tag==='li'?' bot-detail-routine':'')),copy=node('div','routine-copy');
   row.dataset.routineId=r.id;row.dataset.botId=r.bot_id;
-  const name=button('',()=>editRoutine(r),'routine-name');name.dataset.routineAction='edit';
-  const cadence=node('span','muted small'),next=node('span','muted small'),inbox=node('span','muted small');
-  const status=node('span','muted small routine-flight-status'),error=node('span','run-error small routine-flight-error');
-  copy.append(name,cadence,inbox,next,status,error);
-  if(showBot){
-    row.classList.add('routine-card-assigned');const bot=state.bots.find(b=>b.id===r.bot_id),avatar=node('span','routine-avatar');
-    avatar.title=bot?.name||'Assigned bot';avatar.setAttribute('role','img');avatar.setAttribute('aria-label',avatar.title);avatar.tabIndex=0;
-    if(bot)avatar.append(buddy(bot,38));else avatar.append(icon('bot',28));
-    const label=node('span','routine-avatar-tooltip',avatar.title);label.setAttribute('role','tooltip');avatar.append(label);row.append(avatar);
-  }
-  const actions=node('div','row-actions');
-  // The shared flight owns disabled state. perform(button) would re-enable the
-  // temporary clicked button as soon as the RPC acknowledges the request.
-  const runLabel=node('span','','Run now'),run=button('',()=>{},'outline-button','play');run.append(runLabel);run.onclick=()=>void routineFlights.run(r);run.dataset.routineAction='run';
-  const toggle=button('',()=>changeDetailRoutine(r,'toggle'),'outline-button');toggle.dataset.routineAction='toggle';
-  const remove=iconButton('trash','Delete routine',()=>changeDetailRoutine(r,'delete'));remove.dataset.routineAction='delete';
-  actions.append(run,toggle,remove);row.append(copy,actions);
-  row.updateFlight=()=>{const flight=routineFlights.view(r),pending=routinePending(r);run.disabled=flight.blocked||pending;run.setAttribute('aria-busy',String(flight.blocked));
-    routineText(runLabel,flight.blocked?flight.label:'Run now');routineText(status,flight.label);status.hidden=!flight.label;
-    error.textContent=routineActionErrors.get(routineIdentity(r))||flight.error;error.hidden=!error.textContent;toggle.disabled=remove.disabled=name.disabled=pending;
-    row.setAttribute('aria-busy',String(pending||flight.blocked));};
-  row.updateRoutine=value=>{r=value;row.classList.toggle('is-disabled',!r.enabled);routineText(name,r.name);
-    routineText(cadence,(r.enabled?'':r.run_at&&r.last_run?'One-time check '+r.last_run.status+' · ':'Paused · ')+routineScheduleLabel(r));
-    inbox.hidden=!r.provider_inbox;inbox.textContent=r.provider_inbox?(r.provider_inbox.name||'Connected inbox')+' · scheduled AI review':'';
-    next.hidden=!(r.enabled&&r.next_run);next.textContent=r.next_run?'Next: '+new Date(r.next_run*1000).toLocaleString(undefined,{timeZone:r.schedule?.timezone||botTimezone(),timeZoneName:'short'}):'';
-    toggle.textContent=r.enabled?'Pause':'Enable';row.updateFlight();};
+  const name=button('',()=>routineReview(r),'routine-name');name.dataset.routineAction='review';
+  const cadence=node('span','muted small'),status=node('span','muted small routine-flight-status'),error=node('span','run-error small routine-flight-error');
+  copy.append(name,cadence,error);
+  if(showBot){row.classList.add('routine-card-assigned');const bot=state.bots.find(b=>b.id===r.bot_id),avatar=node('span','routine-avatar');avatar.title=bot?.name||'Assigned bot';avatar.setAttribute('role','img');avatar.setAttribute('aria-label',avatar.title);if(bot)avatar.append(buddy(bot,38));row.append(avatar);}
+  const actions=node('div','row-actions routine-compact-actions');
+  const review=button('Review',()=>routineReview(r),'subtle-button routine-review');review.dataset.routineAction='review';
+  const menu=iconButton('more','Routine options',()=>{
+    const current=state.routines.find(value=>value.id===r.id)||r,flight=routineFlights.view(current),items=[];
+    if(current.trigger!=='activity'&&!flight.blocked)items.push(['Run now',()=>routineFlights.run(current),'play']);
+    items.push(['Details',()=>routineReview(current),'info'],['Edit routine',()=>editRoutine(current),'edit'],[current.enabled?'Pause':'Resume',()=>changeDetailRoutine(current,'toggle'),current.enabled?'pause':'play'],['Delete routine',()=>changeDetailRoutine(current,'delete'),'trash']);
+    const bounds=menu.getBoundingClientRect();showConversationMenu(current.name,menu,bounds.right-220,bounds.bottom+6,items);
+  });menu.dataset.routineAction='options';menu.setAttribute('aria-haspopup','menu');
+  actions.append(status,review,menu);row.append(copy,actions);
+  row.updateFlight=()=>{const flight=routineFlights.view(r),pending=routinePending(r),issue=!!(flight.error||r.monitor?.error||r.incident?.failures&&!r.incident?.active);
+    const label=flight.blocked?flight.label:!r.enabled?'Paused':issue?'Needs attention':r.last_run?.status==='completed'?'Checked':'';
+    routineText(status,label);status.hidden=issue&&!flight.blocked||!label;review.hidden=!issue||flight.blocked;
+    // Detailed provider errors belong in Review; action failures remain visible on their row.
+    error.textContent=routineActionErrors.get(routineIdentity(r))||'';error.hidden=!error.textContent;
+    menu.disabled=review.disabled=name.disabled=pending;row.setAttribute('aria-busy',String(pending||flight.blocked));};
+  row.updateRoutine=value=>{r=value;row.classList.toggle('is-disabled',!r.enabled);row.classList.toggle('is-paused',!r.enabled);routineText(name,r.name);routineText(cadence,routineScheduleLabel(r));menu.setAttribute('aria-label','Options for '+r.name);row.updateFlight();};
   row.updateRoutine(r);return row;
 }
 function routineText(element,text){if(element.textContent!==text)element.textContent=text;}
@@ -9884,6 +9915,7 @@ function openMessageMenu(chatId,message,kind){
     if(next!==undefined){e.preventDefault();items[(next+items.length)%items.length].focus();}
     if(e.key==='Tab')closeMessageMenu(true);
   });
+  messageMenu.classList.toggle('keyboard-open',lastMenuInput==='keyboard');
   document.body.append(messageMenu);positionMessageMenu();messageMenu.querySelector('button')?.focus({preventScroll:true});
 }
 async function setMessageReaction(chatId,seq,emoji){

@@ -56,17 +56,22 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   }
   delay=0;
   assert(Number(await first())<700,'Read beyond the former latest-300 cutoff');assert(Number(await last())<1000,'Newer offscreen rows are unloaded');
-  await area.evaluate(n=>n.scrollTop=900);await p.waitForTimeout(150);const saved=await anchor();
-  await p.locator('#bots').getByRole('button',{name:'Teammate 1',exact:true}).click();await area.locator('[data-message="10020"]').waitFor();
+  await p.locator('#prompt').fill('Piper draft stays here.');
+  await area.evaluate(n=>n.scrollTop=900);await p.waitForTimeout(150);const saved=await anchor();delay=700;
+  await p.locator('#bots').getByRole('button',{name:'Teammate 1',exact:true}).click();
+  await p.locator('.chat-loading').waitFor();assert.equal(await p.locator('.chat-loading .character').count(),0);
+  assert((await p.locator('.chat-loading').boundingBox()).height<70,'Opening status must not take over the chat');
+  assert.equal(await p.locator('#prompt').innerText(),'');
+  await area.locator('[data-message="10020"]').waitFor();delay=0;await p.locator('#prompt').fill('Teammate draft.');
   let releaseRefresh;holdRefresh=new Promise(resolve=>releaseRefresh=resolve);
   // Prove cached content appears while the network is still held, rather than
   // racing a 500ms assertion against an 800ms response on a busy browser.
   await p.locator('#bots').getByRole('button',{name:'Piper',exact:true}).click({noWaitAfter:true});
-  await area.locator('[data-message="'+saved.seq+'"]').waitFor();assert.equal(await p.locator('.chat-loading').count(),0);
+  try{await area.locator('[data-message="'+saved.seq+'"]').waitFor();assert.equal(await p.locator('.chat-loading').count(),0);assert.equal(await p.locator('#prompt').innerText(),'Piper draft stays here.');
   const restored=await anchor();assert.equal(restored.seq,saved.seq);assert(Math.abs(restored.y-saved.y)<3,JSON.stringify({saved,restored}));
-  holdRefresh=null;releaseRefresh();await p.waitForTimeout(1100);
+  }finally{holdRefresh=null;releaseRefresh();}await p.waitForTimeout(1100);
   const beforeArrival=await anchor();history.get('dm-piper').push({seq:1001,sender:'piper',kind:'message',text:'New message while reading',created:now+1001});
-  await p.waitForTimeout(1900);const afterArrival=await anchor();assert.equal(afterArrival.seq,beforeArrival.seq);assert(Math.abs(afterArrival.y-beforeArrival.y)<3);
+  await p.waitForTimeout(7000);const afterArrival=await anchor();assert.equal(afterArrival.seq,beforeArrival.seq);assert(Math.abs(afterArrival.y-beforeArrival.y)<3);
   await p.locator('.jump-latest').click();await area.locator('[data-message="1001"]').waitFor();assert.equal(await last(),'1001');
   await p.waitForFunction(()=>{const n=document.querySelector('#content');return n.scrollHeight-n.scrollTop-n.clientHeight<3;});
   // A failed older page leaves visible content intact and has an explicit retry.
@@ -87,5 +92,5 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   await p.screenshot({path:path.join(artifacts,engine+'-chat-history-mobile.png')});
   assert(details.length>0&&new Set(details).size<20,'Only visible historical run details are requested');assert.deepEqual(errors,[]);
   await context.close();console.log(JSON.stringify({passed:true,engine,pagingBeyond300:true,boundedWindow:true,cachedPosition:true,offloadAndReload:true,retry:true,requests:requests.length}));
- }finally{await browser.close();server.close();}
+ }catch(error){console.error(error);throw error;}finally{await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exit(1);});

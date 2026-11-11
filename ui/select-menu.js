@@ -39,10 +39,10 @@ export function installThemedSelects(root=document) {
     const select=opened,changed=select.selectedIndex!==index;select.selectedIndex=index;close(true);
     if(changed){select.dispatchEvent(new Event('input',{bubbles:true}));select.dispatchEvent(new Event('change',{bubbles:true}));}
   }
-  function show(select){
+  function show(select,keyboard=false){
     if(select.disabled||select.multiple||select.size>1)return;
     if(opened===select){close();return;}close();opened=select;
-    menu=document.createElement('div');menu.className='themed-select-menu';menu.id='kindred-select-picker';menu.setAttribute('role','listbox');menu.setAttribute('aria-label',select.getAttribute('aria-label')||select.labels?.[0]?.textContent||'Options');
+    menu=document.createElement('div');menu.className='themed-select-menu'+(keyboard?' keyboard-open':'');menu.id='kindred-select-picker';menu.setAttribute('role','listbox');menu.setAttribute('aria-label',select.getAttribute('aria-label')||select.labels?.[0]?.textContent||'Options');
     // A modal dialog's top layer also contains its picker.
     (select.closest('dialog')||document.body).append(menu);select.setAttribute('aria-expanded','true');select.setAttribute('aria-controls',menu.id);
     list=menu;
@@ -82,25 +82,25 @@ export function installThemedSelects(root=document) {
     if(select.dataset.themedSelect||select.multiple||select.size>1)return;select.dataset.themedSelect='true';select.setAttribute('aria-expanded','false');
     let down=false;
     select.addEventListener('mousedown',event=>{if(event.button!==0)return;event.preventDefault();down=true;show(select);});
-    select.addEventListener('click',event=>{event.preventDefault();if(!down)show(select);down=false;});
+    select.addEventListener('click',event=>{event.preventDefault();if(!down)show(select,event.detail===0);down=false;});
     select.addEventListener('keydown',event=>{
       if(event.key==='Tab'){close();return;}
       if(event.key==='Escape'&&opened){event.preventDefault();event.stopPropagation();close(true);return;}
       if(['ArrowDown','ArrowUp','Home','End','Enter',' '].includes(event.key)){
-        event.preventDefault();if(opened!==select){show(select);return;}
+        event.preventDefault();if(opened!==select){show(select,true);return;}
         if(event.key==='Enter'||event.key===' '){choose(active);return;}
         if(event.key==='Home')active=-1;else if(event.key==='End')active=0;
         move(event.key==='ArrowUp'||event.key==='End'?-1:1);return;
       }
       if(event.key.length===1&&!event.ctrlKey&&!event.metaKey&&!event.altKey){
-        event.preventDefault();if(opened!==select)show(select);if(search){search.value+=event.key;filter();return;}clearTimeout(typingTimer);typeahead+=event.key.toLocaleLowerCase();typingTimer=setTimeout(()=>typeahead='',700);
+        event.preventDefault();if(opened!==select)show(select,true);if(search){search.value+=event.key;filter();return;}clearTimeout(typingTimer);typeahead+=event.key.toLocaleLowerCase();typingTimer=setTimeout(()=>typeahead='',700);
         const index=[...select.options].findIndex((o,i)=>!o.disabled&&!o.parentElement.disabled&&o.label.toLocaleLowerCase().startsWith(typeahead));if(index>=0)highlight(index);
       }
     });
   }
   function scan(records=[]){
     root.querySelectorAll('select').forEach(enhance);
-    if(opened&&records.some(record=>opened.contains(record.target))){const select=opened;close();show(select);}
+    if(opened&&records.some(record=>opened.contains(record.target))){const select=opened;close();show(select,true);}
     else if(opened)position();
   }
   new MutationObserver(scan).observe(root,{childList:true,subtree:true});scan();

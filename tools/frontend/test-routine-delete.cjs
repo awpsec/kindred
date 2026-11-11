@@ -47,7 +47,7 @@ fs.mkdirSync(artifacts,{recursive:true});
     await p.goto(origin);await p.locator('#bot-details').click();
     const detail=id=>p.locator('#details-content [data-routine-id="'+id+'"]');
     const dialog=p.locator('.routine-delete-dialog');
-    const requestDelete=async row=>{await row.locator('[data-routine-action="delete"]').click();await dialog.waitFor();};
+    const requestDelete=async row=>{if(await row.locator('[data-routine-action="options"]').count()){await row.locator('[data-routine-action="options"]').click();await p.getByRole('menuitem',{name:'Delete routine',exact:true}).click();}else await row.locator('[data-routine-action="delete"]').click();await dialog.waitFor();};
     const acceptDelete=async()=>{await dialog.getByRole('button',{name:'Delete routine',exact:true}).click();await dialog.waitFor({state:'detached'});};
     // Cancelling, Escape, and the close button must leave the routine untouched.
     for(const cancel of ['Cancel','Escape','Close']){
@@ -56,17 +56,17 @@ fs.mkdirSync(artifacts,{recursive:true});
       await dialog.getByText('Chat and task history will remain.',{exact:false}).waitFor();
       if(cancel==='Escape')await p.keyboard.press('Escape');else await dialog.getByRole('button',{name:cancel,exact:true}).click();
       await dialog.waitFor({state:'detached'});assert.equal(writes.length,0);
-      await p.waitForFunction(()=>!document.querySelector('#details-content [data-routine-id="details"] [data-routine-action="delete"]').disabled);
+      await p.waitForFunction(()=>!document.querySelector('#details-content [data-routine-id="details"] [data-routine-action="options"]').disabled);
     }
     // Only one request may be sent while a deletion is in flight.
     let release;deleteWait=new Promise(r=>release=r);await requestDelete(detail('details'));await acceptDelete();
     await p.waitForFunction(()=>document.querySelector('#details-content [data-routine-id="details"]').getAttribute('aria-busy')==='true');
-    await detail('details').locator('[data-routine-action="delete"]').evaluate(b=>b.click());
+    await detail('details').locator('[data-routine-action="options"]').evaluate(b=>b.click());
     assert.equal(writes.length,1);release();deleteWait=null;await detail('details').waitFor({state:'detached'});
     // A server error must leave the row actionable for a retry.
     failDelete=true;await requestDelete(detail('retry'));await acceptDelete();
     await detail('retry').getByText('Could not reach the server. Try again.',{exact:true}).waitFor();
-    await p.waitForFunction(()=>!document.querySelector('#details-content [data-routine-id="retry"] [data-routine-action="delete"]').disabled);
+    await p.waitForFunction(()=>!document.querySelector('#details-content [data-routine-id="retry"] [data-routine-action="options"]').disabled);
     failDelete=false;await requestDelete(detail('retry'));await acceptDelete();await detail('retry').waitFor({state:'detached'});
     // The confirmation must appear above Settings, including narrow phone layouts.
     await p.locator('#identity-button').click();await p.locator('#identity-menu').getByRole('menuitem',{name:'Settings',exact:true}).click();await p.locator('[data-settings-page="routines"]').click();
