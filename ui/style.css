@@ -6504,3 +6504,22 @@ html[data-motion="off"] .client-update span{transition:none}
 @media(pointer:coarse){.chat-context-item,.message-menu-item,.routine-compact-actions .icon-button,.routine-review{min-height:44px}.routine-compact-actions .icon-button{min-width:44px}}
 .routine-card .routine-name{min-height:30px;}
 @media(pointer:coarse){.routine-card .routine-name{min-height:44px;}}
+
+/* Draft attachments retain their place until sent or explicitly removed. */
+#composer .composer-files{display:flex;flex-direction:column;gap:0;min-width:0;padding:3px 0;}
+#composer .composer-files[hidden]{display:none;}
+.composer-file.composer-file-row{display:flex;align-items:center;gap:10px;width:100%;max-width:100%;min-width:0;padding:9px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;font-size:calc(13px * var(--text-scale,1));}
+.composer-file-row>.composer-file-visual{display:flex;align-items:center;justify-content:center;flex:none;width:34px;height:36px;border:1px solid var(--line);border-radius:7px;color:var(--muted);overflow:hidden;}
+.composer-file-row .composer-file-preview{width:100%;height:100%;border-radius:0;object-fit:cover;}
+.composer-file-row>.composer-file-copy{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;white-space:normal;}
+.composer-file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.composer-file-status{font-size:calc(11px * var(--text-scale,1));color:var(--muted);}
+.composer-file-row[data-attachment-state=failed] .composer-file-status{color:var(--danger);}
+.composer-file-row .icon-button{flex:none;width:30px;height:32px;padding:6px;}
+.composer-file-retry{flex:none;padding:5px 9px;font-size:calc(12px * var(--text-scale,1));border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);}
+.composer-file-remove{opacity:0;transition:opacity 120ms ease-out;}
+.composer-file-row:hover .composer-file-remove,.composer-file-row:focus-within .composer-file-remove{opacity:1;}
+.composer-files-status{display:block;padding:7px 0 2px;font-size:calc(11px * var(--text-scale,1));color:var(--muted);}
+@media(hover:none),(pointer:coarse){.composer-file-row .icon-button{width:44px;height:44px;padding:12px;}.composer-file-remove{opacity:1;}.composer-file-retry{min-height:44px;}}
+@media(prefers-reduced-motion:reduce){.composer-file-remove{transition:none;}}
+html[data-motion=off] .composer-file-remove{transition:none;}

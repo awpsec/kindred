@@ -20,14 +20,14 @@ export function createNavigationSearch({getItems=()=>[],search,renderIcon,onErro
   const list=el('div','navigation-search-results'),status=el('div','navigation-search-status'),footer=el('div','navigation-search-footer');
   const id='navigation-search-'+Math.random().toString(36).slice(2),mac=/Mac|iPhone|iPad/.test(navigator.platform),mod=shortcutLabel||(mac?'⌘':'Ctrl');
   dialog.setAttribute('aria-label','Search Kindred');list.id=id+'-results';list.setAttribute('role','listbox');list.setAttribute('aria-label','Search results');
-  input.type='search';input.placeholder='Search conversations and actions';input.autocomplete='off';input.spellcheck=false;
-  input.setAttribute('aria-label','Search conversations and actions');input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-controls',list.id);input.setAttribute('aria-expanded','false');
+  input.type='search';input.maxLength=160;input.placeholder='Search messages, conversations and actions';input.autocomplete='off';input.spellcheck=false;
+  input.setAttribute('aria-label','Search messages, conversations and actions');input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-controls',list.id);input.setAttribute('aria-expanded','false');
   const glass=el('span','navigation-search-glass');glass.setAttribute('aria-hidden','true');glass.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10.7" cy="10.7" r="6.7"/><path d="m16 16 4.5 4.5"/></svg>';
   const close=el('button','navigation-search-close','×');close.type='button';close.setAttribute('aria-label','Close search');
   heading.append(glass,input,close);status.setAttribute('role','status');status.setAttribute('aria-live','polite');status.hidden=true;
   footer.append(el('span','','↑ ↓ to navigate'),el('span','','↵ to open'),el('span','','esc to close'));
   dialog.append(heading,list,status,footer);document.body.append(dialog);
-  let rows=[],selectedId=null,origin=null,timer=null,request=null,generation=0,presentation=0,remote=[],animation=null,closing=false,destroyed=false;
+  let rows=[],selectedId=null,origin=null,timer=null,request=null,generation=0,presentation=0,remote=[],animation=null,closing=false,destroyed=false,lastSelection=null,pendingRestore=null;
   const reduced=()=>document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches;
   function invalidate(){++generation;clearTimeout(timer);timer=null;request?.abort();request=null;}
   function announce(message){status.textContent=message;status.hidden=!message;}
@@ -47,38 +47,45 @@ export function createNavigationSearch({getItems=()=>[],search,renderIcon,onErro
       const picture=el('span','navigation-search-icon'),copy=el('span','navigation-search-copy'),title=el('span','navigation-search-title');
       const art=renderIcon?.(item)||item.icon;if(art instanceof Node)picture.append(art);else picture.textContent='⌕';picture.setAttribute('aria-hidden','true');
       title.append(el('span','navigation-search-name',item.title||'Untitled'));if(item.label)title.append(el('span','navigation-search-tag',item.label));copy.append(title);
-      if(item.subtitle)copy.append(el('span','navigation-search-description',item.subtitle));row.append(picture,copy);
+      if(item.subtitle)copy.append(el('span','navigation-search-description',item.subtitle));
+      if(item.excerpt){
+        row.classList.add('is-message');const excerpt=el('span','navigation-search-excerpt');
+        const terms=input.value.trim().split(/\s+/).filter(Boolean).sort((a,b)=>b.length-a.length);
+        const pattern=terms.length?new RegExp('('+terms.map(term=>term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')','giu'):null;
+        for(const part of pattern?String(item.excerpt).split(pattern):[String(item.excerpt)])excerpt.append(pattern&&terms.some(term=>term.toLocaleLowerCase()===part.toLocaleLowerCase())?el('mark','',part):document.createTextNode(part));
+        copy.append(excerpt);
+      }row.append(picture,copy);
       if(index<9)row.append(el('kbd','navigation-search-shortcut',mod+String(index+1)));
       row.addEventListener('pointermove',event=>{if(event.pointerType!=='touch'&&selectedId!==item.id)select(item.id);});
       row.addEventListener('click',()=>activate(item));fragment.append(row);
     }
-    if(!rows.length){const empty=el('div','navigation-search-empty',input.value.trim()?'No matches. Try another name or action.':'No conversations yet.');fragment.append(empty);}
+    if(!rows.length){const empty=el('div','navigation-search-empty',input.value.trim()?'No matches. Try another phrase, name or action.':'No conversations yet.');fragment.append(empty);}
     list.replaceChildren(fragment);select(rows.some(item=>item.id===selectedId)?selectedId:rows[0]?.id||null);list.scrollTop=previous;
   }
   async function activate(item){
     if(closing||!item)return;
-    const ticket=presentation;
+    const ticket=presentation;lastSelection={query:input.value,id:item.id,scroll:list.scrollTop};
     // Finish closing before opening another native modal, so focus cannot be
     // restored onto the old trigger after the destination has taken focus.
     if(!await hide()||ticket!==presentation||destroyed)return;try{await item.run();}catch(error){onError(error);}
   }
   function refresh({remoteSearch=false}={}){
     if(!dialog.open||closing||destroyed)return;
-    if(remoteSearch){invalidate();remote=[];selectedId=null;list.scrollTop=0;announce('');}
+    if(remoteSearch){invalidate();remote=[];selectedId=null;pendingRestore=null;list.scrollTop=0;announce('');}
     paint();
     const query=input.value.trim();if(!remoteSearch||!search||query.length<2)return;
     const ticket=generation;timer=setTimeout(async()=>{
       request=new AbortController();const signal=request.signal;announce('Searching…');
-      try{const found=await search(query,{signal});if(ticket!==generation||!dialog.open||closing)return;remote=Array.isArray(found)?found:[];paint();announce(rows.length?`${rows.length} results`:'No matches.');}
+      try{const found=await search(query,{signal});if(ticket!==generation||!dialog.open||closing)return;remote=Array.isArray(found)?found:Array.isArray(found?.items)?found.items:[];if(pendingRestore)selectedId=pendingRestore.id;paint();if(pendingRestore){list.scrollTop=pendingRestore.scroll;pendingRestore=null;}announce(found?.status||(rows.length?`${rows.length} results`:'No matches.'));}
       catch(error){if(ticket!==generation||signal.aborted||!dialog.open)return;announce('Search is unavailable. Your conversations and actions are still available.');onError(error);}
     },160);
   }
-  function open(query=''){
+  function open(query='',restore=null){
     if(destroyed)return;
     presentation++;
     const wasOpen=dialog.open;animation?.cancel();animation=null;closing=false;
     if(!wasOpen){origin=document.activeElement;onOpen?.();dialog.showModal();}
-    input.value=query;input.setAttribute('aria-expanded','true');refresh({remoteSearch:true});input.focus();input.setSelectionRange?.(query.length,query.length);
+    input.value=query;input.setAttribute('aria-expanded','true');refresh({remoteSearch:true});if(restore){pendingRestore=restore;selectedId=restore.id;list.scrollTop=restore.scroll;}input.focus();input.setSelectionRange?.(query.length,query.length);
     if(!wasOpen&&!reduced())animation=dialog.animate([{opacity:0,transform:'translateY(-6px) scale(.985)'},{opacity:1,transform:'none'}],{duration:140,easing:'cubic-bezier(.2,.8,.2,1)'});
   }
   async function hide(){
@@ -107,5 +114,5 @@ export function createNavigationSearch({getItems=()=>[],search,renderIcon,onErro
   dialog.addEventListener('cancel',event=>{event.preventDefault();void hide();});
   dialog.addEventListener('click',event=>{if(event.target!==dialog)return;const box=dialog.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)void hide();});
   document.addEventListener('keydown',keydown);
-  return{open,close:hide,refresh,element:dialog,get isOpen(){return dialog.open;},destroy(){destroyed=true;invalidate();animation?.cancel();dialog.close();dialog.remove();document.removeEventListener('keydown',keydown);}};
+  return{open,resume(){const saved=lastSelection;open(saved?.query||'',saved);},close:hide,refresh,element:dialog,get query(){return input.value;},get isOpen(){return dialog.open;},destroy(){destroyed=true;invalidate();animation?.cancel();dialog.close();dialog.remove();document.removeEventListener('keydown',keydown);}};
 }

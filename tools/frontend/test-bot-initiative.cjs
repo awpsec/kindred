@@ -27,9 +27,9 @@ const assert=require('node:assert/strict');
   await guidance.fill(instruction);await waitWrite(2);assert.equal(bot.profile.initiative_instructions,instruction);
   for(const value of writes){assert.equal(value.approval_mode,'full');assert.equal(value.instructions,'Keep these instructions');assert.equal(value.memory,'Keep this memory');assert.equal(value.profile.custom_existing,'preserved');assert.equal(value.profile.pinned,true);assert.equal(value.profile.progress_updates,'summaries');}
   // Appearance saves must retain initiative and guidance, and later toggles must retain appearance.
-  await p.locator('.bot-edit-form .avatar-edit').click();await p.locator('#color-options .color-option:not(.selected)').first().click();await waitWrite(3,()=>bot.profile.color!=='#2475ff');
+  await p.locator('[data-bot-settings-group=identity]>summary').click();await p.locator('.bot-edit-form .avatar-edit').click();await p.locator('#color-options .color-option:not(.selected)').first().click();await waitWrite(3,()=>bot.profile.color!=='#2475ff');
   const editedColor=bot.profile.color;assert.notEqual(editedColor,'#2475ff');assert.equal(bot.profile.initiative_instructions,instruction);
-  await p.locator('#avatar-dialog').evaluate(dialog=>dialog.close());
+  await p.locator('#avatar-dialog').evaluate(dialog=>dialog.close());await p.locator('[data-bot-settings-group=behavior]>summary').click();
   await toggle.uncheck();await waitWrite(4,()=>bot.profile.initiative===false);assert.equal(bot.profile.initiative,false);assert.equal(bot.profile.initiative_instructions,instruction);assert.equal(bot.profile.color,editedColor);assert(!await guidance.isVisible());
   settings.timezone='America/New_York';await open();assert(!await toggle.isChecked());
   await toggle.check();await waitWrite(5,()=>bot.profile.initiative===true);assert.equal(await guidance.inputValue(),instruction);

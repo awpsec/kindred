@@ -6,7 +6,7 @@ const {server,token}=require('./fixtures/desktop.cjs');const assert=require('nod
  await p.route('**/api/status**',r=>r.fulfill({json:{version:'test',screen_bot_id:'piper',takeover:false,primary_bot_id:primary}}));
  await p.route('**/api/primary-bot',r=>{if(fail)return r.fulfill({status:400,json:{error:'Could not save preference'}});primary=r.request().postDataJSON().bot_id;return r.fulfill({json:{bot_id:primary}});});
  await p.goto('http://127.0.0.1:'+server.address().port);await p.waitForFunction(()=>document.querySelector('#heading').textContent==='Piper');
- await p.locator('#bot-details').click();await p.locator('#bot-settings').click();
+ await p.locator('#bot-details').click();await p.locator('#details-panel .bot-center-actions').getByRole('button',{name:'Bot settings',exact:true}).click();await p.locator('[data-bot-settings-group=identity]>summary').click();
  const toggle=p.getByRole('switch',{name:'Use as primary bot'});await toggle.check();
  await p.waitForFunction(()=>!!document.querySelector('#heading .primary-bot-badge'));
  assert.equal(primary,'piper');assert.equal(await p.locator('#bots .character>.primary-bot-badge').count(),1);

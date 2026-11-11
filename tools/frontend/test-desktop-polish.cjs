@@ -96,7 +96,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   releaseBots();await p.locator('#bot-details').click();await p.locator('.avatar-customize').hover();
   await context.unroute(origin+'/api/bots',delayedBots);
   assert.equal(await p.locator('.quick-shapes .selected').getAttribute('aria-label'),'cloud');
-  await p.locator('#bot-settings').click();
+  await p.locator('#details-panel .bot-center-actions').getByRole('button',{name:'Bot settings',exact:true}).click();await p.locator('[data-bot-settings-group=behavior]>summary').click();
   await p.getByRole('switch',{name:/Notifications/}).uncheck();
   await p.waitForTimeout(850);assert.equal((await(await fetch(origin+'/api/bots')).json())[0].profile.notifications,false);
   await p.getByRole('switch',{name:/Notifications/}).check();await p.waitForTimeout(850);
@@ -126,7 +126,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
  const webPage=await webContext.newPage();webPage.on('pageerror',e=>errors.push(e.message));
  await webPage.goto(origin);await webPage.locator('#bots .bot-link').waitFor();
  assert.equal(await webPage.locator('.desktop-titlebar').count(),0);
- await webPage.locator('#bot-details').click();await webPage.locator('#bot-settings').click();
+ await webPage.locator('#bot-details').click();await webPage.locator('#details-panel .bot-center-actions').getByRole('button',{name:'Bot settings',exact:true}).click();await webPage.locator('[data-bot-settings-group=behavior]>summary').click();
  await webPage.getByRole('switch',{name:'Notifications',exact:true}).uncheck();
  await webPage.getByRole('switch',{name:'Notifications',exact:true}).check();
  await webPage.waitForFunction(()=>Notification.permission==='granted');

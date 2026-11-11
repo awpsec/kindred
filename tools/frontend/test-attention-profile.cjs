@@ -56,7 +56,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   for(const name of ['Connections','Skills'])assert.equal(await p.locator('#details-content').getByRole('button',{name,exact:true}).count(),1);
   await p.screenshot({path:path.join(artifacts,engine+'-attention-profile.png')});
   await p.setViewportSize({width:390,height:844});await p.waitForTimeout(250);const bounds=await form.boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=390);await p.screenshot({path:path.join(artifacts,engine+'-attention-profile-mobile.png')});await p.setViewportSize({width:1320,height:900});
-  await p.locator('#bot-settings').click();await p.locator('.bot-edit-form select').first().waitFor();assert.equal(await p.locator('#details-title').textContent(),'Bot settings');
+  await p.locator('#details-panel .bot-center-actions').getByRole('button',{name:'Bot settings',exact:true}).click();await p.locator('[data-bot-settings-group=model]>summary').click();await p.locator('.bot-edit-form select').first().waitFor();assert.equal(await p.locator('#details-title').textContent(),'Bot settings');
   assert.deepEqual(errors,[]);assert(writes.length>=2);console.log(JSON.stringify({passed:true,engine,unreadAndReadVisibility:true,groupUnread:true,presenceBoundary:true,staticRestAllShapes:true,profileDraftSurvivesRefresh:true,deepSettingsPreserved:true}));await context.close();
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exit(1);});

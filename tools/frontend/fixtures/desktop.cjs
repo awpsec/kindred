@@ -36,7 +36,7 @@ const server=http.createServer(async(req,res)=>{
   '/api/local/devices':{devices:[]},
   '/api/dictation/models':{configured:false,models:[],require_zdr:true},
   '/api/attention':{bots:{},chats:{}},
-  '/api/bots':[bot],'/api/chats':[chat],'/api/runs':[run],'/api/runs/run-screenshot':{run,events:[],attachments,approvals:[]},
+  '/api/messages/search':{matches:[],limited:false,scope:'recent_messages'},'/api/bots':[bot],'/api/chats':[chat],'/api/runs':[run],'/api/runs/run-screenshot':{run,events:[],attachments,approvals:[]},
   '/api/chats/dm-piper':{chat,messages:[{seq:1,sender:'user',text:run.prompt,kind:'message',run_id:'',created:run.created},{seq:2,sender:'piper',text:run.output,kind:'result',run_id:run.id,attachments,created:run.created}]},
   '/api/workspace-artifact-folders':[], '/api/status':{version:'0.12.1',screen_bot_id:'piper',takeover:false,vm_enabled:true},'/api/settings':general,'/api/connections':{apps:[],openrouter_configured:false},'/api/approvals':[],'/api/questions':[], '/api/user-tasks':[],'/api/routines':[],'/api/activity':{piper:{status:'completed',shape:'success',label:'All done',finished_at:run.created}},'/api/codex/models':{data:[{model:'test',displayName:'Test model',isDefault:true,defaultReasoningEffort:'high',supportedReasoningEfforts:[{reasoningEffort:'high'}]}]},'/api/computer':{image:'data:image/png;base64,'+png.toString('base64')},'/api/skills':[],'/api/commands':[]
  };

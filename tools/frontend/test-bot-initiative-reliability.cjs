@@ -26,7 +26,7 @@ const assert=require('node:assert/strict');
    return route.continue();
   });
   const until=async(predicate,label)=>{for(let i=0;i<200&&!predicate();i++)await p.waitForTimeout(25);assert(predicate(),label);};
-  const open=async()=>{await p.locator('#bot-details').click();await p.locator('#bot-settings').click();};
+  const open=async()=>{await p.locator('#bot-details').click();await p.locator('#details-panel .bot-center-actions').getByRole('button',{name:'Bot settings',exact:true}).click();const section=p.locator('[data-bot-settings-group=behavior]');if(!await section.evaluate(n=>n.open))await section.locator('summary').click();};
   const close=()=>p.locator('#details-close').click();
   const toggle=()=>p.getByRole('switch',{name:'Take initiative',exact:true});
   const guidance=()=>p.getByLabel('What should this bot keep an eye on?',{exact:true});

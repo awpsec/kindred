@@ -1,5 +1,5 @@
 // Device-local preferences. Recording begins only after an explicit microphone click.
-export function createDictationUI({editor,send,composer,nativeInvoke,api,chatId,hasFiles,notice,icon,openrouterConfigured=()=>false,accountId=()=> 'legacy'}) {
+export function createDictationUI({editor,send,composer,nativeInvoke,api,chatId,hasFiles,filesReady=()=>true,notice,icon,openrouterConfigured=()=>false,accountId=()=> 'legacy'}) {
   const nativeAvailable=()=>window.__KINDRED_NATIVE_DICTATION===true&&window.__KINDRED_DESKTOP?.platform==='macos';
   const iosCapability=()=>window.__KINDRED_IOS_DICTATION;
   const iosAvailable=()=>iosCapability()?.supported===true&&iosCapability()?.protocolVersion===1&&iosCapability()?.engine==='apple-on-device'&&iosCapability()?.onDeviceOnly===true&&typeof iosCapability()?.documentID==='string'&&iosCapability().documentID.length>0&&iosCapability().documentID.length<=128&&!!window.webkit?.messageHandlers?.kindredDictation;
@@ -113,12 +113,12 @@ export function createDictationUI({editor,send,composer,nativeInvoke,api,chatId,
     if(iosOperation&&iosOperation.chat!==chatId())endIOS('cancel',true);
     if(usesIOS()&&iosChat!==chatId()){iosChat=chatId();iosMessage('context');}
     const calling=composer.classList.contains('is-voice-calling'),active=phase!=='idle',text=!!editor.value?.trim()||hasFiles(),enabled=!calling&&isEnabled()&&(usesCloud()?openrouterConfigured()&&!!cloud.model:preferences.model!=='ios'||iosAvailable()&&iosCapability().onDeviceAvailable===true),primary=enabled&&!(iosOperation?iosOperation.content:text);
-    const renderKey=JSON.stringify([calling,enabled,text,phase,!!inflight,!!iosOperation?.content]);
+    const attachmentsReady=filesReady(),renderKey=JSON.stringify([calling,enabled,text,phase,!!inflight,!!iosOperation?.content,attachmentsReady]);
     if(renderKey===renderedComposerState){if(settings?.isConnected)renderSettingsStatus();return;}
     renderedComposerState=renderKey;
     composer.classList.toggle('dictation-enabled',enabled);composer.classList.toggle('ios-dictation-content',!!iosOperation?.content);composer.classList.toggle('dictation-empty',primary);composer.classList.toggle('is-dictating',active);
     mic.hidden=!enabled;send.hidden=iosOperation?!iosOperation.content:primary||active;mic.classList.toggle('is-primary',primary);mic.classList.toggle('is-recording',phase==='recording'||!!iosOperation&&phase==='finishing');
-    mic.disabled=calling||phase==='starting'||phase==='finishing';send.disabled=active;send.setAttribute('aria-disabled',String(active));
+    mic.disabled=calling||phase==='starting'||phase==='finishing';send.disabled=active||!attachmentsReady||send.dataset.pending==='true';send.setAttribute('aria-disabled',String(send.disabled));
     const label=phase==='recording'?'Stop dictating':usesIOS()&&iosCapability().onDeviceAvailable!==true?'On-device dictation unavailable':'Dictate';mic.title=label;mic.setAttribute('aria-label',label);mic.setAttribute('aria-pressed',String(phase==='recording'));
     const stopping=phase==='recording'||!!iosOperation&&phase==='finishing';
     // Status polling must not replace the SVG between pointer-down and pointer-up.
