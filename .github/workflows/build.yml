@@ -27,6 +27,14 @@ on:
         description: 'Optional exact source commit to reuse verified packages from the same build.'
         required: false
         type: string
+      preserved_mac_run:
+        description: 'Reviewed failed run containing the same signed app; package and validate without compiling or resigning.'
+        required: false
+        type: string
+      preserved_mac_zip_sha256:
+        description: 'SHA256 of the verified retained Kindred.app.zip.'
+        required: false
+        type: string
       mac_paste_smoke:
         description: 'Run the reviewed disposable native clipboard/RFB smoke on Mac.'
         required: false
@@ -47,14 +55,15 @@ jobs:
   packages:
     permissions:
       contents: write
-    if: ${{ inputs.approve_runner_usage }}
+      actions: read
+    if: ${{ inputs.approve_runner_usage && (!inputs.preserved_mac_run || inputs.platforms == 'macos') }}
     strategy:
       fail-fast: false
       max-parallel: 3
       matrix:
         include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"}]' || inputs.platforms == 'macos' && '[{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]' || inputs.platforms == 'linux' && '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"}]' || '[{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","bundles":"deb,appimage"},{"os":"windows-2025","target":"x86_64-pc-windows-msvc","bundles":"native"},{"os":"macos-26","target":"aarch64-apple-darwin","bundles":"app"}]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ matrix.os == 'macos-26' && 25 || matrix.os == 'windows-2025' && 20 || 45 }}
+    timeout-minutes: ${{ inputs.preserved_mac_run && 15 || matrix.os == 'macos-26' && 25 || matrix.os == 'windows-2025' && 20 || 45 }}
     env:
       KINDRED_PACKAGE_SOURCE_ROOT: ${{ github.workspace }}
       CARGO_BUILD_JOBS: 2
@@ -195,9 +204,17 @@ jobs:
         if: runner.os == 'macOS'
         run: command -v cmake || brew install cmake
       - name: Build macOS and Linux packages
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && !inputs.preserved_mac_run
         working-directory: desktop
         run: tauri build --verbose --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
+      - name: Recover exact retained signed Mac app without rebuilding
+        if: runner.os == 'macOS' && inputs.preserved_mac_run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRESERVED_RUN: ${{ inputs.preserved_mac_run }}
+          PRESERVED_SHA256: ${{ inputs.preserved_mac_zip_sha256 }}
+        run: python .release-tools/scripts/release/recover-signed-macos.py
       - name: Create and verify the signed Mac app disk image
         if: runner.os == 'macOS'
         run: bash .release-tools/scripts/release/package-macos-dmg.sh "${{ matrix.target }}" "$RELEASE_VERSION"
