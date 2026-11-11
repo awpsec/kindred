@@ -57,6 +57,7 @@ let voiceUI, commandsUI, dictationUI, composerLists, navigationSearch, botCenter
 function syncBotCenter(){botCenter?.sync();computerPopout?.sync();}
 const CHAT_PAGE_SIZE=50, CHAT_WINDOW_SIZE=150, CHAT_CACHE_SIZE=6;
 const chatHistory=new Map();
+let quoteNavigation=0,quoteHighlight=null,quoteHighlightTimer,quoteRequest;
 let chatOpening=null;
 const stoppingTasks=new Set();
 const $ = (id) => document.getElementById(id);
@@ -550,6 +551,7 @@ async function chooseBot(b) {
   if(voiceUI&&!voiceUI.canNavigate(`dm-${b.id}`))return;
   if(state.teaching && b.id!==state.teaching.botId){notice("Finish teaching before switching bots.");return;}
   if(!state.chat && state.bot?.id===b.id){captureUnreadBoundary(`dm-${b.id}`);$('app').classList.remove('sidebar-open');await renderChat(true,'cached');return;}
+  cancelQuotedNavigation();
   dictationUI?.cancel();
   $('details-content').querySelector('.artifact-library')?.remove();
   rememberChatPosition();
@@ -4657,6 +4659,7 @@ async function chooseChat(chat) {
   if(voiceUI&&!voiceUI.canNavigate(chat.id))return;
   if(state.teaching){notice("Finish teaching before switching conversations.");return;}
   if(state.chat?.id===chat.id){captureUnreadBoundary(chat.id);$('app').classList.remove('sidebar-open');await renderChat(true,'cached');return;}
+  cancelQuotedNavigation();
   dictationUI?.cancel();
   $('details-content').querySelector('.artifact-library')?.remove();
   rememberChatPosition();
@@ -6809,7 +6812,7 @@ function preserveOrdinaryMessage(previous,next){
   // Iframes, previews and other live cards have separate ownership. Do not
   // move them merely because adjacent Markdown changed.
   if(before.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media')||after.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media'))return false;
-  const shell=n=>{const copy=n.cloneNode(true);copy.removeAttribute('aria-description');copy.classList.remove('message-menu-open','reply-arriving','same-author');if(previous.refreshTaskCommentary){copy.removeAttribute('hidden');copy.style.removeProperty('overflow');if(!copy.getAttribute('style'))copy.removeAttribute('style');}copy.querySelector('.mobile-message-time')?.remove();copy.querySelector('.message-text-content').replaceChildren();for(const a of copy.querySelectorAll('.message-actions'))a.replaceChildren();const viewport=copy.querySelector('.message-text-viewport');viewport.removeAttribute('style');viewport.classList.remove('is-truncated');const toggle=copy.querySelector('.message-expand');if(toggle)toggle.replaceWith(document.createElement('button'));return copy;};
+  const shell=n=>{const copy=n.cloneNode(true);copy.removeAttribute('aria-description');copy.classList.remove('message-menu-open','reply-arriving','same-author','quoted-highlight');if(previous.refreshTaskCommentary){copy.removeAttribute('hidden');copy.style.removeProperty('overflow');if(!copy.getAttribute('style'))copy.removeAttribute('style');}copy.querySelector('.mobile-message-time')?.remove();copy.querySelector('.message-text-content').replaceChildren();for(const a of copy.querySelectorAll('.message-actions'))a.replaceChildren();const viewport=copy.querySelector('.message-text-viewport');viewport.removeAttribute('style');viewport.classList.remove('is-truncated');const toggle=copy.querySelector('.message-expand');if(toggle)toggle.replaceWith(document.createElement('button'));return copy;};
   if(!shell(previous).isEqualNode(shell(next)))return false;
   const focused=document.activeElement,action=previous.contains(focused)?focused.dataset.messageAction:null,focusPath=[];
   if(before.contains(focused))for(let n=focused;n!==before;n=n.parentNode)focusPath.unshift([...n.parentNode.childNodes].indexOf(n));
@@ -8905,6 +8908,7 @@ function beginChatRender(view){
   chatScroll.rendering=true;chatResize.disconnect();
 }
 function endChatRender(){
+  syncQuotedHighlight();
   const id=currentConversationId(),entry=chatHistory.get(id);
   if(state.renderedChatId===id){if(entry)entry.ready=true;if(chatOpening?.id===id)chatOpening.ready=true;}
   const boundary=unreadBoundaries.get(currentConversationId()),divider=$('content').querySelector('.unread-divider');
@@ -8928,6 +8932,7 @@ function endChatRender(){
   if(questionFocus){const card=[...$('content').querySelectorAll('.question-card')].find(c=>c.dataset.questionId===questionFocus.id),control=card&&[...card.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===questionFocus.target);(control||card)?.focus({preventScroll:true});if(control?.tagName==='TEXTAREA'&&questionFocus.start!==null)control.setSelectionRange(questionFocus.start,questionFocus.end);questionFocus=null;}
 }
 function followChatLatest(){
+  cancelQuotedNavigation();
   chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
   chatScroll.follow=true;chatScroll.direction=0;chatScroll.gestureUntil=0;chatScroll.anchor=null;
   const entry=chatHistory.get(currentConversationId());if(entry)entry.wantLatest=true;
@@ -9879,22 +9884,60 @@ function quotedMessage(chatId,quote){
   const content=node('span','message-quote-content');content.append(node('strong','',quote.author),node('span','',plainMessage(quote.text)));
   jump.append(icon('reply',15),content);return jump;
 }
+function syncQuotedHighlight(){
+  const area=$('content'),value=quoteHighlight;
+  const target=value&&value.token===state.token&&value.chatId===currentConversationId()
+    ?area.querySelector('[data-message="'+CSS.escape(String(value.seq))+'"]'):null;
+  for(const row of area.querySelectorAll('.quoted-highlight'))if(row!==target)row.classList.remove('quoted-highlight');
+  target?.classList.add('quoted-highlight');
+}
+function cancelQuotedNavigation(){
+  quoteNavigation++;quoteRequest?.abort();quoteRequest=null;clearTimeout(quoteHighlightTimer);quoteHighlight=null;syncQuotedHighlight();
+}
 async function jumpToMessage(chatId,seq){
   closeMessageMenu();if(currentConversationId()!==chatId)return;
-  let target=$('content').querySelector('[data-message="'+seq+'"]');
+  cancelQuotedNavigation();
+  const revision=quoteNavigation,token=state.token,entry=conversationHistory(chatId),request=new AbortController();quoteRequest=request;
+  const current=()=>revision===quoteNavigation&&token===state.token&&currentConversationId()===chatId&&chatHistory.get(chatId)===entry;
+  const find=()=>$('content').querySelector('[data-message="'+CSS.escape(String(seq))+'"]');
+  let target=find();
   if(!target){
-    const entry=conversationHistory(chatId);if(entry.pending)await entry.pending;
-    const data=await messagePage(entry,{before:seq,inclusive:true});
-    if(currentConversationId()!==chatId)return;
-    chatScroll.follow=false;chatScroll.anchor=null;acceptHistoryPage(entry,data);state.chatKey='';await renderChat(true,'cached');
-    target=$('content').querySelector('[data-message="'+seq+'"]');
+    // Serialize against polling/paging; a late response must not replace the
+    // window chosen by a newer quote, a different chat, or Latest messages.
+    if(entry.pending)try{await entry.pending;}catch{/* The explicit jump can retry independently of a failed poll. */}
+    if(!current())return;
+    const pending=(async()=>{
+      const data=await messagePage(entry,{before:seq,inclusive:true},request.signal);
+      if(!current())return;
+      if(!data.messages.some(message=>String(message.seq)===String(seq)))return;
+      // Near the beginning of a chat, the preceding page may contain only
+      // one or two rows. Fill the remaining window before painting so an
+      // immediate edge load does not reflow the destination a second time.
+      if(data.messages.length<CHAT_PAGE_SIZE&&data.page?.has_after){
+        const newer=await messagePage(entry,{after:data.messages.at(-1).seq,limit:CHAT_PAGE_SIZE-data.messages.length},request.signal);
+        if(!current())return;
+        data.messages=[...new Map([...data.messages,...newer.messages].map(message=>[message.seq,message])).values()];
+        data.page={...data.page,has_after:!!newer.page?.has_after};
+      }
+      chatScroll.follow=false;chatScroll.anchor=null;acceptHistoryPage(entry,data);state.chatKey='';
+      await renderChat(true,'page',request.signal);
+    })();
+    entry.pending=pending;
+    try{await pending;}catch(error){if(current())throw error;return;}
+    finally{if(entry.pending===pending)entry.pending=null;}
+    if(!current())return;
+    target=find();
   }
   if(!target){notice('The original message is unavailable.',true);return;}
   const recovery=target.closest('.task-recovery-history')||target.querySelector('.task-recovery-history');if(recovery)recovery.open=true;
   const stack=target.matches('.connector-stack-group')?target.querySelector('.connector-stack'):target.closest('.connector-stack');
   if(stack){stack.open=true;conversationHistory(chatId).openConnectorStacks?.add(stack.dataset.connectorStack);}
   const call=target.querySelector('.connector-call');if(call){call.open=true;conversationHistory(chatId).openConnectorCalls?.add(target.querySelector('[data-connector-artifact]')?.dataset.connectorArtifact);}
-  chatScroll.follow=false;target.scrollIntoView({block:'center',behavior:'instant'});target.focus({preventScroll:true});captureChatAnchor();target.classList.add('quoted-highlight');setTimeout(()=>target.classList.remove('quoted-highlight'),1600);
+  chatScroll.follow=false;target.scrollIntoView({block:'center',behavior:'instant'});target.focus({preventScroll:true});captureChatAnchor();
+  // The destination is reader-owned state. Loading the adjacent page can
+  // replace its row; retain the cue by message identity until its timer ends.
+  const highlight={chatId,seq,token};quoteHighlight=highlight;syncQuotedHighlight();
+  quoteHighlightTimer=setTimeout(()=>{if(quoteHighlight===highlight){quoteHighlight=null;syncQuotedHighlight();}},1600);
 }
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.message-action-menu,.message-actions'))closeMessageMenu();});
 $('content').addEventListener('scroll',()=>positionMessageMenu());window.addEventListener('resize',()=>positionMessageMenu());

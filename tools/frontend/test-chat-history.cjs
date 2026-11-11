@@ -12,7 +12,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   const chats=bots.map(b=>({id:'dm-'+b.id,name:b.name,members:[b.id],archived:false}));
   const history=new Map(chats.map((c,i)=>[c.id,Array.from({length:i?20:1000},(_,n)=>({seq:i*10000+n+1,sender:n%2?bots[i].id:'user',kind:'message',text:`${bots[i].name} message ${n+1}. `+'History with enough detail to wrap naturally. '.repeat(5),created:now+n}))]));
   for(const m of history.get('dm-piper'))if(m.seq>=600&&m.seq<=950&&m.seq%25===0){m.kind='result';m.run_id='historical-'+m.seq;m.sender='piper';}
-  let delay=0,failOlder=false;
+  let delay=0,failOlder=false,holdRefresh=null;
   await context.route(origin+'/api/**',async route=>{
    const req=route.request(),u=new URL(req.url()),name=u.pathname.slice(4),send=json=>route.fulfill({json});
    if(name==='/bots')return send(bots);if(name==='/chats')return send(chats);if(name==='/runs')return send([]);
@@ -24,6 +24,7 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
     const before=u.searchParams.has('before')?Number(u.searchParams.get('before')):Infinity,after=u.searchParams.has('after')?Number(u.searchParams.get('after')):-1,limit=Number(u.searchParams.get('limit')||50);
     requests.push({id,before,after,limit});assert(limit>0&&limit<=150);
     if(failOlder&&before<Infinity&&after===-1){failOlder=false;return route.fulfill({status:503,json:{error:'Temporary history failure'}});}
+    if(id==='dm-piper'&&holdRefresh)await holdRefresh;
     if(delay)await new Promise(r=>setTimeout(r,delay));
     const inclusive=u.searchParams.get('inclusive')==='true';
     let rows=all.filter(m=>inclusive?m.seq<=before&&m.seq>=after:m.seq<before&&m.seq>after);rows=after>=0?rows.slice(0,limit):rows.slice(-limit);
@@ -57,12 +58,13 @@ const artifacts=process.env.KINDRED_TEST_ARTIFACTS||path.resolve(__dirname,'../.
   assert(Number(await first())<700,'Read beyond the former latest-300 cutoff');assert(Number(await last())<1000,'Newer offscreen rows are unloaded');
   await area.evaluate(n=>n.scrollTop=900);await p.waitForTimeout(150);const saved=await anchor();
   await p.locator('#bots').getByRole('button',{name:'Teammate 1',exact:true}).click();await area.locator('[data-message="10020"]').waitFor();
-  delay=800;
-  // Cached content is drawn before a deliberately delayed network refresh returns.
+  let releaseRefresh;holdRefresh=new Promise(resolve=>releaseRefresh=resolve);
+  // Prove cached content appears while the network is still held, rather than
+  // racing a 500ms assertion against an 800ms response on a busy browser.
   await p.locator('#bots').getByRole('button',{name:'Piper',exact:true}).click({noWaitAfter:true});
-  await area.locator('[data-message="'+saved.seq+'"]').waitFor({timeout:500});assert.equal(await p.locator('.chat-loading').count(),0);
+  await area.locator('[data-message="'+saved.seq+'"]').waitFor();assert.equal(await p.locator('.chat-loading').count(),0);
   const restored=await anchor();assert.equal(restored.seq,saved.seq);assert(Math.abs(restored.y-saved.y)<3,JSON.stringify({saved,restored}));
-  delay=0;await p.waitForTimeout(1100);
+  holdRefresh=null;releaseRefresh();await p.waitForTimeout(1100);
   const beforeArrival=await anchor();history.get('dm-piper').push({seq:1001,sender:'piper',kind:'message',text:'New message while reading',created:now+1001});
   await p.waitForTimeout(1900);const afterArrival=await anchor();assert.equal(afterArrival.seq,beforeArrival.seq);assert(Math.abs(afterArrival.y-beforeArrival.y)<3);
   await p.locator('.jump-latest').click();await area.locator('[data-message="1001"]').waitFor();assert.equal(await last(),'1001');

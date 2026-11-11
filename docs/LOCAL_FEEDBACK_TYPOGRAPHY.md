@@ -21,6 +21,6 @@ Passed in both Chromium and WebKit:
 
 The relevant existing test fixtures were updated to open Settings through the current account menu, expect the current dark panel color, and hold the first Library request explicitly instead of relying on a 60ms loading window.
 
-The full message-actions suite also ran and failed its old quoted-message jump/highlight assertion after loading earlier history. The same failure reproduces with the original test and unchanged baseline `ui/app.js` at server commit `c2a97ebd3aac18cd7eac4fa15a2a2fc9ea12fd1c`. It is not counted as a passing suite or removed from the full test. Investigation of that separate navigation failure remains pending.
+The full message-actions suite also ran and failed its old quoted-message jump/highlight assertion after loading earlier history. The same failure reproduces with the original test and unchanged baseline `ui/app.js` at server commit `c2a97ebd3aac18cd7eac4fa15a2a2fc9ea12fd1c`. It is not counted as a passing suite or removed from the full test. Resolved in the 2026-11-11 quoted-navigation follow-up; see QUOTED_MESSAGE_NAVIGATION.md. The full message-actions suite now passes in Chromium and WebKit.
 
 Browser checks do not replace native macOS/Windows/iOS acceptance. All changed UI and fixture files are synchronized between desktop and server. Test evidence and the unchanged-baseline reproduction are under `/opt/kindred/testing/local-feedback-typography-20261110/` in the development workspace.
