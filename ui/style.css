@@ -5097,7 +5097,7 @@ html.pane-resizing .shell :is(.sidebar,.details-panel,.computer-panel,.conversat
  .shell>.computer-panel.expanded{left:var(--sidebar-width)}
  .details-panel[data-pane-sized]{width:var(--pane-width);max-width:none}
  .computer-panel[data-pane-sized]:not(.expanded){width:var(--pane-width);max-width:none}
- .shell.pane-settling>:is(.sidebar,.details-panel,.computer-panel){transition:width .18s cubic-bezier(.2,.8,.2,1)}
+ /* Keyboard separator steps settle immediately; no transcript reflow animation. */
  .artifact-studio .artifact-studio-library{width:var(--artifact-library-width,252px)}
  .artifact-studio.sidebar-pinned{grid-template-columns:var(--artifact-library-width,252px) minmax(0,1fr)}
  .artifact-studio-library>.pane-resizer{right:-5px}
@@ -5925,7 +5925,7 @@ details.workflow-notice-disclosure[open]>summary::before{transform:rotate(90deg)
   .summary-progress-name.is-working {animation:none;background:none;color:var(--muted)}
 }
 
-/* Temporary pane frames slide while their flex reservation resizes the chat. */
+/* Temporary pane frames slide beside a fixed final flex reservation. */
 .pane-layout-reservation{flex:none;min-width:0;pointer-events:none}
 html .shell>:is(.details-panel,.computer-panel).pane-layout-frame{
   position:fixed!important;right:auto!important;bottom:auto!important;

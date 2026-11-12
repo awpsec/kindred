@@ -4248,8 +4248,16 @@ $("identity-button").onclick = toggleIdentityMenu;
 $("settings-title").parentElement.prepend(settingsHeaderArt());
 $("settings-close").onclick = () => $("settings-dialog").close();
 $('settings-dialog').addEventListener('close',()=>{if($('settings-dialog').open)return;settingsRevision++;settingsRequest?.abort('settings-navigation');settingsMotion?.cancel();settingsMotion=null;});
-$("bot-details").onclick = () =>
-  state.chat && !state.chat.id.startsWith('dm-') ? editChat(state.chat) : openDetails();
+$("bot-details").onclick = () => {
+  if(state.chat&&!state.chat.id.startsWith('dm-'))return editChat(state.chat);
+  // The identity is the same toggle from every bot-center tab. Keep the native
+  // mobile navigation contract; desktop can close it without reaching across.
+  if(!document.documentElement.hasAttribute('data-mobile')&&window.__KINDRED_MOBILE_PLATFORM!=='ios'){
+    const panel=rightPanes().find(p=>!p.hidden&&!p.inert);
+    if(panel)return $(panel.id==='computer-panel'?'computer-close':'details-close').click();
+  }
+  openDetails();
+};
 $("bot-settings").onclick = () => openDetails("settings");
 $("details-back").onclick = () => openDetails();
 $("details-close").onclick = () => {if(state.desktopNavigationHidden){$('computer-close').click();state.desktopNavigationHidden=false;}hidePane($("details-panel"));botCenter?.hidePreview();};
@@ -4408,8 +4416,9 @@ function resizeComposer(refit=false) {
   const editor=$('prompt'),form=$('composer');
   const text=composerText(editor).replace(/\u200b/g,'');
   const previousText=form._layoutText||'';form._layoutText=text;
-  editor.dataset.empty=String(!text.trim());
-  editor.style.height='auto';dictationUI?.render();voiceUI?.render();syncQuestionComposer();
+  const empty=String(!text.trim());
+  if(editor.dataset.empty!==empty)editor.dataset.empty=empty;
+  if(editor.style.height!=='auto')editor.style.height='auto';dictationUI?.render();voiceUI?.render();syncQuestionComposer();
   // IME owns layout until commit. Shortened drafts can return to one row.
   // Native adapters retain their existing compact/expanded policy.
   if(!document.documentElement.hasAttribute('data-mobile')){
@@ -4481,7 +4490,9 @@ window.addEventListener('kindred-interface-font-change',()=>requestAnimationFram
 // including working avatars and collaboration waits.
 const composerSpace={height:null,target:0,frame:0};
 function setComposerClearance(height){
-  composerSpace.height=height;
+  const mode=document.documentElement.hasAttribute('data-mobile');
+  if(composerSpace.height===height&&composerSpace.mobile===mode)return;
+  composerSpace.mobile=mode;composerSpace.height=height;
   const content=$('content');
   if(document.documentElement.hasAttribute('data-mobile')){
     // Native adapters own keyboard, safe-area and split-screen spacing.
@@ -4508,7 +4519,7 @@ const composerClearance=new ResizeObserver(()=>{
   // WebKitGTK must lay out and repaint the scrolling SVG transcript after each
   // padding change. A line wrap needs one adjustment, not a second layout loop
   // competing with typing and avatar motion. Native mobile owns its spacing.
-  // Reply morphs already change height on each frame; don't animate them twice.
+  // Native reply morphs own their height transition; do not animate them twice.
   if(!document.documentElement.hasAttribute('data-mobile')||!sameChat||Math.abs(to-from)<1||!chatScroll.follow||chatOpening||$('composer').classList.contains('is-morphing')||!motionAllowed())return setComposerClearance(to);
   const start=performance.now(),duration=180;
   const step=now=>{
@@ -8224,8 +8235,8 @@ motionPreference.addEventListener('change',settleMotion);
 document.addEventListener('visibilitychange',settleMotion);
 window.addEventListener('blur',()=>{for(const motion of [...activeMotion])motion.finish();});
 new MutationObserver(settleMotion).observe(document.documentElement,{attributes:true,attributeFilter:['data-motion']});
-// Animate the space beside the conversation along with the actual pane. The
-// header and composer stay in normal layout; neither is scaled or snap-positioned.
+// Reserve the final chat layout once, then translate its live surfaces and
+// controls together. Only the empty composer background is scaled.
 let paneLayoutMotion=null;
 const nativePaneMotion=new Map();
 const rightPanes=()=>[$('details-panel'),$('computer-panel')];
@@ -8274,48 +8285,57 @@ function transitionNativePaneLayout(change){
 function transitionPaneLayout(change){
   if(window.__KINDRED_MOBILE_PLATFORM==='ios')return transitionNativePaneLayout(change);
   const settleChat=beginChatLayoutChange(),before=paneLayoutSnapshot();
-  paneLayoutMotion?.cancel();
+  const targets=[$('bot-details').closest('.conversation-header'),$('content'),$('composer-area')];
+  const positions=targets.map(n=>n.getBoundingClientRect());
+  const form=$('composer'),surface=form.querySelector('.composer-resize-surface'),oldSurface=surface?.getBoundingClientRect();
+  const parts=[...form.querySelectorAll(':scope > :not(.composer-bottom), :scope > .composer-bottom > *')].filter(n=>n!==surface&&n.getClientRects().length).map(n=>({node:n,rect:n.getBoundingClientRect()}));
+  // Capture the current presentation before canceling: rapid reversals continue
+  // from where the previous transition actually reached.
+  paneLayoutMotion?.cancel();stopComposerMotion();
   change();layoutPanes();
   const after=paneLayoutSnapshot();
-  if(!motionAllowed()||$('app').hidden){for(const panel of rightPanes())if(panel.hidden&&panel.dataset.clearPaneOnClose){$('details-content').replaceChildren();delete panel.dataset.clearPaneOnClose;}refitComputer();settleChat();return;}
+  const clearClosed=()=>{for(const panel of rightPanes())if(panel.hidden&&panel.dataset.clearPaneOnClose){$('details-content').replaceChildren();delete panel.dataset.clearPaneOnClose;}};
+  if(!motionAllowed()||$('app').hidden){clearClosed();refitComputer();settleChat();return;}
   const moving=after.panels.filter((p,i)=>p.visible||before.panels[i].visible);
   if(!moving.length){settleChat();return;}
-  const shell=$('app'),sidebar=shell.querySelector('.sidebar'),screen=$('desktop');
-  const reserve=node('div','pane-layout-reservation');reserve.setAttribute('aria-hidden','true');
+  const shell=$('app'),reserve=node('div','pane-layout-reservation');reserve.setAttribute('aria-hidden','true');
   shell.querySelector('.conversation').after(reserve);
-  const timing={duration:320,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'},animations=[],restores=[];
-  const reserved=shot=>Math.max(0,shot.shell.right-shot.chat.right);
-  reserve.style.width=reserved(after)+'px';
-  animations.push(reserve.animate([{width:reserved(before)+'px'},{width:reserved(after)+'px'}],timing));
-  animations.push(sidebar.animate([{width:before.sidebar.width+'px'},{width:after.sidebar.width+'px'}],timing));
+  // One final layout, then compositor-only movement. Animating the reservation
+  // width rewrapped every message and refitted the editor on every frame.
+  reserve.style.width=Math.max(0,after.shell.right-after.chat.right)+'px';
+  const timing={duration:240,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'},animations=[],restores=[];
+  const play=(n,frames)=>{const a=n.animate(frames,timing);animations.push(a);return a;};
   for(const target of moving){
     const prior=before.panels.find(p=>p.panel===target.panel),panel=target.panel;
     const end=target.visible?target.rect:{...prior.rect.toJSON(),x:after.shell.right},start=prior.visible?prior.rect:{...target.rect.toJSON(),x:before.shell.right};
     const style=panel.style.cssText,hidden=panel.hidden,inert=panel.inert;
-    restores.push(()=>{const externallyHidden=panel.hidden;panel.style.cssText=style;panel.classList.remove('pane-layout-frame');panel.hidden=hidden||externallyHidden;panel.inert=inert||externallyHidden;if(panel.hidden&&panel.dataset.clearPaneOnClose){$('details-content').replaceChildren();delete panel.dataset.clearPaneOnClose;}});
+    restores.push(()=>{const externallyHidden=panel.hidden;panel.style.cssText=style;panel.classList.remove('pane-layout-frame');panel.hidden=hidden||externallyHidden;panel.inert=inert||externallyHidden;});
     panel.hidden=false;panel.classList.add('pane-layout-frame');
-    // Frame geometry also overrides native mobile's overlay positioning. The
-    // slide uses translation, never scale, so screen input coordinates stay sane.
     Object.assign(panel.style,{left:end.x+'px',top:end.y+'px',width:end.width+'px',height:end.height+'px'});
-    const frames=[{transform:`translate(${start.x-end.x}px,${start.y-end.y}px)`,width:start.width+'px',height:start.height+'px'},{transform:'translate(0,0)',width:end.width+'px',height:end.height+'px'}];
-    animations.push(panel.animate(frames,timing));
+    play(panel,[{transform:`translate(${start.x-end.x}px,${start.y-end.y}px)`},{transform:'none'}]);
   }
-  const screenStyle=screen.style.cssText;
-  if(before.panels[1].visible&&after.panels[1].visible&&Math.abs(before.screen.height-after.screen.height)>1){
-    Object.assign(screen.style,{flex:'none',minHeight:'0',height:after.screen.height+'px'});
-    animations.push(screen.animate([{height:before.screen.height+'px'},{height:after.screen.height+'px'}],timing));
-    restores.push(()=>{screen.style.cssText=screenStyle;});
+  for(let i=0;i<targets.length;i++){
+    const n=targets[i],end=n.getBoundingClientRect(),start=positions[i];
+    if(!start.width||!end.width)continue;
+    const x=start.left+start.width/2-end.left-end.width/2,y=n===$('composer-area')?0:start.top-end.top;
+    if(Math.abs(x)+Math.abs(y)>.5)play(n,[{transform:`translate(${x}px,${y}px)`},{transform:'none'}]);
   }
-  let frame,control;
-  const fit=()=>{refitComputer();frame=requestAnimationFrame(fit);};frame=requestAnimationFrame(fit);
+  // Account for the parent's in-flight translation so each live control starts
+  // at its own previous position even when the draft rewraps. The bottom stays fixed.
+  for(const {node:n,rect:start} of parts){
+    const end=n.getBoundingClientRect();if(!end.width||!end.height)continue;
+    const x=start.left-end.left,y=start.top-end.top;
+    if(Math.abs(x)+Math.abs(y)>.5)play(n,[{transform:`translate(${x}px,${y}px)`},{transform:'none'}]);
+  }
+  // Only the empty background scales; text, controls and the caret stay sharp.
+  if(surface&&oldSurface?.width){const end=surface.getBoundingClientRect();if(end.width&&end.height)play(surface,[{transform:`scale(${oldSurface.width/end.width},${oldSurface.height/end.height})`},{transform:'none'}]);}
+  refitComputer();settleChat();
   const cleanup=()=>{
-    cancelAnimationFrame(frame);
     for(const animation of animations){animation.oncancel=null;animation.cancel();}
     for(const restore of restores)restore();reserve.remove();paneLayoutMotion=null;
-    layoutPanes();refitComputer();settleChat();
+    clearClosed();layoutPanes();refitComputer();settleChat();
   };
-  control=trackMotion(animations[0],timing.duration,cleanup);paneLayoutMotion=control;
-  // External cancellation (including webview lifecycle) settles every sibling.
+  const control=trackMotion(animations[0],timing.duration,cleanup);paneLayoutMotion=control;
   for(const animation of animations.slice(1))animation.oncancel=()=>control.finish();
 }
 function showPane(panel){
@@ -8376,10 +8396,10 @@ function setPaneWidth(panel,width,natural){
 }
 function layoutPanes(){
   if(paneLayoutMotion)return;
-  const shell=$('app');if(window.__KINDRED_MOBILE_PLATFORM==='ios'){setSidebarWidth(null);for(const id of ['details-panel','computer-panel'])setPaneWidth($(id),0,0);return;}if(paneDrag||shell.hidden||!shell.clientWidth)return;
+  const shell=$('app'),header=$('bot-details').closest('.conversation-header');if(window.__KINDRED_MOBILE_PLATFORM==='ios'){header.style.removeProperty('right');setSidebarWidth(null);for(const id of ['details-panel','computer-panel'])setPaneWidth($(id),0,0);return;}if(paneDrag||shell.hidden||!shell.clientWidth)return;
   const panels=[$('details-panel'),$('computer-panel')];
   for(const panel of panels)panel.classList.remove('pane-overlay');
-  if(!wideLayout.matches){setSidebarWidth(null);for(const panel of panels)setPaneWidth(panel,0,0);updateSeparators();return;}
+  if(!wideLayout.matches){header.style.removeProperty('right');setSidebarWidth(null);for(const panel of panels)setPaneWidth(panel,0,0);updateSeparators();return;}
   const total=shell.clientWidth,pane=openRightPane(),natural=pane?naturalPaneWidth(pane):0,rail=railWidth();
   let reserved=pane&&getComputedStyle(pane).position!=='absolute'?natural:0;
   // On the smallest tablet windows there is no side-by-side solution, even
@@ -8404,6 +8424,9 @@ function layoutPanes(){
     if(panel===pane&&saved&&!overlay)setPaneWidth(panel,clampWidth(saved,natural,total-sidebar-paneLimits.chat),natural);
     else if(panel===pane||panel.hidden)setPaneWidth(panel,0,0);
   }
+  // On windows too narrow for two readable panes, center the identity in the
+  // portion of the chat that the fallback overlay leaves visible.
+  header.style.right=overlay?pane.getBoundingClientRect().width+'px':'0px';
   const library=document.querySelector('.artifact-studio');
   if(library){if(paneSizes.library)library.style.setProperty('--artifact-library-width',clampWidth(paneSizes.library,paneLimits.library,Math.min(paneLimits.libraryMax,library.clientWidth-paneLimits.chat))+'px');else library.style.removeProperty('--artifact-library-width');}
   updateSeparators();
@@ -9936,16 +9959,18 @@ function stopComposerMotion(){
 }
 function changeComposerReply(update,animate){
   const form=$('composer'),parts=[$('prompt'),$('composer-actions'),$('composer-hint'),$('send')];
-  const before=form.getBoundingClientRect(),positions=parts.map(n=>n.getBoundingClientRect());
+  const before=form.getBoundingClientRect(),paintHeight=form.querySelector('.composer-resize-surface')?.getBoundingClientRect().height||before.height,positions=parts.map(n=>n.getBoundingClientRect());
   const quoteBounds=replyPreview.getBoundingClientRect(),quoteOpacity=getComputedStyle(replyPreview).opacity;
   const outgoing=!replyPreview.hidden?replyPreview.cloneNode(true):null;
   stopComposerMotion();update();resizeComposer();
   if(!animate||!motionAllowed()||document.documentElement.dataset.motion==='off')return;
-  const after=form.getBoundingClientRect(),duration=320,easing='cubic-bezier(.22,1,.36,1)';
+  const desktop=!document.documentElement.hasAttribute('data-mobile')&&window.__KINDRED_MOBILE_PLATFORM!=='ios';
+  const after=form.getBoundingClientRect(),duration=desktop?240:320,easing='cubic-bezier(.22,1,.36,1)';
   const play=(n,frames,ms=duration)=>{const a=n.animate(frames,{duration:ms,easing,fill:'forwards'});composerMotion.push(a);return a;};
   if(Math.abs(before.height-after.height)<1)return;
   form.classList.add('is-morphing');
-  const resize=play(form,[{height:before.height+'px'},{height:after.height+'px'}]);
+  const surface=desktop&&form.querySelector('.composer-resize-surface');
+  const resize=surface?play(surface,[{transform:`scaleY(${paintHeight/surface.offsetHeight})`},{transform:'none'}]):play(form,[{height:before.height+'px'},{height:after.height+'px'}]);
   for(let i=0;i<parts.length;i++){
     const end=parts[i].getBoundingClientRect(),dx=positions[i].left-end.left,
       dy=(positions[i].top-before.bottom)-(end.top-form.getBoundingClientRect().bottom);

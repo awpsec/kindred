@@ -58,6 +58,8 @@ export function createNametagStatus({heading,onStop}) {
   for(const event of ['pointerenter','pointerleave','focusin','focusout'])heading.addEventListener(event,schedule);
   addEventListener('resize',()=>{if(desktop())update(current,lastChat);else layout();});
   new MutationObserver(schedule).observe(heading.querySelector('#heading'),{subtree:true,childList:true,characterData:true});
+  let headerWidth=0;
+  new ResizeObserver(([entry])=>{if(entry.contentRect.width!==headerWidth){headerWidth=entry.contentRect.width;schedule();}}).observe(heading.closest('.conversation-header'));
   document.fonts?.ready.then(schedule);
   return {update};
 }
