@@ -265,3 +265,12 @@ page/sheet navigation, close-during-load, web download bytes and native receipt
 reveal. Set `WEBKIT=1` for WebKit. `node test-native-document-previews.cjs` runs
 DOCX/XLSX/PDF smoke checks in an actual Linux desktop webview; set
 `KINDRED_NATIVE_EXE` and run under an isolated display (e.g. xvfb-run).
+
+`test-reply-reading-stability.cjs` checks a reading anchor captured mid-reply
+entrance. The entrance may move its own text, but must never move neighboring
+text or change scrollTop when it settles or history refreshes. It covers user
+and bot messages, three text sizes, standard/Retina scale, draft preservation,
+and both reduced-motion settings. Run in Chromium and with `WEBKIT=1`, alongside
+`test-progress-arrival.cjs`, `test-in-chat-work.cjs`, and
+`test-pane-chat-anchor.cjs`. Browser WebKit is not native macOS acceptance:
+also check arrivals while scrolling and opening panes in the installed Mac app.

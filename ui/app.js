@@ -935,13 +935,15 @@ function ordinaryMessageArrival(message) {
 }
 function revealReply(group,at) {
   if(at==null || chatMotionReduced())return;
-  const elapsed=Date.now()-at;if(elapsed>=REPLY_ARRIVAL_MS)return;
+  const row=group.querySelector(':scope > .message-row'),elapsed=Date.now()-at;
+  if(!row||elapsed>=REPLY_ARRIVAL_MS||group._replyArrival)return;
   group.classList.add('reply-arriving');
-  // Grok's ordinary message entrance: a short rise, with no fade or scale.
-  // Transform leaves layout height and the reading anchor unchanged.
-  const effect=group.animate([{transform:'translateY(12px)'},{transform:'translateY(0)'}],{duration:REPLY_ARRIVAL_MS,easing:'cubic-bezier(.23,1,.32,1)',fill:'both'});
+  // Move only the painted row. Scroll anchors measure the group's client rect;
+  // moving that wrapper makes a mid-arrival reading gesture save the temporary
+  // offset, then scroll the entire transcript as the entrance settles.
+  const effect=row.animate([{transform:'translateY(12px)'},{transform:'translateY(0)'}],{duration:REPLY_ARRIVAL_MS,easing:'cubic-bezier(.23,1,.32,1)',fill:'both',id:'reply-arrival'});
   effect.currentTime=elapsed;
-  trackMotion(effect,REPLY_ARRIVAL_MS-elapsed,()=>group.classList.remove('reply-arriving'));
+  group._replyArrival=trackMotion(effect,REPLY_ARRIVAL_MS-elapsed,()=>{group._replyArrival=null;group.classList.remove('reply-arriving');});
 }
 // Animate the painted row, not its measured transcript wrapper. Reading
 // anchors and layout height therefore stay fixed throughout the entrance.
