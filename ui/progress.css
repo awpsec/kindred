@@ -253,3 +253,8 @@ details.task-update-tools>.task-update-tools-heading{padding-inline-start:0;min-
 details.task-update-tools>.task-update-tools-heading::before{display:none}
 
 #content .task-commentary-block>.message-group.task-commentary:first-child{margin-block-start:0}
+/* On narrow/touch layouts the action row remains in flow, so it cannot cover
+   the next milestone. Desktop hover actions can use the free side space. */
+@media(max-width:760px),(hover:none){
+ .task-commentary .message-row>.message-actions{position:static;inset:auto;transform:none;background:none;z-index:auto}
+}

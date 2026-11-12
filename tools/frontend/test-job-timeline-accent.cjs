@@ -4,8 +4,8 @@ const {server,token}=require('./fixtures/desktop.cjs');
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,engine=process.env.WEBKIT?'webkit':'chromium',browser=await({chromium,webkit}[engine]).launch();
  const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-job-timeline';fs.mkdirSync(out,{recursive:true});
- try{for(const width of [1100,390,320]){
- const page=await browser.newPage({viewport:{width,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(10000);
+ try{for(const width of [1100,951,390,320]){
+ const page=await browser.newPage({viewport:{width,height:900},hasTouch:width===951,isMobile:width===951}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(10000);
  const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};let complete=false;
  const run=()=>({id:'review',bot_id:'piper',chat_id:chat.id,status:complete?'completed':'running',created:now-180,progress_started:now-180,task_title:'Verify tonight’s checks',output:'',error:''});
  const timeline=Array.from({length:4},(_,i)=>({message_seq:3+i,label:['Read teammate updates','Coordinate teammate work','Update status board','Verify schedule'][i],count:i===1?3:2,created:now-160+i*40,failed:i===2,event_seq:10+i}));
@@ -16,7 +16,8 @@ const {server,token}=require('./fixtures/desktop.cjs');
  await page.route(origin+'/api/**',r=>{const p=new URL(r.request().url()).pathname,send=json=>r.fulfill({json});if(p==='/api/runs')return send([run()]);if(p==='/api/runs/review')return send({run:run(),events:[],attachments:[],approvals:[]});if(p==='/api/chats/'+chat.id)return send({chat,messages:messages(),page:{has_before:false,has_after:false}});if(['/api/approvals','/api/questions','/api/user-tasks'].includes(p))return send([]);if(p==='/api/activity')return send({});return r.continue();});
  await page.goto(origin);const job=page.locator('[data-progress-group="review"]');await job.waitFor();await page.locator('#prompt').fill('Keep my draft');await job.locator('summary').first().click();await page.waitForTimeout(300);
  assert.equal(await page.locator('.task-commentary:visible').count(),4);assert.equal(await job.locator('.summary-progress-activity').count(),0,'No disconnected tool dump above milestones');
- for(let i=0;i<4;i++){const row=page.locator('.task-commentary[data-message="'+(3+i)+'"]'),stamp=row.locator('.progress-update-time'),bubble=row.locator('.message-bubble');assert.match(await row.locator('.task-update-tools-heading').innerText(),new RegExp(timeline[i].label));const [t,b]=await Promise.all([stamp.boundingBox(),bubble.boundingBox()]);assert(Math.abs(t.x+t.width-b.x-b.width)<2,'Timestamp aligned to right '+JSON.stringify({t,b,html:await bubble.innerHTML()}));assert(t.y<b.y+20);assert(b.x+b.width<=width);}
+ for(let i=0;i<4;i++){const row=page.locator('.task-commentary[data-message="'+(3+i)+'"]'),stamp=row.locator('.progress-update-time'),bubble=row.locator('.message-bubble');assert.match(await row.locator('.task-update-tools-heading').innerText(),new RegExp(timeline[i].label));const [t,b]=await Promise.all([stamp.boundingBox(),bubble.boundingBox()]);assert(Math.abs(t.x+t.width-b.x-b.width)<2,'Timestamp aligned to right '+JSON.stringify({t,b,html:await bubble.innerHTML()}));assert(t.y<b.y+20);assert(b.x+b.width<=width);const prose=await row.locator('.message-text-content>p').first().evaluate(n=>{const r=document.createRange();r.selectNodeContents(n);const rect=r.getClientRects()[0];return {right:rect.right,width:rect.width};});assert(prose.right<=t.x-4,'Milestone text stays clear of timestamp '+JSON.stringify({width,t,prose}));}
+ if(width<=760||width===951){const geometry=await page.locator('.task-commentary').evaluateAll(rows=>rows.map(n=>({top:n.getBoundingClientRect().top,actionsBottom:n.querySelector('.message-actions').getBoundingClientRect().bottom})));for(let i=0;i<geometry.length-1;i++)assert(geometry[i].actionsBottom<=geometry[i+1].top,'Narrow action row must not overlap the next milestone '+JSON.stringify(geometry));}
  const first=page.locator('.task-commentary').first().locator('.task-update-tools');await first.locator('summary').click();await page.waitForTimeout(220);await page.evaluate(()=>timelineRefresh());assert(await first.evaluate(n=>n.open),'Expanded call group survives refresh');await first.locator('summary').click();await page.waitForTimeout(220);
  await page.evaluate(()=>document.activeElement?.blur());await page.mouse.move(0,0);await page.waitForTimeout(180);await page.screenshot({path:path.join(out,engine+'-'+width+'-timeline.png')});
  assert.equal(await page.locator('html').getAttribute('data-accent'),'bot','Missing preference defaults to bot');
@@ -27,6 +28,6 @@ const {server,token}=require('./fixtures/desktop.cjs');
  await page.locator('#settings-button').evaluate(n=>n.click());assert.equal(await page.getByRole('combobox',{name:'Accent color',exact:true}).locator('option[value="bot"]').innerText(),'Bot based');
  assert.deepEqual(errors,[]);await page.close();
  }
- console.log(JSON.stringify({passed:true,engine,widths:[1100,390,320],chronologicalMilestones:true,callDisclosure:true,refreshPreserved:true,accentFallbacks:true,draftPreserved:true}));
+ console.log(JSON.stringify({passed:true,engine,widths:[1100,951,390,320],chronologicalMilestones:true,callDisclosure:true,refreshPreserved:true,accentFallbacks:true,draftPreserved:true}));
  }finally{await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;server.close()});
