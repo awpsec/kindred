@@ -26,6 +26,31 @@ try{
  }
  await wait(()=>$('#bot-details')?.onclick&&$('#bot-details').textContent.includes('Piper')&&!$('#chat-loading'),'actual chat');
  const prompt=$('#prompt'),draft='Native release verification draft';prompt.textContent=draft;prompt.dispatchEvent(new Event('input',{bubbles:true}));
+ // Exercise the actual WKWebView/WebView2 geometry, not a mocked font or
+ // compositor. The declared renderer hook only controls reply timing and data.
+ const originalMessages=await(await fetch('/fixture/messages')).json();
+ const motionMessages=Array.from({length:35},(_,i)=>({seq:300+i,sender:i%3?'piper':'user',kind:'message',created:1700000000+i,text:'Keep this paragraph still when a reply arrives and the pane opens. Read the wrapped lines without moving neighboring characters. '.repeat(3)}));
+ await globalThis.__nativeReleaseReplay(motionMessages);await document.fonts.ready;await sleep(300);
+ const motionAPI=globalThis.__nativeReleaseChatMotion,area=$('#content'),replyStability=[];
+ for(const at of [0,65,120]){
+  const target=$('[data-message="320"]'),neighbour=$('[data-message="321"]');
+  motionAPI.chatScroll.follow=false;area.scrollTop+=rect(target).top-rect(area).top-2;await sleep(80);motionAPI.chatScroll.gestureUntil=0;
+  const textTop=()=>{const r=document.createRange();r.selectNodeContents(neighbour.querySelector('.message-text-content'));return r.getClientRects()[0].top;};
+  const before={scroll:area.scrollTop,text:textTop()};motionAPI.revealReply(target,Date.now());
+  const effect=target.getAnimations({subtree:true}).find(a=>a.id==='reply-arrival');assert(effect,'Reply entrance missing in native engine');effect.pause();effect.currentTime=at;motionAPI.captureChatAnchor();assert(motionAPI.chatScroll.anchor.key==='320','Native reading anchor precondition');
+  effect.currentTime=160;motionAPI.restoreChatPosition();assert(Math.abs(textTop()-before.text)<1,'Native neighboring text moves during arrival');
+  effect.finish();await sleep(60);motionAPI.restoreChatPosition();await globalThis.__nativeReleaseReplay(motionMessages);
+  const after={scroll:area.scrollTop,text:textTop()};assert(Math.abs(after.scroll-before.scroll)<1&&Math.abs(after.text-before.text)<1,'Native reply entrance shifts transcript');replyStability.push({at,before,after});
+ }
+ const paneOverlap=[];
+ for(const opening of [true,false]){
+  const target=$('[data-message="320"]'),offset=()=>rect(target).top-rect(area).top,before=offset();motionAPI.revealReply(target,Date.now());
+  const effect=target.getAnimations({subtree:true}).find(a=>a.id==='reply-arrival');assert(effect,'Pane overlap reply missing');effect.pause();effect.currentTime=65;
+  (opening?$('#bot-details'):named($('#details-panel'),'Close bot center')).click();await sleep(40);await globalThis.__nativeReleaseReplay(motionMessages);effect.finish();await sleep(400);motionAPI.restoreChatPosition();
+  const after=offset();assert(Math.abs(after-before)<1,'Native pane/reply overlap shifts reading anchor');paneOverlap.push({opening,before,after});
+ }
+ motionAPI.chatScroll.follow=true;motionAPI.chatScroll.anchor=null;await globalThis.__nativeReleaseReplay(originalMessages);await sleep(100);
+ assert(prompt.textContent===draft,'Reply and pane motion changed draft');
  const heading=await wait(()=>$('.summary-progress-heading'),'owned task heading');heading.click();await sleep(350);
  assert(document.querySelectorAll('[data-task-commentary-block]').length===1,'Ordinary commentary is not one contiguous block');
  const savedRow=$('[data-message="20"]'),clock=savedRow.querySelector('.progress-update-time-toggle'),text=$('[data-message="4"] .message-text-content>p').firstChild;
@@ -57,5 +82,5 @@ try{
  const cersei=named($('#bots'),'Cersei');assert(cersei,'Second bot missing');cersei.click();await pixels(255);const switched=rect(win);assert(Math.abs(switched.width-p.width)<1&&Math.abs(switched.x-p.x)<1,'Bot switch lost shared placement');named($('#bots'),'Piper').click();await pixels(18);assert(prompt.textContent===draft,'Bot return lost draft');
  win.querySelector('.computer-popout-return').click();await wait(()=>$('.computer-popout-layer').hidden,'return hides float');assert($('#computer-panel').hidden,'Return opened side pane');await sleep(150);
  assert(errors.length===0,'Native page errors: '+errors.join(';'));
- await request('/fixture/report',{passed:true,platform:window.__KINDRED_DESKTOP.platform,userAgent:navigator.userAgent,nativeVersion:native.version,resources,disclosure,library:{paint,decodedSheetCount:2,inertRestored:true,stateRetained:true},popout:{realFramebuffer:true,aspect:r.width/r.height,trustedPointerDowns:trusted,placements,botSwitchPlacement:true,viewerSuspendRestore:true,returnPaneClosed:true,draftRetained:true,composerGap:composer.y-p.bottom},errors});
+ await request('/fixture/report',{passed:true,platform:window.__KINDRED_DESKTOP.platform,userAgent:navigator.userAgent,nativeVersion:native.version,resources,replyStability,paneOverlap,disclosure,library:{paint,decodedSheetCount:2,inertRestored:true,stateRetained:true},popout:{realFramebuffer:true,aspect:r.width/r.height,trustedPointerDowns:trusted,placements,botSwitchPlacement:true,viewerSuspendRestore:true,returnPaneClosed:true,draftRetained:true,composerGap:composer.y-p.bottom},errors});
 }catch(e){await request('/fixture/report',{passed:false,error:String(e),stack:e.stack,errors}).catch(()=>{});}

@@ -14,7 +14,7 @@ function isolateWindows(binary,root){
 const {attachComputerStream}=require('./computer-stream.cjs');
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 function args(argv){const a={};for(let i=0;i<argv.length;i+=2){assert(/^--[a-z-]+$/.test(argv[i])&&argv[i+1]);a[argv[i].slice(2)]=argv[i+1];}return a;}
-const hook='\nglobalThis.__nativeReleaseReplay=async messages=>{const e=conversationHistory("dm-piper");e.messages=messages;state.chatKey="";await renderChat(true,"cached");};\n';
+const hook='\nglobalThis.__nativeReleaseReplay=async messages=>{const e=conversationHistory("dm-piper");e.messages=messages;state.chatKey="";await renderChat(true,"cached");};\nglobalThis.__nativeReleaseChatMotion={revealReply,chatScroll,captureChatAnchor,restoreChatPosition};\n';
 const names=['app.js','computer-popout.js','computer-popout.css','bot-center.css','progress.css','style.css','index.html','characters.js'];
 function binding(source,commit){
  assert(/^[0-9a-f]{40}$/.test(commit));assert(execFileSync('git',['-C',source,'rev-parse','HEAD'],{encoding:'utf8'}).trim()===commit,'Source HEAD mismatch');
