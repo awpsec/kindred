@@ -41,7 +41,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   validate:
-    if: ${{ inputs.approve_runner_usage }}
+    if: ${{ inputs.approve_runner_usage && github.run_attempt == '1' }}
     timeout-minutes: ${{ inputs.validation_run_id && 5 || 15 }}
     env:
       CARGO_BUILD_JOBS: 2
@@ -81,6 +81,28 @@ jobs:
           run-id: ${{ inputs.validation_run_id || inputs.build_run_id }}
           name: mac-validation-${{ inputs.version }}-${{ matrix.target }}
           path: previous-validation
+      - name: Retrieve original native network evidence for the unchanged application
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.build_run_id }}
+          name: native-network-${{ inputs.version }}-${{ matrix.target }}
+          path: original-network
+      - name: Check original native network receipt identity
+        env:
+          PACKAGE_SOURCE: ${{ inputs.source_commit }}
+          PACKAGE_TARGET: ${{ matrix.target }}
+          BUILD_RUN: ${{ inputs.build_run_id }}
+        run: |
+          python - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          p = Path('original-network')
+          r = json.loads((p / 'network-validation.json').read_text())
+          assert r['source_commit'] == os.environ['PACKAGE_SOURCE'] and r['target'] == os.environ['PACKAGE_TARGET']
+          assert r['passed'] is True and r['exit_code'] == 0
+          (p / 'reuse-provenance.json').write_text(json.dumps({'original_run': int(os.environ['BUILD_RUN']), 'source_commit': r['source_commit'], 'new_network_execution': False}) + '\n')
+          PYCODE
       - name: Recover the preserved package without rebuilding or resigning
         if: ${{ inputs.preserved_package }}
         env:
@@ -146,6 +168,13 @@ jobs:
           name: native-ui-${{ inputs.version }}-${{ matrix.target }}
           path: native-ui-validation/
           if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve original native network evidence with reuse provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-network-${{ inputs.version }}-${{ matrix.target }}
+          path: original-network/
+          if-no-files-found: error
           retention-days: 7
       - name: Retain the unchanged package after successful validation
         if: ${{ success() && inputs.preserved_package && !inputs.repair_signature }}

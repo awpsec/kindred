@@ -5,6 +5,7 @@ async function wait(fn,label){const end=performance.now()+12000;while(performanc
 const $=s=>document.querySelector(s),rect=n=>n.getBoundingClientRect().toJSON();
 let fixtureNonce='';
 const request=(path,body)=>fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Kindred-Fixture':fixtureNonce},body:JSON.stringify(body)}).then(async r=>{const v=await r.json();assert(r.ok,v.error||path);return v;});
+const replay=async messages=>{await request('/fixture/replay',messages);await globalThis.__nativeReleaseReplay(messages);};
 const visible=n=>n&&n.getClientRects().length&&!n.closest('[hidden]');
 const named=(root,name)=>[...root.querySelectorAll('button')].find(n=>n.textContent.trim()===name||n.getAttribute('aria-label')===name);
 const hash=async b=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',b))].map(n=>n.toString(16).padStart(2,'0')).join('');
@@ -39,7 +40,7 @@ try{
  // compositor. The declared renderer hook only controls reply timing and data.
  const originalMessages=await(await fetch('/fixture/messages')).json();
  const motionMessages=Array.from({length:35},(_,i)=>({seq:300+i,sender:i%3?'piper':'user',kind:'message',created:1700000000+i,text:'Keep this paragraph still when a reply arrives and the pane opens. Read the wrapped lines without moving neighboring characters. '.repeat(3)}));
- await globalThis.__nativeReleaseReplay(motionMessages);await document.fonts.ready;await sleep(300);
+ await replay(motionMessages);await document.fonts.ready;await sleep(300);
  const motionAPI=globalThis.__nativeReleaseChatMotion,area=$('#content'),replyStability=[];
  for(const at of [0,65,120]){
   const target=$('[data-message="320"]'),neighbour=$('[data-message="321"]');
@@ -48,25 +49,25 @@ try{
   const before={scroll:area.scrollTop,text:textTop()};motionAPI.revealReply(target,Date.now());
   const effect=target.getAnimations({subtree:true}).find(a=>a.id==='reply-arrival');assert(effect,'Reply entrance missing in native engine: '+JSON.stringify(motionState()));effect.pause();effect.currentTime=at;motionAPI.captureChatAnchor();assert(motionAPI.chatScroll.anchor.key==='320','Native reading anchor precondition');
   effect.currentTime=160;motionAPI.restoreChatPosition();assert(Math.abs(textTop()-before.text)<1,'Native neighboring text moves during arrival');
-  effect.finish();await sleep(60);motionAPI.restoreChatPosition();await globalThis.__nativeReleaseReplay(motionMessages);
+  effect.finish();await sleep(60);motionAPI.restoreChatPosition();await replay(motionMessages);
   const after={scroll:area.scrollTop,text:textTop()};assert(Math.abs(after.scroll-before.scroll)<1&&Math.abs(after.text-before.text)<1,'Native reply entrance shifts transcript');replyStability.push({at,before,after});
  }
  const paneOverlap=[];
  for(const opening of [true,false]){
   const target=$('[data-message="320"]'),offset=()=>rect(target).top-rect(area).top,before=offset();motionAPI.revealReply(target,Date.now());
   const effect=target.getAnimations({subtree:true}).find(a=>a.id==='reply-arrival');assert(effect,'Pane overlap reply missing');effect.pause();effect.currentTime=65;
-  (opening?$('#bot-details'):named($('#details-panel'),'Close bot center')).click();await sleep(40);await globalThis.__nativeReleaseReplay(motionMessages);effect.finish();await sleep(400);motionAPI.restoreChatPosition();
+  (opening?$('#bot-details'):named($('#details-panel'),'Close bot center')).click();await sleep(40);await replay(motionMessages);effect.finish();await sleep(400);motionAPI.restoreChatPosition();
   const after=offset();assert(Math.abs(after-before)<1,'Native pane/reply overlap shifts reading anchor');paneOverlap.push({opening,before,after});
  }
- motionAPI.chatScroll.follow=true;motionAPI.chatScroll.anchor=null;await globalThis.__nativeReleaseReplay(originalMessages);await sleep(100);
+ motionAPI.chatScroll.follow=true;motionAPI.chatScroll.anchor=null;await replay(originalMessages);await sleep(100);
  assert(prompt.textContent===draft,'Reply and pane motion changed draft');
  const heading=await wait(()=>$('.summary-progress-heading'),'owned task heading');heading.click();await sleep(350);
  assert(document.querySelectorAll('[data-task-commentary-block]').length===1,'Ordinary commentary is not one contiguous block');
  const savedRow=$('[data-message="20"]'),clock=savedRow.querySelector('.progress-update-time-toggle'),text=$('[data-message="4"] .message-text-content>p').firstChild;
  clock.focus({preventScroll:true});getSelection().setBaseAndExtent(text,0,text,8);assert(document.activeElement===clock,'Focus precondition');
  let messages=await(await fetch('/fixture/messages')).json();const split=messages.slice();split.splice(split.findIndex(m=>m.seq===11),0,{seq:10.5,sender:'user',kind:'message',text:'Intervening user record',created:messages[0].created+25});
- await globalThis.__nativeReleaseReplay(split);assert($('[data-message="20"]')===savedRow&&document.activeElement===clock,'Split loses retained row or focused clock');assert(getSelection().toString()==='Update 4','Split loses selected prose');
- await globalThis.__nativeReleaseReplay(messages);assert(document.activeElement===clock&&getSelection().toString()==='Update 4','Merge loses focus/selection');
+ await replay(split);assert($('[data-message="20"]')===savedRow&&document.activeElement===clock,'Split loses retained row or focused clock');assert(getSelection().toString()==='Update 4','Split loses selected prose');
+ await replay(messages);assert(document.activeElement===clock&&getSelection().toString()==='Update 4','Merge loses focus/selection');
  heading.click();await sleep(350);assert(document.activeElement===heading,'Collapse does not return focus to owning header');assert(prompt.textContent===draft,'Disclosure changed draft');
  const disclosure={splitMergeFocus:true,selection:true,rowIdentity:true,collapseFocus:true,draftRetained:true,blockCount:document.querySelectorAll('[data-task-commentary-block]').length};
  $('#bot-details').click();const panelHeading=await wait(()=>$('#details-panel>.bot-center-heading'),'bot pane');panelHeading.querySelector('[data-tab=library]').click();

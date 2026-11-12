@@ -46,9 +46,10 @@ async function run(a){
   messages=withSharedArtifact(messages,artifact,run);const fixtureRequests=[];
   server.on('request',async(req,res)=>{const n=new URL(req.url,'http://127.0.0.1').pathname;fixture.securityHeaders(req,res);const send=(v,code=200)=>{res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(v));};
    try{
-    if(['/fixture/report','/fixture/input'].includes(n)){
+    if(['/fixture/report','/fixture/input','/fixture/replay'].includes(n)){
      assert(req.headers['x-kindred-fixture']===manifest.fixtureNonce,'Owned fixture nonce required');
      let body='';for await(const b of req){body+=b;if(body.length>128*1024)throw Error('Fixture body cap');}const value=JSON.parse(body);
+     if(n==='/fixture/replay'){assert(Array.isArray(value)&&value.length<=1000&&value.every(m=>Number.isFinite(m.seq)&&m.seq>0&&m.seq<=Number.MAX_SAFE_INTEGER&&typeof m.sender==='string'&&typeof m.kind==='string'),'Invalid replay messages');messages=value;fixtureRequests.push('replay');return send({ok:true});}
      if(n==='/fixture/report'){assert(!report,'Duplicate terminal report');report=value;return send({ok:true});}
      assert(child&&child.exitCode===null&&!timeout,'Owned app not running');assert(inputs.length<8,'Native input request cap');
      assert(Object.keys(value).sort().join(',')==='kind,tx,ty,vh,vw,x,y');assert(['click','drag'].includes(value.kind));for(const k of ['x','y','tx','ty','vw','vh'])assert(Number.isFinite(value[k]));assert(value.vw>100&&value.vw<4000&&value.vh>100&&value.vh<3000);for(const [x,y]of [[value.x,value.y],[value.tx,value.ty]])assert(x>=0&&x<value.vw&&y>=0&&y<value.vh);
