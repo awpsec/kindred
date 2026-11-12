@@ -1,3 +1,4 @@
+import {prepareActivityCarousels,syncActivityCarousels,revealActivityItem,activityArrow} from './activity-carousel.js';
 import {createDocumentReview} from './document-review.js';
 import {createNametagStatus} from './nametag-status.js';
 import {nativeFileDelivery,responseFileBlob,fileDownload} from './file-downloads.js';
@@ -11,7 +12,7 @@ import {transcriptAttachments} from './transcript-attachments.js';
 import {mobileSession,mobileConversationKey,mobileRequestedChat,mobileRequestedEvent,installMobileNavigation} from './mobile.js';
 import {createServerUpdater} from './server-update.js';
 import {settingsHeaderArt} from './settings-header-art.js';
-import {workspaceArtifactCard,artifactStudio,artifactUpdateRow,artifactUpdateBatches} from './workspace-artifacts.js';
+import {workspaceArtifactCard,artifactStudio,artifactUpdateRow} from './workspace-artifacts.js';
 import {groupActivity,transitionGroupActivity,visibleGroupWorkers,sharedConversationWorkers} from './group-activity.js';
 import { decisionReceipt, decisionText, readableDecision } from './decision-receipts.js';
 import {installThemedSelects} from "./select-menu.js";
@@ -5518,7 +5519,7 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
     entry.taskTerminalRuns.set(terminalKey,terminal||{id:currentRunId,status:['completed','failed','cancelled','interrupted'].includes(run?.status)?run.status:phaseFinal?'completed':run?.status,ended:phaseFinal?.created||endedEvent?.created||activity?.last_at||items.at(-1).created});
     while(entry.taskTerminalRuns.size>CHAT_WINDOW_SIZE)entry.taskTerminalRuns.delete(entry.taskTerminalRuns.keys().next().value);
   }
-  if(finished&&!terminal){entry.progressOpen.delete(key);entry.progressClosed.delete(key);}
+  // A terminal update must not close history the reader explicitly opened.
   // A persisted marker retains a compact completion receipt without inventing stages.
   const group=node('article','summary-progress task-activity '+(staged?'task-staged':'task-compact')+(brief?' brief-progress':' task-gather'));group.dataset.message=String(first.seq);group.dataset.scrollMessages=items.map(m=>String(m.seq)).join(' ');group.dataset.progressGroup=key;group.dataset.progressFinished=String(finished);
   if(first.projectedProgress){group.dataset.message='progress:'+key;group.dataset.scrollMessages=items.filter(m=>!m.projectedProgress).map(m=>String(m.seq)).join(' ');}
@@ -5528,6 +5529,7 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   const details=node('details','summary-progress-disclosure');details.open=completing||manual||(staged&&!finished&&!entry.progressClosed.has(key));
   const title=node('summary','summary-progress-heading'),bot=state.bots.find(b=>b.id===first.sender);
   const chevron=node('span','summary-progress-chevron','⌄');chevron.setAttribute('aria-hidden','true');title.append(chevron);
+  if(bot)group.style.setProperty('--activity-bot-color',portrait(bot).color||'var(--line)');
   if(bot&&!brief){
     // A completed receipt belongs to this task, not the bot's next activity.
     const avatar=finished?character({...portrait(bot),animated:false},32):buddy(bot,32);
@@ -5572,14 +5574,6 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   scheduleProgressCompletion(group,completing);
   return group;
 }
-function reminderBatch(messages,entry){
-  const first=messages[0],records=first.planning_batch||messages.map(m=>m.planning),key=first.planning.batch_id;
-  entry.reminderPages??=new Map();const remembered=entry.reminderPages.get(key),index=Math.max(0,records.findIndex(r=>r.id===remembered)),root=node('section','reminder-batch'),slot=node('div');
-  const bar=node('div','notice-pager'),page=node('span','muted small');let current=index;
-  const paint=()=>{const focus=bar.contains(document.activeElement)?document.activeElement:null;const r=records[current];entry.reminderPages.set(key,r.id);page.textContent=(current+1)+' / '+records.length;const card=reminderCard(r);(card.querySelector('.reminder-schedule')||card).append(bar);slot.replaceChildren(card);focus?.focus({preventScroll:true});};
-  const step=delta=>{current=(current+delta+records.length)%records.length;paint();};
-  bar.append(iconButton('chevron','Previous reminder',()=>step(-1)),page,iconButton('chevron','Next reminder',()=>step(1)));root.append(slot);paint();return root;
-}
 async function dismissReminder(reminder,feedback,focusedCard=null){
   const saved=await planningPatch('reminders',reminder,{dismiss:true},feedback,async saved=>{
     const animations=[];
@@ -5604,6 +5598,19 @@ async function dismissReminder(reminder,feedback,focusedCard=null){
     if(receipt){receipt.tabIndex=-1;receipt.focus({preventScroll:true});}
   }
   return saved;
+}
+function reminderReceipt(reminder,delivered,entry){
+  entry.reminderDetails??=new Set();
+  const status=reminder.dismissed_at?'Dismissed':({cancelled:'Cancelled',paused:'Paused',delivered:'Delivered'}[reminder.status]||'');
+  const details=node('details','activity-reminder'),heading=node('summary','activity-reminder-heading'),back=node('span','activity-reminder-back');
+  back.append(activityArrow(-1));
+  heading.append(back,icon('bell',18),node('span','activity-reminder-title',reminder.message),node('span','activity-reminder-when',(status?status+' · ':'')+reminderWhen(reminder).label));
+  details.dataset.reminderStatus=status.toLowerCase();
+  heading.setAttribute('aria-label',(status?status+' reminder: ':'Reminder: ')+reminder.message+', '+reminderWhen(reminder).full);
+  const body=node('div','activity-reminder-body');body.append(reminderCard(reminder,delivered));
+  details.open=entry.reminderDetails.has(reminder.id);details.append(heading,body);animateChatDisclosure(details,body);
+  heading.addEventListener('click',()=>{const opening=!details.open||details.classList.contains('is-collapsing');opening?entry.reminderDetails.add(reminder.id):entry.reminderDetails.delete(reminder.id);},{capture:true});
+  return details;
 }
 function reminderCard(reminder,delivered=false){
   if(reminder.dismissed_at){
@@ -6442,7 +6449,12 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       ),
     );
     area.append(empty);
-    reconcileConversation(liveArea,area,mode==='sync'&&!entry.historyChanged);entry.historyChanged=false;
+    const restoreActivityFocus=prepareActivityCarousels(liveArea);
+  const animateActivity=mode==='sync'&&!entry.historyChanged;
+  reconcileConversation(liveArea,area,animateActivity);
+  syncActivityCarousels(liveArea,entry,{motion:motionAllowed,animate:animateActivity,following:()=>chatScroll.follow,onNavigate:(row,offset)=>{
+    chatScroll.follow=false;chatScroll.anchor={key:row.dataset.message,offset};restoreChatPosition();
+  }});restoreActivityFocus();entry.historyChanged=false;
     endChatRender();
     return;
   }
@@ -6473,7 +6485,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   const remainingAttachments=files=>(files||[]).filter(file=>{if(attachmentPlan.projected.has(file.id)||fallbackAttachments.has(file.id))return false;fallbackAttachments.add(file.id);return true;});
   const transcript=data.messages.flatMap((m,i)=>[...(attachmentPlan.rows.get(i)||[]).map(attachment=>({kind:'shared_attachment',text:'Shared file',attachment})),m]);
   transcript.push(...(attachmentPlan.rows.get(data.messages.length)||[]).map(attachment=>({kind:'shared_attachment',text:'Shared file',attachment})));
-  const batches=connectorBatches(transcript,boundary,runs),artifactBatches=artifactUpdateBatches(transcript),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages,entry),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
+  const batches=connectorBatches(transcript,boundary,runs),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages,entry),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
   // A run/bot pair must name exactly one persisted task. Ambiguous or absent
   // ownership keeps the standalone status instead of hiding unrelated work.
   const taskOwners=new Map();
@@ -6487,6 +6499,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     const key=taskOwners.get(JSON.stringify([wait.parent_run_id,wait.requester_bot_id]));
     if(key&&state.bots.some(b=>b.id===wait.bot_id)){const waits=waitGroups.get(key)||[];waits.push(wait);waitGroups.set(key,waits);}
   }
+  for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
   const taskTrackers=new Map([...summaries].map(([key,items])=>[key,summaryProgress(items,entry,runs,waitGroups.get(key),(runId,botId,group)=>taskOwners.get(JSON.stringify([runId,botId]))===group)]));
   const ownedWaits=new Set([...taskTrackers.values()].flatMap(t=>t._progressWaits||[]));
   const workerTask=run=>{
@@ -6497,7 +6510,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   // precedes its marker. Keep the marker identity and every message in order.
   const trackerAnchors=new Map(),anchoredTasks=new Set();
   for(const m of transcript){const key=m.progress?.group_id;if(!anchoredTasks.has(key)&&summaries.get(key)?.includes(m)){trackerAnchors.set(m.seq,taskTrackers.get(key));anchoredTasks.add(key);}}
-  for(const m of data.messages)if(m.kind==='reminder_card'&&m.planning?.batch_id){const key=m.planning.batch_id,items=reminderGroups.get(key)||[];items.push(m);reminderGroups.set(key,items);}
+
   for (const m of transcript) {
     if(m.kind==='voice_call'){const receipt=node('div','voice-call-receipt');receipt.dataset.message=String(m.seq);receipt.append(icon('phone',14),node('span','',m.text));area.append(receipt);previousSender=null;continue;}
     if(m.kind==='shared_attachment'){
@@ -6543,14 +6556,8 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       area.append(group);previousSender=null;continue;
     }
     if(m.workspace_artifact&&m.artifact_action==='updated'){
-      const batch=artifactBatches.get(m.seq),group=node('article','message-group artifact-update-message');group.dataset.message=String(m.seq);
-      const options={baseUrl:state.status.public_url||location.origin};
-      if(batch){group.dataset.scrollMessages=batch.map(item=>item.seq).join(' ');for(const item of batch)stacked.add(item.seq);const details=node('details','artifact-update-stack'),summary=node('summary');
-        entry.openArtifactStacks??=new Set();details.open=batch.some(item=>entry.openArtifactStacks.has(String(item.seq)));
-        summary.append(artifactUpdateRow(batch.at(-1).workspace_artifact,{...options,label:batch.length+' artifact updates ·'}));
-        const body=node('div','artifact-update-stack-body');for(const item of batch)body.append(artifactUpdateRow(item.workspace_artifact,options));
-        details.append(summary,body);details.addEventListener('toggle',()=>{if(details.isConnected){for(const item of batch){if(details.open)entry.openArtifactStacks.add(String(item.seq));else entry.openArtifactStacks.delete(String(item.seq));}}});group.append(details);
-      }else group.append(artifactUpdateRow(m.workspace_artifact,options));
+      const group=node('article','message-group artifact-update-message');group.dataset.message=String(m.seq);
+      group.append(artifactUpdateRow(m.workspace_artifact,{baseUrl:state.status.public_url||location.origin}));
       area.append(group);previousSender=null;continue;
     }
     if(m.workspace_artifact){const group=node('article','message-group');group.dataset.message=String(m.seq);group.append(workspaceArtifactCard(m.workspace_artifact,{api,markdown,baseUrl:state.status.public_url||location.origin}));area.append(group);previousSender=null;continue;}
@@ -6562,11 +6569,17 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
       area.append(attachTaskReview(batch?connectorStack(batch,entry):connectorMessage(m,id),reviewGroup,taskTrackers,['pending','changes_requested'].includes(m.connector_artifact.status)));previousSender=null;continue;
     }
     if (m.planning) {
-      const group=node('article','message-group planning-message');group.dataset.message=String(m.seq);
-      const batch=m.kind==='reminder_card'&&m.planning.batch_id&&reminderGroups.get(m.planning.batch_id);
-      if(batch&&(m.planning_batch?.length||batch.length)>1){for(const item of batch)stacked.add(item.seq);group.dataset.scrollMessages=batch.map(item=>item.seq).join(' ');group.append(reminderBatch(batch,entry));}
-      else group.append(m.kind==='checklist'?checklistCard(m.planning):reminderCard(m.planning,m.kind==='reminder'));
-      area.append(group);previousSender=null;continue;
+      const batch=m.kind==='reminder_card'&&m.planning.batch_id?reminderGroups.get(m.planning.batch_id):undefined;
+      if(batch)for(const item of batch)stacked.add(item.seq);
+      const records=m.kind==='checklist'||m.kind==='reminder'?[m.planning]:(m.planning_batch?.length?m.planning_batch:batch?.map(item=>item.planning)||[m.planning]);
+      for(const [index,record] of records.entries()){
+        const group=node('article','message-group planning-message');group.dataset.message=index?String(m.seq)+':'+record.id:String(m.seq);group.dataset.scrollMessages=String(m.seq);
+        const original=batch?.find(item=>item.planning.id===record.id);if(original)group.dataset.message=String(original.seq);else if(batch)group.dataset.message=String(m.seq)+':'+record.id;
+        if(m.kind==='checklist')group.append(checklistCard(record));
+        else {group.dataset.reminderRevision=String(record.revision||0);group.dataset.activityKey=m.kind+':'+record.id;group.classList.add('activity-reminder-message');group.append(reminderReceipt(record,m.kind==='reminder',entry));}
+        area.append(group);
+      }
+      previousSender=null;continue;
     }
     if (m.kind === 'workspace_import' && m.workspace_import) {
       const group=node('article','message-group');group.dataset.message=String(m.seq);group.append(workspaceUI.card(m.workspace_import));area.append(group);previousSender=null;continue;
@@ -6849,7 +6862,12 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     area.insertBefore(group,anchor||null);
   }
   groupTaskCommentary(area);
-  reconcileConversation(liveArea,area,mode==='sync'&&!entry.historyChanged);entry.historyChanged=false;
+  const restoreActivityFocus=prepareActivityCarousels(liveArea);
+  const animateActivity=mode==='sync'&&!entry.historyChanged;
+  reconcileConversation(liveArea,area,animateActivity);
+  syncActivityCarousels(liveArea,entry,{motion:motionAllowed,animate:animateActivity,following:()=>chatScroll.follow,onNavigate:(row,offset)=>{
+    chatScroll.follow=false;chatScroll.anchor={key:row.dataset.message,offset};restoreChatPosition();
+  }});restoreActivityFocus();entry.historyChanged=false;
   const artifactTurns=data.messages.filter(m=>m.sender==='user'||m.mine===true||(chat.shared&&chat.participants?.some(p=>p.id===m.sender&&p.kind==='person'))).map(m=>String(m.seq));
   for(const card of liveArea.querySelectorAll('[data-workspace-artifact]'))card.advanceArtifactTurns?.(artifactTurns);
   for(const [seq,at] of entry.replyArrivals){
@@ -6893,6 +6911,15 @@ function groupTaskCommentary(area){
 }
 const conversationRenderSignatures=new WeakMap();
 function conversationSignature(node){
+  if(node.classList.contains('activity-reminder-message')){
+    // Open/closed is reader state, not a new reminder. Keep the header, focus
+    // and in-flight reveal through polling; a changed record revision still
+    // replaces its action closures with the current server revision.
+    const copy=node.cloneNode(true);copy.classList.remove('activity-receipt');
+    delete copy.dataset.activityHidden;delete copy.dataset.activityItem;
+    for(const details of copy.querySelectorAll('details')){details.removeAttribute('open');details.classList.remove('is-collapsing');}
+    return copy.outerHTML;
+  }
   if(node.classList.contains("group-activity"))return node.dataset.activitySignature;
   if(!node.querySelector('[data-connector-artifact],.connector-call,[data-file-signature],[data-visual-signature],[data-decision-signature],[data-shard-signature]'))return node.outerHTML;
   const connectors=[...node.querySelectorAll('[data-connector-artifact]')].map(connectorCardSignature);
@@ -6980,6 +7007,7 @@ function retainConversationSelection(target){
 // deck while the real, readable receipt is already at its final geometry.
 function prepareGatherSettlement(group,next,animate){
   if(next.dataset.progressFinished!=='true'){group.finishGatherSettlement?.();return ()=>{};}
+  if(group.classList.contains('activity-receipt'))return ()=>{};
   if(!animate||group.dataset.progressFinished!=='false'||!group.classList.contains('task-gather')||!motionAllowed()||!chatScroll.follow)return ()=>{};
   const heading=group.querySelector('.summary-progress-heading'),before=heading.getBoundingClientRect();
   if(before.bottom<0||before.top>innerHeight)return ()=>{};
@@ -7017,6 +7045,7 @@ function preserveProgressGroup(previous,next,animate=true){
   details.refreshDisclosure?.();
   if(restarting&&!details.open&&next.querySelector('details').open)details.querySelector('summary').onclick({preventDefault(){}});
   cancelProgressCompletion(next);
+  previous.style.setProperty('--activity-bot-color',next.style.getPropertyValue('--activity-bot-color'));
   previous._progressEntry=next._progressEntry;previous._progressRunId=next._progressRunId;
   scheduleProgressCompletion(previous,next._progressCompleting);
   settle();
@@ -9208,6 +9237,14 @@ $('content').addEventListener('click',e=>{
   if(chatOpening||!e.target.closest('summary,button[aria-expanded]'))return;
   if(e.target.closest('.message-expand')){chatScroll.disclosure=null;chatScroll.disclosureSummary=null;chatScroll.follow=false;captureChatAnchor();return;}
   const area=$('content');
+  const receipt=e.target.closest('.activity-receipt');
+  if(receipt){
+    // Opening a carousel page is a reading action. Pin its actual header,
+    // rather than pulling it upward to keep the expanded history at bottom.
+    chatScroll.follow=false;chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
+    chatScroll.anchor={key:receipt.dataset.message,offset:receipt.getBoundingClientRect().top-area.getBoundingClientRect().top};
+    chatScroll.top=area.scrollTop;return;
+  }
   const continuing=chatScroll.follow&&chatScroll.disclosureSummary===e.target.closest('summary,button[aria-expanded]');
   chatScroll.follow=continuing||!chatHistory.get(currentConversationId())?.hasAfter&&area.scrollHeight-area.scrollTop-area.clientHeight<80;
   chatScroll.disclosure=chatScroll.follow?e.target.closest('[data-message],[data-run]'):null;
@@ -10204,6 +10241,7 @@ async function jumpToMessage(chatId,seq){
     target=find();
   }
   if(!target){notice('The original message is unavailable.',true);return;}
+  revealActivityItem(target);
   const progressKey=target.closest('[data-task-commentary]')?.dataset.taskCommentary||target.closest('[data-task-commentary-block]')?.dataset.taskCommentaryBlock;
   if(progressKey){
     const group=$('content').querySelector('[data-progress-group="'+CSS.escape(progressKey)+'"]');

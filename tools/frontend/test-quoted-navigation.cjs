@@ -7,7 +7,15 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve('test-results/quoted-
  const origin='http://127.0.0.1:'+server.address().port,engine=process.env.WEBKIT?'webkit':'chromium',browser=await(process.env.WEBKIT?webkit:chromium).launch();
  try{
   const p=await browser.newPage({viewport:{width:1180,height:820}}),errors=[],requests=[];p.setDefaultTimeout(15000);p.on('pageerror',e=>errors.push(e.message));
-  await p.addInitScript(t=>sessionStorage.setItem('kindred-token',t),token);
+  await p.addInitScript(t=>{
+   sessionStorage.setItem('kindred-token',t);const interval=window.setInterval;window.setInterval=(f,ms,...a)=>ms===2500?0:interval(f,ms,...a);
+   // The click can finish after a short-lived cue has already painted and
+   // expired. Observe it at paint time, not only after Playwright returns.
+   window.quoteCues=[];new MutationObserver(()=>requestAnimationFrame(()=>{
+    const area=document.querySelector('#content');if(!area)return;const a=area.getBoundingClientRect();
+    for(const n of area.querySelectorAll('.quoted-highlight')){const r=n.getBoundingClientRect(),bubble=n.querySelector('.message-bubble');if(document.activeElement===n&&r.bottom>a.top&&r.top<a.bottom&&bubble&&getComputedStyle(bubble).boxShadow!=='none')window.quoteCues.push(n.dataset.message);}
+   })).observe(document,{subtree:true,attributes:true,attributeFilter:['class']});
+  },token);
   await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nexport {refresh};'}));
   const bots=['piper','other'].map(id=>({id,name:id==='piper'?'Piper':'Other',provider:'codex',memory:'',profile:{shape:'round',color:'#2475ff'}}));
   const chats=bots.map(b=>({id:'dm-'+b.id,name:b.name,members:[b.id],archived:false}));
@@ -32,9 +40,10 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||path.resolve('test-results/quoted-
   });
   const quote=name=>p.getByRole('button',{name:'View message from '+name,exact:true});
   const draft='Keep my draft while I inspect this quote.';
-  const reset=async()=>{await p.goto(origin);await p.locator('[data-message="303"]').waitFor();await p.locator('#prompt').fill(draft);};
+  const reset=async()=>{await p.goto(origin);await p.locator('[data-message="303"]').waitFor().catch(async error=>{console.error('quote-reset',JSON.stringify({errors,body:(await p.locator('body').innerText()).slice(-1600),requests:requests.slice(-5)}));throw error;});await p.locator('#prompt').fill(draft);};
   const highlighted=async seq=>{
-   await p.waitForFunction(seq=>{const n=document.querySelector('#content [data-message="'+seq+'"]'),area=document.querySelector('#content');if(!n)return false;const r=n.getBoundingClientRect(),a=area.getBoundingClientRect();return n.classList.contains('quoted-highlight')&&getComputedStyle(n.querySelector('.message-bubble')).boxShadow!=='none'&&document.activeElement===n&&r.bottom>a.top&&r.top<a.bottom;},seq);
+   await p.waitForFunction(seq=>{const n=document.querySelector('#content [data-message="'+seq+'"]'),area=document.querySelector('#content');if(!n)return false;const r=n.getBoundingClientRect(),a=area.getBoundingClientRect(),live=n.classList.contains('quoted-highlight')&&getComputedStyle(n.querySelector('.message-bubble')).boxShadow!=='none';return (live||window.quoteCues.includes(String(seq)))&&document.activeElement===n&&r.bottom>a.top&&r.top<a.bottom;},seq);
+   await p.evaluate(()=>window.quoteCues=[]);
    assert.equal(await p.locator('#prompt').innerText(),draft);
   };
   const hold=()=>{

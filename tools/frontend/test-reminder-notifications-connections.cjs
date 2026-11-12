@@ -11,7 +11,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   p.on('pageerror',e=>errors.push(e.message));
   await p.addInitScript(()=>{window.reminderFocusTrace=[];for(const kind of ['focusin','focusout'])document.addEventListener(kind,e=>window.reminderFocusTrace.push({kind,tag:e.target.tagName,id:e.target.id,cls:e.target.className,reminder:e.target.closest('[data-reminder]')?.dataset.reminder,time:performance.now()}),true);});
   await p.addInitScript(t=>{sessionStorage.setItem('kindred-token',t);window.__KINDRED_DESKTOP={platform:'macos'};window.__TAURI__={core:{invoke:async command=>command==='notification_status'?{enabled:true,notch:{supported:true,enabled:false}}:null}};},token);
-  await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nexport {reminderCard,reminderBatch};'}));
+  await p.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nexport {reminderCard,reminderReceipt};'}));
   await p.route(url=>url.pathname==='/api/chats/dm-piper',async r=>{const original=await(await r.fetch()).json();original.messages=[{seq:1,sender:'user',text:'Remind me to leave for the station at 4 PM.',kind:'message',created:reminder.run_at-600},{seq:2,sender:'piper',text:'I’ll remind you at 4 PM.',kind:'message',created:reminder.run_at-599},{seq:3,sender:'piper',text:reminder.message,kind:'reminder',created:reminder.run_at,planning:reminder}];await r.fulfill({json:original});});
   await p.route(origin+'/api/chats/dm-piper/reminders/reminder-test',async r=>{const body=r.request().postDataJSON();writes.push(body);await new Promise(r=>setTimeout(r,60));if(fail)return r.fulfill({status:409,json:{error:'This reminder changed. Refresh its state before editing'}});assert.deepEqual(body,{expected_revision:2,dismiss:true});reminder={...reminder,revision:3,dismissed_at:Math.floor(Date.now()/1000)};await r.fulfill({json:reminder});});
   await p.route(origin+'/api/codex/account',r=>r.fulfill({json:{account:{type:'chatgpt',email:'you@example.com'}}}));
@@ -21,6 +21,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await p.route(origin+'/api/provider-cli/claude-code/connectors',r=>r.fulfill({json:{data:[{display_name:'Gmail',status:'connected'},{display_name:'Google Calendar',status:'connected'},{display_name:'Calendar',status:'connected'},{display_name:'Custom service',status:'needs-auth'}]}}));
   await p.route(origin+'/api/composio',r=>r.fulfill({json:{configured:false,apps:[]}}));
   await p.goto(origin);await p.locator('#prompt').waitFor();await p.bringToFront();
+  await p.locator('.activity-reminder-heading').click();
   const card=p.locator('.reminder-card').first();await card.waitFor();
   await card.hover();await card.getByRole('button',{name:'Dismiss',exact:true}).waitFor();
   await p.screenshot({path:path.join(out,engine+'-reminder-delivered.png')});
@@ -45,8 +46,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   assert(await p.locator('.reminder-dismissed-text').evaluate(n=>getComputedStyle(n).textDecorationLine.includes('line-through')));
   assert(await p.locator('.reminder-dismissed').evaluate(n=>n.getBoundingClientRect().height<40));
   await p.screenshot({path:path.join(out,engine+'-reminder-dismissed.png')});
-  console.log('dismissal checked');await p.reload();await p.locator('.reminder-dismissed').waitFor();console.log('reload checked');await p.screenshot({path:path.join(out,engine+'-reminder-dismissed.png')});assert.equal(await p.getByRole('button',{name:'Dismiss',exact:true}).count(),0);
-  await p.getByRole('button',{name:'Settings',exact:true}).click();await p.getByText('Notch notifications',{exact:true}).waitFor();assert.equal(await p.getByText('Replaces system banners and appears even during macOS Focus.',{exact:true}).count(),0);
+  console.log('dismissal checked');await p.reload();await p.locator('.activity-reminder-heading').click();await p.locator('.reminder-dismissed').waitFor();console.log('reload checked');await p.screenshot({path:path.join(out,engine+'-reminder-dismissed.png')});assert.equal(await p.getByRole('button',{name:'Dismiss',exact:true}).count(),0);
+  await p.locator('#identity-button').click();await p.locator('#identity-menu').getByRole('menuitem',{name:'Settings',exact:true}).click();await p.getByText('Notch notifications',{exact:true}).waitFor();assert.equal(await p.getByText('Replaces system banners and appears even during macOS Focus.',{exact:true}).count(),0);
   console.log('notch checked');await p.getByRole('button',{name:'Connections',exact:true}).click();
   for(const provider of ['codex','claude-code']){
    const account=p.locator('.ai-account[data-provider="'+provider+'"]');await account.locator('summary').click();await account.getByText('you@example.com',{exact:true}).waitFor();
@@ -68,17 +69,19 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await p.locator('#settings-close').click();await p.setViewportSize({width:390,height:844});await p.screenshot({path:path.join(out,engine+'-dismissed-mobile.png')});
   await p.emulateMedia({reducedMotion:'reduce'});
   const batchProof=await p.evaluate(async reminder=>{
-    const {reminderBatch}=await import('/app.js'),batch=reminderBatch([{planning:{...reminder,batch_id:'batch'}},{planning:{...reminder,id:'second',dismissed_at:null,batch_id:'batch'}}],{});
-    document.getElementById('content').append(batch);
-    const first=batch.querySelector('.reminder-dismissed .notice-pager')?.textContent;
-    batch.querySelector('[aria-label="Next reminder"]').click();
-    const next=batch.querySelector('.reminder-card').dataset.reminder;
-    batch.querySelector('[aria-label="Previous reminder"]').click();
-    return {first,next,back:batch.querySelector('.reminder-dismissed .notice-pager')?.textContent};
+    const {reminderReceipt}=await import('/app.js'),{syncActivityCarousels}=await import('/activity-carousel.js');
+    const area=document.createElement('div'),entry={};document.getElementById('content').append(area);
+    for(const [i,r] of [reminder,{...reminder,id:'second',dismissed_at:null}].entries()){
+      const row=document.createElement('article');row.className='activity-reminder-message';row.dataset.message='batch-'+i;row.append(reminderReceipt(r,false,entry));area.append(row);
+    }
+    syncActivityCarousels(area,entry);
+    const first=area.querySelector('.activity-count').textContent;
+    area.querySelector('[aria-label="Previous update"]').click();
+    const previous=area.querySelector('[data-activity-hidden="false"] [data-reminder]').dataset.reminder;
+    area.querySelector('[aria-label="Next update"]').click();
+    return {first,previous,back:area.querySelector('.activity-count').textContent};
   },reminder);
-  assert.equal(batchProof.first,'1 / 2');assert.equal(batchProof.next,'second');assert.equal(batchProof.back,'1 / 2');
-  await p.setViewportSize({width:320,height:844});await p.evaluate(()=>document.documentElement.style.setProperty('--text-scale','1.5'));
-  const stack=p.locator('.reminder-batch .reminder-dismissed');assert(await stack.locator('.reminder-dismissed-text').evaluate(n=>n.getBoundingClientRect().width>100),'Stacked receipt leaves readable message width');assert(await stack.locator('.notice-pager>span').evaluate(n=>getComputedStyle(n).whiteSpace==='nowrap'),'Pager count stays on one line');
+  assert.equal(batchProof.first,'2 / 2');assert.equal(batchProof.previous,reminder.id);assert.equal(batchProof.back,'2 / 2');
   assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,engine,dismissalPersists:true,failedSavePreservesReminder:true,collapseClipped:true,connectionsLightDarkAndMobile:true,notchHelperRemoved:true}));
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

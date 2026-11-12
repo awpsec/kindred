@@ -1,7 +1,7 @@
 const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
 const {server,token}=require('./fixtures/desktop.cjs');
 const assert=require('node:assert/strict');
-const artifactMode=!!process.env.ARTIFACT_STACK,summary=artifactMode?'.artifact-update-stack > summary':'.connector-stack-summary';
+const artifactMode=!!process.env.ARTIFACT_STACK,summary=artifactMode?'.artifact-update-message[data-activity-hidden="false"] .artifact-update-row':'.connector-stack-summary';
 (async()=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
  const engine=process.env.WEBKIT?'webkit':'chromium',browser=await(process.env.WEBKIT?webkit:chromium).launch({headless:true});
