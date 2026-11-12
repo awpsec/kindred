@@ -890,9 +890,9 @@ function updateWorkLabel(label) {
 }
 function clientFocused(){return document.hasFocus()||(window.__KINDRED_MOBILE_PLATFORM==='ios'&&window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true);}
 const chatMotionReduced=()=>document.hidden||!clientFocused()||document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches;
-const REPLY_ARRIVAL_MS=240;
+const REPLY_ARRIVAL_MS=240, PROGRESS_ARRIVAL_MS=220;
 function prepareChatPresentation(entry,runs,messages,mode) {
-  entry.replyArrivals??=new Map();
+  entry.replyArrivals??=new Map();entry.progressArrivals??=new Map();
   const sameView=state.renderedChatId===entry.id,now=Date.now();
   const animate=sameView && !entry.hasAfter && chatScroll.follow && !chatMotionReduced();
   const candidates=runs.filter(r=>r.chat_id===entry.id && (active(r)||r.status==='queued'));
@@ -915,8 +915,12 @@ function prepareChatPresentation(entry,runs,messages,mode) {
     // a second empty row behind it.
   }
   entry.workingRuns=new Map(workers.map(r=>[r.id,r]));
-  if(animate && mode==='sync' && entry.renderedIds)for(const m of messages)
-    if(!entry.renderedIds.has(m.seq) && m.created>=entry.latestRenderedTime && ordinaryMessageArrival(m))entry.replyArrivals.set(m.seq,now);
+  if(animate && mode==='sync' && entry.renderedIds)for(const m of messages){
+    if(entry.renderedIds.has(m.seq)||m.created<entry.latestRenderedTime)continue;
+    if(ordinaryMessageArrival(m))entry.replyArrivals.set(m.seq,now);
+    else if(!entry.historyChanged&&m.kind==='assistant'&&isProgressMember(m)&&!m.approval&&!m.question)entry.progressArrivals.set(m.seq,now);
+  }
+  for(const [seq,at] of entry.progressArrivals)if(now-at>=PROGRESS_ARRIVAL_MS||!animate||mode!=='sync'||entry.historyChanged)entry.progressArrivals.delete(seq);
   for(const [seq,at] of entry.replyArrivals)if(now-at>=REPLY_ARRIVAL_MS || !animate)entry.replyArrivals.delete(seq);
   entry.renderedIds=new Set(messages.map(m=>m.seq));entry.latestRenderedTime=Math.max(0,...messages.map(m=>m.created));
   return workers;
@@ -937,6 +941,16 @@ function revealReply(group,at) {
   const effect=group.animate([{transform:'translateY(12px)'},{transform:'translateY(0)'}],{duration:REPLY_ARRIVAL_MS,easing:'cubic-bezier(.23,1,.32,1)',fill:'both'});
   effect.currentTime=elapsed;
   trackMotion(effect,REPLY_ARRIVAL_MS-elapsed,()=>group.classList.remove('reply-arriving'));
+}
+// Animate the painted row, not its measured transcript wrapper. Reading
+// anchors and layout height therefore stay fixed throughout the entrance.
+function revealProgressNote(group,at){
+  if(at==null||chatMotionReduced()||group.hidden||group.hasAttribute('data-task-commentary'))return;
+  const row=group.querySelector(':scope > .message-row'),elapsed=Date.now()-at;
+  if(!row||elapsed>=PROGRESS_ARRIVAL_MS||group._progressArrival)return;
+  const effect=row.animate([{opacity:.45,transform:'translateY(8px)'},{opacity:1,transform:'translateY(0)'}],{duration:PROGRESS_ARRIVAL_MS,easing:'cubic-bezier(.23,1,.32,1)',fill:'both',id:'progress-note-arrival'});
+  effect.currentTime=elapsed;
+  group._progressArrival=trackMotion(effect,PROGRESS_ARRIVAL_MS-elapsed,()=>{group._progressArrival=null;});
 }
 function updateReactions() {
   for(const preview of document.querySelectorAll("[data-sidebar-activity]"))updateSidebarActivity(preview);
@@ -6845,6 +6859,13 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     if(group?.matches('.message-group:not(.progress-commentary):not([hidden])')&&group.querySelector(':scope > .message-row > .message-bubble'))revealReply(group,at);
     entry.replyArrivals.delete(seq);
   }
+  for(const [seq,at] of entry.progressArrivals){
+    const group=[...liveArea.children].find(n=>n.dataset.message===String(seq));
+    if(group?.matches('.progress-commentary'))revealProgressNote(group,at);
+    // A note born inside Gather is consumed here too. Expanding the header
+    // later must not replay it as though it had just arrived.
+    entry.progressArrivals.delete(seq);
+  }
   releaseScreenshotUrls(true);
   for(const divider of liveArea.querySelectorAll('.unread-divider'))unreadObserver.observe(divider);
   endChatRender();
@@ -7159,7 +7180,14 @@ function prepareProgressGather(target,desired,animate){
     // and unrelated groups cannot create a gather animation.
     if(!rows.length)continue;
     const bounds=target.getBoundingClientRect();
-    const visible=rows.slice(-3).filter(row=>row.textContent.length<=12000&&!row.querySelector('iframe,video,audio,img,canvas,[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media')).map(row=>({ghost:row.cloneNode(true),rect:row.getBoundingClientRect()})).filter(({rect})=>rect.bottom>bounds.top&&rect.top<bounds.bottom);
+    const visible=rows.slice(-3).filter(row=>row.textContent.length<=12000&&!row.querySelector('iframe,video,audio,img,canvas,[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media')).map(row=>{
+      const ghost=row.cloneNode(true);
+      if(row._progressArrival){
+        const paint=row.querySelector(':scope > .message-row'),copy=ghost.querySelector(':scope > .message-row'),style=getComputedStyle(paint);
+        copy.style.transform=style.transform;copy.style.opacity=style.opacity;
+      }
+      return {ghost,rect:row.getBoundingClientRect()};
+    }).filter(({rect})=>rect.bottom>bounds.top&&rect.top<bounds.bottom);
     if(!visible.length)continue;
     gathers.push({key,visible});
   }
@@ -7193,6 +7221,12 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
   const restoreSelection=retainConversationSelection(target);
   target.finishConnectorTransfers?.();
   const progressGather=prepareProgressGather(target,desired,animate);
+  // Snapshot the current paint above, then retire the entrance before Gather
+  // hides/reparents the note. Removed rows must not keep detached animations.
+  for(const row of target.querySelectorAll('.progress-commentary'))if(row._progressArrival){
+    const next=[...desired.children].find(n=>n.dataset.message===row.dataset.message&&n.matches('.progress-commentary:not([hidden]):not([data-task-commentary])'));
+    if(!animate||chatMotionReduced()||!next)row._progressArrival.finish();
+  }
   const transfers=connectorTaskTransfers(target,desired),animateTransfers=animate&&motionAllowed();
   const focusedQuestion=target.contains(document.activeElement)?document.activeElement?.closest('[data-task-question]')?.dataset.taskQuestion:null;
   const formations=animate?connectorStackFormation(target,desired):[];

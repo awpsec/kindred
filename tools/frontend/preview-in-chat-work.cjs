@@ -13,8 +13,8 @@ await p.goto(origin);await p.locator('.in-chat-work').waitFor();const refresh=()
 activity={...activity,shape:'read',label:'Checking the client records'};await refresh();await p.waitForTimeout(1500);await p.screenshot({path:out+'/tool-progress.png'});
 activity={...activity,shape:'think',label:'Comparing the references'};await refresh();await p.waitForTimeout(1300);
 messages.push({...progress.marker,kind:'task_progress',text:'',progress});const notes=['The contact details match.','The attachment versions are current.','Three records are consistent.','The fourth record is also consistent.'];
-for(let i=0;i<3;i++)messages.push({seq:3+i,created:now-70+i*10,sender:'piper',run_id:run.id,kind:'assistant',text:notes[i],progress});
-activity={...activity,shape:'read',label:'Checking the final record'};await refresh();await p.waitForTimeout(1700);
+activity={...activity,shape:'read',label:'Checking the final record'};
+for(let i=0;i<3;i++){messages.push({seq:3+i,created:now-70+i*10,sender:'piper',run_id:run.id,kind:'assistant',text:notes[i],progress});await refresh();await p.waitForTimeout(1000);}
 messages.push({seq:6,created:now-30,sender:'piper',run_id:run.id,kind:'assistant',text:notes[3],progress});await refresh();await p.waitForTimeout(1700);await p.screenshot({path:out+'/gather.png'});
 run.status='completed';run.output='All four records are consistent. The contacts, attachment versions and references match.';activity.status='idle';messages.push({seq:7,created:now,sender:'piper',run_id:run.id,kind:'result',text:run.output,progress:{...progress,phase:'final_answer'}});await refresh();await p.waitForTimeout(1600);await p.screenshot({path:out+'/answer.png'});
 const video=p.video();await context.close();fs.copyFileSync(await video.path(),out+'/work-transition.webm');
