@@ -330,3 +330,7 @@ html[data-motion=off] .bot-setting-heading>svg{transition:none;}
 }
 
 html:not([data-mobile]):not([data-kindred-ios]) #composer.has-resize-surface.is-morphing{overflow:visible;}
+
+/* Bot identity follows the selected conversation; fixed palettes remain available. */
+html[data-accent=bot][data-accent]{--message-accent:var(--bot-accent);--user-fg:var(--bot-accent-ink)}
+html[data-accent=bot][data-accent] #send{--button-fg:var(--bot-accent-ink)}

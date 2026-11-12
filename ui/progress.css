@@ -220,3 +220,36 @@ details.activity-reminder>.activity-reminder-heading::before{display:none}
 .past-interruption[open]>summary>svg{transform:rotate(90deg)}
 .past-interruption-body{overflow:hidden}
 .connector-stack-failures{color:var(--muted);font-size:inherit}
+
+/* Milestones read as one chronological journal beneath the Gather deck. */
+#content .task-commentary-block .message-group.task-commentary{margin-block:14px;padding-inline:42px 14px}
+#content .message-group.task-commentary .message-bubble{width:100%;font-size:calc(13px * var(--text-scale,1));line-height:1.55}
+.task-commentary .message-text-content{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:16px}
+.task-commentary .message-text-content>*{grid-column:1;min-width:0}
+.task-commentary .message-text-content>.progress-update-time{grid-column:2;grid-row:1;align-self:start;position:relative;margin:4px 0 0;text-align:right}
+.task-commentary .progress-update-time-toggle{text-align:right}
+.task-commentary .progress-update-clock{position:absolute;right:0;top:100%;padding:2px 5px;background:var(--bg);border-radius:4px;z-index:1;pointer-events:none}
+.task-commentary .message-text-content>.task-update-tools{grid-column:1 / -1}
+.task-update-tools{color:var(--muted);font-size:calc(11px * var(--text-scale,1));font-weight:400;margin:2px 0 0}
+.task-update-tools-heading{display:flex;align-items:baseline;gap:7px;cursor:pointer;list-style:none;line-height:1.6;overflow-wrap:anywhere}
+.task-update-tools-heading::-webkit-details-marker{display:none}
+.task-update-tools-chevron{display:inline-block;flex:none;transition:transform 180ms ease-out}
+.task-update-tools[open]:not(.is-collapsing) .task-update-tools-chevron{transform:rotate(90deg)}
+.task-update-tools-body{padding:6px 0 2px 14px}
+.task-update-tool{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:3px 0}
+.task-update-tool>span:first-child{min-width:0;overflow-wrap:anywhere}
+.task-update-tool-time{flex:none;font-variant-numeric:tabular-nums;font-size:calc(11px * var(--text-scale,1))}
+.task-gather .summary-progress-activity{padding:10px 14px 0 42px}
+.task-gather .summary-progress-body:empty{display:none}
+:root[data-motion=off] .task-update-tools-chevron{transition:none}
+@media(prefers-reduced-motion:reduce){.task-update-tools-chevron{transition:none}}
+@media(max-width:520px){#content .task-commentary-block .message-group.task-commentary{padding-inline:20px 12px}.task-gather .summary-progress-activity{padding-inline-start:20px}}
+
+/* Message actions float beside the journal rather than stealing its time column. */
+.task-commentary .message-row{position:relative}
+#content .task-commentary .message-row>.message-bubble{flex:1;max-width:100%}
+.task-commentary .message-row>.message-actions{position:absolute;right:0;top:100%;transform:none;z-index:2;background:var(--bg);border-radius:8px}
+details.task-update-tools>.task-update-tools-heading{padding-inline-start:0;min-height:20px}
+details.task-update-tools>.task-update-tools-heading::before{display:none}
+
+#content .task-commentary-block>.message-group.task-commentary:first-child{margin-block-start:0}

@@ -499,9 +499,27 @@ function settingRow(title,control,detail=''){
   if(!control.getAttribute('aria-label'))control.setAttribute('aria-label',title);row.append(copy,control);return row;
 }
 function settingSwitch(label,value){const valueField=switchField(label,value);valueField.label.classList.add('setting-row');return valueField;}
-const accentColors=[['monochrome','Monochrome','#777777'],['blue','Blue','#176bd1'],['green','Green','#16764b'],['orange','Orange','#a94d0c'],['purple','Purple','#7646c8'],['pink','Pink','#b33475']];
+const accentColors=[['bot','Bot based','#7646c8'],['monochrome','Monochrome','#777777'],['blue','Blue','#176bd1'],['green','Green','#16764b'],['orange','Orange','#a94d0c'],['purple','Purple','#7646c8'],['pink','Pink','#b33475']];
+function applyChatAccent(){
+  const root=document.documentElement,choice=accentColors.some(([id])=>id===state.general.accent_color)?state.general.accent_color:'bot';
+  // Shared rooms have no single speaker identity. Keep their chrome neutral.
+  const bot=state.chat&&(state.chat.shared||!state.chat.id.startsWith('dm-'))?null:state.bot;
+  const color=bot&&portrait(bot).color;
+  const resolved=choice==='bot'?(color&&/^#[0-9a-f]{6}$/i.test(color)?'bot':'monochrome'):choice;
+  if(root.dataset.accent!==resolved)root.dataset.accent=resolved;
+  if(resolved==='bot'){
+    // Preserve the actual bot hue. Pick ink by WCAG luminance, including pale
+    // and white avatars, rather than forcing white text onto every bot color.
+    const rgb=color.slice(1).match(/../g).map(v=>parseInt(v,16)/255);
+    const linear=rgb.map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);
+    const luminance=linear[0]*.2126+linear[1]*.7152+linear[2]*.0722;
+    const ink=luminance>.179?'#000000':'#ffffff';
+    if(root.style.getPropertyValue('--bot-accent')!==color)root.style.setProperty('--bot-accent',color);
+    if(root.style.getPropertyValue('--bot-accent-ink')!==ink)root.style.setProperty('--bot-accent-ink',ink);
+  }else for(const property of ['--bot-accent','--bot-accent-ink'])if(root.style.getPropertyValue(property))root.style.removeProperty(property);
+}
 function applyGeneral() {
-  document.documentElement.dataset.accent=accentColors.some(([id])=>id===state.general.accent_color)?state.general.accent_color:'monochrome';
+  applyChatAccent();
   const theme = state.general.theme;
   document.documentElement.dataset.theme =
     theme === "system"
@@ -1329,6 +1347,7 @@ function renderNametagStatus(){
   nametagStatus.update(work,id);
 }
 function renderHeader() {
+  applyChatAccent();
   syncSearchReturn();
   documentReview?.sync();
   syncBotCenter();
@@ -2561,7 +2580,7 @@ async function settingsGeneral(revision) {
   const appearance=settingsPane('Appearance'),theme=select([['system','Follow System'],['dark','Dark'],['light','Light']],state.general.theme||'system');
   const motion=settingSwitch('Reduce motion',state.general.reduced_motion),activity=settingSwitch('Show activity in chats',state.general.show_activity===true);
   const separateBots=settingSwitch('Separate bot conversations',state.general.separate_bot_chats!==false);
-  const accent=select(accentColors.map(([id,label])=>[id,label]),state.general.accent_color||'monochrome');
+  const accent=select(accentColors.map(([id,label])=>[id,label]),state.general.accent_color||'bot');
   accent.setAttribute('aria-label','Accent color');
   for(const option of accent.options)option.dataset.swatch=accentColors.find(([id])=>id===option.value)[2];
   const accentSwatch=node('span','accent-swatch');accentSwatch.setAttribute('aria-hidden','true');
@@ -2643,7 +2662,7 @@ async function settingsGeneral(revision) {
     loading.append(button('Retry settings',()=>openSettings('general'),'outline-button','refresh'));
   }else{
     state.general=loaded.value;account.querySelector('.user-avatar').textContent=personInitials(state.general.name);
-    name.input.value=state.general.name||'';prefs.input.value=state.general.identity||'';theme.value=state.general.theme||'system';accent.value=state.general.accent_color||'monochrome';paintAccent();
+    name.input.value=state.general.name||'';prefs.input.value=state.general.identity||'';theme.value=state.general.theme||'system';accent.value=state.general.accent_color||'bot';paintAccent();
     motion.input.checked=state.general.reduced_motion===true;activity.input.checked=state.general.show_activity===true;separateBots.input.checked=state.general.separate_bot_chats!==false;
     const selected=state.general.timezone_mode==='fixed'?state.general.timezone:'auto';
     if(selected&&!Array.from(timezone.options).some(o=>o.value===selected))timezone.add(new Option(selected,selected));
@@ -5505,6 +5524,19 @@ function updateTaskStatus(label){
   label.classList.toggle('working-glimmer',run?.status==='running'&&!label.dataset.taskStatusFixed&&!stale&&!(current&&activity.provider_retry?.phase==='retrying'&&activity.provider_retry.scope!=='routine'));
   label.title=text;
 }
+function taskUpdateTools(items,entry,key,started){
+  if(!items.length)return null;
+  entry.progressToolOpen??=new Set();
+  const details=node('details','task-update-tools'),summary=node('summary','task-update-tools-heading');
+  const count=items.reduce((n,item)=>n+(Number(item.count)||1),0),failed=items.reduce((n,item)=>n+(item.failed?(Number(item.count)||1):0),0);
+  const labels=[...new Set(items.map(item=>item.label))];
+  summary.append(node('span','task-update-tools-chevron','›'),node('span','', (labels.length===1?labels[0]:'Recorded work')+' · '+count+' call'+(count===1?'':'s')+(failed?' · '+failed+' failed':'')));
+  const body=node('div','task-update-tools-body');
+  for(const item of items){const row=node('div','task-update-tool');row.append(node('span','',item.label+' · '+(Number(item.count)||1)+' call'+(Number(item.count)===1?'':'s')+(item.failed?' · Failed':'')));if(started&&item.created>=started)row.append(node('span','task-update-tool-time',elapsedTime(item.created-started)));body.append(row);}
+  details.open=entry.progressToolOpen.has(key);details.append(summary,body);animateChatDisclosure(details,body);
+  summary.addEventListener('click',()=>{const opening=!details.open||details.classList.contains('is-collapsing');opening?entry.progressToolOpen.add(key):entry.progressToolOpen.delete(key);},{capture:true});
+  return details;
+}
 function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   const first=items.find(m=>m.kind==='task_progress'),key=first.progress.group_id,brief=!substantialProgress(items)&&!entry.trackedProgressGroups?.has(key),presentation=taskPresentation(items,entry),staged=presentation.mode==='staged',questions=taskQuestions(items,entry);
   const rootRun=runs.find(r=>r.id===first.run_id)||state.allRuns.find(r=>r.id===first.run_id)||state.details.get(first.run_id)?.run;
@@ -5570,9 +5602,15 @@ function summaryProgress(items,entry,runs,ownedWaits=[],ownsRun=()=>true){
   const body=node('div','summary-progress-body');
   if(staged){const stages=node('ol','task-stages');stages.setAttribute('aria-label','Task stages');presentation.stages.forEach((label,index)=>{const stage=node('li','task-stage',label);if(index<presentation.current_stage)stage.dataset.state='done';else if(index===presentation.current_stage){stage.dataset.state=finished?'ended':'current';stage.setAttribute('aria-current','step');if(finished)stage.setAttribute('aria-label',label+' · '+status);}else stage.dataset.state='pending';stages.append(stage);});body.append(stages);}
   const receipt=node('div','summary-progress-activity');receipt.setAttribute('aria-label','Recorded activity');
-  if(activity){receipt.append(node('div','muted small','Recorded activity · '+(Number(activity.completed)||0)+' completed call'+(activity.completed===1?'':'s')+(activity.failed?' · '+activity.failed+' failed':'')));for(const item of activity.recent||[]){const row=node('div','summary-progress-update',item.label+(item.count>1?' × '+item.count:'')+(item.failed?' · Failed':''));if(started&&item.created>=started)row.append(node('span','progress-update-time',' '+elapsedTime(item.created-started)));receipt.append(row);}}
-  else receipt.append(node('div','muted small','No recorded actions yet.'));
-  if(activity||!live)body.append(receipt);
+  const narration=items.filter(m=>m.kind==='assistant'&&m.progress?.phase==='commentary');
+  // New servers supply exact milestone ownership. Legacy history keeps an honest
+  // compact receipt instead of pretending its four recent groups are a timeline.
+  const timeline=Array.isArray(activity?.timeline)?activity.timeline:null;
+  const unplaced=timeline?timeline.filter(item=>!narration.some(m=>m.seq===item.message_seq)):(activity?.recent||[]);
+  const tools=taskUpdateTools(unplaced,entry,key+':unplaced',started);if(tools)receipt.append(tools);
+  if(activity?.timeline_omitted)receipt.append(node('div','muted small',activity.timeline_omitted+' earlier calls · see task details'));
+  if(!timeline&&activity)receipt.append(node('div','muted small',Number(activity.completed||0)+' completed calls'+(activity.failed?' · '+activity.failed+' failed':'')));
+  if(receipt.children.length)body.append(receipt);
   details.append(title,body);group.append(details);
   if(live&&bot&&!brief)group.append(taskStopButton(bot,run));
   animateChatDisclosure(details,body);
@@ -6707,7 +6745,12 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     if(!isUser&&['message','assistant','result','voice_recap'].includes(m.kind)&&(!isProgressMember(m)||m.progress?.phase==='final_answer'))group.classList.add('conversation-answer');
     // Live previews keep their transcript ancestry and stay visible when text
     // updates gather. Reparenting an iframe reloads it even if its node survives.
-    if(!isUser&&m.kind==='assistant'&&isProgressMember(m)){group.classList.add('progress-commentary');group.dataset.progressCandidate=m.progress.group_id;if(summaries.get(m.progress.group_id)?.includes(m)&&!m.files?.length&&!bubble.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media,iframe,video,audio')){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker)group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);}
+    if(!isUser&&m.kind==='assistant'&&isProgressMember(m)){group.classList.add('progress-commentary');group.dataset.progressCandidate=m.progress.group_id;if(summaries.get(m.progress.group_id)?.includes(m)&&!m.files?.length&&!bubble.querySelector('[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media,iframe,video,audio')){group.classList.add('task-commentary');group.dataset.taskCommentary=m.progress.group_id;const tracker=taskTrackers.get(m.progress.group_id);if(tracker)group.hidden=!tracker.querySelector('details').open;}appendProgressTimestamp(bubble,m,entry,runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run);if(group.classList.contains('task-commentary')){
+      const stamp=bubble.querySelector('.progress-update-time');if(stamp)bubble.append(stamp);
+      const timeline=m.progress.activity?.timeline||summaries.get(m.progress.group_id)?.find(item=>item.progress?.activity?.timeline)?.progress.activity.timeline||[];
+      const run=runs.find(r=>r.id===m.run_id)||state.details.get(m.run_id)?.run;
+      const tools=taskUpdateTools(timeline.filter(item=>item.message_seq===m.seq),entry,m.progress.group_id+':'+m.seq,run?.progress_started||run?.created);if(tools)bubble.append(tools);
+    }}
     if(!isUser&&m.kind!=='question')foldLongMessage(bubble,String(m.seq),entry);
     if(m.reply_to)bubble.prepend(quotedMessage(chat.id,m.reply_to));
     if(m.reactions?.length)bubble.append(messageReactions(chat.id,m));

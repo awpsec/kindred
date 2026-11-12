@@ -18,6 +18,7 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
    addEventListener('DOMContentLoaded',()=>{const style=document.createElement('style');style.textContent=css;document.head.append(style);(0,eval)(native);(0,eval)(layout);},{once:true});
   },{token,profileID,css:fs.readFileSync(path.join(dir,'MobileLayout.css'),'utf8'),native:fs.readFileSync(path.join(dir,'NativeComposer.js'),'utf8'),layout:fs.readFileSync(path.join(dir,'MobileLayout.js'),'utf8')});
   const base='http://127.0.0.1:'+server.address().port;
+  await page.route(base+'/app.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nwindow.nativeAccent=(color)=>{state.general.accent_color="bot";state.bot.profile.color=color;applyChatAccent();};'}));
   await page.goto(base+'/#kindred-chat=dm-piper');
   await page.waitForFunction(()=>document.querySelector('#composer').hasAttribute('data-ios-native-composer'));
   const model=()=>page.evaluate(()=>nativeMessages.filter(m=>m.composer).at(-1));
@@ -71,10 +72,14 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
   assert(await call('edit',{revision:7,text:'/zz',selection:[3,0]}));
   await page.waitForFunction(()=>nativeMessages.filter(m=>m.composer).at(-1)?.composer.items.some(i=>i.kind==='suggestion-label'&&i.text.includes('No matching commands')));
   assert.equal((await (await fetch(base+'/fixture/state')).json()).messages['dm-piper'],74,'choosing a command never sends it');
+  for(const [color,rgb,ink] of [['#ffffff',[1,1,1],[0,0,0]],['#16764b',[22/255,118/255,75/255],[1,1,1]]]){
+   await page.evaluate(c=>nativeAccent(c),color);
+   await page.waitForFunction(({rgb,ink})=>{const item=nativeMessages.filter(m=>m.composer).at(-1)?.composer.items.find(i=>i.symbol==='arrow.up');return item?.background?.every((v,i)=>Math.abs(v-rgb[i])<.001)&&item?.foreground?.every((v,i)=>Math.abs(v-ink[i])<.001);},{rgb,ink});
+  }
   await page.evaluate(()=>document.querySelector('#settings-button').click());await page.locator('#settings-dialog[open]').waitFor();
   await page.waitForFunction(()=>!document.querySelector('#composer').hasAttribute('data-ios-native-composer'));
   assert.equal(await page.locator('#prompt').getAttribute('contenteditable'),'true');
   assert.equal(await page.evaluate(()=>__KINDRED_NATIVE_COMPOSER_FOCUSED),false);
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,nativeModelBridge:true,unicodeDraft:true,staleContextRejected:true,staleRevisionRejected:true,retainedResize:true,oneSend:true,nativeSlashLoadingFilteringSelection:true,completionCaretAndSuffix:true,emptyCommandStatus:true,modalRevocation:true,noSyntheticScrollbar:true}));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,nativeModelBridge:true,botAccentProjection:true,unicodeDraft:true,staleContextRejected:true,staleRevisionRejected:true,retainedResize:true,oneSend:true,nativeSlashLoadingFilteringSelection:true,completionCaretAndSuffix:true,emptyCommandStatus:true,modalRevocation:true,noSyntheticScrollbar:true}));
  }finally{await browser.close();server.closeAllConnections();server.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;server.close();});
