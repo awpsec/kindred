@@ -23,6 +23,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   });
   await p.goto('http://127.0.0.1:'+server.address().port);await p.locator('.nametag-shell').waitFor();await p.waitForTimeout(400);
   const shell=p.locator('.nametag-shell'),title=p.locator('#bot-details'),row=p.locator('.nametag-status'),x=p.locator('.nametag-status-stop');
+  for(const name of ['An unusually long bot name to constrain the tag','Helia','Ochrane','Bo']){
+   await p.locator('#heading').evaluate((n,name)=>n.textContent=name,name);await p.waitForTimeout(300);
+   const metrics=await p.locator('#heading').evaluate(n=>({actual:n.clientWidth,needed:n.scrollWidth}));
+   assert(metrics.actual>=metrics.needed-1,`Name clipped: ${name} ${JSON.stringify(metrics)}`);
+  }
   const compact=await shell.boundingBox();assert(compact.width<110,'Short names retain compact identity');
   await p.screenshot({path:path.join(artifacts,'nametag-idle.png')});
   waits=[{bot_id:'orion',requester_bot_id:'piper',parent_run_id:'run-screenshot'},{bot_id:'perseus',requester_bot_id:'piper',parent_run_id:'run-screenshot'}];

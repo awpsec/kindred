@@ -6393,9 +6393,9 @@ html[data-motion="off"] .client-update span{transition:none}
 
 /* Outcome first: desktop answers read as prose. Identity, progress, handoffs,
    decisions and mobile message surfaces retain their separate treatments. */
-:root:not([data-mobile]) #content .conversation-answer>.message-row.assistant>.message-bubble{background:transparent;border:0;box-shadow:none;border-radius:0;padding:4px 0;max-width:100%}
+:root:not([data-mobile]):not([data-bot-message-style="bubbles"]) #content .conversation-answer>.message-row.assistant>.message-bubble{background:transparent;border:0;box-shadow:none;border-radius:0;padding:4px 0;max-width:100%}
 /* Preserve the quote destination cue on prose outcomes without changing layout. */
-:root:not([data-mobile]) #content .conversation-answer.quoted-highlight>.message-row.assistant>.message-bubble{box-shadow:0 0 0 2px var(--muted);border-radius:6px}
+:root:not([data-mobile]):not([data-bot-message-style="bubbles"]) #content .conversation-answer.quoted-highlight>.message-row.assistant>.message-bubble{box-shadow:0 0 0 2px var(--muted);border-radius:6px}
 
 /* One stable email action row, with optional actions in a local popover. */
 .connector-artifact.email-notice{border:1px solid var(--line);border-radius:16px;background:var(--panel);box-shadow:none}

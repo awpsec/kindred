@@ -41,3 +41,17 @@
  }};
  window.addEventListener('storage',event=>{if(event.key===key||event.key===null)update(event.newValue);});
 })();
+
+// Bubble styling is a presentation preference on this device, like type size.
+(()=>{
+ const key='kindred-bot-message-style';
+ let value='prose';try{if(localStorage.getItem(key)==='bubbles')value='bubbles';}catch{}
+ const apply=()=>document.documentElement.dataset.botMessageStyle=value;
+ apply();window.KindredBotMessageStyle={get:()=>value,set:next=>{
+  if(!['prose','bubbles'].includes(next))return;
+  window.dispatchEvent(new Event('kindred-message-style-before-change'));
+  value=next;apply();try{localStorage.setItem(key,value);}catch{}
+  window.dispatchEvent(new Event('kindred-message-style-change'));
+ }};
+ window.addEventListener('storage',e=>{if(e.key===key||e.key===null){window.dispatchEvent(new Event('kindred-message-style-before-change'));value=e.newValue==='bubbles'?'bubbles':'prose';apply();window.dispatchEvent(new Event('kindred-message-style-change'));}});
+})();

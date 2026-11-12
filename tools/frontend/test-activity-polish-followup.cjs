@@ -1,0 +1,40 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwright');
+const {server,token}=require('./fixtures/desktop.cjs');
+(async()=>{
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,engine=process.env.WEBKIT?'webkit':'chromium',browser=await({chromium,webkit}[engine]).launch();
+ try{
+  const page=await browser.newPage({viewport:{width:1200,height:900}});page.setDefaultTimeout(12000);const errors=[],writes=[];page.on('pageerror',e=>errors.push(e.message));
+  const folder=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-activity-followup';fs.mkdirSync(folder,{recursive:true});
+  const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};
+  let moved=false;
+  const run={id:'old',chat_id:chat.id,bot_id:'piper',status:'failed',error:'The check was incomplete',output:'',created:now-1800,prompt:'Check the old task'};
+  const call=(seq,status)=>({seq,sender:'piper',kind:'connector_artifact',text:'Called Gmail',created:now-1000+seq,connector_artifact:{id:'call-'+seq,bot_id:'piper',kind:'task',connection:'Gmail',source:'Claude',tool:'search_threads',status,revision:1,input:{},records:[]}});
+  const messages=()=>[{seq:1,sender:'user',kind:'message',text:'Check this',created:now-1800},{seq:2,sender:'piper',kind:'result',text:run.error,created:now-1700,run_id:'old',status_notice:{label:'Task failed',text:run.error}},...(moved?[{seq:3,sender:'user',kind:'message',text:'Move on to the next item',created:now-1100}]:[]),call(4,'completed'),call(5,'failed'),call(6,'interrupted'),call(7,'completed'),{seq:8,sender:'piper',kind:'message',text:'Here is the current answer. '+('Readable body text. '.repeat(20)),created:now-900}];
+  await page.addInitScript(t=>{sessionStorage.setItem('kindred-token',t);const original=setInterval;window.setInterval=(f,ms,...args)=>ms===2500?0:original(f,ms,...args);},token);
+  await page.route(origin+'/api/**',r=>{const req=r.request(),u=new URL(req.url()),send=json=>r.fulfill({json});if(req.method()!=='GET'&&(/^\/api\/runs\//.test(u.pathname)||/^\/api\/routines/.test(u.pathname)||u.pathname==='/api/settings'))writes.push(u.pathname);
+   if(u.pathname==='/api/runs')return send([run]);if(u.pathname==='/api/runs/old')return send({run,events:[],attachments:[],approvals:[]});
+   if(u.pathname==='/api/chats/dm-piper')return send({chat,messages:messages(),page:{has_before:false,has_after:false}});return r.continue();});
+  await page.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nwindow.followupRefresh=()=>refresh(true);'}));
+  await page.goto(origin);await page.getByRole('button',{name:'Continue task',exact:true}).waitFor().catch(async e=>{console.log(JSON.stringify({errors,body:(await page.locator('body').innerText()).slice(-5000)}));throw e;});
+  assert.equal(await page.locator('.past-interruption').count(),0,'Time alone must not hide blocked work');
+  await page.locator('#prompt').fill('Keep my draft');
+  assert.equal(await page.locator('.connector-stack').count(),1);assert.match(await page.locator('.connector-stack-summary').innerText(),/4 tool calls.*2 issues/);
+  await page.locator('.connector-stack-summary').click();assert(await page.locator('.connector-message[data-message="5"]').isVisible());await page.locator('.connector-stack-summary').click();
+  moved=true;await page.evaluate(()=>followupRefresh());await page.waitForTimeout(300);
+  assert(await page.getByRole('button',{name:'Continue task',exact:true}).isHidden());const quiet=page.locator('.past-interruption');assert(await quiet.isVisible());
+  await quiet.locator('summary').click();await page.waitForTimeout(250);assert(await page.getByRole('button',{name:'Continue task',exact:true}).isVisible());
+  await page.evaluate(()=>followupRefresh());assert(await quiet.evaluate(n=>n.open),'Review disclosure retained during refresh');
+  await quiet.locator('summary').click();await page.waitForTimeout(250);
+  await page.screenshot({path:path.join(folder,engine+'-open-text.png')});
+  const answer=page.locator('[data-message="8"] .message-bubble');assert.equal(await answer.evaluate(n=>getComputedStyle(n).backgroundColor),'rgba(0, 0, 0, 0)');
+  await page.locator('#settings-button').evaluate(n=>n.click());const style=page.getByRole('combobox',{name:'Bot messages',exact:true});await style.selectOption('bubbles');
+  assert.notEqual(await answer.evaluate(n=>getComputedStyle(n).backgroundColor),'rgba(0, 0, 0, 0)');assert.equal(await page.locator('#prompt').innerText(),'Keep my draft');
+  await page.screenshot({path:path.join(folder,engine+'-appearance.png')});
+  await page.keyboard.press('Escape');await page.reload();await answer.waitFor();assert.equal(await page.evaluate(()=>KindredBotMessageStyle.get()),'bubbles');assert.notEqual(await answer.evaluate(n=>getComputedStyle(n).backgroundColor),'rgba(0, 0, 0, 0)');
+  await page.screenshot({path:path.join(folder,engine+'-bubbles.png')});
+  await page.evaluate(()=>KindredBotMessageStyle.set('prose'));assert.equal(await answer.evaluate(n=>getComputedStyle(n).backgroundColor),'rgba(0, 0, 0, 0)');
+  assert.deepEqual(writes,[],'No task restarted or marked successful by presentation changes');assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({passed:true,engine,mixedReceiptsGrouped:true,failuresRetained:true,latestIssueVisible:true,oldIssueQuiet:true,noTaskWrites:true,bubblesPersist:true,draftRetained:true}));
+ }finally{await browser.close();server.closeAllConnections();server.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;server.close()});

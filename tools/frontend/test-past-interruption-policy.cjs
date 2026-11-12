@@ -1,0 +1,18 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../../ui/app.js'),'utf8');
+const fn=source.slice(source.indexOf('function pastInterruption('),source.indexOf('function quietPastInterruption('));
+const check=vm.runInNewContext('('+fn+')'),now=10000,run={status:'failed'};
+const message={seq:1,created:now-601},later=[{seq:2,created:now-1,sender:'user',kind:'message'}];
+assert.equal(check(message,run,[],now),false);
+assert.equal(check(message,run,later,now),true);
+assert.equal(check({...message,created:now-599},run,later,now),false);
+const two=[...later,{...later[0],seq:3}];
+assert.equal(check({...message,created:now-121},run,two,now),true);
+assert.equal(check({...message,created:now-119},run,two,now),false);
+assert.equal(check({...message,created:now+1},run,two,now),false);
+assert.equal(check({...message,routine_incident:{active:true}},run,two,now),false);
+assert.equal(check(message,{status:'running'},two,now),false);
+assert.equal(check(message,run,[{...later[0],sender:'bot'}],now),false);
+assert.equal(check(message,run,[{...later[0],kind:'continuation'}],now),false);
+assert.equal(check(message,run,[{...later[0],seq:0}],now),false);
+console.log('Past interruption policy: 11 cases passed');

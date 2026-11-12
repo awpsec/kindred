@@ -2568,6 +2568,11 @@ async function settingsGeneral(revision) {
   const accentControl=node('span','accent-control');accentControl.append(accentSwatch,accent);
   const paintAccent=()=>accentSwatch.style.backgroundColor=accentColors.find(([id])=>id===accent.value)?.[2]||'#777777';paintAccent();accent.addEventListener('change',paintAccent);
   appearance.body.append(settingRow('Theme',theme),settingRow('Accent color',accentControl),motion.label);
+  if(!document.documentElement.hasAttribute('data-mobile')){
+  const messageStyle=select([['prose','Open text'],['bubbles','Chat bubbles']],window.KindredBotMessageStyle.get());
+  messageStyle.setAttribute('aria-label','Bot messages');messageStyle.onchange=()=>window.KindredBotMessageStyle.set(messageStyle.value);
+  const messageStyleRow=settingRow('Bot messages',messageStyle);messageStyleRow.dataset.devicePreference='true';appearance.body.append(messageStyleRow);
+  }
   const interfaceFont=window.KindredInterfaceFont;
   if(interfaceFont&&!interfaceFont.systemManaged){
     const font=select([['inter','Inter'],['dm-sans','DM Sans'],['manrope','Manrope']],interfaceFont.get());
@@ -6116,16 +6121,16 @@ function positionNotice(){
 }
 const noticeLayout=new ResizeObserver(positionNotice);noticeLayout.observe($('composer-area'));
 window.addEventListener('resize',positionNotice);
-function connectorBatches(messages,_boundary,runs=[]){
+function connectorBatches(messages,_boundary,runs=[],owner=()=>null){
   const batches=new Map();let batch=[];
   const flush=()=>{if(batch.length>2)batches.set(batch[0].seq,batch);batch=[];};
   for(const m of messages){
     const previous=batch.at(-1);
     // Quiet routine completions are invisible, so they do not divide receipts.
-    if(m.kind==='continuation'||!m.text?.trim()||(hiddenCompletionMessage(m)&&!runs.find(r=>r.id===m.run_id)?.error))continue;
-    if(m.connector_artifact?.email_send||!['completed','preparing','approved','ready','executing'].includes(m.connector_artifact?.status)){flush();continue;}
+    if(m.interruption_hidden||m.status_notice?.continued_by||m.kind==='continuation'||!m.text?.trim()||(hiddenCompletionMessage(m)&&!runs.find(r=>r.id===m.run_id)?.error))continue;
+    if(m.connector_artifact?.email_send||!['completed','preparing','approved','ready','executing','failed','interrupted','cancelled'].includes(m.connector_artifact?.status)){flush();continue;}
     // Consecutive calls belong together even across scheduled runs and long gaps.
-    if(previous&&previous.sender!==m.sender)flush();
+    if(previous&&(previous.sender!==m.sender||owner(previous)!==owner(m)))flush();
     batch.push(m);
   }
   flush();return batches;
@@ -6321,7 +6326,9 @@ function connectorStack(messages,entry){
   const summary=node('summary','connector-stack-summary'),logos=node('span','connector-stack-logos'),copy=node('span','connector-stack-copy');
   const brands=[...new Map(messages.map(m=>{const c=m.connector_artifact,b=connectorBrand(c.connection||c.connector,c.tool);return[b.key,b];})).values()];
   for(const brand of brands.slice(0,3))logos.append(connectorLogo(brand));
+  const failed=messages.filter(m=>['failed','interrupted','cancelled'].includes(m.connector_artifact.status)).length;
   const title=node('span','',`${messages.length} tool calls`);copy.append(title);
+  if(failed)copy.append(node('span','connector-stack-failures',` · ${failed} ${failed===1?'issue':'issues'}`));
   summary.append(icon('chevron',12),copy,logos);
   summary.title=brands.map(b=>b.name).join(', ');
   const body=node('div','connector-stack-body');for(const m of messages.filter(m=>m!==last)){const card=connectorMessage(m,entry.id);conversationRenderSignatures.set(card,conversationSignature(card));body.append(card);}
@@ -6370,6 +6377,24 @@ function orderedDirectMessages(messages,runs){
   }
   return ordered;
 }
+// Old interruptions remain inspectable, but stop asking for attention once
+// the person has moved on. Time alone never retires the latest blocked work.
+function pastInterruption(message,run,messages,now=Date.now()/1000){
+  if(!run||!['failed','cancelled','interrupted'].includes(run.status)||message.routine_incident?.active)return false;
+  if(!Number.isFinite(message.created)||message.created>now)return false;
+  const later=messages.filter(m=>m.sender==='user'&&m.kind==='message'&&m.created>=message.created&&m.seq>message.seq);
+  const age=now-message.created;
+  return later.length>0&&age>=600||later.length>=2&&age>=120;
+}
+function quietPastInterruption(group,message,entry){
+  const details=node('details','past-interruption'),summary=node('summary'),body=node('div','past-interruption-body chat-disclosure-body');
+  summary.append(icon('chevron',12),node('span','',message.routine_incident?'Earlier check':'Earlier task'));
+  summary.title='Previous issue. Open to review details or retry.';
+  body.append(...group.childNodes);details.append(summary,body);group.append(details);group.classList.add('past-interruption-group');
+  entry.openPastInterruptions??=new Set();details.open=entry.openPastInterruptions.has(message.seq);
+  details.ontoggle=()=>{if(details.isConnected)details.open?entry.openPastInterruptions.add(message.seq):entry.openPastInterruptions.delete(message.seq);};
+  animateChatDisclosure(details,body);
+}
 async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   const id=chat.id,entry=conversationHistory(id),liveArea=$('content'),area=node('div');
   if(mode==='sync')await syncChatHistory(entry,signal);
@@ -6413,9 +6438,13 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   const groupWorkers=chat.shared?sharedConversationWorkers(chat,entry.sharedWorkers||[],state.allRuns):workers.map(r=>({...r,label:state.activities[r.bot_id]?.run_id===r.id?state.activities[r.bot_id].label:undefined,participant:r.bot_id,name:state.bots.find(b=>b.id===r.bot_id)?.name||'Bot'}));
   const keep=new Set(runs.map(r=>r.id));
   for(const [runId,detail] of state.details){if(state.details.size<=200)break;if(!keep.has(runId)&&!active(detail.run))state.details.delete(runId);}
+  const pastIssues=new Set(data.messages.filter(m=>pastInterruption(m,runs.find(r=>r.id===m.run_id),data.messages)).filter(m=>{
+    const row=liveArea.querySelector(`[data-message="${m.seq}"]`),selection=getSelection();
+    return row?.classList.contains('past-interruption-group')||!row?.contains(document.activeElement)&&!(selection&&!selection.isCollapsed&&(row?.contains(selection.anchorNode)||row?.contains(selection.focusNode)));
+  }).map(m=>m.seq));
   const key = JSON.stringify([
     id,
-    data.messages,
+    data.messages,[...pastIssues],
     helperWork(chat.id.startsWith('dm-')?chat.id.slice(3):null),entry.pendingWaits,entry.commands,groupWorkers,unreadBoundaries.get(id)?.through,
     chat.shared?state.allRuns.filter(r=>r.chat_id===id&&active(r)).map(r=>[r.id,r.bot_id,r.status,stoppingTasks.has(r.id)]):null,
     entry.hasBefore,entry.hasAfter,entry.error,state.general.show_activity === true,state.general.name,
@@ -6487,7 +6516,8 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   const remainingAttachments=files=>(files||[]).filter(file=>{if(attachmentPlan.projected.has(file.id)||fallbackAttachments.has(file.id))return false;fallbackAttachments.add(file.id);return true;});
   const transcript=data.messages.flatMap((m,i)=>[...(attachmentPlan.rows.get(i)||[]).map(attachment=>({kind:'shared_attachment',text:'Shared file',attachment})),m]);
   transcript.push(...(attachmentPlan.rows.get(data.messages.length)||[]).map(attachment=>({kind:'shared_attachment',text:'Shared file',attachment})));
-  const batches=connectorBatches(transcript,boundary,runs),stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages,entry),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
+  const stacked=new Set(),reminderGroups=new Map(),summaries=progressGroups(data.messages,entry),taskQuestionSeqs=new Set([...summaries.values()].flatMap(items=>taskQuestions(items,entry).map(m=>m.seq)));
+  const batches=connectorBatches(transcript,boundary,runs,m=>taskReviewGroup(m,summaries,id,data.messages));
   // A run/bot pair must name exactly one persisted task. Ambiguous or absent
   // ownership keeps the standalone status instead of hiding unrelated work.
   const taskOwners=new Map();
@@ -6607,6 +6637,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     if(statusNotice&&m.routine_incident){
       const group=node('article','chat-status-group routine-incident');group.dataset.message=String(m.seq);group.dataset.run=m.run_id;group.dataset.routineId=m.routine_incident.routine_id;
       group.append(routineIncidentCard(m.routine_incident,statusRun));
+      if(pastIssues.has(m.seq))quietPastInterruption(group,m,entry);
       if(m.files?.length)group.append(fileLinks(m.files));renderAttachments(group,remainingAttachments(m.attachments||state.details.get(m.run_id)?.attachments));
       area.append(group);previousSender=null;sequenceAvatar=null;continue;
     }
@@ -6629,6 +6660,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
         renderAttachments(content,remainingAttachments(m.attachments||state.details.get(m.run_id)?.attachments));
         if(statusRun){content.append(messageTools(statusRun,state.details.get(statusRun.id)?.events||[]));if(!recovered&&['failed','cancelled','interrupted'].includes(statusRun.status))content.append(continueTaskButton(statusRun));}
       }
+      if(pastIssues.has(m.seq)&&!recovered)quietPastInterruption(group,m,entry);
       previousSender=null;sequenceAvatar=null;continue;
     }
     const group = node("article", "message-group");
@@ -7248,6 +7280,7 @@ function prepareProgressGather(target,desired,animate){
   });
 }
 function reconcileConversation(target,desired,animate=true,priorCommentary=null){
+  const pastSettlements=[];
   const focusedCommentary=target.contains(document.activeElement)&&document.activeElement.closest('.progress-commentary')?document.activeElement:null;
   const restoreSelection=retainConversationSelection(target);
   target.finishConnectorTransfers?.();
@@ -7321,6 +7354,9 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
     if(previous&&preserveProgressCommentary(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     if(previous&&preserveOrdinaryMessage(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
     if(previous&&preserveShardMessage(previous,next)){conversationRenderSignatures.set(previous,signature);return previous;}
+    if(animate&&!chatMotionReduced()&&previous?.matches('.chat-status-group:not(.past-interruption-group)')&&next.matches('.past-interruption-group')){
+      const disclosure=next.querySelector('.past-interruption');if(!disclosure.open){disclosure.open=true;pastSettlements.push(disclosure);}
+    }
     conversationRenderSignatures.set(next,signature);return next;
   });
   for(const transfer of transfers)if(animateTransfers&&!transfer.collapsing&&!transfer.expanded){
@@ -7335,6 +7371,10 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
   const keep=new Set(nodes);for(const child of [...target.children])if(!keep.has(child))child.remove();
   let cursor=target.firstChild;
   for(const next of nodes){if(next===cursor){cursor=cursor.nextSibling;continue;}target.insertBefore(next,cursor);}
+  for(const disclosure of pastSettlements){
+    disclosure.collapseDisclosure();const body=disclosure.querySelector('.past-interruption-body');
+    trackMotion(body.animate([{opacity:1},{opacity:0}],{duration:180,easing:'ease-out'}),180);
+  }
   progressGather();
   for(const formation of formations)animateConnectorFormation(formation);
   for(const transfer of transfers)if(transfer.focused)connectorTransferArrival(target,transfer)?.focus({preventScroll:true});
@@ -7377,6 +7417,7 @@ function animateChatDisclosure(history,body,falling=false){
   // A live activity refresh can change the destination while a disclosure is
   // moving. Continue from its visible height, keeping the latest user intent.
   history.refreshDisclosure=()=>{if(motion)transition(expanded);};
+  history.collapseDisclosure=()=>transition(false);
   // Explicit message navigation must win over an in-flight collapse without
   // replaying a disclosure animation or changing any neighbouring groups.
   history.revealDisclosure=()=>{
@@ -10483,3 +10524,6 @@ syncBotCenter();
 
 function closeAvatarMenus(){for(const menu of document.querySelectorAll('.avatar-menu.menu-open')){menu.classList.remove('menu-open');menu.querySelector('.avatar-customize')?.setAttribute('aria-expanded','false');}}
 document.addEventListener('pointerdown',event=>{if(!event.target.closest('.avatar-menu'))closeAvatarMenus();});
+
+window.addEventListener('kindred-message-style-before-change',()=>captureChatAnchor());
+window.addEventListener('kindred-message-style-change',()=>{restoreChatPosition();requestAnimationFrame(restoreChatPosition);});

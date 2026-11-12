@@ -32,7 +32,9 @@ export function createNametagStatus({heading,onStop}) {
     shell.classList.toggle('reveal-stop',reveal);
     const headingText=heading.querySelector('#heading'),avatar=heading.querySelector('#header-avatar');
     const detailsHovered=heading.matches(':hover,:focus-visible');
-    const titleWidth=(headingText?.scrollWidth||0)+(avatar?.offsetWidth||0)+7+24+(detailsHovered?20:0);
+    // Range measures the actual unellipsized inline content, including badges.
+    const range=document.createRange();if(headingText)range.selectNodeContents(headingText);
+    const titleWidth=(headingText?range.getBoundingClientRect().width:0)+(avatar?.offsetWidth||0)+7+24+(detailsHovered?20:0);
     const statusWidth=current?label.scrollWidth+24+(reveal?28:0):0;
     const available=Math.max(80,heading.closest('.conversation-header').clientWidth-(heading.closest('.group-conversation')?180:32));
     const width=Math.ceil(Math.min(available,Math.max(titleWidth,statusWidth)));
@@ -61,5 +63,8 @@ export function createNametagStatus({heading,onStop}) {
   let headerWidth=0;
   new ResizeObserver(([entry])=>{if(entry.contentRect.width!==headerWidth){headerWidth=entry.contentRect.width;schedule();}}).observe(heading.closest('.conversation-header'));
   document.fonts?.ready.then(schedule);
+  document.fonts?.addEventListener('loadingdone',schedule);
+  addEventListener('kindred-interface-font-change',schedule);
+  new MutationObserver(schedule).observe(document.documentElement,{attributes:true,attributeFilter:['style','data-interface-font']});
   return {update};
 }
