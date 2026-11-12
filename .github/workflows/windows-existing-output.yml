@@ -49,7 +49,7 @@ jobs:
           assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '80bc079a11a90fbfa3077b6d26403fc2358238a2'
           tools = Path('.verification-tools')
           assert subprocess.check_output(['git', '-C', str(tools), 'rev-parse', 'HEAD'], text=True).strip() == os.environ['GITHUB_SHA']
-          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == 'e59f05487aa93eb41eafc2c7228d26e554fcbcf6f4f328ec9e48ad41410d43a4'
+          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '0191e6e240d62d19e2532d33b10a8a31514c1afbb6437747c8e5ff925f8bf61f'
           PY
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:

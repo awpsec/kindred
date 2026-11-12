@@ -98,7 +98,7 @@ def main():
         artifact = get('actions/artifacts/' + str(ARTIFACT))
         exe = verify_artifact(artifact, get('actions/artifacts/' + str(ARTIFACT) + '/zip', True))
         stage = 'bundle'
-        release = get('releases/tags/build-inputs-0.90.4-eb817d3')
+        release = get('releases/443456419')
         assert release['draft'] is True and release['tag_name'] == 'build-inputs-0.90.4-eb817d3'
         assert release['target_commitish'] == SOURCE and any(a['id'] == ASSET for a in release['assets'])
         asset = get('releases/assets/' + str(ASSET))
