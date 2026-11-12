@@ -9,6 +9,8 @@ const visible=n=>n&&n.getClientRects().length&&!n.closest('[hidden]');
 const named=(root,name)=>[...root.querySelectorAll('button')].find(n=>n.textContent.trim()===name||n.getAttribute('aria-label')===name);
 const hash=async b=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',b))].map(n=>n.toString(16).padStart(2,'0')).join('');
 async function input(kind,n,dx=0,dy=0){const r=rect(n),x=r.x+r.width*.4,y=r.y+r.height*.4;return request('/fixture/input',{kind,x,y,tx:x+dx,ty:y+dy,vw:innerWidth,vh:innerHeight});}
+const focusEvidence={};
+const motionState=()=>({focused:document.hasFocus(),hidden:document.hidden,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,motion:document.documentElement.dataset.motion||'default'});
 const errors=[];addEventListener('error',e=>errors.push(e.message));
 try{
  const manifest=await(await fetch('/fixture/manifest')).json();fixtureNonce=manifest.fixtureNonce;
@@ -26,6 +28,12 @@ try{
  }
  await wait(()=>$('#bot-details')?.onclick&&$('#bot-details').textContent.includes('Piper')&&!$('#chat-loading'),'actual chat');
  const prompt=$('#prompt'),draft='Native release verification draft';prompt.textContent=draft;prompt.dispatchEvent(new Event('input',{bubbles:true}));
+ // Foreground the owned native window through real OS input before testing
+ // animations, which correctly stay disabled in background windows.
+ focusEvidence.before=motionState();await input('click',prompt);
+ await wait(()=>document.hasFocus()&&!document.hidden,'foreground native window');
+ focusEvidence.after=motionState();
+ assert(!focusEvidence.after.reduced&&focusEvidence.after.motion!=='off','Motion disabled by actual native preferences: '+JSON.stringify(focusEvidence));
  // Exercise the actual WKWebView/WebView2 geometry, not a mocked font or
  // compositor. The declared renderer hook only controls reply timing and data.
  const originalMessages=await(await fetch('/fixture/messages')).json();
@@ -37,7 +45,7 @@ try{
   motionAPI.chatScroll.follow=false;area.scrollTop+=rect(target).top-rect(area).top-2;await sleep(80);motionAPI.chatScroll.gestureUntil=0;
   const textTop=()=>{const r=document.createRange();r.selectNodeContents(neighbour.querySelector('.message-text-content'));return r.getClientRects()[0].top;};
   const before={scroll:area.scrollTop,text:textTop()};motionAPI.revealReply(target,Date.now());
-  const effect=target.getAnimations({subtree:true}).find(a=>a.id==='reply-arrival');assert(effect,'Reply entrance missing in native engine');effect.pause();effect.currentTime=at;motionAPI.captureChatAnchor();assert(motionAPI.chatScroll.anchor.key==='320','Native reading anchor precondition');
+  const effect=target.getAnimations({subtree:true}).find(a=>a.id==='reply-arrival');assert(effect,'Reply entrance missing in native engine: '+JSON.stringify(motionState()));effect.pause();effect.currentTime=at;motionAPI.captureChatAnchor();assert(motionAPI.chatScroll.anchor.key==='320','Native reading anchor precondition');
   effect.currentTime=160;motionAPI.restoreChatPosition();assert(Math.abs(textTop()-before.text)<1,'Native neighboring text moves during arrival');
   effect.finish();await sleep(60);motionAPI.restoreChatPosition();await globalThis.__nativeReleaseReplay(motionMessages);
   const after={scroll:area.scrollTop,text:textTop()};assert(Math.abs(after.scroll-before.scroll)<1&&Math.abs(after.text-before.text)<1,'Native reply entrance shifts transcript');replyStability.push({at,before,after});
@@ -82,5 +90,5 @@ try{
  const cersei=named($('#bots'),'Cersei');assert(cersei,'Second bot missing');cersei.click();await pixels(255);const switched=rect(win);assert(Math.abs(switched.width-p.width)<1&&Math.abs(switched.x-p.x)<1,'Bot switch lost shared placement');named($('#bots'),'Piper').click();await pixels(18);assert(prompt.textContent===draft,'Bot return lost draft');
  win.querySelector('.computer-popout-return').click();await wait(()=>$('.computer-popout-layer').hidden,'return hides float');assert($('#computer-panel').hidden,'Return opened side pane');await sleep(150);
  assert(errors.length===0,'Native page errors: '+errors.join(';'));
- await request('/fixture/report',{passed:true,platform:window.__KINDRED_DESKTOP.platform,userAgent:navigator.userAgent,nativeVersion:native.version,resources,replyStability,paneOverlap,disclosure,library:{paint,decodedSheetCount:2,inertRestored:true,stateRetained:true},popout:{realFramebuffer:true,aspect:r.width/r.height,trustedPointerDowns:trusted,placements,botSwitchPlacement:true,viewerSuspendRestore:true,returnPaneClosed:true,draftRetained:true,composerGap:composer.y-p.bottom},errors});
-}catch(e){await request('/fixture/report',{passed:false,error:String(e),stack:e.stack,errors}).catch(()=>{});}
+ await request('/fixture/report',{passed:true,platform:window.__KINDRED_DESKTOP.platform,userAgent:navigator.userAgent,nativeVersion:native.version,resources,focusEvidence,replyStability,paneOverlap,disclosure,library:{paint,decodedSheetCount:2,inertRestored:true,stateRetained:true},popout:{realFramebuffer:true,aspect:r.width/r.height,trustedPointerDowns:trusted,placements,botSwitchPlacement:true,viewerSuspendRestore:true,returnPaneClosed:true,draftRetained:true,composerGap:composer.y-p.bottom},errors});
+}catch(e){await request('/fixture/report',{passed:false,error:String(e),stack:e.stack,focusEvidence,motionState:motionState(),errors}).catch(()=>{});}

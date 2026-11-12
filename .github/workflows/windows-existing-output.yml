@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: 0ed07d614d2e2a186a56c188091ae5abb63d5503
+          ref: 80bc079a11a90fbfa3077b6d26403fc2358238a2
           persist-credentials: false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -46,30 +46,40 @@ jobs:
           python - <<'PY'
           import hashlib, os, subprocess
           from pathlib import Path
-          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '0ed07d614d2e2a186a56c188091ae5abb63d5503'
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '80bc079a11a90fbfa3077b6d26403fc2358238a2'
           tools = Path('.verification-tools')
           assert subprocess.check_output(['git', '-C', str(tools), 'rev-parse', 'HEAD'], text=True).strip() == os.environ['GITHUB_SHA']
-          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == '125f861ed25f35596e1b8532b20d73c235ab4903ea397a214dd50556acce8a19'
+          assert hashlib.sha256((tools / 'scripts/release/stage-retained-windows.py').read_bytes()).hexdigest() == 'e59f05487aa93eb41eafc2c7228d26e554fcbcf6f4f328ec9e48ad41410d43a4'
           PY
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          targets: x86_64-pc-windows-msvc
-      - name: Restore compiler dependencies without saving a cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            desktop/target
-          key: kindred-native-v1-x86_64-pc-windows-msvc-${{ hashFiles('desktop/Cargo.lock', 'desktop/build.rs', 'desktop/dictation/**') }}
-          restore-keys: kindred-native-v1-x86_64-pc-windows-msvc-
-          fail-on-cache-miss: true
+          node-version: '24.14.0'
       - name: Stage exact API-bound executable and adjacent standalone resource
         env:
           GH_TOKEN: ${{ github.token }}
         run: python .verification-tools/scripts/release/stage-retained-windows.py --source . --output verification-proof
-      - name: Verify unchanged cold production network discovery and Compose replacement
-        run: python scripts/release/test-native-network.py --target x86_64-pc-windows-msvc --output native-network-validation
+      - name: Verify and reuse original passing native network receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .verification-tools/scripts/release/reuse-0904-windows-network.py --output native-network-validation
+      - name: Verify actual foreground reply, pane, disclosure, Library and computer gestures
+        run: node .verification-tools/scripts/release/native-ui-smoke/run-native.cjs --source . --binary desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe --output native-ui-validation --version 0.90.4 --source-commit 80bc079a11a90fbfa3077b6d26403fc2358238a2
+      - name: Preserve native UI evidence including failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-ui-0.90.4-x86_64-pc-windows-msvc
+          path: native-ui-validation/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve native network evidence and reuse provenance
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-network-0.90.4-x86_64-pc-windows-msvc
+          path: native-network-validation/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Verify actual retained executable worker lifetime and cancellation
         run: python scripts/release/test-command-worker.py --binary desktop/target/x86_64-pc-windows-msvc/release/kindred-desktop.exe > verification-proof/worker.json
       - name: Verify and collect the retained native package
@@ -87,7 +97,7 @@ jobs:
       - name: Upload packages only after every required native gate passed
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: kindred-0.86.11-x86_64-pc-windows-msvc
+          name: kindred-0.90.4-x86_64-pc-windows-msvc
           path: package-artifacts/*
           if-no-files-found: error
           retention-days: 7
