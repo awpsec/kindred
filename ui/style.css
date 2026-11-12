@@ -6523,3 +6523,19 @@ html[data-motion="off"] .client-update span{transition:none}
 @media(hover:none),(pointer:coarse){.composer-file-row .icon-button{width:44px;height:44px;padding:12px;}.composer-file-remove{opacity:1;}.composer-file-retry{min-height:44px;}}
 @media(prefers-reduced-motion:reduce){.composer-file-remove{transition:none;}}
 html[data-motion=off] .composer-file-remove{transition:none;}
+
+/* One activity slot: semantic phase changes crossfade without moving the text. */
+.in-chat-work{min-height:32px;font-size:calc(12px * var(--text-scale,1))}
+.work-visual{position:relative;display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px}
+.work-visual>.character,.work-phase-dots{grid-area:1/1;transition:opacity 180ms ease-out,transform 180ms cubic-bezier(.23,1,.32,1)}
+.work-phase-dots{display:flex;align-items:center;justify-content:center;gap:4px;opacity:0;transform:scale(.85);color:var(--muted)}
+.work-phase-dots i{display:block;width:4px;height:4px;border-radius:50%;background:currentColor;animation:work-phase-pulse 1.2s ease-in-out infinite;animation-play-state:paused}
+.work-phase-dots i:nth-child(2){animation-delay:140ms}.work-phase-dots i:nth-child(3){animation-delay:280ms}
+.in-chat-work[data-phase="dots"] .work-visual>.character{opacity:0;transform:scale(.85)}
+.in-chat-work[data-phase="dots"] .work-phase-dots{opacity:1;transform:scale(1)}
+.in-chat-work[data-phase="dots"] .work-phase-dots i{animation-play-state:running}
+.in-chat-work .work-timer{display:none}
+@keyframes work-phase-pulse{0%,70%,100%{opacity:.35;transform:translateY(0)}35%{opacity:1;transform:translateY(-2px)}}
+:root[data-motion="off"] .work-visual>*,:root[data-motion="off"] .work-phase-dots i{transition:none;animation:none}
+@media(prefers-reduced-motion:reduce){.work-visual>*,.work-phase-dots i{transition:none;animation:none}}
+:root[data-page-hidden] .work-phase-dots i{animation-play-state:paused!important}

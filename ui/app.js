@@ -48,7 +48,6 @@ import {
   syncCharacter,
   idleCompanion,
   arriveCharacter,
-  departCharacter,
 } from "./characters.js";
 document.addEventListener('pointerdown',()=>{document.documentElement.dataset.inputModality='pointer';},true);
 document.addEventListener('keydown',e=>{if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','Enter',' '].includes(e.key))document.documentElement.dataset.inputModality='keyboard';},true);
@@ -777,15 +776,42 @@ function senderName(bot,avatar) {
   }
   return name;
 }
+// The slot stays mounted through phase changes. Only its two painted layers
+// crossfade; labels settle before changing so short provider phases do not flash.
+function settleWorkPresentation(label,caption,phase,immediate=false) {
+  const signature=JSON.stringify([caption,phase]);
+  const apply=()=>{
+    clearTimeout(label._workTimer);label._workTimer=null;label._workPending=null;
+    label._workSignature=signature;
+    let text=label.querySelector('.work-caption');
+    if(!text){text=node('span','work-caption');label.replaceChildren(text);}
+    if(text.textContent!==caption){
+      label._workTextMotion?.finish();text.textContent=caption;
+      if(label.isConnected&&!chatMotionReduced())label._workTextMotion=trackMotion(text.animate([{opacity:.55},{opacity:1}],{duration:140,easing:'ease-out'}),140,()=>{label._workTextMotion=null;});
+    }
+    text.title=caption;
+    const line=label.closest('[data-work-line]');
+    if(line){line.dataset.phase=phase;line.setAttribute('aria-label',caption||'Working');}
+  };
+  if(signature===label._workSignature){clearTimeout(label._workTimer);label._workTimer=null;label._workPending=null;return;}
+  if(!label.isConnected||!label._workSignature||immediate){apply();return;}
+  if(label._workPending===signature)return;
+  clearTimeout(label._workTimer);label._workPending=signature;
+  label._workTimer=setTimeout(()=>{if(label.isConnected)apply();else {label._workTimer=null;label._workPending=null;}},220);
+}
 function workLine(bot, run, {secondary = false} = {}) {
-  const line = node("div", secondary ? "work-line collaboration-wait-row" : "work-line");
-  line.tabIndex = 0;
-  const label = node("span", "work-label working-glimmer", reaction(run.bot_id).label);
-  label.dataset.activityLabel = run.bot_id;
-  label.dataset.workRun = run.id;
-  updateWorkLabel(label);
-  line.append(buddy(bot, secondary ? 24 : 48, !secondary, `${secondary ? "helper" : "work"}-${run.id}`), label);
-  line.append(taskStopButton(bot,run));
+  const line = node('div', secondary ? 'work-line collaboration-wait-row' : 'work-line in-chat-work');
+  line.tabIndex=0;line.dataset.workLine=run.id;
+  const label=node('span','work-label');
+  label.dataset.activityLabel=run.bot_id;label.dataset.workRun=run.id;
+  if(secondary)line.append(buddy(bot,24,false),label);
+  else {
+    const slot=node('span','work-visual'),dots=node('span','work-phase-dots');
+    slot.setAttribute('aria-hidden','true');
+    for(let i=0;i<3;i++)dots.append(node('i'));
+    slot.append(buddy(bot,32,true),dots);line.append(slot,label);
+  }
+  line.append(taskStopButton(bot,run));updateWorkLabel(label);
   return line;
 }
 function taskStopButton(bot,run) {
@@ -832,6 +858,8 @@ function updateWorkLabel(label) {
   const retry=current&&run?.status==='running'&&a.provider_retry?.phase==='retrying'&&a.provider_retry.scope!=='routine'?a.provider_retry:null;
   label.classList.toggle('provider-retrying',!!retry&&!stale);
   if(retry&&!stale){
+    clearTimeout(label._workTimer);label._workSignature=null;label._workPending=null;
+    if(label.closest('[data-work-line]'))label.closest('[data-work-line]').dataset.phase='avatar';
     label.hidden=false;label.classList.remove('working-glimmer');
     if(label.dataset.providerRetry===String(retry.attempt))return;
     label.dataset.providerRetry=String(retry.attempt);
@@ -844,19 +872,27 @@ function updateWorkLabel(label) {
   let caption=pending?(queue.pause?'Waiting for control':starting?'Waiting to start':helping?.name?'Waiting for '+(state.bots.find(b=>b.id===run.bot_id)?.name||'this bot')+' to finish work for '+helping.name:'Waiting for the current task'):current?r.label:'Waiting for the current task';
   if(run?.status==='awaiting_user'&&pendingHumanTask(run.bot_id)&&!pending)caption='Needs you';
   if(delegation)caption=delegation.caption+(!delegation.waiting&&!run.delegation.resuming&&caption&&!['Working','Idle','Resting'].includes(caption)?' · '+caption:'');
-  const text=node('span','',activityConnectionLost()?'Connection lost · last known: '+(caption||'Waiting to start'):caption);
-  text.title=text.textContent;
-  const timer=node('time','work-timer',elapsedTime(now-(current?(a.started_at||now):now)));
-  timer.title='Elapsed time in this step';
+  const lost=activityConnectionLost();
+  const thinking=current&&run?.status==='running'&&a.status==='running'&&a.shape==='think'&&a.model_progress_state!=='writing'&&!a.awaiting&&!stale&&!lost&&!a.offline&&!a.reconnecting&&!delegation;
+  const urgent=lost||stale||pending||run?.status!=='running'||!!a.awaiting||r.action==='waiting'||r.action==='worry';
+  // Writing is provisional until a reply arrives. Do not surface a
+  // speculative “Typing…” label between tool calls and the actual answer.
+  const writing=current&&run?.status==='running'&&a.shape==='think'&&a.model_progress_state==='writing'&&!urgent;
+  if(writing)caption=label.querySelector('.work-caption')?.textContent||'Thinking it through';
+  if(run?.status==='completed'&&run.output?.trim())caption=label.querySelector('.work-caption')?.textContent||'Preparing a response';
+  settleWorkPresentation(label,lost?'Connection lost · last known: '+(caption||'Waiting to start'):caption,writing?(label.closest('[data-work-line]')?.dataset.phase||'dots'):thinking?'dots':'avatar',urgent);
+  let timer=label.querySelector('.work-timer');
+  if(!timer){timer=node('time','work-timer');timer.title='Elapsed time in this step';label.append(timer);}
+  timer.textContent=elapsedTime(now-(current?(a.started_at||now):now));
   label.classList.toggle('working-glimmer',!stale&&a.status==='running'&&r.action!=='waiting'&&r.action!=='worry');
-  label.replaceChildren(text,timer);continueLoops(label);
+  continueLoops(label);
   label.title=activityConnectionLost()?'The server has not confirmed new activity. The timer is paused at the last received status.':a.run_created_at?'Task elapsed: '+elapsedTime(now-a.run_created_at):'';
 }
 function clientFocused(){return document.hasFocus()||(window.__KINDRED_MOBILE_PLATFORM==='ios'&&window.__KINDRED_NATIVE_COMPOSER_FOCUSED===true);}
 const chatMotionReduced=()=>document.hidden||!clientFocused()||document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches;
-const WORK_DEPARTURE_MS=1970, REPLY_ARRIVAL_MS=240;
+const REPLY_ARRIVAL_MS=240;
 function prepareChatPresentation(entry,runs,messages,mode) {
-  entry.finishing??=new Map();entry.replyArrivals??=new Map();
+  entry.replyArrivals??=new Map();
   const sameView=state.renderedChatId===entry.id,now=Date.now();
   const animate=sameView && !entry.hasAfter && chatScroll.follow && !chatMotionReduced();
   const candidates=runs.filter(r=>r.chat_id===entry.id && (active(r)||r.status==='queued'));
@@ -864,7 +900,7 @@ function prepareChatPresentation(entry,runs,messages,mode) {
   const workers=candidates.sort((a,b)=>Number(active(b))-Number(active(a))||a.created-b.created).filter(r=>{if(workerBots.has(r.bot_id))return false;workerBots.add(r.bot_id);return true;});
   for(const [id,prior] of entry.workingRuns||[]) {
     const current=runs.find(r=>r.id===id && r.chat_id===entry.id);
-    if(current?.status!=='completed' || entry.finishing.has(id))continue;
+    if(current?.status!=='completed')continue;
     // Question handoffs and quiet completions deliberately have no final reply.
     // Do not retain their worker while waiting for a message that will never exist.
     const events=state.details.get(id)?.events||[];
@@ -873,19 +909,11 @@ function prepareChatPresentation(entry,runs,messages,mode) {
     // The run feed and message page are fetched separately. Keep a written
     // result's presence until that reply has actually reached visible history.
     const delivered=messages.some(m=>m.run_id===id && (m.kind==='result'||(current.output&&m.text===current.output)));
-    if(!delivered){workers.push(prior);continue;}
-    if(animate && !workers.some(r=>r.bot_id===current.bot_id)) {
-      const finish={run:current,at:now};entry.finishing.set(id,finish);
-      finish.timer=setTimeout(()=>{
-        entry.finishing.delete(id);avatarCache.delete('work-'+id);
-        if(currentConversationId()===entry.id){
-          beginChatRender(entry.id);$('content').querySelector(`[data-finishing-run="${id}"]`)?.remove();
-          state.chatKey='';endChatRender();
-        }
-      },WORK_DEPARTURE_MS);
-    }
+    if(!delivered){if(!workers.some(r=>r.bot_id===prior.bot_id))workers.push(prior);continue;}
+    // Arrival replaces activity in the same render. The reply's short rise
+    // supplies the handoff; no disappearing avatar covers the answer or leaves
+    // a second empty row behind it.
   }
-  if(!animate)for(const [id,finish] of entry.finishing){clearTimeout(finish.timer);entry.finishing.delete(id);avatarCache.delete('work-'+id);}
   entry.workingRuns=new Map(workers.map(r=>[r.id,r]));
   if(animate && mode==='sync' && entry.renderedIds)for(const m of messages)
     if(!entry.renderedIds.has(m.seq) && m.created>=entry.latestRenderedTime && ordinaryMessageArrival(m))entry.replyArrivals.set(m.seq,now);
@@ -909,20 +937,6 @@ function revealReply(group,at) {
   const effect=group.animate([{transform:'translateY(12px)'},{transform:'translateY(0)'}],{duration:REPLY_ARRIVAL_MS,easing:'cubic-bezier(.23,1,.32,1)',fill:'both'});
   effect.currentTime=elapsed;
   trackMotion(effect,REPLY_ARRIVAL_MS-elapsed,()=>group.classList.remove('reply-arriving'));
-}
-function finishingWork(entry,finish) {
-  const run=finish.run,bot=state.bots.find(b=>b.id===run.bot_id),group=node('article','message-group finishing-work'),line=workLine(bot,run);
-  group.dataset.finishingRun=run.id;group.setAttribute('aria-hidden','true');line.removeAttribute('tabindex');line.querySelector('.work-label').remove();
-  group.append(line);$('content').append(group);
-  departCharacter(line.querySelector('.character'),finish.at);
-  const height=group.getBoundingClientRect().height,margin=getComputedStyle(group).marginBottom;
-  group.style.overflow='clip';
-  const effect=group.animate([{height:height+'px',marginBottom:margin},{height:height+'px',marginBottom:margin,offset:1750/WORK_DEPARTURE_MS},{height:'0px',marginBottom:'0px'}],{duration:WORK_DEPARTURE_MS,easing:'ease-in-out',fill:'both'});
-  effect.currentTime=Math.max(0,Date.now()-finish.at);
-  trackMotion(effect,Math.max(0,WORK_DEPARTURE_MS-(Date.now()-finish.at)),()=>{
-    clearTimeout(finish.timer);entry.finishing.delete(run.id);avatarCache.delete('work-'+run.id);
-    group.remove();scheduleChatPosition();
-  });
 }
 function updateReactions() {
   for(const preview of document.querySelectorAll("[data-sidebar-activity]"))updateSidebarActivity(preview);
@@ -5463,8 +5477,9 @@ function updateTaskStatus(label){
     if(run.status==='running'&&activity.provider_retry?.phase==='retrying'&&activity.provider_retry.scope!=='routine')text=`Connection issue - retrying (${activity.provider_retry.attempt}/5)`;
     if(activityConnectionLost())text='Connection lost · last known: '+text;
   }
-  if(label.textContent!==text)label.textContent=text;
   const stale=state.activityReadAt&&(Date.now()-state.activityReadAt)/1000>15;
+  if(current&&activity.model_progress_state==='writing'&&!label.dataset.taskStatusFixed)text=label.querySelector('.work-caption')?.textContent||label.dataset.taskStatusFallback||'Working';
+  settleWorkPresentation(label,text,'avatar',!!label.dataset.taskStatusFixed||stale||activityConnectionLost()||run?.status!=='running'||activity?.provider_retry?.phase==='retrying');
   label.classList.toggle('working-glimmer',run?.status==='running'&&!label.dataset.taskStatusFixed&&!stale&&!(current&&activity.provider_retry?.phase==='retrying'&&activity.provider_retry.scope!=='routine'));
   label.title=text;
 }
@@ -6383,7 +6398,7 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
     entry.hasBefore,entry.hasAfter,entry.error,state.general.show_activity === true,state.general.name,
     state.bots.map(b=>[b.id,b.name,b.profile]),
     runs,
-    workers.map(r=>r.id),[...entry.finishing.keys()],
+    workers.map(r=>r.id),
     state.approvals,
     state.userTasks,
     runs.map((r) => [state.details.get(r.id)?.events,state.details.get(r.id)?.attachments]),
@@ -6832,7 +6847,6 @@ async function renderPreparedSharedChat(chat, force, mode='sync', signal) {
   }
   releaseScreenshotUrls(true);
   for(const divider of liveArea.querySelectorAll('.unread-divider'))unreadObserver.observe(divider);
-  for(const finish of entry.finishing.values())if(!taskOwners.get(JSON.stringify([finish.run.id,finish.run.bot_id])))finishingWork(entry,finish);
   endChatRender();
 }
 // Adjacent narration shares one disclosure surface. Keep interrupted runs in
@@ -6883,8 +6897,12 @@ function patchConversationText(before,after){
     // Rich attachments are left to preserveShardMessage/the artifact renderer.
     before.replaceWith(after);return;
   }
+  if(before.dataset.taskStatusRun!==after.dataset.taskStatusRun){
+    clearTimeout(before._workTimer);before._workTextMotion?.finish();before._workSignature=null;before._workPending=null;
+  }
   for(const attr of [...before.attributes])if(!after.hasAttribute(attr.name))before.removeAttribute(attr.name);
   for(const attr of after.attributes)if(before.getAttribute(attr.name)!==attr.value)before.setAttribute(attr.name,attr.value);
+  if(before.matches('[data-task-status-run]')&&after.matches('[data-task-status-run]')){updateTaskStatus(before);return;}
   const old=[...before.childNodes];let cursor=before.firstChild;
   for(const fresh of [...after.childNodes]){
     const candidate=old.find(n=>n===cursor&&n.nodeType===fresh.nodeType&&n.nodeName===fresh.nodeName)
@@ -7186,6 +7204,24 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
   for(const n of target.children)if(n.dataset.message)old.set(n.dataset.message,n);
   const commentary=new Map([...target.querySelectorAll('.progress-commentary[data-message]')].map(n=>[n.dataset.message,n])),claimedBlocks=new Set();
   const nodes=[...desired.children].map(next=>{
+    const freshLine=next.querySelector(':scope > .in-chat-work');
+    const priorWorker=freshLine&&[...target.children].find(n=>n.dataset.run===next.dataset.run&&!n.dataset.message);
+    const oldLine=priorWorker?.querySelector(':scope > .in-chat-work');
+    if(oldLine){
+      const oldAvatar=oldLine.querySelector('.character'),freshAvatar=freshLine.querySelector('.character');
+      if(oldAvatar?.dataset.profile!==freshAvatar?.dataset.profile)oldAvatar?.replaceWith(freshAvatar);
+      updateWorkLabel(oldLine.querySelector('.work-label'));
+      const oldStop=oldLine.querySelector('.work-stop'),newStop=freshLine.querySelector('.work-stop');
+      oldStop.disabled=newStop.disabled;oldStop.className=newStop.className;oldStop.title=newStop.title;oldStop.setAttribute('aria-label',newStop.getAttribute('aria-label'));
+      // Preserve both the wrapper and visual slot. Fresh siblings (reviews and
+      // tool receipts) can change without restarting the avatar or dots.
+      const children=[...next.childNodes].map(n=>n===freshLine?oldLine:n),keep=new Set(children);
+      for(const child of [...priorWorker.childNodes])if(!keep.has(child))child.remove();
+      let cursor=priorWorker.firstChild;
+      for(const child of children){if(child===cursor){cursor=cursor.nextSibling;continue;}priorWorker.insertBefore(child,cursor);}
+      return priorWorker;
+    }
+
     if(next.dataset.taskCommentaryBlock){
       const members=new Set(next.dataset.scrollMessages.split(' '));
       const previous=[...target.children].find(n=>!claimedBlocks.has(n)&&n.dataset.taskCommentaryBlock===next.dataset.taskCommentaryBlock&&n.dataset.scrollMessages.split(' ').some(id=>members.has(id)));
@@ -8226,7 +8262,7 @@ function trackMotion(animation,duration,settled=()=>{}) {
 function settleMotion(){if(!motionAllowed())for(const motion of [...activeMotion])motion.finish();}
 // Status loops share the document clock. A routine render that recreates their
 // dots or label continues the current pulse instead of restarting it.
-const statusLoops=new Set(['provider-retry-dot','connector-call-dot','group-working-pulse','working-glimmer']);
+const statusLoops=new Set(['provider-retry-dot','connector-call-dot','group-working-pulse','work-phase-pulse','working-glimmer']);
 function continueLoops(root){
   if(!root?.getAnimations)return;
   for(const loop of root.getAnimations({subtree:true}))if(statusLoops.has(loop.animationName)&&loop.startTime!==0)loop.startTime=0;
