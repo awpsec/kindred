@@ -30,7 +30,8 @@ try{
  const prompt=$('#prompt'),draft='Native release verification draft';prompt.textContent=draft;prompt.dispatchEvent(new Event('input',{bubbles:true}));
  // Foreground the owned native window through real OS input before testing
  // animations, which correctly stay disabled in background windows.
- focusEvidence.before=motionState();await input('click',prompt);
+ focusEvidence.before=motionState();focusEvidence.nativeClick=!focusEvidence.before.focused||focusEvidence.before.hidden;
+ if(focusEvidence.nativeClick)await input('click',prompt);
  await wait(()=>document.hasFocus()&&!document.hidden,'foreground native window');
  focusEvidence.after=motionState();
  assert(!focusEvidence.after.reduced&&focusEvidence.after.motion!=='off','Motion disabled by actual native preferences: '+JSON.stringify(focusEvidence));
