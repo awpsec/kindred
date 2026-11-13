@@ -4522,7 +4522,7 @@ const composerLayout=new ResizeObserver(()=>{
 });
 new MutationObserver(updateComposerLayout).observe($('composer'),{attributes:true,attributeFilter:['class']});
 composerLayout.observe($('composer'));document.fonts.ready.then(resizeComposer);
-installComposerResizeMotion($('composer'),$('prompt'),{allowed:motionAllowed,chat:()=>state.token+':'+composerChatId()});
+const composerResizeMotion=installComposerResizeMotion($('composer'),$('prompt'),{allowed:motionAllowed,chat:()=>state.token+':'+composerChatId()});
 // Align the desktop reading column with its composer on overlay and classic
 // scrollbar platforms. Height-only composer changes do no measurement or style
 // work here; native mobile retains its existing layout entirely.
@@ -4544,10 +4544,51 @@ window.addEventListener('kindred-interface-font-change',()=>requestAnimationFram
 // The composer remains a floating surface. Reserve space for all chat rows,
 // including working avatars and collaboration waits.
 const composerSpace={height:null,target:0,frame:0};
+// The surface and viewport share one animation clock. Only scrollTop changes
+// between frames; transcript padding is reserved once, and text is never scaled.
+let composerReadingMotion=null;
+function moveComposerReadingEdge(top){
+  const content=$('content'),before=content.scrollTop;
+  content.scrollTop=top;
+  const moved=content.scrollTop-before;
+  chatScroll.top=content.scrollTop;
+  if(chatScroll.anchor)for(const anchor of [chatScroll.anchor,...(chatScroll.anchor.backups||[])])anchor.offset-=moved;
+}
+function finishComposerReadingMotion(settle=true){
+  const motion=composerReadingMotion;if(!motion)return;
+  composerReadingMotion=null;cancelAnimationFrame(motion.frame);
+  const content=$('content'),before=content.scrollTop;
+  content.style.paddingBottom=motion.padding+'px';
+  // Shrinking may clamp the scroll offset; include that in anchor correction.
+  const clamped=content.scrollTop-before;
+  if(chatScroll.anchor)for(const anchor of [chatScroll.anchor,...(chatScroll.anchor.backups||[])])anchor.offset-=clamped;
+  moveComposerReadingEdge(settle?motion.target:content.scrollTop);
+  updateJumpLatest();
+}
+function animateComposerReadingEdge(animation,from,target,padding){
+  const motion={animation,from,target,padding,frame:0,chat:chatScroll.view};
+  composerReadingMotion=motion;
+  const step=()=>{
+    if(composerReadingMotion!==motion)return;
+    if(chatScroll.view!==motion.chat)return finishComposerReadingMotion(false);
+    if(!motionAllowed()||document.hidden||animation.playState==='idle')return finishComposerReadingMotion();
+    if(chatScroll.follow){
+      const content=$('content'),reserved=parseFloat(content.style.paddingBottom)||0;
+      motion.target=Math.max(0,content.scrollHeight-content.clientHeight-reserved+padding);
+    }
+    const timing=animation.effect.getComputedTiming();
+    const progress=animation.playState==='finished'||animation.currentTime>=timing.endTime?1:timing.progress??0;
+    moveComposerReadingEdge(from+(motion.target-from)*progress);
+    if(progress>=1)return finishComposerReadingMotion();
+    motion.frame=requestAnimationFrame(step);
+  };
+  step();
+}
 function setComposerClearance(height,moveReadingEdge=false){
   const mode=document.documentElement.hasAttribute('data-mobile');
   if(composerSpace.height===height&&composerSpace.mobile===mode)return;
-  const previousHeight=composerSpace.height;
+  const previousHeight=composerSpace.height,previousMotion=composerReadingMotion;
+  if(previousMotion){cancelAnimationFrame(previousMotion.frame);composerReadingMotion=null;}
   composerSpace.mobile=mode;composerSpace.height=height;
   const content=$('content'),previousTop=content.scrollTop;
   if(document.documentElement.hasAttribute('data-mobile')){
@@ -4558,22 +4599,30 @@ function setComposerClearance(height,moveReadingEdge=false){
     // An inherited variable on the conversation invalidates every message and
     // avatar on every animation frame. These two properties affect only the
     // scroll container, avoiding full-transcript style work during typing.
-    content.style.paddingBottom=(height+10)+'px';
+    const padding=height+10,animation=moveReadingEdge?composerResizeMotion.animation():null;
     content.style.scrollPaddingBottom=(height+12)+'px';
+    const target=previousHeight!==null?(previousMotion?.target??previousTop)+height-previousHeight:previousTop;
+    if(animation&&motionAllowed()&&!chatScroll.disclosureSummary){
+      // Keep the old space during shrink so the browser cannot clamp to the
+      // final offset before the surface has moved. Release it on completion.
+      const reserved=Math.max(padding,parseFloat(content.style.paddingBottom)||0);
+      content.style.paddingBottom=reserved+'px';
+      const maximum=Math.max(0,content.scrollHeight-content.clientHeight-reserved+padding);
+      animateComposerReadingEdge(animation,previousTop,chatScroll.follow?maximum:Math.min(maximum,Math.max(0,target)),padding);
+      return;
+    }
+    content.style.paddingBottom=padding+'px';
     if(moveReadingEdge&&!chatScroll.follow&&previousHeight!==null){
-      // Keep the same text above the composer while answering an older message.
-      // One scroll adjustment per measured resize avoids per-frame transcript
-      // layout and never enables following or pulls the reader to newer work.
-      content.scrollTop=previousTop+height-previousHeight;
-      const moved=content.scrollTop-previousTop;
-      chatScroll.top=content.scrollTop;
-      if(chatScroll.anchor)for(const anchor of [chatScroll.anchor,...(chatScroll.anchor.backups||[])])anchor.offset-=moved;
-      updateJumpLatest();
+      // Account for browser clamping as well as our own adjustment.
+      const clamped=content.scrollTop-previousTop;
+      if(chatScroll.anchor)for(const anchor of [chatScroll.anchor,...(chatScroll.anchor.backups||[])])anchor.offset-=clamped;
+      moveComposerReadingEdge(target);updateJumpLatest();
     }
   }
   if(chatScroll.follow&&!chatOpening&&!chatScroll.rendering)restoreChatPosition();
 }
 function settleComposerClearance(){
+  finishComposerReadingMotion();
   cancelAnimationFrame(composerSpace.frame);composerSpace.frame=0;
   setComposerClearance(composerSpace.target);
 }
@@ -9153,6 +9202,7 @@ const chatScroll={view:null,follow:true,direction:0,touchY:null,gestureUntil:0,a
 // resize observer runs. Preserve reading intent through the entire pane motion;
 // browser layout corrections must never be mistaken for a person's scroll.
 function beginChatLayoutChange(){
+  finishComposerReadingMotion();
   if(!chatScroll.follow)captureChatAnchor();
   const layout={view:chatScroll.view};chatScroll.layout=layout;
   return ()=>{
@@ -9172,6 +9222,7 @@ function captureChatAnchor(){
   chatScroll.anchor=anchors.length?{...anchors[0],backups:anchors.slice(1)}:null;
 }
 function restoreChatPosition(){
+  if(composerReadingMotion)return;
   const area=$('content');
   // Let native wheel/touch scrolling finish. Writing scrollTop during WebKit's
   // eased gesture cancels it, even when a resize just wants the old anchor.
@@ -9234,6 +9285,7 @@ function beginChatRender(view){
   messageActionFocus=chatScroll.view===view && focused?.dataset.messageFocus && focused.closest('[data-message]') ? {seq:focused.closest('[data-message]').dataset.message,control:focused.dataset.messageFocus}:null;
   questionFocus=focused?.closest('.question-card') && chatScroll.view===view?{id:focused.closest('.question-card').dataset.questionId,target:focused.dataset.questionFocus,start:focused.selectionStart,end:focused.selectionEnd}:null;
   if(chatScroll.view!==view){
+    finishComposerReadingMotion(false);
     chatScroll.direction=0;chatScroll.touchY=null;chatScroll.gestureUntil=0;
     chatScroll.layout=null;chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
     const saved=chatHistory.get(view)?.scroll;
@@ -9268,6 +9320,7 @@ function endChatRender(){
   if(questionFocus){const card=[...$('content').querySelectorAll('.question-card')].find(c=>c.dataset.questionId===questionFocus.id),control=card&&[...card.querySelectorAll('[data-question-focus]')].find(n=>n.dataset.questionFocus===questionFocus.target);(control||card)?.focus({preventScroll:true});if(control?.tagName==='TEXTAREA'&&questionFocus.start!==null)control.setSelectionRange(questionFocus.start,questionFocus.end);questionFocus=null;}
 }
 function followChatLatest(){
+  finishComposerReadingMotion();
   cancelQuotedNavigation();
   chatScroll.disclosure=null;chatScroll.disclosureSummary=null;
   chatScroll.follow=true;chatScroll.direction=0;chatScroll.gestureUntil=0;chatScroll.anchor=null;
@@ -9284,6 +9337,7 @@ $('content').addEventListener('scroll',()=>{
   // scroll; keep following the finite animation until a real gesture cancels it.
   if(chatScroll.follow&&chatScroll.disclosure?.getAnimations({subtree:true}).some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))){restoreChatPosition();return;}
   if(Math.abs(area.scrollTop-chatScroll.top)<1)return;
+  finishComposerReadingMotion(false);
   cancelAnimationFrame(chatScroll.frame);chatScroll.frame=0;
   const entry=chatHistory.get(currentConversationId());
   // WebKit eases a wheel gesture through small initial steps. An upward step
@@ -9303,6 +9357,7 @@ function readingGesture(e){
   if(e.type==='wheel'&&e.deltaY===0)return;
   if((e.type==='pointerdown'||e.type==='keydown'&&e.key===' ')&&chatScroll.follow&&e.target.closest('summary,button[aria-expanded]')===chatScroll.disclosureSummary)return;
   if(e.type==='keydown'&&(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(e.key)||e.target.closest('input,textarea,[contenteditable=true]')))return;
+  finishComposerReadingMotion(false);
   // At a clamped edge a wheel/key gesture may produce no scroll event.
   if(e.type==='wheel'||e.type==='touchmove'||e.type==='keydown')requestAnimationFrame(()=>{
     loadVisibleHistoryEdge();

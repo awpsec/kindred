@@ -28,5 +28,5 @@ export function installComposerResizeMotion(form, editor, {allowed, chat}) {
   new MutationObserver(()=>{if(!allowed()||document.documentElement.hasAttribute('data-mobile'))stop();}).observe(document.documentElement,{attributes:true,attributeFilter:['data-motion','data-mobile']});
   matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',stop);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();});
-  return stop;
+  return {stop,animation:()=>effects[0]||null};
 }
