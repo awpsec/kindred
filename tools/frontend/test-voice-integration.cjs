@@ -165,9 +165,10 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
     assert.equal(await page.getByRole('link',{name:'north entrance',exact:true}).count(),1);
     assert.equal(await page.locator('[data-message="100001"] .task-cards,[data-message="100001"] .tool-timeline').count(),0,'recap has no duplicated work stream');
     if(process.env.KINDRED_TEST_ARTIFACTS)await page.screenshot({path:path.join(process.env.KINDRED_TEST_ARTIFACTS,'voice-recap-'+engine+'.png')});
-    // A retained, idle tray isolates presentation mutations from the live call's
-    // timer, incoming audio and incidental finite animation scans.
-    await page.evaluate(()=>{document.documentElement.dataset.motion='off';const t=document.querySelector('.voice-call-tray');t.dataset.status='true';t.querySelector('.voice-call-state').textContent='Connecting…';t.querySelector('.voice-mute').setAttribute('aria-pressed','false');t.hidden=false;t.inert=false;});
+    // A detached controller's cloned tray isolates presentation mutations from
+    // normal post-call composer/layout refreshes, which correctly hide its idle tray.
+    // Exercise the native adapter's real observers without reopening a provider call.
+    await page.evaluate(()=>{document.documentElement.dataset.motion='off';const original=document.querySelector('.voice-call-tray'),t=original.cloneNode(true);original.replaceWith(t);t.dataset.status='true';t.querySelector('.voice-call-state').textContent='Connecting…';t.querySelector('.voice-mute').setAttribute('aria-pressed','false');t.hidden=false;t.inert=false;});
     await page.waitForFunction(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.showingStatus===true);
     await page.waitForTimeout(350);
     const retainedKey=await page.evaluate(()=>nativeMessages.filter(m=>m.voice).at(-1).voice.key);
