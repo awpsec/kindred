@@ -258,3 +258,26 @@ details.task-update-tools>.task-update-tools-heading::before{display:none}
 @media(max-width:760px),(hover:none){
  .task-commentary .message-row>.message-actions{position:static;inset:auto;transform:none;background:none;z-index:auto}
 }
+
+/* One connector ledger within Gather; progress narration stays uninterrupted. */
+.task-gather .task-connector-drawer{margin:18px 14px 10px 42px;color:var(--muted);font-size:calc(11px * var(--text-scale,1));min-width:0}
+details.task-connector-drawer>.task-connector-heading{display:flex;align-items:center;gap:7px;list-style:none;padding:4px 0;min-height:24px;cursor:pointer}
+.task-connector-heading::-webkit-details-marker{display:none}
+details.task-connector-drawer>.task-connector-heading::before{display:none}
+.task-connector-heading>svg{flex:none;transition:transform 180ms ease-out}
+.task-connector-drawer[open]:not(.is-collapsing)>.task-connector-heading>svg{transform:rotate(90deg)}
+.task-connector-label{min-width:0;overflow-wrap:anywhere}
+.task-connector-count{margin-inline-start:auto;flex:none;font-variant-numeric:tabular-nums}
+.task-connector-body{padding:12px 0 4px}
+.task-connector-batch+.task-connector-batch{margin-top:18px}
+.task-connector-batch-heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:7px;line-height:1.5}
+.task-connector-batch-heading>span:first-child{min-width:0;overflow-wrap:anywhere}
+.task-connector-batch-count{flex:none;font-variant-numeric:tabular-nums}
+.task-connector-rows{border-inline-start:1px solid var(--line);padding-inline-start:10px}
+#content .task-connector-rows>.connector-message{margin:5px 0;padding:0;max-width:100%;width:100%}
+.task-connector-rows .connector-call-summary{font-size:inherit;min-width:0}
+.task-connector-rows .connector-call-label{overflow-wrap:anywhere}
+:root[data-motion=off] .task-connector-heading>svg{transition:none}
+@media(prefers-reduced-motion:reduce){.task-connector-heading>svg{transition:none}}
+@media(max-width:520px){.task-gather .task-connector-drawer{margin-inline:20px 12px}}
+@media(pointer:coarse){details.task-connector-drawer>.task-connector-heading{min-height:44px}}
