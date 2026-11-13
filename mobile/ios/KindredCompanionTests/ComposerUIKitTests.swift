@@ -345,6 +345,11 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             try await self.boolean("window.__nativeAccentFixture && document.querySelectorAll('.sidebar .bot-link').length===3 && document.documentElement.dataset.accent==='bot'")
         }
         var observations: [[String: Any]] = []
+        func components(_ color: UIColor) -> [CGFloat] {
+            var r:CGFloat=0,g:CGFloat=0,b:CGFloat=0,a:CGFloat=0
+            color.getRed(&r,green:&g,blue:&b,alpha:&a)
+            return [r,g,b,a]
+        }
         for (name, color, ink) in [("Piper", "#ec3947", UIColor.black), ("Vivienne", "#16764b", UIColor.white), ("Izbella", "#ffffff", UIColor.black)] {
             _ = try await js("document.querySelector('.sidebar .bot-link[aria-label=\"\(name)\"]').click();true")
             try await waitFor("selected bot accent " + name) {
@@ -355,7 +360,10 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                 try await waitFor("native " + symbol + " follows " + name) {
                     guard let item=self.session.glassControls.composer.model?.items.first(where:{$0.primary && $0.symbol==symbol}),let background=item.background,let foreground=item.foreground else{return false}
                     let expected=UIColor(red:CGFloat(Int(color.dropFirst().prefix(2),radix:16)!)/255,green:CGFloat(Int(color.dropFirst(3).prefix(2),radix:16)!)/255,blue:CGFloat(Int(color.suffix(2),radix:16)!)/255,alpha:1)
-                    return background.isEqual(expected) && foreground.isEqual(ink)
+                    // UIKit's named black/white use a grayscale color space;
+                    // the bridge decodes sRGB. Compare painted components.
+                    return zip(components(background),components(expected)).allSatisfy{pair in abs(pair.0-pair.1)<0.001}
+                        && zip(components(foreground),components(ink)).allSatisfy{pair in abs(pair.0-pair.1)<0.001}
                 }
                 let composer=session.glassControls.composer,item=try XCTUnwrap(composer.model?.items.first(where:{$0.primary && $0.symbol==symbol}))
                 let button=try XCTUnwrap(composer.material.contentView.subviews.compactMap{$0 as? UIButton}.first(where:{$0.accessibilityIdentifier=="kindred-native-composer-"+item.id}))
