@@ -70,7 +70,7 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-ios-progress-layout'
         const metrics=await page.locator('.task-commentary,#legacy-progress-fixture>.summary-progress-update').evaluateAll(rows=>rows.map(row=>{
           const bubble=row.querySelector('.message-bubble'),stamp=bubble.querySelector('.progress-update-time'),toggle=stamp.querySelector('button'),p=bubble.querySelector('p'),r=row.getBoundingClientRect(),b=bubble.getBoundingClientRect(),t=toggle.getBoundingClientRect(),s=stamp.getBoundingClientRect();
           const text=document.createRange();text.selectNodeContents(p);text.setEndBefore(stamp);const lines=[...text.getClientRects()].filter(rect=>rect.width>0&&rect.height>0);
-          return {legacy:row.classList.contains('summary-progress-update'),row:{x:r.x,y:r.y,width:r.width,height:r.height},bubble:{x:b.x,y:b.y,width:b.width,height:b.height},target:{width:t.width,height:t.height},stamp:{y:s.y,height:s.height},line:parseFloat(getComputedStyle(bubble).lineHeight),font:parseFloat(getComputedStyle(bubble).fontSize),textTop:Math.min(...lines.map(r=>r.top)),textBottom:Math.max(...lines.map(r=>r.bottom)),margin:parseFloat(getComputedStyle(row).marginBottom),scrollWidth:bubble.scrollWidth,clientWidth:bubble.clientWidth};
+          return {legacy:row.classList.contains('summary-progress-update'),row:{x:r.x,y:r.y,width:r.width,height:r.height},bubble:{x:b.x,y:b.y,width:b.width,height:b.height},target:{width:t.width,height:t.height},stamp:{y:s.y,height:s.height},line:parseFloat(getComputedStyle(bubble).lineHeight),glyphLine:Math.max(...lines.map(r=>r.height)),font:parseFloat(getComputedStyle(bubble).fontSize),textTop:Math.min(...lines.map(r=>r.top)),textBottom:Math.max(...lines.map(r=>r.bottom)),margin:parseFloat(getComputedStyle(row).marginBottom),scrollWidth:bubble.scrollWidth,clientWidth:bubble.clientWidth};
         }));
         fs.writeFileSync(path.join(out,'latest-metrics.json'),JSON.stringify({width,scale,theme,metrics},null,2));
         for(const metric of metrics) {
@@ -84,7 +84,18 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-ios-progress-layout'
         const current=metrics.filter(m=>!m.legacy);
         const aligned=await page.evaluate(()=>{const a=document.querySelector('.summary-progress-activity'),x=a.getBoundingClientRect().x+parseFloat(getComputedStyle(a).paddingInlineStart);return [...document.querySelectorAll('.task-commentary .message-text-content')].every(p=>Math.abs(p.getBoundingClientRect().x-x)<1);});
         assert(aligned,'native commentary aligns with its expanded activity body');
-        for(let i=1;i<current.length;i++)assert(current[i].textTop-Math.max(current[i-1].textBottom,current[i-1].stamp.y+current[i-1].stamp.height)<=20,`consecutive narration updates cannot have a large empty gap: ${JSON.stringify({width,scale,theme,previous:current[i-1],next:current[i]})}`);
+        for(let i=1;i<current.length;i++) {
+          const previous=current[i-1],next=current[i];
+          // Range rectangles measure glyphs, not CSS line boxes. At AX5 the
+          // 65.47px line box adds 14.05px of legitimate font leading between
+          // glyphs. Keep the reading-gap check and independently enforce the
+          // stricter native 8px block gap, without treating leading as padding.
+          const leading=Math.max(0,previous.line-previous.glyphLine)/2+Math.max(0,next.line-next.glyphLine)/2;
+          const readingGap=next.textTop-Math.max(previous.textBottom,previous.stamp.y+previous.stamp.height)-leading;
+          const blockGap=next.row.y-previous.row.y-previous.row.height;
+          assert(blockGap>=-1&&blockGap<=8.5,`consecutive narration blocks retain their compact 8px gap: ${JSON.stringify({width,scale,theme,blockGap,previous,next})}`);
+          assert(readingGap<=20,`consecutive narration updates cannot have a large empty gap: ${JSON.stringify({width,scale,theme,readingGap,leading,previous,next})}`);
+        }
         const toggle=page.locator('.task-commentary .progress-update-time-toggle').first(),row=page.locator('.task-commentary').first();
         await toggle.scrollIntoViewIfNeeded();
         const before=await row.boundingBox(),clock=toggle.locator('..').locator('time'),reserved=await clock.boundingBox();
