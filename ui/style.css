@@ -6295,7 +6295,8 @@ html[data-ios-reserved=true] :is(.conversation-header,.composer-area,.computer-p
 /* Desktop drafts begin in one row; writing expands above the same controls.
    Keep native mobile geometry and its 44px touch targets in the adapter. */
 html:not([data-mobile]) #composer {grid-template-rows:auto auto auto 32px;min-height:50px;padding:8px 10px;border-radius:26px;align-items:center;}
-html:not([data-mobile]) #prompt {grid-column:2;grid-row:4;min-height:22px;padding:0 4px;margin:0;align-self:center;}
+/* Whole-pixel line boxes prevent WebKit grid rounding from feeding resize motion back into layout. */
+html:not([data-mobile]) #prompt {line-height:round(nearest,calc(22px * var(--text-scale,1)),1px);position:relative;grid-column:2;grid-row:4;min-height:22px;padding:0 4px;margin:0;align-self:center;}
 html:not([data-mobile]) #prompt[data-empty="true"]::before {display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 html:not([data-mobile]) #composer:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) {grid-template-rows:auto auto minmax(40px,auto) 32px;min-height:98px;padding:10px 12px;border-radius:24px;}
 html:not([data-mobile]) #composer:is(.is-multiline,.is-replying,.has-files,.is-dictating,.is-answering,.is-request-activating) #prompt {grid-column:1/-1;grid-row:3;min-height:40px;padding:2px 4px;margin-bottom:9px;align-self:stretch;}
