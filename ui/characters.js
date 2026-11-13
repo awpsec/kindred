@@ -81,6 +81,7 @@ export function arriveCharacter(box,startedAt=Date.now()){if(box?._character?.ar
 export function departCharacter(box){if(box?._character?.tribute){setActivity(box,'idle');return;}setActivity(box,'powering-down');if(box&&!reducedMotion()&&box._character?.p.animated!==false)box.animate([{opacity:1},{opacity:0}],{duration:600,delay:500,fill:'forwards'});}
 export function idleCompanion(box){setActivity(box,'idle');}
 const iconPaths = {
+  "arrow-down": "M12 5v14m-7-7 7 7 7-7",
   image: "M3 3h18v18H3zM3 16l6-6 5 5 3-3 4 4M16 7h.01",
   minus: "M5 12h14",
   calendar: "M8 3v4M16 3v4M3 10h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z",

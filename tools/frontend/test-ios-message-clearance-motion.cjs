@@ -138,14 +138,14 @@ const near=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
     const jump=document.querySelector('.jump-latest'),before=jump.getBoundingClientRect().right;
     Object.assign(__KINDRED_IOS_LAYOUT,{keyboardVisible:true,composerBottomInset:0,viewportHeight:430});
     dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));jump.getBoundingClientRect();
-    const motions=jump.getAnimations().filter(a=>a.transitionProperty==='right');motions.forEach(a=>{a.pause();a.currentTime=0;});
+    const motions=jump.getAnimations().filter(a=>a.transitionProperty==='left');motions.forEach(a=>{a.pause();a.currentTime=0;});
     const frames=[];for(const fraction of [0,.25,.5,.999]){motions.forEach(a=>a.currentTime=Number(a.effect.getTiming().duration)*fraction);frames.push(jump.getBoundingClientRect().right);}
     motions.forEach(a=>a.finish());return {before,frames,after:jump.getBoundingClientRect().right,motions:motions.length};
    });
-   assert(latestKeyboard.motions>0,'keyboard avoidance slides Latest messages');
+   assert(latestKeyboard.motions>0,'keyboard avoidance slides Latest messages '+JSON.stringify(latestKeyboard));
    near(latestKeyboard.frames[0],latestKeyboard.before,'Latest begins at its painted position');
    assert(latestKeyboard.frames.some(right=>right<latestKeyboard.before-2&&right>latestKeyboard.after+2),'Latest passes through intermediate horizontal positions');
-   near(latestKeyboard.after,latestKeyboard.before-84,'Latest clears the native keyboard-side gutter');
+   near(latestKeyboard.after,latestKeyboard.before-42,'Latest stays centered in the keyboard-safe lane');
    assert(latestKeyboard.after<=376,'Latest stays left of the right dock while typing');
    await page.setViewportSize({width:466,height:780});
    await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{keyboardVisible:false,composerBottomInset:34,viewportHeight:780});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});

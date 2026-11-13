@@ -30,7 +30,7 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
   if(pose==='slab')await computer.getByRole('button',{name:'Close bot center',exact:true}).evaluate(n=>n.click());else await page.evaluate(()=>__kindredDuoActions.perform('back'));await computer.waitFor({state:'hidden'});assert.equal(await page.locator('#prompt').innerText(),'Retain my draft.');
   if(pose!=='slab'){
    const nav=await page.evaluate(()=>requests.filter(r=>r.action==='duo-navigation').at(-1));assert.equal(nav.botAvatarShape,'wedge');
-   await page.evaluate(()=>{document.querySelector('.jump-latest').hidden=false;});const latest=await page.locator('.jump-latest').boundingBox(),area=await page.locator('#composer-area').boundingBox();assert(Math.abs(latest.x+latest.width-(area.x+area.width-10))<1,'Latest uses the full bottom lane');
+   await page.evaluate(()=>{document.querySelector('.jump-latest').hidden=false;});const latest=await page.locator('.jump-latest').boundingBox(),area=await page.locator('#composer-area').boundingBox();assert(Math.abs(latest.x+latest.width/2-(area.x+area.width/2))<1,'Latest is centered in the full bottom lane');
   }
   if(pose==='outer'){
    await page.evaluate(()=>{__KINDRED_IOS_TOOLBAR={x:399,y:175,width:38,height:142};dispatchEvent(new Event('kindred-ios-toolbar'));const content=document.querySelector('#content');content.scrollTop=content.scrollHeight;});

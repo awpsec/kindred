@@ -6129,6 +6129,15 @@ function messagePage(entry,query={},signal){
   return api('/chats/'+entry.id+'?'+new URLSearchParams({limit:CHAT_PAGE_SIZE,...query}),'GET',undefined,{signal});
 }
 function acceptHistoryPage(entry,data){
+  // Count only fresh incoming replies, never old pages, tools, progress or our
+  // own sends. Seed from the known tail so opening history cannot invent unread.
+  const cursor=Math.max(0,...data.messages.map(m=>Number(m.seq)||0));
+  const previous=entry.latestArrivalCursor;
+  if(previous!==undefined&&!entry.hasAfter&&!data.page?.has_after&&chatScroll.view===entry.id&&!chatScroll.follow){
+    entry.latestUnread??=new Set();
+    for(const m of data.messages)if(m.seq>previous&&!m.mine&&!['user','system'].includes(m.sender)&&['message','result'].includes(m.kind))entry.latestUnread.add(m.seq);
+  }
+  entry.latestArrivalCursor=Math.max(previous||0,cursor,Number(state.attention.chats[entry.id]?.cursor)||0);
   entry.pendingWaits=data.pending_waits||[];entry.waitingStates=data.waiting_states;entry.commands=data.commands||[];entry.sharedWorkers=data.workers||[];
   entry.messages=data.messages.slice(-CHAT_WINDOW_SIZE);entry.loaded=true;
   entry.hasBefore=!!data.page?.has_before;entry.hasAfter=!!data.page?.has_after;entry.error=null;entry.wantLatest=false;
@@ -9371,9 +9380,9 @@ function readingGesture(e){
   // deliberate return to latest. Pointer dragging still uses scroll deltas.
   if(e.type==='wheel')chatScroll.direction=Math.sign(e.deltaY);
   else if(e.type==='keydown')chatScroll.direction=['ArrowUp','PageUp','Home'].includes(e.key)||e.key===' '&&e.shiftKey?-1:1;
-  else if(e.type==='touchstart'){chatScroll.direction=0;chatScroll.touchY=e.touches[0]?.clientY??null;}
+  else if(e.type==='touchstart'){chatScroll.direction=0;chatScroll.touchY=e.touches?.[0]?.clientY??null;}
   else if(e.type==='touchmove'){
-    const y=e.touches[0]?.clientY;
+    const y=e.touches?.[0]?.clientY;
     if(y!==undefined&&chatScroll.touchY!==null&&y!==chatScroll.touchY)chatScroll.direction=Math.sign(chatScroll.touchY-y);
     chatScroll.touchY=y??null;
   }else if(e.type==='pointerdown')chatScroll.direction=0;
@@ -9406,8 +9415,24 @@ $('content').addEventListener('click',e=>{
   settleChatDisclosure();
 },true);
 
-const jumpLatest=button('Latest messages',async()=>{followChatLatest();await renderChat(true);$('prompt').focus({preventScroll:true});},'jump-latest','chevron');jumpLatest.hidden=true;$('composer-area').append(jumpLatest);
-function updateJumpLatest(){const area=$('content');jumpLatest.hidden=!chatHistory.get(currentConversationId())?.hasAfter && area.scrollHeight-area.scrollTop-area.clientHeight<150;}
+const jumpLatest=iconButton('arrow-down','Latest messages',async()=>{followChatLatest();await renderChat(true);if(!window.__KINDRED_MOBILE)$('prompt').focus({preventScroll:true});});
+jumpLatest.className='jump-latest';jumpLatest.hidden=true;
+// Keep the current editor/keyboard geometry through the press. Blurring the
+// composer here can move the button between pointerdown and click on WebKit.
+jumpLatest.addEventListener('pointerdown',event=>{if(event.button===0)event.preventDefault();});
+const jumpLatestCount=node('span','jump-latest-count');jumpLatestCount.hidden=true;jumpLatestCount.setAttribute('aria-hidden','true');jumpLatest.append(jumpLatestCount);$('composer-area').append(jumpLatest);
+function updateJumpLatest(){
+  const area=$('content'),entry=chatHistory.get(currentConversationId()),gap=area.scrollHeight-area.scrollTop-area.clientHeight;
+  if(!entry?.hasAfter&&gap<6&&!chatOpening&&!document.hidden)entry?.latestUnread?.clear();
+  const count=entry?.latestUnread?.size||0,label=count?`${count} new ${count===1?'message':'messages'}. Go to latest messages`:'Latest messages';
+  const hidden=!entry?.hasAfter&&gap<40&&!count;
+  if(jumpLatest.hidden!==hidden)jumpLatest.hidden=hidden;
+  // Avoid repeated attribute mutations on every scroll (also observed by UIKit).
+  if(jumpLatest.getAttribute('aria-label')!==label){jumpLatest.setAttribute('aria-label',label);jumpLatest.title=label;}
+  const text=count>99?'99+':count?String(count):'';
+  if(jumpLatestCount.textContent!==text)jumpLatestCount.textContent=text;
+  if(jumpLatestCount.hidden!==!count)jumpLatestCount.hidden=!count;
+}
 $('content').addEventListener('scroll',updateJumpLatest,{passive:true});new MutationObserver(updateJumpLatest).observe($('content'),{childList:true,subtree:true});
 
 const pendingFiles=new Map(),pendingPreviewUrls=new WeakMap(),pendingFileSources=new WeakMap(),pendingFileRows=new WeakMap(),uploadPreviewCache=new Map();

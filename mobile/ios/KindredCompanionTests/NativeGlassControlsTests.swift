@@ -19,6 +19,22 @@ final class NativeGlassControlsTests: XCTestCase {
         }
     }
 
+    func testLatestBadgeStaysSeparateFromTheIconAndClears() throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Liquid Glass requires iOS 26") }
+        var row=control("latest");row["rect"]=[100.0,200,44,44];row["title"]="";row["shape"]=nil;row["symbol"]="arrow.down";row["badge"]="3"
+        row["label"]="3 new messages. Go to latest messages"
+        let web=WKWebView(frame:CGRect(x:0,y:0,width:390,height:700)),glass=NativeGlassControls(frame:web.bounds),document=UUID().uuidString
+        _=glass.update(["document":document,"controls":[row]],in:web)
+        let button=try XCTUnwrap(glass.subviews.first as? UIButton)
+        let badge=try XCTUnwrap(button.subviews.first{$0.accessibilityIdentifier=="kindred-latest-unread-count"} as? UILabel)
+        XCTAssertEqual(button.frame.size,CGSize(width:44,height:44));XCTAssertEqual(button.configuration?.attributedTitle?.characters.count,0)
+        XCTAssertEqual(badge.text,"3");XCTAssertFalse(badge.isHidden);XCTAssertLessThan(badge.frame.minY,0)
+        XCTAssertEqual(button.accessibilityLabel,"3 new messages. Go to latest messages")
+        row["badge"]="";_=glass.update(["document":document,"controls":[row]],in:web);XCTAssertTrue(badge.isHidden)
+        for invalid in ["0","-1","100","bad"] {row["badge"]=invalid;XCTAssertNil(NativeGlassControl(row))}
+        row["badge"]="99+";XCTAssertNotNil(NativeGlassControl(row))
+    }
+
     func testCompactNametagFitsShortNameUsingMeasuredContentSlots() throws {
         guard #available(iOS 26.0, *) else { throw XCTSkip("Liquid Glass requires iOS 26") }
         let web=WKWebView(frame:CGRect(x:0,y:0,width:1000,height:720)),glass=NativeGlassControls(frame:web.bounds),document=UUID().uuidString

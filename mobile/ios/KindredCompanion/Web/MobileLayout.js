@@ -2153,7 +2153,7 @@
     const glassDocument = crypto.randomUUID(), current = new Map(), replaced = new Map();
     const specs = [
       ['identity','.conversation-header .bot-heading',''],
-      ['latest','.conversation>.composer-area>.jump-latest','chevron.down'],
+      ['latest','.conversation>.composer-area>.jump-latest','arrow.down'],
       ['accounts','#ios-accounts','ellipsis'],
       ['search','#ios-search','magnifyingglass'],
       ['new','.sidebar-top #new-bot','plus'],
@@ -2256,10 +2256,12 @@
         if (!(ghost ? ghost.isConnected && ghost.getClientRects().length : visible(node))) continue;
         const alpha = opacity(node); if (alpha < .005) continue;
         const rect = node.getBoundingClientRect(), style = getComputedStyle(node), identity = id === 'identity';
-        const title = identity ? (source.querySelector('strong')?.textContent || '').trim().slice(0,160) : ['latest','artifact-zoom'].includes(id) ? node.textContent.trim().slice(0,160) : '';
+        const title = identity ? (source.querySelector('strong')?.textContent || '').trim().slice(0,160) : id === 'artifact-zoom' ? node.textContent.trim().slice(0,160) : '';
+        const badgeNode = id === 'latest' ? node.querySelector('.jump-latest-count:not([hidden])') : null;
+        const badge = badgeNode?.textContent.trim() || '';
         const label = identity ? title+' details' : (node.getAttribute('aria-label') || node.title || node.textContent.trim() || id).slice(0,200);
         const avatar = source?.querySelector('.character'), shape = avatar?.dataset.avatarBody || avatar?.dataset.shape;
-        const color = avatar?.dataset.avatarColor || (avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '');
+        const color = id === 'latest' ? style.getPropertyValue('--user-bubble').trim() : avatar?.dataset.avatarColor || (avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '');
         const round = n => Math.round(n*100)/100;
         let identityGeometry = {};
         if (identity) {
@@ -2274,7 +2276,7 @@
           }
         }
         current.set(id,{source,node,interactive:!ghost});
-        controls.push({id,title,label,symbol,shape,color,rect:[rect.x,rect.y,rect.width,rect.height].map(round),...identityGeometry,
+        controls.push({id,title,label,symbol,shape,color,badge,rect:[rect.x,rect.y,rect.width,rect.height].map(round),...identityGeometry,
           fontSize:parseFloat(identity ? getComputedStyle(source.querySelector('strong') || source).fontSize : style.fontSize),
           imageInset:parseFloat(style.paddingLeft)||0,imageGap:parseFloat(style.columnGap)||0,
           opacity:alpha,titleOpacity:ghost ? Number(getComputedStyle(ghost.lastElementChild).opacity) : 1,interactive:!ghost});

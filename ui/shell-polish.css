@@ -334,3 +334,17 @@ html:not([data-mobile]):not([data-kindred-ios]) #composer.has-resize-surface.is-
 /* Bot identity follows the selected conversation; fixed palettes remain available. */
 html[data-accent=bot][data-accent]{--message-accent:var(--bot-accent);--user-fg:var(--bot-accent-ink)}
 html[data-accent=bot][data-accent] #send{--button-fg:var(--bot-accent-ink)}
+
+/* Progressive frost: clear at the reading edge, increasing toward the top.
+   A shallow, fixed overlay; no scroll handlers, text transforms or layout work. */
+.chat-top-frost{position:absolute;inset:0 0 auto;height:56px;z-index:2;pointer-events:none;}
+.chat-top-frost::before{content:'';position:absolute;inset:0;background:linear-gradient(to bottom,color-mix(in srgb,var(--bg) 28%,transparent),color-mix(in srgb,var(--bg) 12%,transparent) 35%,transparent 90%);}
+.chat-top-frost>span{position:absolute;inset:0;pointer-events:none;-webkit-backdrop-filter:blur(var(--frost-radius));backdrop-filter:blur(var(--frost-radius));-webkit-mask-image:var(--frost-mask);mask-image:var(--frost-mask);}
+.chat-top-frost>span:nth-child(1){--frost-radius:1px;--frost-mask:linear-gradient(#000,#000b 45%,#0004 75%,transparent);}
+.chat-top-frost>span:nth-child(2){--frost-radius:3px;--frost-mask:linear-gradient(#000,#000b 25%,#0004 55%,transparent 85%);}
+.chat-top-frost>span:nth-child(3){--frost-radius:6px;--frost-mask:linear-gradient(#000,#000a 15%,#0003 40%,transparent 68%);}
+.chat-top-frost>span:nth-child(4){--frost-radius:12px;--frost-mask:linear-gradient(#000,#0007 18%,#0002 32%,transparent 50%);}
+html[data-mobile] .chat-top-frost{height:44px;}
+@media(max-width:760px){.chat-top-frost{height:44px;}}
+@media(prefers-reduced-transparency:reduce){.chat-top-frost>span{display:none;}.chat-top-frost::before{background:linear-gradient(var(--bg),transparent);}}
+@media(forced-colors:active){.chat-top-frost{display:none;}}

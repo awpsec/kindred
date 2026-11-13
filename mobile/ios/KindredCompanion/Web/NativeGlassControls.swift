@@ -5,6 +5,7 @@ import WebKit
 private final class GlassChromeButton: UIButton {
     let avatar = UIImageView()
     let name = UILabel()
+    let badge = UILabel()
     var identity = false
     var imageInset: CGFloat = 8
     var imageGap: CGFloat = 8
@@ -17,6 +18,12 @@ private final class GlassChromeButton: UIButton {
         avatar.contentMode = .scaleAspectFit; name.lineBreakMode = .byTruncatingTail
         name.textColor = .label
         addSubview(avatar); addSubview(name)
+        badge.isUserInteractionEnabled = false; badge.isAccessibilityElement = false
+        badge.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        badge.textAlignment = .center; badge.textColor = .white
+        badge.backgroundColor = .label; badge.layer.cornerRadius = 9; badge.clipsToBounds = true
+        badge.accessibilityIdentifier = "kindred-latest-unread-count"
+        badge.isHidden = true; addSubview(badge)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func layoutSubviews() {
@@ -28,6 +35,8 @@ private final class GlassChromeButton: UIButton {
         avatar.frame = CGRect(x: center.x-15,y: center.y-15,width:30,height:30)
         let leading = imageInset+30+imageGap
         name.frame = titleFrame ?? CGRect(x: leading,y: 0,width:max(0,bounds.width-leading-imageInset),height:bounds.height)
+        let badgeWidth = max(18, badge.intrinsicContentSize.width + 8)
+        badge.frame = CGRect(x: bounds.width-badgeWidth+6,y: -6,width:badgeWidth,height:18)
     }
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         bounds.insetBy(dx: -max(0,44-bounds.width)/2,dy: -max(0,44-bounds.height)/2).contains(point)
@@ -53,6 +62,7 @@ struct NativeGlassControl {
     let imageGap: CGFloat
     let titleFrame: CGRect?
     let avatarCenter: CGPoint?
+    let badge: String
 
     init?(_ body: [String: Any]) {
         guard let id = body["id"] as? String, Self.identifiers.contains(id),
@@ -69,6 +79,9 @@ struct NativeGlassControl {
         else { return nil }
         self.id = id; frame = CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
         self.title = title; self.label = label; self.symbol = symbol
+        let badge = body["badge"] as? String ?? ""
+        guard badge.isEmpty || (id == "latest" && badge.range(of: "^(?:[1-9][0-9]?|99\\+)$", options: .regularExpression) != nil) else { return nil }
+        self.badge = badge
         shape = (body["shape"] as? String).flatMap { BotToolbarAvatar.supports(shape: $0) ? $0 : nil }
         color = (body["color"] as? String).flatMap { $0.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil ? $0 : nil } ?? "#2475ff"
         self.fontSize = fontSize; self.opacity = opacity; self.titleOpacity = titleOpacity
@@ -223,6 +236,11 @@ final class NativeGlassControls: UIView {
                 button.titleFrame = item.titleFrame; button.avatarCenter = item.avatarCenter
                 button.avatar.isHidden = !button.identity; button.name.isHidden = !button.identity
                 button.name.alpha = item.titleOpacity
+                button.badge.text = item.badge; button.badge.isHidden = item.badge.isEmpty
+                let rgb = UInt32(item.color.dropFirst(), radix:16) ?? 0x2475ff
+                button.badge.backgroundColor = UIColor(red:CGFloat((rgb >> 16) & 255)/255,green:CGFloat((rgb >> 8) & 255)/255,blue:CGFloat(rgb & 255)/255,alpha:1)
+                let brightness = Double((rgb >> 16) & 255)*0.299 + Double((rgb >> 8) & 255)*0.587 + Double(rgb & 255)*0.114
+                button.badge.textColor = brightness > 170 ? .black : .white
                 button.setNeedsLayout()
             }
             button.layoutIfNeeded()
