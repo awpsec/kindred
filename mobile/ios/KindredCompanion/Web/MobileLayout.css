@@ -436,8 +436,10 @@ html[data-kindred-ios][data-ios-duo-inner=true][data-ios-toolbar-identity=true] 
 /* Follow the shared milestone/Gather column, rather than the retired tracker
    header-plus-body indent. Keep the compact native narration and time targets. */
 html[data-kindred-ios] #content .message-group.task-commentary { margin-block:8px; padding-inline:42px 14px; }
+html[data-kindred-ios] #content .summary-progress-update { box-sizing:border-box; padding-inline:42px 14px; }
 @media(max-width:520px) {
  html[data-kindred-ios] #content .message-group.task-commentary { padding-inline:20px 12px; }
+ html[data-kindred-ios] #content .summary-progress-update { padding-inline:20px 12px; }
 }
 html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .message-row,
 html[data-kindred-ios] #content .summary-progress-update.message-row { display:block; min-height:0; height:auto; margin:0; }
@@ -451,6 +453,11 @@ html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .
 html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .progress-update-time { max-width:100%; font-size:calc(12px * var(--text-scale,1)); line-height:1.5; vertical-align:baseline; white-space:normal; }
 html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .progress-update-clock { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
 html[data-kindred-ios] #content :is(.task-commentary,.summary-progress-update) .progress-update-time-toggle { display:inline-flex; align-items:center; min-width:44px; min-height:44px; padding:0; margin-block:min(0px,calc((1.5em - 44px) / 2)); vertical-align:baseline; }
+/* Historical narration uses the journal's same text and time columns. Its
+   elapsed target must not trail the last word or steal a line of body text. */
+html[data-kindred-ios] #content .summary-progress-update p:has(>.progress-update-time) { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:16px; align-items:start; }
+html[data-kindred-ios] #content .summary-progress-update p>.progress-update-time { grid-column:2; grid-row:1; position:relative; margin:0; text-align:right; }
+html[data-kindred-ios] #content .summary-progress-update .progress-update-clock { position:absolute; right:0; top:100%; padding:2px 5px; background:var(--bg); border-radius:4px; z-index:1; pointer-events:none; }
 
 /* Native rail clearance belongs to reading and panel content; the independent
    composer still uses the available bottom lane. */

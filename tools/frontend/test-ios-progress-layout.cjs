@@ -70,7 +70,7 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-ios-progress-layout'
         const metrics=await page.locator('.task-commentary,#legacy-progress-fixture>.summary-progress-update').evaluateAll(rows=>rows.map(row=>{
           const bubble=row.querySelector('.message-bubble'),stamp=bubble.querySelector('.progress-update-time'),toggle=stamp.querySelector('button'),p=bubble.querySelector('p'),r=row.getBoundingClientRect(),b=bubble.getBoundingClientRect(),t=toggle.getBoundingClientRect(),s=stamp.getBoundingClientRect();
           const text=document.createRange();text.selectNodeContents(p);text.setEndBefore(stamp);const lines=[...text.getClientRects()].filter(rect=>rect.width>0&&rect.height>0);
-          return {legacy:row.classList.contains('summary-progress-update'),row:{x:r.x,y:r.y,width:r.width,height:r.height},bubble:{x:b.x,y:b.y,width:b.width,height:b.height},target:{width:t.width,height:t.height},stamp:{y:s.y,height:s.height},line:parseFloat(getComputedStyle(bubble).lineHeight),glyphLine:Math.max(...lines.map(r=>r.height)),font:parseFloat(getComputedStyle(bubble).fontSize),textTop:Math.min(...lines.map(r=>r.top)),textBottom:Math.max(...lines.map(r=>r.bottom)),margin:parseFloat(getComputedStyle(row).marginBottom),scrollWidth:bubble.scrollWidth,clientWidth:bubble.clientWidth};
+          return {legacy:row.classList.contains('summary-progress-update'),row:{x:r.x,y:r.y,width:r.width,height:r.height},bubble:{x:b.x,y:b.y,width:b.width,height:b.height},target:{width:t.width,height:t.height},stamp:{x:s.x,y:s.y,width:s.width,height:s.height},line:parseFloat(getComputedStyle(bubble).lineHeight),glyphLine:Math.max(...lines.map(r=>r.height)),font:parseFloat(getComputedStyle(bubble).fontSize),textTop:Math.min(...lines.map(r=>r.top)),textBottom:Math.max(...lines.map(r=>r.bottom)),textRight:Math.max(...lines.map(r=>r.right)),margin:parseFloat(getComputedStyle(row).marginBottom),scrollWidth:bubble.scrollWidth,clientWidth:bubble.clientWidth};
         }));
         fs.writeFileSync(path.join(out,'latest-metrics.json'),JSON.stringify({width,scale,theme,metrics},null,2));
         for(const metric of metrics) {
@@ -82,6 +82,11 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-ios-progress-layout'
           assert(metric.margin<=8,'progress rows use a small reading gap');
         }
         const current=metrics.filter(m=>!m.legacy);
+        for(const legacy of metrics.filter(m=>m.legacy)) {
+          assert(Math.abs(legacy.bubble.x-current[0].bubble.x)<1,'historical narration shares the current journal text column');
+          assert(Math.abs(legacy.stamp.x+legacy.stamp.width-current[0].stamp.x-current[0].stamp.width)<1,'historical elapsed times share the journal right column');
+          assert(legacy.textRight<=legacy.stamp.x-15,'historical narration cannot run underneath its elapsed target');
+        }
         const aligned=await page.evaluate(()=>{const a=document.querySelector('.summary-progress-activity'),x=a.getBoundingClientRect().x+parseFloat(getComputedStyle(a).paddingInlineStart);return [...document.querySelectorAll('.task-commentary .message-text-content')].every(p=>Math.abs(p.getBoundingClientRect().x-x)<1);});
         assert(aligned,'native commentary aligns with its expanded activity body');
         for(let i=1;i<current.length;i++) {
