@@ -9499,7 +9499,7 @@ function renderPendingFiles(){
     let row=pendingFileRows.get(file);
     if(!row||row.token!==state.token||row.chatId!==composerChatId()){
       const token=state.token,chatId=composerChatId(),current=()=>state.token===token&&composerChatId()===chatId&&pendingFiles.get(chatId)?.includes(file);
-      const chip=node('div','composer-file composer-file-row'),preview=pendingPreviewUrls.get(file),visual=node('span','composer-file-visual');
+      const preview=pendingPreviewUrls.get(file),isImage=!!preview||imageUpload(file),chip=node('div','composer-file composer-file-row'+(isImage?' composer-file-image':'')),visual=node('span','composer-file-visual');chip.title=file.name;
       if(preview||imageUpload(file)){
         const image=node('img','composer-file-preview');image.alt='';
         if(preview)image.src=preview;else fillUploadImage(image,file);visual.append(image);
@@ -9507,7 +9507,7 @@ function renderPendingFiles(){
       const copy=node('span','composer-file-copy'),name=node('span','composer-file-name',file.name),status=node('span','composer-file-status');
       name.title=file.name;status.setAttribute('role','status');copy.append(name,status);
       const retry=button('Retry',()=>{if(current())return uploadPendingFile(file);},'composer-file-retry');
-      const open=iconButton('search','Preview '+file.name,()=>{if(current())return previewPendingFile(file,open);});open.classList.add('composer-file-open');
+      const open=iconButton('search','Preview '+file.name,()=>{if(current())return previewPendingFile(file,open);});open.classList.add('composer-file-open');open.replaceChildren();
       const remove=iconButton('close','Remove '+file.name,async()=>{
         if(!current())return;
         const currentFiles=pendingFiles.get(chatId),position=currentFiles.indexOf(file);if(position<0)return;
@@ -9519,13 +9519,9 @@ function renderPendingFiles(){
       row={chip,status,retry,open,remove,token,chatId};pendingFileRows.set(file,row);
     }
     const {chip,status,retry,open,remove}=row;chip.dataset.attachmentState=file.loading?'uploading':file.error?'failed':'ready';
-    status.textContent=file.loading?'Uploading…':file.error?'Upload interrupted':(Number.isFinite(file.size)?(file.size<1024?file.size+' B':Math.ceil(file.size/1024)+' KB')+' · ':'')+'Ready';
+    status.textContent=file.loading?'Uploading…':file.error?'Upload interrupted':'';status.hidden=!file.loading&&!file.error;
     status.title=file.error||'';retry.hidden=!file.error;retry.disabled=!pendingFileSources.has(file);retry.dataset.attachmentFocus=index+':retry';
     open.hidden=!!file.loading||!!file.error||!(/\.(docx|xlsx|pdf|html?|jsx|md|txt|csv|json)$/i.test(file.name)||pendingPreviewUrls.has(file)||imageUpload(file));open.dataset.attachmentFocus=index+':preview';remove.dataset.attachmentFocus=index+':remove';rows.push(chip);
-  }
-  if(files.length){
-    let status=fileChips.querySelector('.composer-files-status');if(!status){status=node('span','composer-files-status');status.setAttribute('role','status');}
-    status.textContent=files.some(f=>f.error)?'Retry or remove the interrupted file':files.some(f=>f.loading)?'Preparing files…':files.length+' '+(files.length===1?'file':'files')+' ready';rows.push(status);
   }
   // Preserve controls across upload completion, including pointer-down/up in WebKit.
   for(const child of [...fileChips.children])if(!rows.includes(child))child.remove();
