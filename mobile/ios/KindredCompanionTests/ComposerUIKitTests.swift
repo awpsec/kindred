@@ -348,7 +348,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         for (name, color, ink) in [("Piper", "#ec3947", UIColor.black), ("Vivienne", "#16764b", UIColor.white), ("Izbella", "#ffffff", UIColor.black)] {
             _ = try await js("document.querySelector('.sidebar .bot-link[aria-label=\"\(name)\"]').click();true")
             try await waitFor("selected bot accent " + name) {
-                try await self.boolean("document.documentElement.style.getPropertyValue('--bot-accent')==='\(color)' && document.querySelector('#prompt')?.getAttribute('placeholder')?.includes('\(name)')")
+                try await self.boolean("document.documentElement.style.getPropertyValue('--bot-accent')==='\(color)' && document.querySelector('#prompt')?.getAttribute('data-placeholder')?.includes('\(name)')")
             }
             for (symbol, draft) in [("arrow.up", "Keep this draft"), ("waveform", "")] {
                 _ = try await js("const p=document.querySelector('#prompt');p.value='\(draft)';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
@@ -375,7 +375,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         session.webView.reload()
         try await waitFor("fixed accent survives document reload") { try await self.boolean("!!document.querySelector('#prompt') && document.documentElement.dataset.accent==='blue'") }
         _ = try await js("document.querySelector('.sidebar .bot-link[aria-label=\"Vivienne\"]').click();true")
-        try await waitFor("bot switch preserves fixed accent") { try await self.boolean("document.querySelector('#prompt')?.getAttribute('placeholder')?.includes('Vivienne') && document.documentElement.dataset.accent==='blue' && document.documentElement.style.getPropertyValue('--bot-accent')===''") }
+        try await waitFor("bot switch preserves fixed accent") { try await self.boolean("document.querySelector('#prompt')?.getAttribute('data-placeholder')?.includes('Vivienne') && document.documentElement.dataset.accent==='blue' && document.documentElement.style.getPropertyValue('--bot-accent')===''") }
         let report=XCTAttachment(data:try JSONSerialization.data(withJSONObject:["controls":observations,"fixedChoiceSurvivesReloadAndSwitch":true],options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json")
         report.name="native-bot-accent-acceptance";report.lifetime = .keepAlways;add(report)
     }
@@ -600,7 +600,9 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         window.__motionArrivals=[];
         const animate=Element.prototype.animate;
         Element.prototype.animate=function(frames,options){
-          if(this.classList.contains('reply-arriving'))window.__motionArrivals.push({seq:this.dataset.message,frames,options});
+          // The stable transcript group owns the arrival marker; the painted
+          // child row moves so scroll anchors never measure an animation.
+          if(options?.id==='reply-arrival')window.__motionArrivals.push({seq:this.closest('.message-group')?.dataset.message,frames,options});
           return animate.call(this,frames,options);
         };
         const baseFetch=window.fetch.bind(window);
