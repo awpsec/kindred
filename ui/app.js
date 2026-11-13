@@ -4475,15 +4475,16 @@ function resizeComposer(refit=false) {
   const empty=String(!text.trim());
   if(editor.dataset.empty!==empty)editor.dataset.empty=empty;
   if(editor.style.height!=='auto')editor.style.height='auto';dictationUI?.render();voiceUI?.render();syncQuestionComposer();
-  // IME owns layout until commit. Shortened drafts can return to one row.
+  // Marked dictation/IME text still needs room before commit. Keep its DOM
+  // and selection intact; only defer collapsing the grid until commit.
   // Native adapters retain their existing compact/expanded policy.
   if(!document.documentElement.hasAttribute('data-mobile')){
     const chat=state.token+':'+composerChatId();
     if(form.dataset.layoutChat!==chat){form.dataset.layoutChat=chat;form.classList.remove('is-multiline');}
-    if(editor.dataset.composing==='true')return;
-    if(!text){form.classList.remove('is-multiline');return;}
+    if(!text){if(editor.dataset.composing!=='true')form.classList.remove('is-multiline');return;}
     if(!form.getClientRects().length||form.matches('.is-replying,.has-files,.is-dictating'))return;
     if(form.classList.contains('is-multiline')){
+      if(editor.dataset.composing==='true')return;
       // Adding to the end cannot make this draft fit a smaller row. Avoid
       // compact/expanded probes on every key while typing a wrapped line.
       if(!refit&&previousText&&text.startsWith(previousText))return;
@@ -4507,7 +4508,7 @@ function resizeComposer(refit=false) {
   form.classList.toggle('is-multiline',editor.scrollHeight>Math.ceil(line)+1);
 }
 $('prompt').addEventListener('compositionstart',()=>{$('prompt').dataset.composing='true';});
-$('prompt').addEventListener('compositionend',()=>{delete $('prompt').dataset.composing;resizeComposer();});
+$('prompt').addEventListener('compositionend',()=>{delete $('prompt').dataset.composing;resizeComposer(true);});
 let composerWidth=0,composerFont='',composerMode='';
 function updateComposerLayout(){
   const form=$('composer'),width=form.clientWidth,font=getComputedStyle($('prompt')).fontSize,
