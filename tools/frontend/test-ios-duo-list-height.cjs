@@ -46,6 +46,16 @@ const bundle = path.resolve(__dirname, '../../mobile/ios/KindredCompanion/Web');
     assert(before.list.bottom>=630,'the list fills the display down to its normal bottom inset');
     assert(before.summary.bottom<=before.list.bottom,'six bots, group, and Bot conversations fit before any scrolling');
     assert.equal(before.scrollTop,0);
+    const first=page.locator('#bots .nav-entry .bot-link').first();
+    const firstTop=await first.evaluate(node=>node.getBoundingClientRect().top);
+    assert(firstTop>=16,'the first cover conversation clears the display contour with breathing room');
+    assert(await first.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+r.width/2,r.top+2));}),'the first row is tappable at its top edge, not clipped by the contour');
+    // A larger native top inset must win without adding another fixed spacer.
+    await page.evaluate(()=>{__KINDRED_IOS_LAYOUT.topInset=28;dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
+    await page.waitForFunction(()=>document.querySelector('#bots .bot-link').getBoundingClientRect().top>=28);
+    assert.equal(await page.locator('.sidebar').evaluate(node=>node.getBoundingClientRect().height),678,'top clearance does not shorten the cover sidebar');
+    await page.evaluate(()=>{__KINDRED_IOS_LAYOUT.topInset=0;dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
+    await page.waitForFunction(top=>Math.abs(document.querySelector('#bots .bot-link').getBoundingClientRect().top-top)<1,firstTop);
     if(process.env.KINDRED_TEST_ARTIFACTS)await page.screenshot({path:path.join(process.env.KINDRED_TEST_ARTIFACTS,'closed-list-six-rows-fixed.png')});
     await summary.click();
     await page.locator('#bots').evaluate(node=>node.scrollTop=node.scrollHeight);
@@ -67,6 +77,10 @@ const bundle = path.resolve(__dirname, '../../mobile/ios/KindredCompanion/Web');
       assert(Math.abs(report.height-height)<1,pose+' restores full list height after a pose change');
       assert(await page.locator('.bot-chat-section').evaluate(node=>node.open),'expansion survives folding');
       reports.push({pose,...report});
+      if(!inner){
+        await page.locator('#bots').evaluate(node=>node.scrollTop=0);
+        assert((await first.boundingBox()).y>=16,pose+' keeps the first conversation below the cover edge');
+      }
     }
     assert.deepEqual(errors,[]);
     if(process.env.KINDRED_TEST_ARTIFACTS)await page.screenshot({path:path.join(process.env.KINDRED_TEST_ARTIFACTS,'closed-list-fixed.png')});
