@@ -316,6 +316,70 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         }
     }
 
+    func testBotAccentReachesNativeSendAndVoiceAndKeepsFixedChoice() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
+        // Exact shipped UI and native bridge; only disposable API responses are
+        // seeded. No provider, microphone, owner preference or account is used.
+        _ = try await js("localStorage.removeItem('__nativeAccentSettings');true")
+        session.webView.configuration.userContentController.addUserScript(WKUserScript(source: """
+        (()=>{
+          const original=window.fetch.bind(window),json=value=>Promise.resolve(new Response(JSON.stringify(value),{status:200,headers:{'Content-Type':'application/json'}}));
+          const bots=[['piper','Piper','#ec3947'],['vivienne','Vivienne','#16764b'],['izbella','Izbella','#ffffff']].map(([id,name,color])=>({id,name,provider:'codex',model:'test',instructions:'Fixture',profile:{shape:'round',color,label:'Assistant',description:'Disposable native accent fixture'}}));
+          const chats=bots.map(b=>({id:'dm-'+b.id,name:b.name,members:[b.id],archived:false}));
+          let settings=JSON.parse(localStorage.getItem('__nativeAccentSettings')||'null')||{name:'You',theme:'dark',accent_color:'bot',reduced_motion:false};
+          window.fetch=(input,options={})=>{
+            const url=new URL(typeof input==='string'?input:input.url,location.href),p=url.pathname;
+            if(url.origin!==location.origin)return original(input,options);
+            if(p==='/api/bots')return json(bots);if(p==='/api/chats')return json(chats);
+            if(p==='/api/runs')return json([]);if(p==='/api/activity')return json({});
+            if(p==='/api/settings'){if(options.method==='PUT'){settings=JSON.parse(options.body);localStorage.setItem('__nativeAccentSettings',JSON.stringify(settings));}return json(settings);}
+            if(p==='/api/voice/settings')return json({configured:true,enabled:true,voice:'juni',pace:'normal',voices:[{id:'juni',name:'Juni'}]});
+            const chat=chats.find(c=>p==='/api/chats/'+c.id);
+            if(chat)return json({chat,messages:[{seq:1,sender:'user',kind:'message',text:'Native accent acceptance',created:1},{seq:2,sender:chat.members[0],kind:'message',text:'Retained conversation',created:2}],page:{has_before:false,has_after:false}});
+            return original(input,options);
+          };window.__nativeAccentFixture=true;
+        })();
+        """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        session.webView.reload()
+        try await waitFor("three disposable accent conversations") {
+            try await self.boolean("window.__nativeAccentFixture && document.querySelectorAll('.sidebar .bot-link').length===3 && document.documentElement.dataset.accent==='bot'")
+        }
+        var observations: [[String: Any]] = []
+        for (name, color, ink) in [("Piper", "#ec3947", UIColor.black), ("Vivienne", "#16764b", UIColor.white), ("Izbella", "#ffffff", UIColor.black)] {
+            _ = try await js("document.querySelector('.sidebar .bot-link[aria-label=\"\(name)\"]').click();true")
+            try await waitFor("selected bot accent " + name) {
+                try await self.boolean("document.documentElement.style.getPropertyValue('--bot-accent')==='\(color)' && document.querySelector('#prompt')?.getAttribute('placeholder')?.includes('\(name)')")
+            }
+            for (symbol, draft) in [("arrow.up", "Keep this draft"), ("waveform", "")] {
+                _ = try await js("const p=document.querySelector('#prompt');p.value='\(draft)';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
+                try await waitFor("native " + symbol + " follows " + name) {
+                    guard let item=self.session.glassControls.composer.model?.items.first(where:{$0.primary && $0.symbol==symbol}),let background=item.background,let foreground=item.foreground else{return false}
+                    let expected=UIColor(red:CGFloat(Int(color.dropFirst().prefix(2),radix:16)!)/255,green:CGFloat(Int(color.dropFirst(3).prefix(2),radix:16)!)/255,blue:CGFloat(Int(color.suffix(2),radix:16)!)/255,alpha:1)
+                    return background.isEqual(expected) && foreground.isEqual(ink)
+                }
+                let composer=session.glassControls.composer,item=try XCTUnwrap(composer.model?.items.first(where:{$0.primary && $0.symbol==symbol}))
+                let button=try XCTUnwrap(composer.material.contentView.subviews.compactMap{$0 as? UIButton}.first(where:{$0.accessibilityIdentifier=="kindred-native-composer-"+item.id}))
+                XCTAssertEqual(button.configuration?.baseBackgroundColor,item.background)
+                XCTAssertEqual(button.configuration?.baseForegroundColor,item.foreground)
+                XCTAssertTrue(composer.material.effect is UIGlassEffect)
+                XCTAssertGreaterThanOrEqual(button.bounds.width,44);XCTAssertGreaterThanOrEqual(button.bounds.height,44)
+                let image=UIGraphicsImageRenderer(bounds:window.bounds).image{_ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true)}
+                let a=XCTAttachment(image:image);a.name="native-accent-"+name+"-"+symbol;a.lifetime = .keepAlways;add(a)
+                observations.append(["bot":name,"color":color,"symbol":symbol,"contrastingInk":ink==UIColor.black ? "black":"white","nativeGlass":true])
+            }
+        }
+        _ = try await js("document.querySelector('#settings-button').click();true")
+        try await waitFor("actual Accent color control") { try await self.boolean("!!document.querySelector('#settings-dialog[open] select[aria-label=\"Accent color\"]:not(:disabled)')") }
+        _ = try await js("const a=document.querySelector('select[aria-label=\"Accent color\"]');a.value='blue';a.dispatchEvent(new Event('change',{bubbles:true}));true")
+        try await waitFor("fixed blue saved") { try await self.boolean("document.querySelector('.general-settings-form .preference-status')?.textContent==='Saved' && JSON.parse(localStorage.getItem('__nativeAccentSettings')).accent_color==='blue'") }
+        session.webView.reload()
+        try await waitFor("fixed accent survives document reload") { try await self.boolean("!!document.querySelector('#prompt') && document.documentElement.dataset.accent==='blue'") }
+        _ = try await js("document.querySelector('.sidebar .bot-link[aria-label=\"Vivienne\"]').click();true")
+        try await waitFor("bot switch preserves fixed accent") { try await self.boolean("document.querySelector('#prompt')?.getAttribute('placeholder')?.includes('Vivienne') && document.documentElement.dataset.accent==='blue' && document.documentElement.style.getPropertyValue('--bot-accent')===''") }
+        let report=XCTAttachment(data:try JSONSerialization.data(withJSONObject:["controls":observations,"fixedChoiceSurvivesReloadAndSwitch":true],options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json")
+        report.name="native-bot-accent-acceptance";report.lifetime = .keepAlways;add(report)
+    }
+
     func testNativeComposerTypingKeyboardAndSend() async throws {
         guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
         try await waitFor("genuine native composer") { self.session.glassControls.composer.model != nil && !self.session.glassControls.composer.isHidden }
