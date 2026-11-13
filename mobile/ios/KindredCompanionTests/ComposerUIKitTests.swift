@@ -128,7 +128,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // Bind the fixture's exact shared candidate, not a stale connected UI.
         _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
         try await waitFor("exact Send candidate UI manifest") {
-            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='65ff5d94daf66792ac4b166c9cb26a971cf18e15305c15dff18b3b079946f96d' && window.__sendSurfaceFixture?.['app.js']==='c96abbb80c5457cf2d3550593e9c40ef760baacfd487fc86808bb2ac72094c72' && window.__sendSurfaceFixture?.['progress.css']==='6fa9d59b1da504c1439a519b9d19346cdfa94f30918a4aff914b90ae4f17ef50' && window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='05693c440ab93dfbe96cdc28436d3426a9d4182922668034c5e3b542897a8e3c' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='2e6283b9f301283ea5c695856cc11b8eb539c31bdbd7a08975eeb45434c2c040'")
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='31b508f3a57aaf28c7a28ef515e8e8ce8412e1304b4426e630029c3a5d3db204' && window.__sendSurfaceFixture?.['app.js']==='3fc231c60dcb8d5a234d720fea1aa82308689537ddbead383957590e04dbf7fc' && window.__sendSurfaceFixture?.['progress.css']==='6c711768f8bd33a4645f906f529aad8ea37691fef1931911412c1862473bc831' && window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='05693c440ab93dfbe96cdc28436d3426a9d4182922668034c5e3b542897a8e3c' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='b509b9b5cfc690606f8ba7e413e251bf893763c0a937f26c887b00e5ef6371ee'")
         }
         try await waitFor("injected native capability reconciles through bridge") {
             try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && window.__KINDRED_IOS_DICTATION?.recognizerAvailable===true")
@@ -314,6 +314,70 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             let data=XCTAttachment(data:try JSONSerialization.data(withJSONObject:info,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");data.name="native-primary-glyph-geometry";data.lifetime = .keepAlways;add(data)
             XCTAssertGreaterThan(ink,5,"Native primary control must paint a contrasting symbol inside its circle")
         }
+    }
+
+    func testBotAccentReachesNativeSendAndVoiceAndKeepsFixedChoice() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
+        // Exact shipped UI and native bridge; only disposable API responses are
+        // seeded. No provider, microphone, owner preference or account is used.
+        _ = try await js("localStorage.removeItem('__nativeAccentSettings');true")
+        session.webView.configuration.userContentController.addUserScript(WKUserScript(source: """
+        (()=>{
+          const original=window.fetch.bind(window),json=value=>Promise.resolve(new Response(JSON.stringify(value),{status:200,headers:{'Content-Type':'application/json'}}));
+          const bots=[['piper','Piper','#ec3947'],['vivienne','Vivienne','#16764b'],['izbella','Izbella','#ffffff']].map(([id,name,color])=>({id,name,provider:'codex',model:'test',instructions:'Fixture',profile:{shape:'round',color,label:'Assistant',description:'Disposable native accent fixture'}}));
+          const chats=bots.map(b=>({id:'dm-'+b.id,name:b.name,members:[b.id],archived:false}));
+          let settings=JSON.parse(localStorage.getItem('__nativeAccentSettings')||'null')||{name:'You',theme:'dark',accent_color:'bot',reduced_motion:false};
+          window.fetch=(input,options={})=>{
+            const url=new URL(typeof input==='string'?input:input.url,location.href),p=url.pathname;
+            if(url.origin!==location.origin)return original(input,options);
+            if(p==='/api/bots')return json(bots);if(p==='/api/chats')return json(chats);
+            if(p==='/api/runs')return json([]);if(p==='/api/activity')return json({});
+            if(p==='/api/settings'){if(options.method==='PUT'){settings=JSON.parse(options.body);localStorage.setItem('__nativeAccentSettings',JSON.stringify(settings));}return json(settings);}
+            if(p==='/api/voice/settings')return json({configured:true,enabled:true,voice:'juni',pace:'normal',voices:[{id:'juni',name:'Juni'}]});
+            const chat=chats.find(c=>p==='/api/chats/'+c.id);
+            if(chat)return json({chat,messages:[{seq:1,sender:'user',kind:'message',text:'Native accent acceptance',created:1},{seq:2,sender:chat.members[0],kind:'message',text:'Retained conversation',created:2}],page:{has_before:false,has_after:false}});
+            return original(input,options);
+          };window.__nativeAccentFixture=true;
+        })();
+        """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        session.webView.reload()
+        try await waitFor("three disposable accent conversations") {
+            try await self.boolean("window.__nativeAccentFixture && document.querySelectorAll('.sidebar .bot-link').length===3 && document.documentElement.dataset.accent==='bot'")
+        }
+        var observations: [[String: Any]] = []
+        for (name, color, ink) in [("Piper", "#ec3947", UIColor.black), ("Vivienne", "#16764b", UIColor.white), ("Izbella", "#ffffff", UIColor.black)] {
+            _ = try await js("document.querySelector('.sidebar .bot-link[aria-label=\"\(name)\"]').click();true")
+            try await waitFor("selected bot accent " + name) {
+                try await self.boolean("document.documentElement.style.getPropertyValue('--bot-accent')==='\(color)' && document.querySelector('#prompt')?.getAttribute('placeholder')?.includes('\(name)')")
+            }
+            for (symbol, draft) in [("arrow.up", "Keep this draft"), ("waveform", "")] {
+                _ = try await js("const p=document.querySelector('#prompt');p.value='\(draft)';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
+                try await waitFor("native " + symbol + " follows " + name) {
+                    guard let item=self.session.glassControls.composer.model?.items.first(where:{$0.primary && $0.symbol==symbol}),let background=item.background,let foreground=item.foreground else{return false}
+                    let expected=UIColor(red:CGFloat(Int(color.dropFirst().prefix(2),radix:16)!)/255,green:CGFloat(Int(color.dropFirst(3).prefix(2),radix:16)!)/255,blue:CGFloat(Int(color.suffix(2),radix:16)!)/255,alpha:1)
+                    return background.isEqual(expected) && foreground.isEqual(ink)
+                }
+                let composer=session.glassControls.composer,item=try XCTUnwrap(composer.model?.items.first(where:{$0.primary && $0.symbol==symbol}))
+                let button=try XCTUnwrap(composer.material.contentView.subviews.compactMap{$0 as? UIButton}.first(where:{$0.accessibilityIdentifier=="kindred-native-composer-"+item.id}))
+                XCTAssertEqual(button.configuration?.baseBackgroundColor,item.background)
+                XCTAssertEqual(button.configuration?.baseForegroundColor,item.foreground)
+                XCTAssertTrue(composer.material.effect is UIGlassEffect)
+                XCTAssertGreaterThanOrEqual(button.bounds.width,44);XCTAssertGreaterThanOrEqual(button.bounds.height,44)
+                let image=UIGraphicsImageRenderer(bounds:window.bounds).image{_ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true)}
+                let a=XCTAttachment(image:image);a.name="native-accent-"+name+"-"+symbol;a.lifetime = .keepAlways;add(a)
+                observations.append(["bot":name,"color":color,"symbol":symbol,"contrastingInk":ink==UIColor.black ? "black":"white","nativeGlass":true])
+            }
+        }
+        _ = try await js("document.querySelector('#settings-button').click();true")
+        try await waitFor("actual Accent color control") { try await self.boolean("!!document.querySelector('#settings-dialog[open] select[aria-label=\"Accent color\"]:not(:disabled)')") }
+        _ = try await js("const a=document.querySelector('select[aria-label=\"Accent color\"]');a.value='blue';a.dispatchEvent(new Event('change',{bubbles:true}));true")
+        try await waitFor("fixed blue saved") { try await self.boolean("document.querySelector('.general-settings-form .preference-status')?.textContent==='Saved' && JSON.parse(localStorage.getItem('__nativeAccentSettings')).accent_color==='blue'") }
+        session.webView.reload()
+        try await waitFor("fixed accent survives document reload") { try await self.boolean("!!document.querySelector('#prompt') && document.documentElement.dataset.accent==='blue'") }
+        _ = try await js("document.querySelector('.sidebar .bot-link[aria-label=\"Vivienne\"]').click();true")
+        try await waitFor("bot switch preserves fixed accent") { try await self.boolean("document.querySelector('#prompt')?.getAttribute('placeholder')?.includes('Vivienne') && document.documentElement.dataset.accent==='blue' && document.documentElement.style.getPropertyValue('--bot-accent')===''") }
+        let report=XCTAttachment(data:try JSONSerialization.data(withJSONObject:["controls":observations,"fixedChoiceSurvivesReloadAndSwitch":true],options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json")
+        report.name="native-bot-accent-acceptance";report.lifetime = .keepAlways;add(report)
     }
 
     func testNativeComposerTypingKeyboardAndSend() async throws {
@@ -899,7 +963,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             (()=>{const rect=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
               const p=document.querySelector('#prompt'),shell=document.querySelector('#app'),v=visualViewport;
               return {draftMatches:p?.textContent==='Keyboard ownership fixture draft',sendCount:window.__composerSends.length,
-                uiMatches:window.__sendSurfaceFixture?.['style.css']==='65ff5d94daf66792ac4b166c9cb26a971cf18e15305c15dff18b3b079946f96d'&&window.__sendSurfaceFixture?.['app.js']==='c96abbb80c5457cf2d3550593e9c40ef760baacfd487fc86808bb2ac72094c72' && window.__sendSurfaceFixture?.['progress.css']==='6fa9d59b1da504c1439a519b9d19346cdfa94f30918a4aff914b90ae4f17ef50'&&window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='05693c440ab93dfbe96cdc28436d3426a9d4182922668034c5e3b542897a8e3c' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='2e6283b9f301283ea5c695856cc11b8eb539c31bdbd7a08975eeb45434c2c040',
+                uiMatches:window.__sendSurfaceFixture?.['style.css']==='31b508f3a57aaf28c7a28ef515e8e8ce8412e1304b4426e630029c3a5d3db204'&&window.__sendSurfaceFixture?.['app.js']==='3fc231c60dcb8d5a234d720fea1aa82308689537ddbead383957590e04dbf7fc' && window.__sendSurfaceFixture?.['progress.css']==='6c711768f8bd33a4645f906f529aad8ea37691fef1931911412c1862473bc831'&&window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='05693c440ab93dfbe96cdc28436d3426a9d4182922668034c5e3b542897a8e3c' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='b509b9b5cfc690606f8ba7e413e251bf893763c0a937f26c887b00e5ef6371ee',
                 uiManifest:window.__sendSurfaceFixture,viewport:{width:innerWidth,height:innerHeight},
                 client:{width:document.documentElement.clientWidth,height:document.documentElement.clientHeight},
                 visual:v?{width:v.width,height:v.height,offsetTop:v.offsetTop,offsetLeft:v.offsetLeft,scale:v.scale}:null,
