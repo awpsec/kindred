@@ -4544,11 +4544,12 @@ window.addEventListener('kindred-interface-font-change',()=>requestAnimationFram
 // The composer remains a floating surface. Reserve space for all chat rows,
 // including working avatars and collaboration waits.
 const composerSpace={height:null,target:0,frame:0};
-function setComposerClearance(height){
+function setComposerClearance(height,moveReadingEdge=false){
   const mode=document.documentElement.hasAttribute('data-mobile');
   if(composerSpace.height===height&&composerSpace.mobile===mode)return;
+  const previousHeight=composerSpace.height;
   composerSpace.mobile=mode;composerSpace.height=height;
-  const content=$('content');
+  const content=$('content'),previousTop=content.scrollTop;
   if(document.documentElement.hasAttribute('data-mobile')){
     // Native adapters own keyboard, safe-area and split-screen spacing.
     content.style.removeProperty('padding-bottom');content.style.removeProperty('scroll-padding-bottom');
@@ -4559,6 +4560,16 @@ function setComposerClearance(height){
     // scroll container, avoiding full-transcript style work during typing.
     content.style.paddingBottom=(height+10)+'px';
     content.style.scrollPaddingBottom=(height+12)+'px';
+    if(moveReadingEdge&&!chatScroll.follow&&previousHeight!==null){
+      // Keep the same text above the composer while answering an older message.
+      // One scroll adjustment per measured resize avoids per-frame transcript
+      // layout and never enables following or pulls the reader to newer work.
+      content.scrollTop=previousTop+height-previousHeight;
+      const moved=content.scrollTop-previousTop;
+      chatScroll.top=content.scrollTop;
+      if(chatScroll.anchor)for(const anchor of [chatScroll.anchor,...(chatScroll.anchor.backups||[])])anchor.offset-=moved;
+      updateJumpLatest();
+    }
   }
   if(chatScroll.follow&&!chatOpening&&!chatScroll.rendering)restoreChatPosition();
 }
@@ -4568,14 +4579,15 @@ function settleComposerClearance(){
 }
 const composerClearance=new ResizeObserver(()=>{
   const area=$('composer-area'),chat=composerChatId(),to=area.hidden?0:area.getBoundingClientRect().height+24;
-  const from=composerSpace.height??to,sameChat=chatScroll.view===chat;
-  composerSpace.target=to;
+  const width=area.offsetWidth,from=composerSpace.height??to,sameChat=chatScroll.view===chat;
+  const moveReadingEdge=sameChat&&composerSpace.chat===chat&&composerSpace.mobile===false&&composerSpace.width===width&&!chatOpening&&!chatScroll.rendering&&!chatScroll.layout&&performance.now()>=chatScroll.gestureUntil;
+  composerSpace.chat=chat;composerSpace.width=width;composerSpace.target=to;
   cancelAnimationFrame(composerSpace.frame);composerSpace.frame=0;
   // WebKitGTK must lay out and repaint the scrolling SVG transcript after each
   // padding change. A line wrap needs one adjustment, not a second layout loop
   // competing with typing and avatar motion. Native mobile owns its spacing.
   // Native reply morphs own their height transition; do not animate them twice.
-  if(!document.documentElement.hasAttribute('data-mobile')||!sameChat||Math.abs(to-from)<1||!chatScroll.follow||chatOpening||$('composer').classList.contains('is-morphing')||!motionAllowed())return setComposerClearance(to);
+  if(!document.documentElement.hasAttribute('data-mobile')||!sameChat||Math.abs(to-from)<1||!chatScroll.follow||chatOpening||$('composer').classList.contains('is-morphing')||!motionAllowed())return setComposerClearance(to,moveReadingEdge);
   const start=performance.now(),duration=180;
   const step=now=>{
     if(!motionAllowed()||composerChatId()!==chat)return settleComposerClearance();

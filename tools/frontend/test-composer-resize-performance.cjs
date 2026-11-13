@@ -52,9 +52,10 @@ const {webkit,chromium}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwrig
   const geometry=()=>p.evaluate(()=>{const c=document.querySelector('#content'),a=document.querySelector('#composer-area'),form=document.querySelector('#composer');return {padding:parseFloat(getComputedStyle(c).paddingBottom),height:a.getBoundingClientRect().height,gap:c.scrollHeight-c.clientHeight-c.scrollTop,formTop:form.getBoundingClientRect().top,last:c.lastElementChild.getBoundingClientRect().bottom};});
   let g=await geometry();assert(g.padding>=g.height,'The growing composer must reserve enough space');assert(g.gap<3,'Typing at the end must stay at the end');assert(g.last<=g.formTop,'The last message must remain readable');
   await p.locator('#content').evaluate(n=>n.scrollTop=n.scrollHeight/2);await p.waitForTimeout(100);
-  const anchor=await p.evaluate(()=>{const c=document.querySelector('#content'),top=c.getBoundingClientRect().top,n=[...c.children].find(n=>n.dataset.message&&n.getBoundingClientRect().bottom>top);return {id:n.dataset.message,y:n.getBoundingClientRect().top};});
+  const anchor=await p.evaluate(()=>{const c=document.querySelector('#content'),top=c.getBoundingClientRect().top,n=[...c.children].find(n=>n.dataset.message&&n.getBoundingClientRect().bottom>top);return {id:n.dataset.message,y:n.getBoundingClientRect().top,composerTop:document.querySelector('#composer-area').getBoundingClientRect().top};});
   await p.locator('#prompt').fill('A short draft.');await p.waitForTimeout(300);
-  assert(Math.abs((await p.locator('[data-message="'+anchor.id+'"]').boundingBox()).y-anchor.y)<2,'Changing composer size must preserve a reader’s position');
+  const composerTop=await p.locator('#composer-area').evaluate(n=>n.getBoundingClientRect().top);
+  assert(Math.abs((await p.locator('[data-message="'+anchor.id+'"]').boundingBox()).y-composerTop-(anchor.y-anchor.composerTop))<2,'Changing composer size must preserve the reading edge above it');
   await p.evaluate(()=>{document.documentElement.dataset.motion='off';const c=document.querySelector('#content');c.scrollTop=c.scrollHeight;});await p.waitForTimeout(150);
   await p.locator('#prompt').fill('');await p.waitForTimeout(100);g=await geometry();assert(g.gap<3&&g.last<=g.formTop,'Reduced motion collapse must preserve the newest message');
   assert.equal(await p.locator('#content>[data-message]').count(),initial,'Composer resizing must retain the transcript');assert.deepEqual(errors,[]);
