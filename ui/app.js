@@ -2588,7 +2588,7 @@ async function settingsGeneral(revision) {
   const paintAccent=()=>accentSwatch.style.backgroundColor=accentColors.find(([id])=>id===accent.value)?.[2]||'#777777';paintAccent();accent.addEventListener('change',paintAccent);
   appearance.body.append(settingRow('Theme',theme),settingRow('Accent color',accentControl),motion.label);
   if(!document.documentElement.hasAttribute('data-mobile')){
-  const messageStyle=select([['prose','Open text'],['bubbles','Chat bubbles']],window.KindredBotMessageStyle.get());
+  const messageStyle=select([['bubbles','Chat bubbles'],['prose','Open text']],window.KindredBotMessageStyle.get());
   messageStyle.setAttribute('aria-label','Bot messages');messageStyle.onchange=()=>window.KindredBotMessageStyle.set(messageStyle.value);
   const messageStyleRow=settingRow('Bot messages',messageStyle);messageStyleRow.dataset.devicePreference='true';appearance.body.append(messageStyleRow);
   }
