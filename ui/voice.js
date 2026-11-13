@@ -1,5 +1,14 @@
 // The server owns credentials, the call transcript, private work session and requested follow-ups.
 // Tones are original, short state cues, never recordings from another application.
+// Keep contiguous packets contiguous. Reapplying a lead to every packet opens
+// gaps whenever delivery jitters close to the render clock. Match native iOS's
+// bounded 120 ms startup/recovery cushion without changing pitch or playback rate.
+export function voicePlaybackStart(now,next,duration){
+  if(!Number.isFinite(now)||now<0||!Number.isFinite(duration)||duration<=0||duration>2)throw Error('Invalid audio');
+  const start=Number.isFinite(next)&&next>=now?next:now+.12;
+  if(start+duration-now>3)throw Error('Audio playback fell behind');
+  return start;
+}
 const callTones={connecting:[[392,0,.14]],connected:[[523,0,.11],[659,.13,.11]],ended:[[494,0,.12],[330,.14,.12]],error:[[330,0,.14],[262,.17,.14]]};
 // Each position has a fixed profile. Only current PCM energy changes its height;
 // this is a meter, never a scrolling recording of previous audio samples.
@@ -238,7 +247,7 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     if(operation!==op)return;
     if(value.type==='started'){if(op.phase==='ending')return;const fresh=op.phase!=='active';op.phase='active';op.started=value.started_ms||Date.now();if(typeof value.muted==='boolean')op.muted=value.muted;clearTimeout(op.timeout);if(fresh)cue('connected',op);render();}
     else if(value.type==='audio'&&op.phase==='active'){
-      try{const raw=atob(value.data);if(raw.length>96000||raw.length%2)throw Error('Invalid audio');const samples=new Float32Array(raw.length/2);for(let i=0;i<samples.length;i++){let n=raw.charCodeAt(i*2)|(raw.charCodeAt(i*2+1)<<8);if(n>32767)n-=65536;samples[i]=n/32768;}const context=op.audio;if(!context)return;const at=Math.max(context.currentTime+.02,op.nextAudio||0);if(at-context.currentTime>3)throw Error('Audio playback fell behind');const buffer=context.createBuffer(1,samples.length,24000);buffer.copyToChannel(samples,0);const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);op.playing.add(source);source.onended=()=>op.playing.delete(source);source.start(at);op.nextAudio=at+buffer.duration;
+      try{const raw=atob(value.data);if(raw.length>96000||raw.length%2)throw Error('Invalid audio');const samples=new Float32Array(raw.length/2);for(let i=0;i<samples.length;i++){let n=raw.charCodeAt(i*2)|(raw.charCodeAt(i*2+1)<<8);if(n>32767)n-=65536;samples[i]=n/32768;}const context=op.audio;if(!context)return;const at=voicePlaybackStart(context.currentTime,op.nextAudio,samples.length/24000);const buffer=context.createBuffer(1,samples.length,24000);buffer.copyToChannel(samples,0);const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);op.playing.add(source);source.onended=()=>op.playing.delete(source);source.start(at);op.nextAudio=at+buffer.duration;
         // GPT Live also streams silent PCM. Meter actual scheduled sound, not
         // packet arrival, so idle audio cannot look or read as bot speech.
         for(let offset=0;offset<samples.length;offset+=960){let sum=0,count=0;const end=Math.min(samples.length,offset+960);for(let i=offset;i<end;i+=4){sum+=samples[i]*samples[i];count++;}op.outputLevels.push({at:at+offset/24000,end:at+end/24000,rms:Math.sqrt(sum/count)});}
