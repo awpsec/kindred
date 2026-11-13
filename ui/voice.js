@@ -9,6 +9,25 @@ export function voicePlaybackStart(now,next,duration){
   if(start+duration-now>3)throw Error('Audio playback fell behind');
   return start;
 }
+// Auth/token checks stay with api(); this parser bounds every streamed sample.
+export async function readVoicePreviewStream(response,onEvent,isCurrent=()=>true){
+  if(!response.headers.get('content-type')?.startsWith('application/x-ndjson'))throw Error('The voice preview format is unsupported.');
+  const reader=response.body.getReader(),decoder=new TextDecoder();let pending='',total=0,done=false;
+  try{
+    while(true){const part=await reader.read();if(!isCurrent())throw Error('Voice preview cancelled.');
+      if(part.done)break;total+=part.value.length;if(total>1500000)throw Error('Voice preview exceeds its size limit.');
+      pending+=decoder.decode(part.value,{stream:true});let split;
+      while((split=pending.indexOf('\n'))>=0){const line=pending.slice(0,split);pending=pending.slice(split+1);if(!line.trim())continue;
+        if(line.length>140000)throw Error('Voice preview exceeds its size limit.');if(done)throw Error('Unexpected voice preview data.');const event=JSON.parse(line);
+        if(event.type==='error')throw Error('Voice preview stopped. Try again.');
+        if(event.type!=='audio'&&event.type!=='done')throw Error('Invalid voice preview event.');
+        done=event.type==='done';await onEvent(event);
+      }
+      if(pending.length>140000)throw Error('Voice preview exceeds its size limit.');
+    }
+    if(!done||pending.trim())throw Error('The voice preview ended before it finished.');
+  }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+}
 const callTones={connecting:[[392,0,.14]],connected:[[523,0,.11],[659,.13,.11]],ended:[[494,0,.12],[330,.14,.12]],error:[[330,0,.14],[262,.17,.14]]};
 // Each position has a fixed profile. Only current PCM energy changes its height;
 // this is a meter, never a scrolling recording of previous audio samples.
@@ -181,7 +200,7 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     const active=!!preview,label=active?'Stop voice preview':'Preview '+(config?.voices?.find(v=>v.id===config.voice)?.name||'voice');
     control.disabled=!config?.configured||!!operation||settings.dataset.saving==='true';control.title=label;control.setAttribute('aria-label',label);control.setAttribute('aria-pressed',String(active));control.setAttribute('aria-busy',String(preview?.phase==='loading'));control.replaceChildren(icon(active?'stop':'play',16));
   }
-  function stopPreview(){const old=preview;preview=null;if(old){clearInterval(old.check);clearTimeout(old.timer);old.controller.abort();if(old.native){if(window.__KINDRED_IOS_VOICE?.previewID===old.id)delete window.__KINDRED_IOS_VOICE.previewID;postNative('previewStop',{id:old.id});}if(old.source){old.source.onended=null;try{old.source.stop();old.source.disconnect();}catch{}}}renderPreview();idleEffects();}
+  function stopPreview(){const old=preview;preview=null;if(old){clearInterval(old.check);clearTimeout(old.timer);old.controller.abort();for(const source of old.sources||[])try{source.onended=null;source.stop();source.disconnect();}catch{}if(old.native){if(window.__KINDRED_IOS_VOICE?.previewID===old.id)delete window.__KINDRED_IOS_VOICE.previewID;postNative('previewStop',{id:old.id});}if(old.source){old.source.onended=null;try{old.source.stop();old.source.disconnect();}catch{}}}renderPreview();idleEffects();}
   async function previewVoice(){
     if(preview){stopPreview();return;}if(operation||!config?.configured||!config.voice)return;
     const error=settings.querySelector('.voice-settings-error');error.textContent='';const current=revision,owner=settings;
@@ -190,7 +209,25 @@ export function createVoiceUI({api,composer,editor,send,bot,chatId,icon,avatar,n
     try{
       let context;
       if(!sample.native){const audio=effectsContext();context=audio.context;await bounded(audio.ready,3000,'Audio playback is paused. Try preview again.');}if(preview!==sample)return;
-      const blob=await api('/voice/preview','POST',{voice:config.voice},{responseType:'blob',maxBlobBytes:1500000,signal:sample.controller.signal,timeoutMs:35000});
+      if(sample.native&&config.preview_streaming===true&&window.__KINDRED_IOS_VOICE.previewStreaming===true){
+        window.__KINDRED_IOS_VOICE.previewID=sample.id;postNative('previewStream',{id:sample.id,voice:config.voice});
+        sample.timer=setTimeout(()=>{if(preview===sample){stopPreview();error.textContent='The voice preview did not start. Try again.';}},30000);return;
+      }
+      const streaming=!sample.native&&config.preview_streaming===true;sample.sources=new Set();sample.frames=0;
+      const onEvent=event=>{
+        if(preview!==sample||current!==revision)throw Error('Voice preview cancelled.');
+        if(event.type==='done'){sample.done=true;if(!sample.frames)throw Error('The voice preview contained no audio.');if(!sample.sources.size)stopPreview();return;}
+        const raw=atob(event.data);if(!raw.length||raw.length%2||raw.length>96000)throw Error('Invalid voice preview audio.');
+        const frames=raw.length/2;sample.frames+=frames;if(sample.frames>240000)throw Error('Voice preview exceeds its duration limit.');
+        const buffer=context.createBuffer(1,frames,24000),channel=buffer.getChannelData(0);
+        for(let i=0;i<frames;i++){let n=raw.charCodeAt(i*2)|(raw.charCodeAt(i*2+1)<<8);if(n>32767)n-=65536;channel[i]=n/32768;}
+        const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);sample.sources.add(source);
+        source.onended=()=>{sample.sources.delete(source);source.disconnect();if(preview===sample&&sample.done&&!sample.sources.size)stopPreview();};
+        const at=Number.isFinite(sample.next)&&sample.next>=context.currentTime?sample.next:context.currentTime+.12;
+        source.start(at);sample.next=at+buffer.duration;sample.phase='playing';renderPreview();
+      };
+      const blob=await api('/voice/preview','POST',{voice:config.voice,...(streaming?{stream:true}:{})},{responseType:streaming?'voice-stream':'blob',onEvent,maxBlobBytes:1500000,signal:sample.controller.signal,timeoutMs:35000});
+      if(streaming&&!blob)return;
       if(preview!==sample||current!==revision)return;if(!blob.type.startsWith('audio/'))throw Error('The voice preview could not be played.');
       const bytes=await blob.arrayBuffer();if(preview!==sample||current!==revision)return;
       if(sample.native){

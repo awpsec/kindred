@@ -277,7 +277,7 @@ final class WebSession: NSObject {
         })();
         """
         let textSize = WebTextSize.script(origin: origin, scale: systemTextScale)
-        controller.addUserScript(WKUserScript(source: source + "\n" + textSize + "\n" + WebDictation.bootstrap(origin: origin) + "\nif(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_VOICE={protocolVersion:1,previewPlayback:true,documentID:window.__KINDRED_IOS_DICTATION.documentID};if(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_FILES={protocolVersion:1,documentID:window.__KINDRED_IOS_DICTATION.documentID};", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        controller.addUserScript(WKUserScript(source: source + "\n" + textSize + "\n" + WebDictation.bootstrap(origin: origin) + "\nif(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_VOICE={protocolVersion:1,previewPlayback:true,previewStreaming:true,documentID:window.__KINDRED_IOS_DICTATION.documentID};if(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_FILES={protocolVersion:1,documentID:window.__KINDRED_IOS_DICTATION.documentID};", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
         // Bundle the presentation layer so an older server still fits an iPhone.
         // The same exact-origin check as the session bootstrap scopes this script.
         if let cssURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "css"),
@@ -862,6 +862,34 @@ final class WebSession: NSObject {
         if action == "previewStop" {
             if voicePreviewRequestID == id { voicePreviewRequestID = nil }
             NativeVoicePreview.shared.stop(owner: accountID, id: id); return
+        }
+        if action == "previewStream" {
+            guard !nativeNavigationBlocked, webView.window != nil, !webView.isLoading,
+                  UIApplication.shared.applicationState == .active,
+                  let token = latestToken, !token.isEmpty,
+                  let voice = body["voice"] as? String, !voice.isEmpty, voice.utf8.count <= 100,
+                  let url = origin.url(path: "/api/voice/preview") else { return }
+            voicePreviewRequestID = id
+            let generation = dictationDocumentGeneration
+            webView.callAsyncJavaScript("return window.__KINDRED_IOS_VOICE?.documentID===documentID && window.__KINDRED_IOS_VOICE?.previewID===id",
+                arguments: ["documentID": document, "id": id], in: nil, in: .page) { [weak self] result in
+                guard let self, generation == self.dictationDocumentGeneration, self.voicePreviewRequestID == id,
+                      self.latestToken == token, !self.nativeNavigationBlocked,
+                      self.webView.window != nil, self.origin.matches(self.webView.url),
+                      UIApplication.shared.applicationState == .active,
+                      case .success(let accepted) = result, accepted as? Bool == true else { return }
+                var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+                request.httpMethod = "POST"
+                request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try? JSONSerialization.data(withJSONObject: ["voice": voice, "stream": true])
+                self.dictation.cancel()
+                NativeVoicePreview.shared.startStream(id: id, owner: self.accountID, request: request) { [weak self] value in
+                    guard self?.latestToken == token else { return }
+                    self?.emitVoice(value, document: document)
+                }
+            }
+            return
         }
         if action == "preview" {
             guard !nativeNavigationBlocked, webView.window != nil, !webView.isLoading,

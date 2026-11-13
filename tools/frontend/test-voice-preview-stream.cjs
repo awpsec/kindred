@@ -1,0 +1,23 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../../ui/voice.js'),'utf8');
+ const {readVoicePreviewStream}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+ const encode=s=>new TextEncoder().encode(s);
+ let input,canceled=false,current=true,events=[];
+ const body=new ReadableStream({start(c){input=c},cancel(){canceled=true}});
+ const read=readVoicePreviewStream(new Response(body,{headers:{'Content-Type':'application/x-ndjson'}}),e=>events.push(e),()=>current);
+ input.enqueue(encode('{"type":"au'));
+ input.enqueue(encode('dio","data":"AQI="}\n'));
+ await new Promise(r=>setImmediate(r));
+ assert.equal(events.length,1,'audio is delivered before the response ends');
+ input.enqueue(encode('{"type":"done"}\n'));input.close();await read;
+ assert.deepEqual(events.map(e=>e.type),['audio','done']);
+ const response=text=>new Response(text,{headers:{'Content-Type':'application/x-ndjson'}});
+ await assert.rejects(readVoicePreviewStream(response('{"type":"audio","data":"AQI="}\n'),()=>{}),/before it finished/);
+ await assert.rejects(readVoicePreviewStream(response('{"type":"error","message":"private server details"}\n'),()=>{}),/preview stopped/);
+ await assert.rejects(readVoicePreviewStream(response('{"type":"done"}\n{"type":"audio"}\n'),()=>{}),/Unexpected/);
+ await assert.rejects(readVoicePreviewStream(response('x'.repeat(1500001)),()=>{}),/size limit/);
+ await assert.rejects(readVoicePreviewStream(response(JSON.stringify({type:'audio',data:'a'.repeat(140001)})+'\n'),()=>{}),/size limit/);
+ await assert.rejects(readVoicePreviewStream(response('{"type":"done"}\n'),()=>{},()=>false),/cancelled/);
+ console.log(JSON.stringify({passed:true,firstChunkBeforeCompletion:true,fragmentedFrames:true,missingDoneRejected:true,errorsSanitized:true,accountFence:true,boundedInput:true}));
+})().catch(e=>{console.error(e);process.exitCode=1});

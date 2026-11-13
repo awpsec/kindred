@@ -22,7 +22,7 @@ import {createRoutineFlights} from './routine-flight.js';
 import {connectorCatalog} from "./connector-catalog.js";
 import {connectorCard,connectorCardSignature} from "./connector-cards.js";
 installThemedSelects();
-import {createVoiceUI} from "./voice.js";
+import {createVoiceUI,readVoicePreviewStream} from "./voice.js";
 import {createDictationUI} from "./dictation.js";
 import {createProfileUI} from "./profiles.js";
 import {createWorkspaceImportUI} from "./workspace-import.js";
@@ -279,6 +279,7 @@ async function api(path, method = "GET", body, options = {}) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if(res.status===401)await profilesUI.checkSession(requestToken);
+  if(options.responseType==='voice-stream'&&res.ok){await readVoicePreviewStream(res,options.onEvent,()=>state.token===requestToken&&!timeout.signal.aborted);return;}
   if(options.responseType==='blob'&&res.ok){if(state.token!==requestToken)throw new Error('Workspace changed');const blob=await res.blob();if(state.token!==requestToken)throw new Error('Workspace changed');if(blob.size>(options.maxBlobBytes??8*1024*1024))throw new Error('Preview exceeds the supported size');return blob;}
   let data;
   try {

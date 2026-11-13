@@ -69,6 +69,56 @@ final class NativeVoiceCallTests: XCTestCase {
         XCTAssertThrowsError(try NativeVoicePreview.makePlayer(Data(repeating: 0, count: 1_500_001)))
     }
 
+    func testStreamedPreviewPreservesPCMValuesAndRate() throws {
+        let samples: [Int16] = [.min, -16384, 0, 16384, .max]
+        var pcm = Data()
+        for value in samples { var little = value.littleEndian; withUnsafeBytes(of: &little) { pcm.append(contentsOf: $0) } }
+        let buffer = try NativeVoicePreview.previewBuffer(pcm)
+        XCTAssertEqual(buffer.format.sampleRate, 24_000)
+        XCTAssertEqual(buffer.frameLength, 5)
+        for (i, value) in samples.enumerated() { XCTAssertEqual(buffer.floatChannelData![0][i], Float(value) / 32768) }
+        XCTAssertThrowsError(try NativeVoicePreview.previewBuffer(Data()))
+        XCTAssertThrowsError(try NativeVoicePreview.previewBuffer(Data([1])))
+        XCTAssertThrowsError(try NativeVoicePreview.previewBuffer(Data(count: 96_002)))
+    }
+
+    func testStreamedPreviewPlaysBeforeResponseFinishesAndCancelsWithoutMicrophone() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [VoicePreviewStreamFixture.self]
+        let session = URLSession(configuration: configuration)
+        let preview = NativeVoicePreview(), id = UUID().uuidString
+        var events: [[String: Any]] = []
+        VoicePreviewStreamFixture.release = nil
+        defer { preview.stop(); session.invalidateAndCancel(); VoicePreviewStreamFixture.release = nil }
+        preview.startStream(id: id, owner: owner, request: URLRequest(url: origin.appendingPathComponent("preview")), session: session) { events.append($0) }
+        try await wait { VoicePreviewStreamFixture.release != nil && events.contains { $0["type"] as? String == "preview_playing" } }
+        XCTAssertEqual(AVAudioSession.sharedInstance().category, .playback)
+        XCTAssertFalse(events.contains { $0["type"] as? String == "preview_ended" }, "Audio starts while the HTTP response remains open")
+        preview.stop(owner: UUID(), id: id)
+        XCTAssertEqual(events.count, 1, "A different account cannot stop the sample")
+        preview.stop(owner: owner, id: id)
+        XCTAssertEqual(events.last?["type"] as? String, "preview_ended")
+        VoicePreviewStreamFixture.release?()
+        await drainMainQueue()
+        XCTAssertEqual(events.count, 2, "Late completion cannot restart a cancelled preview")
+    }
+
+    func testStreamedPreviewCompletesAfterScheduledAudioWithoutOpeningMicrophone() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [VoicePreviewStreamFixture.self]
+        let session = URLSession(configuration: configuration)
+        let preview = NativeVoicePreview(), id = UUID().uuidString
+        var events: [[String: Any]] = []
+        VoicePreviewStreamFixture.release = nil
+        defer { preview.stop(); session.invalidateAndCancel(); VoicePreviewStreamFixture.release = nil }
+        preview.startStream(id: id, owner: owner, request: URLRequest(url: origin.appendingPathComponent("preview")), session: session) { events.append($0) }
+        try await wait { VoicePreviewStreamFixture.release != nil && events.contains { $0["type"] as? String == "preview_playing" } }
+        XCTAssertEqual(AVAudioSession.sharedInstance().category, .playback)
+        VoicePreviewStreamFixture.release?()
+        try await wait { events.contains { $0["type"] as? String == "preview_ended" } }
+        XCTAssertEqual(events.compactMap { $0["type"] as? String }, ["preview_playing", "preview_ended"])
+    }
+
     func testVoicePreviewUsesMediaPlaybackAndOwnerScopedCancellation() throws {
         let preview = NativeVoicePreview(), id = UUID().uuidString
         var events: [[String: Any]] = []
@@ -951,4 +1001,34 @@ private final class VoiceSocketFixture: VoiceCallConnection {
         closed = true
         pending?.resume(throwing: URLError(.cancelled)); pending = nil
     }
+}
+
+/// The response remains open after the first real PCM chunk until the test ends it.
+private final class VoicePreviewStreamFixture: URLProtocol {
+    static var release: (() -> Void)?
+    private var stopped = false
+    private let lock = NSLock()
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type":"application/x-ndjson"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        var pcm = Data()
+        for i in 0..<2400 {
+            var sample = Int16(sin(Double(i) * 2 * .pi * 440 / 24_000) * 3_000).littleEndian
+            withUnsafeBytes(of: &sample) { pcm.append(contentsOf: $0) }
+        }
+        let line = "{\"type\":\"audio\",\"data\":\"" + pcm.base64EncodedString() + "\"}\n"
+        client?.urlProtocol(self, didLoad: Data(line.utf8))
+        DispatchQueue.main.async { [weak self] in
+            Self.release = { [weak self] in
+                guard let self else { return }
+                self.lock.lock(); let stopped = self.stopped; self.lock.unlock()
+                guard !stopped else { return }
+                self.client?.urlProtocol(self, didLoad: Data("{\"type\":\"done\"}\n".utf8))
+                self.client?.urlProtocolDidFinishLoading(self)
+            }
+        }
+    }
+    override func stopLoading() { lock.lock(); stopped = true; lock.unlock() }
 }
