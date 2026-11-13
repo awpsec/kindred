@@ -302,8 +302,8 @@ html[data-nametag-status] .conversation:not(.group-conversation) :is(.collaborat
 
 /* Bot settings keep their current value visible while each editor stays focused. */
 .bot-settings-group-form{display:block;}
-.bot-setting-group{min-width:0;border-bottom:1px solid var(--line);}
-.bot-setting-group>.bot-setting-heading{display:flex;align-items:center;gap:10px;min-height:66px;padding:14px 0;margin:0;border-radius:0;list-style:none;}
+.bot-setting-group{min-width:0;padding-inline:12px;border-bottom:1px solid var(--line);}
+.bot-setting-group>.bot-setting-heading{display:flex;align-items:center;gap:10px;min-height:66px;padding:14px 12px;margin:0 -12px;border-radius:10px;list-style:none;}
 .bot-setting-group>.bot-setting-heading::before,.bot-setting-group>.bot-setting-heading::marker,.bot-setting-group>.bot-setting-heading::-webkit-details-marker{display:none;content:none;}
 .bot-setting-heading>.bot-setting-copy{display:grid;flex:1;gap:4px;min-width:0;}
 .bot-setting-title{font-size:calc(14px * var(--text-scale,1));font-weight:500;line-height:1.4;margin:0;}
@@ -315,7 +315,7 @@ html[data-nametag-status] .conversation:not(.group-conversation) :is(.collaborat
 .bot-setting-body>label,.bot-setting-body>.local-access-settings,.bot-setting-body>.bot-initiative-settings{margin:0;}
 .bot-setting-body .bot-name-field,.bot-setting-body .bot-role-field{font-size:calc(13px * var(--text-scale,1));gap:6px;text-align:start;margin:0;}
 .bot-setting-body .bot-name-field input,.bot-setting-body .bot-role-field input{display:block;width:100%;field-sizing:fixed;min-width:0;margin:0;text-align:start;font-weight:400;color:var(--fg);background:var(--hover);}
-.bot-settings-connections.bot-connector-preferences{margin:0 0 18px;padding:0;border-top:0;}
+.bot-settings-connections.bot-connector-preferences{margin:0 0 18px;padding:0 12px;border-top:0;}
 .bot-settings-connections[open]>.bot-connectors-heading{margin-bottom:0;}
 .bot-settings-connections .bot-connectors-heading .bot-setting-title{font-size:calc(14px * var(--text-scale,1));font-weight:500;}
 .bot-settings-group-form>.preference-status{margin:12px 0 0;}
