@@ -128,7 +128,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // Bind the fixture's exact shared candidate, not a stale connected UI.
         _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
         try await waitFor("exact Send candidate UI manifest") {
-            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='454ce3f5fe2e9aa7f776f8ae903aacc4f656b172e08b7abc30fdb4482459d941' && window.__sendSurfaceFixture?.['app.js']==='2d382808dfc07de102843119ba16b852fd5f0d90ed428802d92ed9b7a045de32' && window.__sendSurfaceFixture?.['progress.css']==='ed96bc9859b1028a41ef711b527a9cb17b12d116720e18151998f866447c8a1a' && window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d'")
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='454ce3f5fe2e9aa7f776f8ae903aacc4f656b172e08b7abc30fdb4482459d941' && window.__sendSurfaceFixture?.['app.js']==='6eeba53bc56e559f97bf91e2446a37f7b33e9a4ce628fbf940576d8d1ab31823' && window.__sendSurfaceFixture?.['progress.css']==='ed96bc9859b1028a41ef711b527a9cb17b12d116720e18151998f866447c8a1a' && window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d'")
         }
         try await waitFor("injected native capability reconciles through bridge") {
             try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && window.__KINDRED_IOS_DICTATION?.recognizerAvailable===true")
@@ -397,6 +397,10 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
         try await waitFor("genuine native composer") { self.session.glassControls.composer.model != nil && !self.session.glassControls.composer.isHidden }
         let composer=session.glassControls.composer
+        // Model the older server's Enter-to-send default while retaining its
+        // completion handlers. A native Return without suggestions must never
+        // reach this handler; explicit Send must keep working.
+        _ = try await js("const p=document.querySelector('#prompt'),keydown=p.onkeydown;p.onkeydown=function(e){keydown.call(this,e);if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&!e.defaultPrevented){e.preventDefault();document.querySelector('#composer').requestSubmit();}};true")
         XCTAssertTrue(composer.material.effect is UIGlassEffect)
         XCTAssertTrue(composer.editor.superview === composer.material.contentView)
         XCTAssertFalse(session.webView.backgroundColor == .clear)
@@ -1119,7 +1123,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             (()=>{const rect=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
               const p=document.querySelector('#prompt'),shell=document.querySelector('#app'),v=visualViewport;
               return {draftMatches:p?.textContent==='Keyboard ownership fixture draft',sendCount:window.__composerSends.length,
-                uiMatches:window.__sendSurfaceFixture?.['style.css']==='454ce3f5fe2e9aa7f776f8ae903aacc4f656b172e08b7abc30fdb4482459d941'&&window.__sendSurfaceFixture?.['app.js']==='2d382808dfc07de102843119ba16b852fd5f0d90ed428802d92ed9b7a045de32' && window.__sendSurfaceFixture?.['progress.css']==='ed96bc9859b1028a41ef711b527a9cb17b12d116720e18151998f866447c8a1a'&&window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d',
+                uiMatches:window.__sendSurfaceFixture?.['style.css']==='454ce3f5fe2e9aa7f776f8ae903aacc4f656b172e08b7abc30fdb4482459d941'&&window.__sendSurfaceFixture?.['app.js']==='6eeba53bc56e559f97bf91e2446a37f7b33e9a4ce628fbf940576d8d1ab31823' && window.__sendSurfaceFixture?.['progress.css']==='ed96bc9859b1028a41ef711b527a9cb17b12d116720e18151998f866447c8a1a'&&window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d',
                 uiManifest:window.__sendSurfaceFixture,viewport:{width:innerWidth,height:innerHeight},
                 client:{width:document.documentElement.clientWidth,height:document.documentElement.clientHeight},
                 visual:v?{width:v.width,height:v.height,offsetTop:v.offsetTop,offsetLeft:v.offsetLeft,scale:v.scale}:null,
@@ -1512,13 +1516,13 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             let rect=CGRect(x:t["x"]!,y:t["y"]!,width:t["width"]!,height:t["height"]!)
             let button=try nativeButton(rect:rect)
             XCTAssertNotNil(button.configuration?.image)
-            XCTAssertEqual(button.configuration?.background.backgroundInsets,NSDirectionalEdgeInsets(top:4,leading:4,bottom:4,trailing:4))
+            XCTAssertEqual(button.configuration?.background.backgroundInsets,NSDirectionalEdgeInsets(top:7,leading:7,bottom:7,trailing:7))
             let nativeColor=try XCTUnwrap(button.configuration?.baseBackgroundColor).resolvedColor(with:button.traitCollection)
             var r:CGFloat=0,g:CGFloat=0,b:CGFloat=0,a:CGFloat=0;nativeColor.getRed(&r,green:&g,blue:&b,alpha:&a)
             let expected=[Double(r*255),Double(g*255),Double(b*255)]
             for (dx,dy) in [(1.0,0.0),(-1.0,0.0),(0.0,1.0),(0.0,-1.0)] {
                 XCTAssertTrue(button.point(inside:CGPoint(x:22+dx*20,y:22+dy*20),with:nil))
-                let point=session.webView.convert(CGPoint(x:rect.midX+dx*17,y:rect.midY+dy*17),to:window)
+                let point=session.webView.convert(CGPoint(x:rect.midX+dx*13,y:rect.midY+dy*13),to:window)
                 let actual=try Self.imagePixel(image,point:point)
                 XCTAssertLessThanOrEqual(Self.colourDistance(actual,expected),12,"native primary circle is painted with its semantic color")
             }
@@ -1532,28 +1536,28 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let paint = try XCTUnwrap(send["paint"] as? [String: Any])
         for key in ["width", "height"] {
             XCTAssertEqual(target[key] ?? 0, 44, accuracy: 0.5)
-            XCTAssertEqual(arrow[key] ?? 0, 20, accuracy: 0.5)
-            XCTAssertEqual((paint[key] as? Double) ?? 0, 36, accuracy: 0.5)
+            XCTAssertEqual(arrow[key] ?? 0, 16, accuracy: 0.5)
+            XCTAssertEqual((paint[key] as? Double) ?? 0, 30, accuracy: 0.5)
         }
-        for key in ["left", "top"] { XCTAssertEqual((paint[key] as? Double) ?? 0, 4, accuracy: 0.5) }
+        for key in ["left", "top"] { XCTAssertEqual((paint[key] as? Double) ?? 0, 7, accuracy: 0.5) }
         let centre = CGPoint(x: (target["x"] ?? 0) + 22, y: (target["y"] ?? 0) + 22)
-        XCTAssertEqual((arrow["x"] ?? 0) + 10, Double(centre.x), accuracy: 0.5)
-        XCTAssertEqual((arrow["y"] ?? 0) + 10, Double(centre.y), accuracy: 0.5)
+        XCTAssertEqual((arrow["x"] ?? 0) + 8, Double(centre.x), accuracy: 0.5)
+        XCTAssertEqual((arrow["y"] ?? 0) + 8, Double(centre.y), accuracy: 0.5)
         let colour = try XCTUnwrap(paint["rgba"] as? [Double])
         XCTAssertEqual(colour.count, 4)
         XCTAssertEqual(colour[3], 255)
         let opacity = try XCTUnwrap(send["opacity"] as? Double)
         var probes: [[String: Any]] = []
-        // Cardinal samples avoid the 20px arrow. Radius17 must be painted;
-        // radius19 must be outside the 36px circle but inside the 44px target.
+        // Cardinal samples avoid the 16px glyph. Radius13 must be painted;
+        // radius17 must be outside the 30px circle but inside the 44px target.
         for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
-            let inside = session.webView.convert(CGPoint(x: centre.x + dx * 17, y: centre.y + dy * 17), to: window)
-            let outside = session.webView.convert(CGPoint(x: centre.x + dx * 19, y: centre.y + dy * 19), to: window)
+            let inside = session.webView.convert(CGPoint(x: centre.x + dx * 13, y: centre.y + dy * 13), to: window)
+            let outside = session.webView.convert(CGPoint(x: centre.x + dx * 17, y: centre.y + dy * 17), to: window)
             let innerPixel = try Self.imagePixel(image, point: inside)
             let outerPixel = try Self.imagePixel(image, point: outside)
             let expected = (0..<3).map { opacity * colour[$0] + (1 - opacity) * outerPixel[$0] }
             XCTAssertGreaterThan(Self.colourDistance(expected, outerPixel), 12, "Paint must visibly differ from surroundings")
-            XCTAssertLessThanOrEqual(Self.colourDistance(innerPixel, expected), 12, "Native bitmap must paint through radius17")
+            XCTAssertLessThanOrEqual(Self.colourDistance(innerPixel, expected), 12, "Native bitmap must paint through radius13")
             probes.append(["direction": [dx, dy], "inside": innerPixel, "outside": outerPixel, "expected": expected])
         }
         let evidence: [String: Any] = ["primarySurface": send, "nativeBitmapProbes": probes]
