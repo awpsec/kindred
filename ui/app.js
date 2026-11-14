@@ -4686,7 +4686,7 @@ $("prompt").onkeydown = (e) => {
   if(questionComposerMode()){
     if(e.isComposing)return;
     if(e.key==='Escape'){e.preventDefault();if(!questionPending.has(questionComposerMode().q.id))leaveQuestionComposer(true);return;}
-    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('composer').requestSubmit();}return;
+    if(e.key==='Enter'&&!e.shiftKey&&window.__KINDRED_MOBILE_PLATFORM!=='ios'){e.preventDefault();$('composer').requestSubmit();}return;
   }
   if(commandsUI?.keydown(e))return;
   if(!e.isComposing&&!$("mention-options").hidden&&['ArrowDown','ArrowUp'].includes(e.key)){
@@ -4705,7 +4705,7 @@ $("prompt").onkeydown = (e) => {
   }
   if (e.key === "Escape") $("mention-options").hidden = true;
   if(composerLists?.keydown(e))return;
-  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing && window.__KINDRED_MOBILE_PLATFORM !== "ios") {
     e.preventDefault();
     $("composer").requestSubmit();
   }

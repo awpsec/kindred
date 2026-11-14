@@ -44,7 +44,7 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
   const rgb=value=>{const match=value.match(/^rgba?\(([^)]+)\)$/);if(!match)return undefined;const parts=match[1].split(/[,\s/]+/).filter(Boolean).map(Number);return parts.length>=3&&parts.slice(0,3).every(Number.isFinite)?parts.slice(0,3).map(n=>Math.max(0,Math.min(255,n))/255):undefined;};
   const actionColors=button=>{
     if(button.id!=='send'&&!button.classList.contains('voice-start'))return {};
-    const css=getComputedStyle(button),surface=button.id==='send'&&document.documentElement.hasAttribute('data-mobile')?getComputedStyle(button,'::before').backgroundColor:css.backgroundColor;
+    const css=getComputedStyle(button),surface=(button.id==='send'||button.classList.contains('voice-start'))&&document.documentElement.hasAttribute('data-kindred-ios')?getComputedStyle(button,'::before').backgroundColor:css.backgroundColor;
     return {background:rgb(surface),foreground:rgb(css.color)};
   };
   const snapshot=covered=>{
@@ -122,8 +122,9 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
       editor.dispatchEvent(new FocusEvent(command.focused?'focus':'blur',{bubbles:false}));
      }else if(command.action==='key'){
       if(!['Enter','Tab','Escape','ArrowUp','ArrowDown'].includes(command.key))return false;
+      // Return is only forwarded for a visible completion, never to send.
+      if(command.key==='Enter'&&![...document.querySelectorAll('#mention-options:not([hidden]) button,#command-options:not([hidden]) button')].some(visible))return false;
       const event=new KeyboardEvent('keydown',{key:command.key,bubbles:true,cancelable:true});editor.dispatchEvent(event);
-      if(command.key==='Enter'&&!event.defaultPrevented)form.requestSubmit();
     }else if(command.action==='send')form.requestSubmit();
     else if(command.action==='action'){
       const node=actions.get(command.id);if(!visible(node)||node.disabled)return false;

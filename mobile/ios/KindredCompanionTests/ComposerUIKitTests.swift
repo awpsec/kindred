@@ -303,6 +303,10 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             let composer=session.glassControls.composer,item=try XCTUnwrap(composer.model?.items.first(where:{$0.primary}))
             let button=try XCTUnwrap(composer.material.contentView.subviews.compactMap {$0 as? UIButton}.first(where:{$0.accessibilityIdentifier=="kindred-native-composer-"+item.id}))
             window.layoutIfNeeded();button.layoutIfNeeded()
+            XCTAssertGreaterThanOrEqual(button.bounds.width,44)
+            XCTAssertGreaterThanOrEqual(button.bounds.height,44)
+            XCTAssertEqual(button.configuration?.background.backgroundInsets.leading,7)
+
             let image=UIGraphicsImageRenderer(bounds:window.bounds).image {_ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true)}
             let center=button.convert(CGPoint(x:button.bounds.midX,y:button.bounds.midY),to:window)
             var ink=0
@@ -401,6 +405,13 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         try await waitFor("real native keyboard notification") { self.keyboardShows>0 && self.keyboardFrame.height>100 }
         composer.editor.insertText("Native 🦋 draft with a second line that will wrap when the phone narrows.")
         try await waitFor("native draft reaches retained delivery model") { try await self.boolean("document.querySelector('#prompt').value==='Native 🦋 draft with a second line that will wrap when the phone narrows.'") }
+        XCTAssertEqual(composer.editor.returnKeyType,.default)
+        let beforeReturn=composer.editor.text ?? ""
+        composer.editor.insertText("\n")
+        composer.editor.insertText("Second paragraph")
+        try await waitFor("Return retains a newline instead of sending") { try await self.boolean("document.querySelector('#prompt').value.includes('\\nSecond paragraph') && window.__composerSends.length===0") }
+        XCTAssertEqual(composer.editor.text,beforeReturn+"\nSecond paragraph")
+        XCTAssertTrue(composer.textView(composer.editor,shouldChangeTextIn:composer.editor.selectedRange,replacementText:"\n"))
         let retainedEditor=composer.editor
         let bottom=composer.material.frame.maxY
         composer.editor.insertText(" More words to grow the native text view without moving its bottom edge.")

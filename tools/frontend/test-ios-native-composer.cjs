@@ -31,6 +31,7 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
   assert.equal(await call('edit',{context:'bots:wrong|message',text:'Must not leak'}),false);
   assert.equal(await call('edit',{revision:0,text:'Stale edit'}),false);
   assert.equal(await page.locator('#prompt').evaluate(n=>n.value),'Native 🦋 draft');
+  assert.equal(await call('key',{key:'Enter'}),false,'Return without a completion cannot submit');
   assert(await call('edit',{revision:2,text:'@',selection:[1,0]}));
   await page.waitForFunction(()=>{const c=nativeMessages.filter(m=>m.composer).at(-1)?.composer;return c?.popup?.height>0&&c.items.some(i=>i.kind==='suggestion');});
   assert((await model()).composer.popup.height>0,'native suggestions keep their real scroll area');
@@ -60,6 +61,8 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
   assert.equal(await page.locator('#command-options').evaluate(n=>getComputedStyle(n).opacity),'0','only native glass paints the popup');
   assert(await call('edit',{revision:5,text:'/dom',selection:[4,0]}));
   await page.waitForFunction(()=>nativeMessages.filter(m=>m.composer).at(-1)?.composer.text==='/dom');
+  // Let the selectionchange-driven command filter publish its replacement rows.
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   let choice=(await model()).composer.items.find(i=>i.kind==='suggestion'&&i.text.includes('/domain-review'));
   assert(await call('action',{revision:5,text:'/dom',selection:[4,0],id:choice.id}));
   await page.waitForFunction(()=>nativeMessages.filter(m=>m.composer).at(-1)?.composer.text==='/domain-review ');
