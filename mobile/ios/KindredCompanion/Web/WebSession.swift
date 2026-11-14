@@ -32,6 +32,7 @@ final class WebPresentationState {
     var listToggleAvailable = false
     var route = "chat-list"
     var chatTitle = ""
+    var collaboration: NativeCollaborationStatus?
     var listVisible = false
     var artifactLibraryVisible = false
 }
@@ -142,6 +143,10 @@ final class WebSession: NSObject {
             self.webView.callAsyncJavaScript("window.__kindredGlassControls?.perform(id, document)",
                 arguments: ["id": id, "document": document], in: nil, in: .page) { _ in }
         }
+        glassControls.activateCollaboration = { [weak self] key, document in
+            guard let self, self.glassControls.document == document else { return }
+            self.interruptCollaboration(key: key)
+        }
         glassControls.activateVoice = { [weak self] action, key, document in
             guard let self, !self.nativeNavigationBlocked, self.origin.matches(self.webView.url),
                   self.glassControls.document == document else { return }
@@ -221,6 +226,13 @@ final class WebSession: NSObject {
         """, arguments: ["expectedOrigin": origin.serialized, "action": action.rawValue], in: nil, in: .page) { _ in }
     }
 
+    func interruptCollaboration(key: String) {
+        guard presentation.hasChatInterface, !nativeNavigationBlocked, origin.matches(webView.url),
+              loadState.failure == nil else { return }
+        webView.callAsyncJavaScript("return window.__kindredCollaboration?.interrupt(key)",
+            arguments: ["key": key], in: nil, in: .page) { _ in }
+    }
+
     func detachVisibleHost() {
         edgeBack?.cancel()
         cancelSidebarResize()
@@ -276,8 +288,11 @@ final class WebSession: NSObject {
           if (appearance !== 'system') document.documentElement.dataset.theme = appearance;
         })();
         """
+        let collaboration = Bundle.main.url(forResource: "NativeCollaboration", withExtension: "js")
+            .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
         let textSize = WebTextSize.script(origin: origin, scale: systemTextScale)
         controller.addUserScript(WKUserScript(source: source + "\n" + textSize + "\n" + WebDictation.bootstrap(origin: origin) + "\nif(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_VOICE={protocolVersion:1,previewPlayback:true,previewStreaming:true,documentID:window.__KINDRED_IOS_DICTATION.documentID};if(window.__KINDRED_IOS_DICTATION)window.__KINDRED_IOS_FILES={protocolVersion:1,documentID:window.__KINDRED_IOS_DICTATION.documentID};", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        controller.addUserScript(WKUserScript(source: "if(window.top===window.self && location.origin === \(WebBootstrap.javaScriptString(origin.serialized))) {\n" + collaboration + "\n}", injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
         // Bundle the presentation layer so an older server still fits an iPhone.
         // The same exact-origin check as the session bootstrap scopes this script.
         if let cssURL = Bundle.main.url(forResource: "MobileLayout", withExtension: "css"),
@@ -615,6 +630,7 @@ final class WebSession: NSObject {
                 withAnimation(animate ? .smooth(duration: 0.28) : nil) {
                     presentation.route = route
                     presentation.chatTitle = title
+                    presentation.collaboration = route == "bot-chat" ? (body["collaboration"] as? [String: Any]).flatMap(NativeCollaborationStatus.init) : nil
                     presentation.listVisible = listVisible
                     presentation.artifactLibraryVisible = body["artifactLibraryVisible"] as? Bool == true && ["artifacts", "artifact"].contains(route)
                     presentation.botSettingsAvailable = body["botSettingsAvailable"] as? Bool == true

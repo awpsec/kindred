@@ -84,6 +84,8 @@ struct ToolbarAvatarButton: UIViewRepresentable {
     let title: String
     let action: () -> Void
     let frameChanged: (CGRect) -> Void
+    var collaboration: NativeCollaborationStatus? = nil
+    var interrupt: (String) -> Void = { _ in }
 
     func makeUIView(context: Context) -> MeasuredAvatarButton {
         let button = MeasuredAvatarButton()
@@ -98,6 +100,7 @@ struct ToolbarAvatarButton: UIViewRepresentable {
     func updateUIView(_ button: MeasuredAvatarButton, context: Context) {
         button.configuration?.image = image ?? UIImage(systemName: "person.crop.circle")
         button.accessibilityLabel = title
+        button.apply(collaboration: collaboration, interrupt: interrupt)
         button.activate = action
         button.frameChanged = frameChanged
         button.setNeedsLayout()
@@ -108,6 +111,25 @@ struct ToolbarAvatarButton: UIViewRepresentable {
 final class MeasuredAvatarButton: UIButton {
     var activate: (() -> Void)?
     var frameChanged: ((CGRect) -> Void)?
+    let status = UIImageView()
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        status.contentMode = .scaleAspectFit; status.tintColor = .label
+        status.backgroundColor = .secondarySystemBackground; status.layer.cornerRadius = 7
+        status.isUserInteractionEnabled = false; status.isAccessibilityElement = false
+        status.isHidden = true; addSubview(status)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+    private var collaborationState: NativeCollaborationStatus?
+    func apply(collaboration: NativeCollaborationStatus?, interrupt: @escaping (String) -> Void) {
+        guard collaborationState != collaboration else { return }
+        collaborationState = collaboration
+        accessibilityValue = collaboration?.label
+        accessibilityHint = collaboration == nil ? nil : "Touch and hold for collaboration controls"
+        menu = collaboration?.menu(interrupt: interrupt)
+        status.image = collaboration.flatMap { UIImage(systemName: $0.kind == "working" ? "arrow.triangle.branch" : "clock.fill") }
+        status.isHidden = collaboration == nil
+    }
     private var frameScheduled = false
     private func publishFrame() {
         guard !frameScheduled else { return }
@@ -123,6 +145,7 @@ final class MeasuredAvatarButton: UIButton {
     }
     override func layoutSubviews() {
         super.layoutSubviews()
+        status.frame = CGRect(x:bounds.maxX-17,y:bounds.maxY-17,width:14,height:14)
         publishFrame()
     }
     override func didMoveToWindow() {

@@ -128,7 +128,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // Bind the fixture's exact shared candidate, not a stale connected UI.
         _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
         try await waitFor("exact Send candidate UI manifest") {
-            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='454ce3f5fe2e9aa7f776f8ae903aacc4f656b172e08b7abc30fdb4482459d941' && window.__sendSurfaceFixture?.['app.js']==='389fe80f3e13c3c8c6e9b87dd1bfe7fa5a7e5c96721d1836ab09d0c4f172f69e' && window.__sendSurfaceFixture?.['progress.css']==='6fa9d59b1da504c1439a519b9d19346cdfa94f30918a4aff914b90ae4f17ef50' && window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d'")
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='454ce3f5fe2e9aa7f776f8ae903aacc4f656b172e08b7abc30fdb4482459d941' && window.__sendSurfaceFixture?.['app.js']==='2d382808dfc07de102843119ba16b852fd5f0d90ed428802d92ed9b7a045de32' && window.__sendSurfaceFixture?.['progress.css']==='ed96bc9859b1028a41ef711b527a9cb17b12d116720e18151998f866447c8a1a' && window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d'")
         }
         try await waitFor("injected native capability reconciles through bridge") {
             try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && window.__KINDRED_IOS_DICTATION?.recognizerAvailable===true")
@@ -140,6 +140,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
     }
 
     override func tearDown() async throws {
+        _ = try? await js("fetch('/fixture/collaboration',{method:'POST',body:JSON.stringify({mode:'none'})});true")
         // A failed landscape assertion must not contaminate the next test.
         window?.endEditing(true)
         if let scene = window?.windowScene, scene.interfaceOrientation.isLandscape, !startedLandscape {
@@ -706,6 +707,140 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let attachment=XCTAttachment(data:try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");attachment.name="native-combined-polish";attachment.lifetime = .keepAlways;add(attachment)
     }
 
+    func testNativeCallDrawerRetainsOwnershipDisclosureAndDraft() async throws {
+        _ = try await js("""
+        const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};
+        const run={id:'native-drawer',bot_id:'piper',chat_id:chat.id,status:'running',created:now-300,progress_started:now-300,task_title:'Verify the native report',output:'',error:''};
+        const progress={mode:'summaries',phase:'commentary',run_id:run.id,group_id:run.id,work_qualified:true,task_title:run.task_title,activity:{actions:35,completed:35,failed:0,seconds:300,recent:[],timeline:[],phase:'thinking'},presentation:{mode:'compact',promoted:false}};
+        const note=(seq,text)=>({seq,sender:'piper',kind:'assistant',text,created:now-180+seq,run_id:run.id,progress});
+        const connector=(seq,status='completed',other={})=>({seq,sender:'piper',kind:'connector_artifact',text:'Search mail',created:now-180+seq,run_id:run.id,connector_artifact:{id:'native-mail-'+seq,run_id:run.id,bot_id:'piper',chat_id:chat.id,progress_message_seq:2,connection:'Gmail',connector:'gmail',source:'Codex',tool:'gmail.search',kind:'task',title:'Lookup '+seq,status,revision:1,input:{query:'Project'},records:[],read_only:true,approval_id:'native-approval-'+seq,...other}});
+        const messages=[{seq:1,sender:'user',kind:'message',text:'Verify the report.',created:run.created},{seq:2,sender:'piper',kind:'task_progress',text:'',created:run.created,run_id:run.id,progress},connector(3),connector(4),connector(5),note(6,'The report is ready.'),note(7,'Checking the upload.'),note(8,'The upload is ready.'),connector(9,'pending'),connector(10,'completed',{run_id:'other-run'})];
+        window.__nativeDrawer={messages,connector};
+        const original=window.fetch.bind(window),json=v=>Promise.resolve(new Response(JSON.stringify(v),{status:200,headers:{'Content-Type':'application/json'}}));
+        window.fetch=(input,options={})=>{const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;
+          if(path==='/api/chats/dm-piper')return json({chat,messages,page:{has_before:false,has_after:false}});
+          if(path==='/api/runs')return json([run]);if(path==='/api/runs/'+run.id)return json({run,events:[],approvals:[],attachments:[]});
+          if(path==='/api/activity')return json({});return original(input,options);};
+        dispatchEvent(new Event('online'));true
+        """)
+        try await waitFor("native call drawer and pending approval",timeout:20) { try await self.boolean("document.querySelectorAll('.task-connector-drawer .connector-message').length===3 && [...document.querySelectorAll('button')].some(b=>b.textContent==='Allow')") }
+        _ = try await js("const job=document.querySelector('.task-gather');job.querySelector('.summary-progress-heading').click();const drawer=job.querySelector('.task-connector-drawer');drawer.querySelector(':scope>summary').click();window.__retainedNativeDrawer=drawer;window.__retainedNativeCall=drawer.querySelector('.connector-call');true")
+        let composer=session.glassControls.composer
+        composer.editor.becomeFirstResponder();composer.editor.insertText("A retained native draft")
+        try await waitFor("drawer native keyboard and draft") { composer.editor.isFirstResponder && self.keyboardVisible && composer.model?.text == "A retained native draft" }
+        _ = try await js("window.__nativeDrawer.messages.push(window.__nativeDrawer.connector(11));dispatchEvent(new Event('online'));true")
+        try await waitFor("native arrival retains drawer and open call",timeout:20) { try await self.boolean("document.querySelectorAll('.task-connector-drawer .connector-message').length===4 && window.__retainedNativeDrawer===document.querySelector('.task-connector-drawer') && window.__retainedNativeDrawer.open && window.__retainedNativeCall===document.querySelector('.task-connector-drawer .connector-call')") }
+        let ownership = try await boolean("[...document.querySelectorAll('.task-attention button')].some(b=>b.textContent==='Allow') && document.querySelectorAll('#content>.connector-message:not(.task-attention)').length===1 && !document.querySelector('#content>.task-owned-review:not(.task-attention)') && document.documentElement.scrollWidth<=innerWidth")
+        XCTAssertTrue(ownership,"Approvals stay actionable and unrelated receipts stay outside the job")
+        XCTAssertTrue(composer.editor.isFirstResponder);XCTAssertEqual(composer.editor.text,"A retained native draft")
+        _ = try await checkComposer(label:"native-call-drawer")
+        let evidence=XCTAttachment(image:UIGraphicsImageRenderer(bounds:window.bounds).image { _ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true) });evidence.name="native-call-drawer";evidence.lifetime = .keepAlways;add(evidence)
+    }
+
+    func testNativeCollaborationStatusAndCancellationOwnership() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native glass requires iOS 26") }
+        func mode(_ value: String) async throws {
+            _ = try await js("window.__collaborationModeAck=null;fetch('/fixture/collaboration',{method:'POST',body:JSON.stringify({mode:'\(value)'})}).then(()=>{window.__collaborationModeAck='\(value)';dispatchEvent(new Event('online'));});true")
+            try await waitFor("fixture mode " + value) { try await self.boolean("window.__collaborationModeAck==='\(value)'") }
+        }
+        func status(_ label: String) async throws {
+            try await waitFor("native collaboration page: " + label, timeout: 20) {
+                try await self.boolean("window.__kindredCollaboration?.read()?.label==='\(label)'")
+            }
+            try await waitFor("native collaboration control: " + label, timeout: 20) {
+                if self.session.presentation.toolbarIdentity {
+                    return self.session.presentation.collaboration?.label == label
+                }
+                let button = self.session.glassControls.subviews.compactMap { $0 as? UIButton }.first { $0.accessibilityIdentifier == "kindred-glass-identity" }
+                return button?.accessibilityValue == label && button?.menu?.children.count == 1
+            }
+            if session.presentation.toolbarIdentity {
+                let button=MeasuredAvatarButton(frame:CGRect(x:0,y:0,width:44,height:44))
+                button.apply(collaboration:session.presentation.collaboration,interrupt:{ _ in })
+                XCTAssertEqual(button.accessibilityValue,label);XCTAssertEqual(button.menu?.title,label)
+                XCTAssertFalse(button.status.isHidden);XCTAssertNotNil(button.status.image)
+                button.apply(collaboration:nil,interrupt:{ _ in })
+                XCTAssertNil(button.menu);XCTAssertTrue(button.status.isHidden)
+            }
+            let fits = try await boolean("(()=>{const r=document.querySelector('#bot-details').getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && !document.querySelector('.nametag-shell')})()")
+            XCTAssertTrue(fits,"Native status must fit without enabling the desktop header")
+        }
+        try await mode("incoming")
+        try await status("Requester is waiting on you")
+        let incomingKeyValue = try await js("window.__kindredCollaboration.read().key") as? String
+        let incomingKey = try XCTUnwrap(incomingKeyValue)
+        _ = try await js("document.querySelector('.bot-link[data-sidebar-id=\"requester\"]').click();true")
+        try await status("Waiting on Piper")
+        let stale = try await boolean("window.__kindredCollaboration.interrupt(\(String(reflecting: incomingKey)))")
+        XCTAssertFalse(stale,"An old menu cannot interrupt after switching chats")
+        _ = try await js("document.querySelector('.bot-link[data-sidebar-id=\"piper\"]').click();true")
+        try await status("Requester is waiting on you")
+        let incomingCancel = try await js("window.__kindredCollaboration.read().key") as? String
+        session.interruptCollaboration(key: try XCTUnwrap(incomingCancel))
+        try await waitFor("incoming cancellation clears status") { try await self.boolean("window.__kindredCollaboration.read()===null") }
+        _ = try await js("window.__collaborationCancellations=null;fetch('/fixture/collaboration').then(r=>r.json()).then(d=>window.__collaborationCancellations=d.cancellations);true")
+        try await waitFor("parent cancellation receipt") { try await self.boolean("Array.isArray(window.__collaborationCancellations)") }
+        let parent = try await js("window.__collaborationCancellations") as? [String]
+        XCTAssertEqual(parent,["/api/runs/native-parent/cancel"])
+        try await mode("working")
+        try await status("Working for Requester")
+        let workKeyValue = try await js("window.__kindredCollaboration.read().key") as? String
+        let workKey = try XCTUnwrap(workKeyValue)
+        try await mode("queued")
+        try await status("Queued for Requester")
+        let queuedStale = try await boolean("window.__kindredCollaboration.interrupt(\(String(reflecting: workKey)))")
+        XCTAssertFalse(queuedStale)
+        let helperCancel = try await js("window.__kindredCollaboration.read().key") as? String
+        session.interruptCollaboration(key: try XCTUnwrap(helperCancel))
+        try await waitFor("helper cancellation clears native subtitle") { try await self.boolean("window.__kindredCollaboration.read()===null && !document.querySelector('.ios-collaboration-caption')") }
+        _ = try await js("window.__collaborationCancellations=null;fetch('/fixture/collaboration').then(r=>r.json()).then(d=>window.__collaborationCancellations=d.cancellations);true")
+        try await waitFor("helper cancellation receipt") { try await self.boolean("Array.isArray(window.__collaborationCancellations)") }
+        let helper = try await js("window.__collaborationCancellations") as? [String]
+        XCTAssertEqual(helper,["/api/runs/native-helper/cancel"])
+        let evidence=XCTAttachment(data:try JSONSerialization.data(withJSONObject:["nativeGlass":true,"incomingAndRequester":true,"workingAndQueued":true,"parentCancellation":parent ?? [],"helperCancellation":helper ?? [],"staleMenuRejected":true,"terminalCleared":true],options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json")
+        evidence.name="native-collaboration-ownership";evidence.lifetime = .keepAlways;add(evidence)
+    }
+
+    func testFourLineNativeDictationGrowsCommitsCancelsAndSends() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Native glass requires iOS 26") }
+        let composer=session.glassControls.composer
+        let transcript="First spoken line.\nSecond spoken line.\nThird spoken line.\nFourth spoken line."
+        composer.editor.becomeFirstResponder()
+        try await waitFor("dictation keyboard") { self.keyboardVisible && composer.editor.isFirstResponder }
+        for reduced in [false,true] {
+            _ = try await js("document.documentElement.dataset.motion='\(reduced ? "off" : "on")';document.querySelector('.dictation-button').click();true")
+            try await waitFor("four-line recognition starts") { self.session.dictation.phase == "recording" }
+            let operation=try XCTUnwrap(session.dictation.operation), bottom=composer.material.frame.maxY
+            session.dictation.acceptRecognition(text:transcript,final:false,failed:false,operation:operation)
+            try await waitFor("four-line native foreground contained") {
+                composer.editor.text == transcript && composer.editor.bounds.height >= 70 &&
+                composer.editor.contentSize.height <= composer.editor.bounds.height+2 && abs(composer.material.frame.maxY-bottom)<2
+            }
+            XCTAssertTrue(composer.material.effect is UIGlassEffect)
+            XCTAssertTrue(composer.editor.isFirstResponder)
+            _ = try await checkComposer(label:reduced ? "four-line-dictation-reduced" : "four-line-dictation")
+            if reduced {
+                _ = try await js("document.querySelector('.dictation-cancel').click();true")
+                try await waitFor("cancel four lines restores empty draft") { composer.editor.text.isEmpty && self.session.dictation.operation == nil }
+                session.dictation.acceptRecognition(text:"Stale result",final:true,failed:false,operation:operation)
+            } else {
+                _ = try await js("document.querySelector('.dictation-button').click();true")
+                try await waitFor("four-line finishing") { self.session.dictation.phase == "finishing" }
+                session.dictation.acceptRecognition(text:transcript,final:true,failed:false,operation:operation)
+                try await waitFor("four-line commit") { try await self.boolean("!document.querySelector('.dictation-transcript')") }
+                XCTAssertEqual(composer.editor.text,transcript)
+                composer.editor.text="Edited spoken draft";composer.editor.selectedRange=NSRange(location:19,length:0);composer.emit("edit")
+                try await waitFor("edited dictation shrinks without moving bottom") { composer.editor.bounds.height<70 && abs(composer.material.frame.maxY-bottom)<2 }
+                XCTAssertEqual(composer.editor.selectedRange.location,19)
+                composer.emit("send")
+                try await waitFor("dictation edit sends once and clears") { try await self.boolean("window.__composerSends.length===1 && window.__composerSends[0].prompt==='Edited spoken draft' && document.querySelector('#prompt').value===''") }
+            }
+            XCTAssertTrue(composer.editor.isFirstResponder)
+            XCTAssertTrue(keyboardVisible)
+        }
+        _ = try await checkComposer(label:"four-line-final-empty")
+    }
+
     func testStartupFailureRestoresRecoveryNavigationAndRetries() async throws {
         let web = session.webView
         _ = try await js("window.webkit.messageHandlers.kindredAccounts.postMessage({action:'startup-failed'});true")
@@ -973,7 +1108,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             (()=>{const rect=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
               const p=document.querySelector('#prompt'),shell=document.querySelector('#app'),v=visualViewport;
               return {draftMatches:p?.textContent==='Keyboard ownership fixture draft',sendCount:window.__composerSends.length,
-                uiMatches:window.__sendSurfaceFixture?.['style.css']==='454ce3f5fe2e9aa7f776f8ae903aacc4f656b172e08b7abc30fdb4482459d941'&&window.__sendSurfaceFixture?.['app.js']==='389fe80f3e13c3c8c6e9b87dd1bfe7fa5a7e5c96721d1836ab09d0c4f172f69e' && window.__sendSurfaceFixture?.['progress.css']==='6fa9d59b1da504c1439a519b9d19346cdfa94f30918a4aff914b90ae4f17ef50'&&window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d',
+                uiMatches:window.__sendSurfaceFixture?.['style.css']==='454ce3f5fe2e9aa7f776f8ae903aacc4f656b172e08b7abc30fdb4482459d941'&&window.__sendSurfaceFixture?.['app.js']==='2d382808dfc07de102843119ba16b852fd5f0d90ed428802d92ed9b7a045de32' && window.__sendSurfaceFixture?.['progress.css']==='ed96bc9859b1028a41ef711b527a9cb17b12d116720e18151998f866447c8a1a'&&window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d',
                 uiManifest:window.__sendSurfaceFixture,viewport:{width:innerWidth,height:innerHeight},
                 client:{width:document.documentElement.clientWidth,height:document.documentElement.clientHeight},
                 visual:v?{width:v.width,height:v.height,offsetTop:v.offsetTop,offsetLeft:v.offsetLeft,scale:v.scale}:null,

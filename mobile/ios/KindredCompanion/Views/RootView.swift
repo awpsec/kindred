@@ -146,7 +146,9 @@ struct RootView: View {
                     ToolbarAvatarButton(image: BotToolbarAvatar(shape: session.presentation.botAvatarShape, color: session.presentation.botAvatarColor).image(scale: displayScale),
                                         title: session.presentation.chatTitle + " details",
                                         action: { session.performDuoAction(.botDetails) },
-                                        frameChanged: { session.updateToolbarIdentityFrame(inWindow: $0) })
+                                        frameChanged: { session.updateToolbarIdentityFrame(inWindow: $0) },
+                                        collaboration: session.presentation.collaboration,
+                                        interrupt: { session.interruptCollaboration(key: $0) })
                         .frame(width: 44, height: 44)
                 }
                 .axisBehavior(session.presentation.isDuoInner ? .automatic : .verticalPreferred)

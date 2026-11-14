@@ -6,6 +6,7 @@ private final class GlassChromeButton: UIButton {
     let avatar = UIImageView()
     let name = UILabel()
     let badge = UILabel()
+    let status = UILabel()
     var identity = false
     var imageInset: CGFloat = 8
     var imageGap: CGFloat = 8
@@ -18,6 +19,9 @@ private final class GlassChromeButton: UIButton {
         avatar.contentMode = .scaleAspectFit; name.lineBreakMode = .byTruncatingTail
         name.textColor = .label
         addSubview(avatar); addSubview(name)
+        status.isUserInteractionEnabled = false; status.isAccessibilityElement = false
+        status.textColor = .secondaryLabel; status.lineBreakMode = .byTruncatingTail
+        status.font = .systemFont(ofSize: 11); addSubview(status)
         badge.isUserInteractionEnabled = false; badge.isAccessibilityElement = false
         badge.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         badge.textAlignment = .center; badge.textColor = .white
@@ -35,6 +39,7 @@ private final class GlassChromeButton: UIButton {
         avatar.frame = CGRect(x: center.x-15,y: center.y-15,width:30,height:30)
         let leading = imageInset+30+imageGap
         name.frame = titleFrame ?? CGRect(x: leading,y: 0,width:max(0,bounds.width-leading-imageInset),height:bounds.height)
+        status.frame = CGRect(x:name.frame.minX,y:name.frame.maxY,width:max(0,bounds.width-name.frame.minX-imageInset),height:max(0,bounds.height-name.frame.maxY))
         let badgeWidth = max(18, badge.intrinsicContentSize.width + 8)
         badge.frame = CGRect(x: bounds.width-badgeWidth+6,y: -6,width:badgeWidth,height:18)
     }
@@ -63,6 +68,7 @@ struct NativeGlassControl {
     let titleFrame: CGRect?
     let avatarCenter: CGPoint?
     let badge: String
+    let collaboration: NativeCollaborationStatus?
 
     init?(_ body: [String: Any]) {
         guard let id = body["id"] as? String, Self.identifiers.contains(id),
@@ -82,6 +88,10 @@ struct NativeGlassControl {
         let badge = body["badge"] as? String ?? ""
         guard badge.isEmpty || (id == "latest" && badge.range(of: "^(?:[1-9][0-9]?|99\\+)$", options: .regularExpression) != nil) else { return nil }
         self.badge = badge
+        if let value = body["collaboration"] {
+            guard id == "identity", let row = value as? [String:Any], let status = NativeCollaborationStatus(row) else { return nil }
+            collaboration = status
+        } else { collaboration = nil }
         shape = (body["shape"] as? String).flatMap { BotToolbarAvatar.supports(shape: $0) ? $0 : nil }
         color = (body["color"] as? String).flatMap { $0.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil ? $0 : nil } ?? "#2475ff"
         self.fontSize = fontSize; self.opacity = opacity; self.titleOpacity = titleOpacity
@@ -116,6 +126,7 @@ final class NativeGlassControls: UIView {
     private var ready: Set<String> = []
     private(set) var document: String?
     var activate: ((String, String) -> Void)?
+    var activateCollaboration: ((String, String) -> Void)?
     var activateVoice: ((String, String, String) -> Void)?
 
     override func layoutSubviews() {
@@ -197,7 +208,7 @@ final class NativeGlassControls: UIView {
                 }, for: .primaryActionTriggered)
                 buttons[item.id] = button; addSubview(button)
             }
-            let key = [item.title,item.symbol,item.shape ?? "",item.color,String(Double(item.fontSize))]
+            let key = [item.title,item.symbol,item.shape ?? "",item.color,String(Double(item.fontSize)),item.collaboration?.key ?? "",String(item.collaboration?.canInterrupt ?? false)]
             if contentKeys[item.id] != key {
                 var configuration = UIButton.Configuration.glass()
                 configuration.cornerStyle = .capsule
@@ -220,8 +231,14 @@ final class NativeGlassControls: UIView {
                     button.name.text = item.title
                     button.name.font = .systemFont(ofSize: item.fontSize, weight: .semibold)
                 }
+                button.menu = item.collaboration?.menu { [weak self, weak button] key in
+                    guard let self, self.document == document, self.buttons[item.id] === button else { return }
+                    self.activateCollaboration?(key, document)
+                }
                 contentKeys[item.id] = key
             }
+            button.accessibilityValue = item.collaboration?.label
+            button.accessibilityHint = item.collaboration == nil ? nil : "Touch and hold for collaboration controls"
             button.accessibilityLabel = item.label
             button.isAccessibilityElement = item.interactive
             button.accessibilityElementsHidden = !item.interactive
@@ -236,6 +253,10 @@ final class NativeGlassControls: UIView {
                 button.titleFrame = item.titleFrame; button.avatarCenter = item.avatarCenter
                 button.avatar.isHidden = !button.identity; button.name.isHidden = !button.identity
                 button.name.alpha = item.titleOpacity
+                button.status.text = item.collaboration?.label
+                button.status.isHidden = !button.identity || item.collaboration == nil
+                button.status.alpha = item.titleOpacity
+                button.status.font = .systemFont(ofSize: max(10,item.fontSize * 11 / 14))
                 button.badge.text = item.badge; button.badge.isHidden = item.badge.isEmpty
                 let rgb = UInt32(item.color.dropFirst(), radix:16) ?? 0x2475ff
                 button.badge.backgroundColor = UIColor(red:CGFloat((rgb >> 16) & 255)/255,green:CGFloat((rgb >> 8) & 255)/255,blue:CGFloat(rgb & 255)/255,alpha:1)

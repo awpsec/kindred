@@ -37,8 +37,11 @@ targets:
           - "**/*.md"
           - "Web/MobileLayout.js"
           - "Web/NativeComposer.js"
+          - "Web/NativeCollaboration.js"
           - "Web/MobileLayout.css"
           - "Views/BotToolbarArtwork.json"
+      - path: KindredCompanion/Web/NativeCollaboration.js
+        buildPhase: resources
       - path: KindredCompanion/Web/NativeComposer.js
         buildPhase: resources
       - path: KindredCompanion/Web/MobileLayout.js

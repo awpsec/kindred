@@ -2083,7 +2083,7 @@
     const artifactRoot=document.querySelector('.artifact-studio'),artifacts=['artifacts','artifact'].includes(route);
     const listAvailable = artifacts ? route==='artifact'&&artifactRoot?.dataset.iosArtifactToggleAvailable==='true' : (route === 'bot-chat' || (!botCenter() && route === 'computer')) && nativeSidebarActive();
     const avatar = document.querySelector('#header-avatar .character'), shape = avatar?.dataset.avatarBody || avatar?.dataset.shape || 'round', color = avatar?.dataset.avatarColor || (avatar ? getComputedStyle(avatar).getPropertyValue('--bot-fill').trim() : '');
-    const state = {action:'duo-navigation', botCenterAvailable:botCenter(), route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160),
+    const state = {action:'duo-navigation', collaboration:route==='bot-chat' ? window.__kindredCollaboration?.read() : null, botCenterAvailable:botCenter(), route, title:(document.querySelector('.bot-heading strong')?.textContent || '').slice(0,160),
       reduceMotion:html.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion:reduce)').matches,
       botAvatarShape:/^[a-z0-9-]{1,32}$/.test(shape) ? shape : 'round',
       botAvatarColor:/^#[0-9a-f]{6}$/i.test(color) ? color : '#2475ff',
@@ -2099,6 +2099,7 @@
     lastDuoNavigation = next;
     window.webkit?.messageHandlers?.kindredAccounts?.postMessage(state);
   };
+  window.addEventListener('kindred-collaboration',publishDuoNavigation);
   window.__kindredDuoActions = {async perform(action) {
     // Search is a modal on new servers. Back/search dismiss it; other native
     // actions wait for dismissal so no second sheet can stack over its exit.
@@ -2269,6 +2270,7 @@
         const alpha = opacity(node); if (alpha < .005) continue;
         const rect = node.getBoundingClientRect(), style = getComputedStyle(node), identity = id === 'identity';
         const title = identity ? (source.querySelector('strong')?.textContent || '').trim().slice(0,160) : id === 'artifact-zoom' ? node.textContent.trim().slice(0,160) : '';
+        const collaboration = identity ? window.__kindredCollaboration?.read() : null;
         const badgeNode = id === 'latest' ? node.querySelector('.jump-latest-count:not([hidden])') : null;
         const badge = badgeNode?.textContent.trim() || '';
         const label = identity ? title+' details' : (node.getAttribute('aria-label') || node.title || node.textContent.trim() || id).slice(0,200);
@@ -2288,7 +2290,7 @@
           }
         }
         current.set(id,{source,node,interactive:!ghost});
-        controls.push({id,title,label,symbol,shape,color,badge,rect:[rect.x,rect.y,rect.width,rect.height].map(round),...identityGeometry,
+        controls.push({id,title,label,symbol,shape,color,badge,...(collaboration?{collaboration}:{}),rect:[rect.x,rect.y,rect.width,rect.height].map(round),...identityGeometry,
           fontSize:parseFloat(identity ? getComputedStyle(source.querySelector('strong') || source).fontSize : style.fontSize),
           imageInset:parseFloat(style.paddingLeft)||0,imageGap:parseFloat(style.columnGap)||0,
           opacity:alpha,titleOpacity:ghost ? Number(getComputedStyle(ghost.lastElementChild).opacity) : 1,interactive:!ghost});
@@ -2330,7 +2332,7 @@
     observeUI(schedule).observe(html,{attributes:true,attributeFilter:['style','class','data-theme','data-motion']});
     const resize = new ResizeObserver(schedule);
     for(const node of [shell,sidebar,conversation,composerArea,header])if(node)resize.observe(node);
-    for(const name of ['resize','kindred-ios-layout','kindred-native-geometry','kindred-ios-toolbar','pageshow'])window.addEventListener(name,()=>{stopped=false;schedule();});
+    for(const name of ['resize','kindred-ios-layout','kindred-native-geometry','kindred-ios-toolbar','kindred-collaboration','pageshow'])window.addEventListener(name,()=>{stopped=false;schedule();});
     voiceMotion.addEventListener('change',schedule);
     document.addEventListener('scroll',schedule,true);
     window.addEventListener('pagehide',()=>{nativeComposer?.setActive(false);setVoiceActive(false);stopped=true;cancelAnimationFrame(glassFrame);cancelAnimationFrame(meterFrame);glassFrame=meterFrame=0;current.clear();for(const node of replaced.keys())restore(node);glassLast='';window.webkit?.messageHandlers?.kindredAccounts?.postMessage({action:'glass-controls',document:glassDocument,sequence:++glassSerial,controls:[]});});

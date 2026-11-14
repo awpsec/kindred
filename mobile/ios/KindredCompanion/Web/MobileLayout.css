@@ -721,3 +721,8 @@ html[data-kindred-ios] #composer-area>.jump-latest{
 }
 html[data-kindred-ios][data-motion=off] #composer-area>.jump-latest{transition:none;}
 @media(prefers-reduced-motion:reduce){html[data-kindred-ios] #composer-area>.jump-latest{transition:none;}}
+
+/* A compact native identity subtitle shares the existing 44pt glass surface. */
+html[data-kindred-ios] .bot-heading[data-ios-collaboration]>span:last-child { display:flex; flex-direction:column; align-items:flex-start; min-width:0; }
+html[data-kindred-ios] .bot-heading[data-ios-collaboration] strong { font-size:calc(14px * var(--text-scale,1)); line-height:calc(18px * var(--text-scale,1)); }
+html[data-kindred-ios] .ios-collaboration-caption { display:block; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:calc(11px * var(--text-scale,1)); line-height:calc(14px * var(--text-scale,1)); color:var(--muted); }
