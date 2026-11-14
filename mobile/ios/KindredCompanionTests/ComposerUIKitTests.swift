@@ -1334,7 +1334,15 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                 while let candidate=hit,!(candidate is UIButton) { hit=candidate.superview }
                 return hit is UIButton
             }
-            let stable = stamp != nil && stamp == previousStamp && nativeReady
+            // Keyboard notifications and the host's layout guide settle in
+            // separate transactions. Keep the final clearance assertion, and
+            // wait for that same real-keyboard geometry before taking a paint.
+            let bottom=(sample["composer"] as? [String:Double])?["bottom"] ?? .infinity
+            let nativeBottom=self.session.webView.convert(CGPoint(x:0,y:bottom),to:self.window).y
+            let gap=self.window.convert(self.keyboardFrame,from:nil).minY-nativeBottom
+            let keyboardReady = !self.keyboardVisible || (6...18).contains(gap)
+            self.layoutEvidence["keyboardClearance"] = gap.isFinite ? gap : -99999
+            let stable = stamp != nil && stamp == previousStamp && nativeReady && keyboardReady
             previousStamp = stamp
             if stable { measured = sample }
             return stable
