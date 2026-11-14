@@ -4,6 +4,7 @@
   if (!window.__KINDRED_MOBILE || html.dataset.kindredIos) return;
   html.dataset.kindredIos = 'true';
   html.dataset.mobile = 'true';
+  document.querySelector('#prompt')?.setAttribute('enterkeyhint','enter');
   // SVG animation frames cannot change navigation, menus or pane geometry.
   // Keep them out of native-wide observers while retaining identity changes.
   const observeUI = callback => new MutationObserver((records, observer) => {

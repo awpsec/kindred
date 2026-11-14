@@ -123,7 +123,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
         var key:((String)->Void)?
         var pastePayload: (([String:Any])->Void)?
         override func insertText(_ text:String) {
-            if text=="\n",!insertingNewline,markedTextRange==nil { key?("Enter");return }
+            if text=="\n",hasSuggestions,!insertingNewline,markedTextRange==nil { key?("Enter");return }
             super.insertText(text)
         }
         override func paste(_ sender: Any?) {
@@ -173,7 +173,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
         editor.key={ [weak self] key in self?.emit("key",extra:["key":key]) }
         editor.backgroundColor = .clear;editor.textColor = .label;editor.delegate=self
         editor.textContainer.lineFragmentPadding=0;editor.autocorrectionType = .no;editor.spellCheckingType = .yes
-        editor.smartQuotesType = .no;editor.smartDashesType = .no;editor.returnKeyType = .send
+        editor.smartQuotesType = .no;editor.smartDashesType = .no;editor.returnKeyType = .default
         editor.accessibilityIdentifier="kindred-native-composer-editor"
         placeholder.textColor = .placeholderText;placeholder.isUserInteractionEnabled=false;placeholder.isAccessibilityElement=false
         material.contentView.addSubview(editor);material.contentView.addSubview(placeholder)
@@ -242,7 +242,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
                 config.baseForegroundColor = item.primary ? (item.foreground ?? .systemBackground) : .label
                 config.cornerStyle = .capsule;config.contentInsets = .zero
                 if item.kind=="suggestion" { config.titleAlignment = .leading }
-                if item.primary { config.background.backgroundInsets = NSDirectionalEdgeInsets(top:4,leading:4,bottom:4,trailing:4) }
+                if item.primary { config.background.backgroundInsets = NSDirectionalEdgeInsets(top:7,leading:7,bottom:7,trailing:7) }
                 if item.symbol.isEmpty {
                     config.title=item.text;config.titleLineBreakMode = item.kind=="suggestion" ? .byWordWrapping : .byTruncatingTail
                     config.titleTextAttributesTransformer=UIConfigurationTextAttributesTransformer { attributes in
@@ -250,7 +250,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
                     }
                 }
                 else {
-                    let symbol=UIImage(systemName:item.symbol,withConfiguration:UIImage.SymbolConfiguration(pointSize:20,weight:.regular))
+                    let symbol=UIImage(systemName:item.symbol,withConfiguration:UIImage.SymbolConfiguration(pointSize:16,weight:.regular))
                     // The filled primary circle needs opaque contrasting ink.
                     // Glass vibrancy must not turn its template glyph into
                     // the same color as that circle.
@@ -389,7 +389,7 @@ final class NativeComposer: UIView, UITextViewDelegate {
     func textViewDidBeginEditing(_ textView:UITextView) { if !applying { emit("focus",extra:["focused":true]) } }
     func textViewDidEndEditing(_ textView:UITextView) { if !applying { emit("focus",extra:["focused":false]) } }
     func textView(_ textView:UITextView,shouldChangeTextIn range:NSRange,replacementText text:String)->Bool {
-        if text=="\n",!editor.insertingNewline,textView.markedTextRange==nil { emit("key",extra:["key":"Enter"]);return false };return true
+        if text=="\n",editor.hasSuggestions,!editor.insertingNewline,textView.markedTextRange==nil { emit("key",extra:["key":"Enter"]);return false };return true
     }
     func emit(_ action:String,extra:[String:Any]=[:]) {
         guard let model,let document,confirmed else { return }
