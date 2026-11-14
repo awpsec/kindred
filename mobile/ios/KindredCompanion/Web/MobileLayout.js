@@ -1567,6 +1567,22 @@
   const messageClearance = new WeakMap();
   let messageReadingEpoch = 0, messageGeometryEpoch = 0, messageReadingActive = false;
   function updateNativeContentClearance() {
+    // Edge navigation translates whole panes, including its release animation.
+    // Measure their resting layout against the stationary native controls:
+    // screen-space translation is not a resize or a change of reading lane.
+    // Real viewport/fold/pane resizing still uses the current layout bounds.
+    const translations = new Map();
+    const readingRect = (node,pane=node) => {
+      const rect = node.getBoundingClientRect();
+      if (!shell.classList.contains('ios-edge-preview')) return rect;
+      if (!translations.has(pane)) {
+        const transform = getComputedStyle(pane).transform;
+        translations.set(pane,transform === 'none' ? {m41:0,m42:0} : new DOMMatrixReadOnly(transform));
+      }
+      const {m41:x,m42:y} = translations.get(pane);
+      return {left:rect.left-x,right:rect.right-x,top:rect.top-y,bottom:rect.bottom-y,
+        x:rect.x-x,y:rect.y-y,width:rect.width,height:rect.height};
+    };
     updateNativeSheets();
     // Cover content extends beneath glass navigation; controls keep their safe frame.
     const previewFrame = artifactFrames({single:true,fullCover:true}).document;
@@ -1586,7 +1602,7 @@
     for (const node of [conversation,computer,document.querySelector('#details-panel')]) {
       if (!node) continue;
       // Use the stable parent pane interval, never an already-inset child.
-      const inset = insetFor(node.getBoundingClientRect());
+      const inset = insetFor(readingRect(node));
       setContentInset(node,'--ios-content-left',inset.left);
       setContentInset(node,'--ios-content-right',inset.right);
     }
@@ -1595,7 +1611,7 @@
       ['x','y','width','height'].every(key => Number.isFinite(toolbar[key])) && toolbar.width > 0 && toolbar.height > 0;
     html.toggleAttribute('data-ios-message-flow',!!flow);
     const zones = flow ? [toolbar,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).filter(region => region.kind === 'occlusion' && region.active !== false)] : [];
-    const history = document.querySelector('#content'), historyRect = history?.getBoundingClientRect();
+    const history = document.querySelector('#content'), historyRect = history && readingRect(history,conversation);
     // WebKit can report an elastic offset while a touch is settling (including
     // a gesture begun before the cover layout arrived). Classify the resting
     // reading position so that stretch cannot resize and reflow a bubble.
@@ -1617,7 +1633,7 @@
     for (const group of history?.children || []) {
       const user = !!group.querySelector('.message-row.user');
       group.toggleAttribute('data-ios-user-message',user);
-      const rect = group.getBoundingClientRect();
+      const rect = readingRect(group,conversation);
       const previous = messageClearance.get(group);
       const buffer = previous?.blocked ? 12 : 6;
       const overlaps = user && zones.some(zone => rect.top+elasticOffset < zone.y+zone.height+buffer && rect.bottom+elasticOffset > zone.y-buffer);
@@ -1636,12 +1652,12 @@
       setContentInset(group,'--ios-user-clearance',blocked ? laneRight : 0);
     }
     if (!sidebar) return;
-    const base = sidebar.getBoundingClientRect(), sidebarStyle = getComputedStyle(sidebar);
+    const base = readingRect(sidebar), sidebarStyle = getComputedStyle(sidebar);
     const contentLeft = base.left+(parseFloat(sidebarStyle.paddingLeft)||0), contentRight = base.right-(parseFloat(sidebarStyle.paddingRight)||0);
     const inset = insetFor({left:contentLeft,right:contentRight,width:contentRight-contentLeft});
-    const scroll = document.querySelector('#bots'), viewport = scroll?.getBoundingClientRect() || base;
+    const scroll = document.querySelector('#bots'), viewport = scroll ? readingRect(scroll,sidebar) : base;
     const rows = [...sidebar.querySelectorAll('#bots .nav-entry')];
-    const visible = rows.filter(node => {const r=node.getBoundingClientRect();return r.height>0 && r.bottom>Math.max(base.top,viewport.top) && r.top<Math.min(base.bottom,viewport.bottom);});
+    const visible = rows.filter(node => {const r=readingRect(node,sidebar);return r.height>0 && r.bottom>Math.max(base.top,viewport.top) && r.top<Math.min(base.bottom,viewport.bottom);});
     const contour = nativeDuo && viewport.width > 0 && viewport.height > 0 ? displayContour(viewport) : null;
     if (contour && scroll.style.getPropertyValue('--ios-display-contour') !== contour) scroll.style.setProperty('--ios-display-contour',contour);
     if (!contour) scroll?.style.removeProperty('--ios-display-contour');
