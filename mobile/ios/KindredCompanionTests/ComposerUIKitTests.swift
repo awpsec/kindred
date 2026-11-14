@@ -404,6 +404,10 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         XCTAssertTrue(composer.material.effect is UIGlassEffect)
         XCTAssertTrue(composer.editor.superview === composer.material.contentView)
         XCTAssertFalse(session.webView.backgroundColor == .clear)
+        try tapComposerButton("plus")
+        try await waitFor("native plus opens retained menu") { try await self.boolean("!document.querySelector('#composer-menu').hidden") }
+        try tapComposerButton("plus")
+        try await waitFor("native plus closes retained menu") { try await self.boolean("document.querySelector('#composer-menu').hidden") }
         composer.editor.becomeFirstResponder()
         try await waitFor("native editor first responder") { composer.editor.isFirstResponder }
         try await waitFor("real native keyboard notification") { self.keyboardShows>0 && self.keyboardFrame.height>100 }
@@ -416,6 +420,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         try await waitFor("Return retains a newline instead of sending") { try await self.boolean("document.querySelector('#prompt').value.includes('\\nSecond paragraph') && window.__composerSends.length===0") }
         XCTAssertEqual(composer.editor.text,beforeReturn+"\nSecond paragraph")
         XCTAssertTrue(composer.textView(composer.editor,shouldChangeTextIn:composer.editor.selectedRange,replacementText:"\n"))
+        _ = try await checkComposer(label:"native-return-multiline")
         let retainedEditor=composer.editor
         let bottom=composer.material.frame.maxY
         composer.editor.insertText(" More words to grow the native text view without moving its bottom edge.")
@@ -425,7 +430,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         _ = try await js("document.querySelector('[data-message=\"1\"] [data-message-action=\"reply\"]').click();true")
         try await waitFor("native reply cancellation control") { try await self.boolean("!!document.querySelector('#composer-reply:not([hidden])')") }
         let draft=composer.editor.text!
-        composer.emit("send")
+        try tapComposerButton("arrow.up")
         try await waitFor("one native send through original handler") { try await self.boolean("window.__composerSends.length===1 && document.querySelector('#prompt').value==='' ") }
         let sent=try await js("window.__composerSends[0].prompt") as? String
         XCTAssertEqual(sent,draft)
@@ -823,7 +828,8 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         composer.editor.becomeFirstResponder()
         try await waitFor("dictation keyboard") { self.keyboardVisible && composer.editor.isFirstResponder }
         for reduced in [false,true] {
-            _ = try await js("document.documentElement.dataset.motion='\(reduced ? "off" : "on")';document.querySelector('.dictation-button').click();true")
+            _ = try await js("document.documentElement.dataset.motion='\(reduced ? "off" : "on")';true")
+            try tapComposerButton("mic")
             try await waitFor("four-line recognition starts") { self.session.dictation.phase == "recording" }
             let operation=try XCTUnwrap(session.dictation.operation), bottom=composer.material.frame.maxY
             session.dictation.acceptRecognition(text:transcript,final:false,failed:false,operation:operation)
@@ -839,7 +845,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                 try await waitFor("cancel four lines restores empty draft") { composer.editor.text.isEmpty && self.session.dictation.operation == nil }
                 session.dictation.acceptRecognition(text:"Stale result",final:true,failed:false,operation:operation)
             } else {
-                _ = try await js("document.querySelector('.dictation-button').click();true")
+                try tapComposerButton("stop.fill")
                 try await waitFor("four-line finishing") { self.session.dictation.phase == "finishing" }
                 session.dictation.acceptRecognition(text:transcript,final:true,failed:false,operation:operation)
                 try await waitFor("four-line commit") { try await self.boolean("!document.querySelector('.dictation-transcript')") }
@@ -847,7 +853,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
                 composer.editor.text="Edited spoken draft";composer.editor.selectedRange=NSRange(location:19,length:0);composer.emit("edit")
                 try await waitFor("edited dictation shrinks without moving bottom") { composer.editor.bounds.height<70 && abs(composer.material.frame.maxY-bottom)<2 }
                 XCTAssertEqual(composer.editor.selectedRange.location,19)
-                composer.emit("send")
+                try tapComposerButton("arrow.up")
                 try await waitFor("dictation edit sends once and clears") { try await self.boolean("window.__composerSends.length===1 && window.__composerSends[0].prompt==='Edited spoken draft' && document.querySelector('#prompt').value===''") }
             }
             XCTAssertTrue(composer.editor.isFirstResponder)
@@ -1310,7 +1316,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         const colour=document.createElement('canvas').getContext('2d');colour.fillStyle=surface.backgroundColor;colour.fillRect(0,0,1,1);const rgba=[...colour.getImageData(0,0,1,1).data];
         const primarySurface={selector:send.id==='send'?'#send':'.dictation-button',controlKind:send.id==='send'?'send':'microphone',capability:window.__KINDRED_IOS_DICTATION};
         const target=rect(send),edgeHits=[[20,0],[-20,0],[0,20],[0,-20]].map(([dx,dy])=>{const h=document.elementFromPoint(target.x+target.width/2+dx,target.y+target.height/2+dy);return h===send||send.contains(h)});
-        return {focusTrace:window.__composerFocusTrace??[],firstPromptFocus:window.__composerFirstPromptFocus??null,windowScroll:{x:scrollX,y:scrollY,top:document.scrollingElement?.scrollTop??0,left:document.scrollingElement?.scrollLeft??0,height:document.scrollingElement?.scrollHeight??0},dictationState:{draftPresent:!!p.textContent.trim(),transientSpan:!!p.querySelector('.dictation-transcript'),dictating:c.classList.contains('is-dictating'),lastEvent:window.__composerDictationEvents.at(-1)??null,sendCount:window.__composerSends.length,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches},primarySurface:{...primarySurface,edgeHits,target,arrow:rect(arrow),paint:{width:parseFloat(surface.width),height:parseFloat(surface.height),left:parseFloat(surface.left),top:parseFloat(surface.top),rgba},opacity:parseFloat(style.opacity),appearance:style.appearance,theme:document.documentElement.dataset.theme,hidden:send.hidden,disabled:send.disabled,fixture:window.__sendSurfaceFixture},layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
+        return {topFrost:(()=>{const f=document.querySelector('.chat-top-frost');return f?{rect:rect(f),parent:rect(f.parentElement),safe:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ios-safe-top'))||0,depth:document.documentElement.dataset.iosDuo==='true'&&document.documentElement.dataset.iosDuoInner!=='true'?28:44,layers:f.children.length}:null})(),focusTrace:window.__composerFocusTrace??[],firstPromptFocus:window.__composerFirstPromptFocus??null,windowScroll:{x:scrollX,y:scrollY,top:document.scrollingElement?.scrollTop??0,left:document.scrollingElement?.scrollLeft??0,height:document.scrollingElement?.scrollHeight??0},dictationState:{draftPresent:!!p.textContent.trim(),transientSpan:!!p.querySelector('.dictation-transcript'),dictating:c.classList.contains('is-dictating'),lastEvent:window.__composerDictationEvents.at(-1)??null,sendCount:window.__composerSends.length,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches},primarySurface:{...primarySurface,edgeHits,target,arrow:rect(arrow),paint:{width:parseFloat(surface.width),height:parseFloat(surface.height),left:parseFloat(surface.left),top:parseFloat(surface.top),rgba},opacity:parseFloat(style.opacity),appearance:style.appearance,theme:document.documentElement.dataset.theme,hidden:send.hidden,disabled:send.disabled,fixture:window.__sendSurfaceFixture},layout:{shell:rect(document.querySelector('#app')),resizing:document.querySelector('#app').dataset.mobileResizing==='true',mode:document.documentElement.dataset.iosLayout??'',textScale:parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-scale'))||1},composer:rect(c),prompt:rect(p),reply:reply?.getClientRects().length?rect(reply):null,files:files?.getClientRects().length?rect(files):null,viewport:{width:innerWidth,height:innerHeight},native:window.__KINDRED_NATIVE_GEOMETRY,
         controls:[...c.querySelectorAll('#composer-actions,#send,.dictation-button,.dictation-cancel')].filter(b=>b.getClientRects().length).map(b=>{const r=rect(b),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {...r,enabled:!b.disabled,hit:h===b||b.contains(h)}})}})()
         """
         var measured: [String: Any]?
@@ -1374,6 +1380,11 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         let c = try XCTUnwrap(metrics["composer"] as? [String: Double])
         let p = try XCTUnwrap(metrics["prompt"] as? [String: Double])
         let controls = try XCTUnwrap(metrics["controls"] as? [[String: Any]])
+        let frost=try XCTUnwrap(metrics["topFrost"] as? [String:Any])
+        let frostRect=try XCTUnwrap(frost["rect"] as? [String:Double]),frostParent=try XCTUnwrap(frost["parent"] as? [String:Double])
+        XCTAssertEqual(frostRect["y"] ?? -1,frostParent["y"] ?? -2,accuracy:1,"Frost covers the actual native safe-area edge without a gap")
+        XCTAssertEqual(frostRect["height"] ?? -1,(frost["safe"] as? Double ?? 0)+(frost["depth"] as? Double ?? 0),accuracy:1)
+        XCTAssertEqual(frost["layers"] as? Int,4)
         XCTAssertGreaterThanOrEqual(controls.count, 2)
         XCTAssertGreaterThanOrEqual(p["height"] ?? 0, 24)
         if (c["height"] ?? .infinity) <= 60 {
@@ -1471,6 +1482,13 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         _ = try await js("const p=document.querySelector('#prompt');p.textContent='';p.dispatchEvent(new InputEvent('input',{bubbles:true}));true")
         let sends = try await js("window.__composerSends.length") as? Int
         XCTAssertEqual(sends, 1, "Paint matrix must not submit another message")
+    }
+
+    private func tapComposerButton(_ symbol: String) throws {
+        let item=try XCTUnwrap(session.glassControls.composer.model?.items.first { $0.kind == "button" && $0.symbol == symbol })
+        let button=try nativeButton(rect:item.frame)
+        XCTAssertTrue(button.isEnabled)
+        button.sendActions(for:.primaryActionTriggered)
     }
 
     private func nativeButton(rect:CGRect,enabled:Bool=true) throws -> UIButton {
