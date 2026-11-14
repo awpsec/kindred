@@ -1343,7 +1343,19 @@ function renderNametagStatus(){
   if(bot&&!chat?.shared&&id==='dm-'+bot.id){
     const waits=(entry?.pendingWaits||[]).filter(w=>w.requester_bot_id===bot.id&&state.bots.some(b=>b.id===w.bot_id));
     if(waits.length)work={label:'Waiting on '+[...new Set(waits.map(w=>state.bots.find(b=>b.id===w.bot_id).name))].join(', '),runIds:[...new Set(waits.map(w=>w.parent_run_id))]};
-    else {const helper=helperWork(bot.id);if(helper&&helper.run.chat_id!==id)work={label:helper.caption,runIds:[helper.run.id],stopping:stoppingTasks.has(helper.run.id)};}
+    else {
+      // Incoming work belongs in the helper's nametag too, including work in
+      // this DM and waits received before the delegated run details arrive.
+      const helper=helperWork(bot.id);
+      if(helper)work={label:helper.caption,runIds:[helper.run.id],stopping:stoppingTasks.has(helper.run.id)};
+      else {
+        const incoming=(entry?.pendingWaits||[]).filter(w=>w.bot_id===bot.id&&w.requester_bot_id!==bot.id);
+        if(incoming.length){
+          const names=[...new Set(incoming.map(w=>state.bots.find(b=>b.id===w.requester_bot_id)?.name||'A teammate'))];
+          work={label:names.join(', ')+(names.length===1?' is':' are')+' waiting on you',runIds:[...new Set(incoming.map(w=>w.parent_run_id))]};
+        }
+      }
+    }
   }
   nametagStatus.update(work,id);
 }
