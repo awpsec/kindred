@@ -3,7 +3,7 @@
 Based on published desktop source `25094e557dd44648f12a45d2f3ebd8f91098f9a1`.
 Retains the native Duo computer mapping/rotation and narration alignment fixes,
 alongside the published voice preview streaming, attachments and chat chrome.
-The private iOS build is 0.90.6 (4), using the existing application identity.
+The private iOS build is 0.90.6 (5), using the existing application identity.
 
 The bundled native collaboration adapter observes the existing same-origin API
 reads and retains only bounded collaboration metadata. It makes no extra API
@@ -37,3 +37,5 @@ Regression coverage:
 
 Exact test, signing and device results belong in the private acceptance receipt;
 these checks do not authorize replacing public 0.90.6 artifacts.
+
+Includes the edge-navigation clearance correction from `eae3d6dffa00339b4251e295fcc09e8d8130ce84`, retaining normal fold and inner-pane resizing. The temporary hardware smoke install used build 4 before this follow-up arrived; the final normal artifact uses build 5.
