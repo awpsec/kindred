@@ -404,13 +404,15 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         XCTAssertTrue(composer.material.effect is UIGlassEffect)
         XCTAssertTrue(composer.editor.superview === composer.material.contentView)
         XCTAssertFalse(session.webView.backgroundColor == .clear)
+        composer.editor.becomeFirstResponder()
+        try await waitFor("native editor first responder") { composer.editor.isFirstResponder }
+        try await waitFor("real native keyboard notification") { self.keyboardShows>0 && self.keyboardFrame.height>100 }
         try tapComposerButton("plus")
         try await waitFor("native plus opens retained menu") { try await self.boolean("!document.querySelector('#composer-menu').hidden") }
         try tapComposerButton("plus")
         try await waitFor("native plus closes retained menu") { try await self.boolean("document.querySelector('#composer-menu').hidden") }
         composer.editor.becomeFirstResponder()
-        try await waitFor("native editor first responder") { composer.editor.isFirstResponder }
-        try await waitFor("real native keyboard notification") { self.keyboardShows>0 && self.keyboardFrame.height>100 }
+        try await waitFor("keyboard restored after native menu") { composer.editor.isFirstResponder && self.keyboardVisible }
         composer.editor.insertText("Native 🦋 draft with a second line that will wrap when the phone narrows.")
         try await waitFor("native draft reaches retained delivery model") { try await self.boolean("document.querySelector('#prompt').value==='Native 🦋 draft with a second line that will wrap when the phone narrows.'") }
         XCTAssertEqual(composer.editor.returnKeyType,.default)
@@ -542,6 +544,8 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         composer.editor.insertText("acme.test")
         try await waitFor("command parameter reaches original draft") { try await self.boolean("document.querySelector('#prompt').value==='/domain-review acme.test'") }
         composer.editor.insertText("\n")
+        try await waitFor("Return after command arguments stays in the draft") { try await self.boolean("document.querySelector('#prompt').value==='/domain-review acme.test\\n' && window.__composerSends.length===0") }
+        try tapComposerButton("arrow.up")
         try await waitFor("command sends exactly once") { try await self.boolean("window.__composerSends.length===1 && window.__composerSends[0].prompt==='/domain-review acme.test' && document.querySelector('#prompt').value===''") }
         composer.editor.insertText("/zz")
         try await waitFor("native empty command status") { !composer.popup.isHidden && composer.model?.items.contains(where: { $0.kind=="suggestion-label" && $0.text.contains("No matching commands") })==true }
