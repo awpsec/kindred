@@ -38,7 +38,7 @@
     const selected = document.querySelector('.bot-link.active[data-sidebar-id],.pinned-bot.active[data-sidebar-id]');
     const selectedID = selected?.dataset.sidebarId, botID = selected?.dataset.sidebarKind === 'bots' ? selectedID : selectedID?.startsWith('dm-') ? selectedID.slice(3) : null;
     const bot = bots.find(b => b.id === botID), heading = document.querySelector('#bot-details');
-    if (!bot || heading?.disabled || heading?.querySelector('.participant-stack') || document.querySelector('#heading')?.textContent.trim() !== bot.name) return empty();
+    if (!bot || heading?.disabled || heading?.querySelector('.participant-stack') || [...(document.querySelector('#heading')?.childNodes || [])].filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim() !== bot.name) return empty();
     const chatID = 'dm-' + bot.id, pending = waits.get(chatID) || [], known = pending.filter(w => w.requester_bot_id === bot.id && bots.some(b => b.id === w.bot_id));
     let label, runIDs, kind, groups = [];
     if (known.length) {
@@ -67,8 +67,10 @@
     // Prefer the owning task's handler. Mobile fallback groups retain the
     // existing parent-run cancellation behavior when no task is on this page.
     const buttons = unique(runIDs.map(run => document.querySelector('.work-stop[data-run="' + CSS.escape(run) + '"]')));
-    const targets = buttons.every(Boolean) ? buttons : unique(groups.map(group => document.querySelector('.collaboration-wait[data-message="collaboration-wait-' + CSS.escape(group || '') + '"] .collaboration-stop')));
-    const canInterrupt = targets.length > 0 && targets.every(button => button?.isConnected && !button.disabled);
+    const missing = buttons.some(button => !button);
+    const fallback = missing ? unique(groups.map(group => document.querySelector('.collaboration-wait[data-message="collaboration-wait-' + CSS.escape(group || '') + '"] .collaboration-stop'))) : [];
+    const targets = unique([...buttons.filter(Boolean),...fallback]);
+    const canInterrupt = (!missing || fallback.length > 0) && targets.length > 0 && targets.every(button => button?.isConnected && !button.disabled);
     return {key,label:label.slice(0,200),kind,canInterrupt,targets};
   }
   function sync() {

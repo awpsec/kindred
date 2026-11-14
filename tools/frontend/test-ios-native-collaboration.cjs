@@ -38,6 +38,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
    assert.equal(await p.locator('.nametag-shell').count(),0,'Desktop layout stays gated');
    assert(await p.locator('#bot-details').evaluate(n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}),'Native identity fits');
   };
+  await status('Requester is waiting on you');
+  await p.evaluate(()=>{const badge=document.createElement('span');badge.textContent='Primary';document.querySelector('#heading').append(badge);});
   await status('Requester is waiting on you');const old=await p.evaluate(()=>__kindredCollaboration.read().key);
   // Use the retained page handler so this also covers a collapsed mobile list.
   await p.evaluate(()=>document.querySelector('.bot-link[data-sidebar-id="requester"]').click());
