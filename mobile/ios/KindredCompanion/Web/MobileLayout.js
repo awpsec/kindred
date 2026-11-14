@@ -2319,7 +2319,7 @@
       if (!stopped && document.getAnimations().some(a=>!a.effect?.target?.closest?.('.voice-wave')&&a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime))) schedule();
     };
     const schedule = () => {if(!stopped&&!glassFrame)glassFrame=requestAnimationFrame(scan);};
-    nativeComposer=window.__kindredCreateNativeComposer?.({documentID:glassDocument,schedule,allowed:()=>duoRoute()==='bot-chat'});
+    nativeComposer=window.__kindredCreateNativeComposer?.({documentID:glassDocument,schedule,allowed:()=>duoRoute()==='bot-chat',beforeAction:node=>{lastMenuSource=node;}});
     window.__kindredGlassControls = {
       setActive(document,ids,sequence) {
         if (document !== glassDocument || sequence !== glassSerial || !Array.isArray(ids)) return false;

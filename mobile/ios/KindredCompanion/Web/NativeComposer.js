@@ -1,6 +1,6 @@
 // Installed only by the trusted iOS host. UIKit owns foreground editing and
 // glass; the retained page owns drafts, menus, files, dictation and delivery.
-window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
+window.__kindredCreateNativeComposer=({documentID,schedule,allowed,beforeAction=()=>{}})=>{
   const form=document.querySelector('#composer'),editor=document.querySelector('#prompt');
   const actions=new Map(),keys=new WeakMap(),images=new WeakMap();let serial=0,active=false,ack=0,context='',saved=null;
   const originalFocus=editor.focus.bind(editor),originalBlur=editor.blur.bind(editor);
@@ -128,6 +128,7 @@ window.__kindredCreateNativeComposer=({documentID,schedule,allowed})=>{
     }else if(command.action==='send')form.requestSubmit();
     else if(command.action==='action'){
       const node=actions.get(command.id);if(!visible(node)||node.disabled)return false;
+      beforeAction(node);
       // The existing iOS dictation handler captures the current DOM range on
       // pointerdown. That range mirrors UIKit's real selection.
       node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',button:0}));node.click();

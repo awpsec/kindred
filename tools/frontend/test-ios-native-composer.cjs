@@ -26,6 +26,13 @@ const {server,token,profileID}=require('./fixtures/duo.cjs');
   assert(await page.locator('#composer').evaluate(n=>getComputedStyle(n).backdropFilter==='none'&&getComputedStyle(n).opacity==='0'));
   assert.equal(await page.locator('#prompt').getAttribute('contenteditable'),'false');
   const call=async(action,extra={})=>{const m=await model();return page.evaluate(c=>__kindredNativeComposer.perform(c),{document:m.document,context:m.composer.context,revision:1,text:'Native 🦋 draft',selection:[15,0],action,...extra});};
+
+  const plus=(await model()).composer.items.find(i=>i.symbol==='plus');assert(plus);
+  assert(await call('action',{id:plus.id}));
+  await page.waitForFunction(()=>nativeMessages.some(m=>m.action==='native-menu'&&m.items.some(i=>i.title==='Attach files')));
+  const nativeMenu=await page.evaluate(()=>nativeMessages.filter(m=>m.action==='native-menu').at(-1));
+  assert(nativeMenu.rect[2]>=44&&nativeMenu.rect[3]>=44,'native menu uses the retained composer tap target');
+  assert.equal(await page.locator('#composer-menu').evaluate(n=>n.hidden),true,'the retained menu hands presentation to iOS');
   assert(await call('edit'));await page.waitForFunction(()=>document.querySelector('#prompt').value==='Native 🦋 draft');
   assert(await call('focus',{focused:true}));assert.equal(await page.evaluate(()=>__KINDRED_NATIVE_COMPOSER_FOCUSED),true);
   assert.equal(await call('edit',{context:'bots:wrong|message',text:'Must not leak'}),false);

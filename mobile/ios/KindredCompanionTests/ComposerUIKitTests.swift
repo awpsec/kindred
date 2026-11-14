@@ -408,9 +408,21 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         try await waitFor("native editor first responder") { composer.editor.isFirstResponder }
         try await waitFor("real native keyboard notification") { self.keyboardShows>0 && self.keyboardFrame.height>100 }
         try tapComposerButton("plus")
-        try await waitFor("native plus opens retained menu") { try await self.boolean("!document.querySelector('#composer-menu').hidden") }
-        try tapComposerButton("plus")
-        try await waitFor("native plus closes retained menu") { try await self.boolean("document.querySelector('#composer-menu').hidden") }
+        try await waitFor("native plus opens the iOS attachment menu") {
+            guard let menu=self.window.rootViewController?.presentedViewController as? UIAlertController else { return false }
+            return menu.viewIfLoaded?.window != nil && !menu.isBeingPresented && menu.actions.contains { $0.title == "Attach files" }
+        }
+        let menu=try XCTUnwrap(window.rootViewController?.presentedViewController as? UIAlertController)
+        if let popover=menu.popoverPresentationController {
+            XCTAssertTrue(popover.sourceView === session.webView)
+            XCTAssertGreaterThan(popover.sourceRect.width,0)
+            XCTAssertLessThanOrEqual(popover.sourceRect.maxX,session.webView.bounds.maxX+1)
+        }
+        let menuImage=XCTAttachment(image:UIGraphicsImageRenderer(bounds:window.bounds).image { _ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true) });menuImage.name="native-composer-plus-menu";menuImage.lifetime = .keepAlways;add(menuImage)
+        menu.dismiss(animated:false)
+        try await waitFor("native menu dismissal") { self.window.rootViewController?.presentedViewController == nil }
+        composer.editor.resignFirstResponder()
+        try await waitFor("native menu keyboard cleanup") { !self.keyboardVisible }
         composer.editor.becomeFirstResponder()
         try await waitFor("keyboard restored after native menu") { composer.editor.isFirstResponder && self.keyboardVisible }
         composer.editor.insertText("Native 🦋 draft with a second line that will wrap when the phone narrows.")
