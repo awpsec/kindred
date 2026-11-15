@@ -519,9 +519,11 @@ final class WebSession: NSObject {
 
     func reload() {
         edgeBack?.setNavigation(nil)
+        let recovering = loadState.failure != nil
         loadState.failure = nil
-        // A script can leave the main frame on about:blank; start over at the root.
-        if !origin.matches(webView.url) {
+        // Retry a failed deep link at the workspace root. Reloading the same
+        // missing page would leave recovery stuck on that route again.
+        if recovering || !origin.matches(webView.url) {
             webView.load(URLRequest(url: origin.rootURL))
         } else {
             webView.reload()
@@ -1102,15 +1104,25 @@ extension WebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         let url = navigationResponse.response.url
+        if navigationResponse.isForMainFrame, !policy.allowsMainFrameResponse(from: url) {
+            decisionHandler(.cancel)
+            notify(NavigationRefusal.otherOrigin(host: url?.host).message)
+            return
+        }
+        if navigationResponse.isForMainFrame,
+           let response = navigationResponse.response as? HTTPURLResponse,
+           (400...599).contains(response.statusCode) {
+            presentation.hasChatInterface = false
+            presentation.hasLoadedChats = false
+            edgeBack?.setNavigation(nil)
+            loadState.failure = "Your server couldn’t open this page (HTTP \(response.statusCode)). Try again to return to your workspace."
+            decisionHandler(.cancel)
+            return
+        }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition")
         let attachment = disposition?.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment") ?? false
         if attachment || !navigationResponse.canShowMIMEType {
             decisionHandler(policy.allowsDownload(from: url) ? .download : .cancel)
-            return
-        }
-        if navigationResponse.isForMainFrame, !policy.allowsMainFrameResponse(from: url) {
-            decisionHandler(.cancel)
-            notify(NavigationRefusal.otherOrigin(host: url?.host).message)
             return
         }
         decisionHandler(.allow)

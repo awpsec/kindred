@@ -878,6 +878,34 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         _ = try await checkComposer(label:"four-line-final-empty")
     }
 
+    func testHTTPPageFailureRestoresRecoveryAndRetriesWorkspaceRoot() async throws {
+        session.open(URL(string: "https://localhost:8765/missing-artifact-route")!)
+        try await waitFor("HTTP 404 restores native recovery") { self.session.loadState.failure != nil }
+        XCTAssertTrue(try XCTUnwrap(session.loadState.failure).contains("HTTP 404"))
+        XCTAssertFalse(session.presentation.hasChatInterface)
+        XCTAssertFalse(session.presentation.hasLoadedChats)
+
+        session.reload()
+        try await waitFor("retry opens the workspace root and becomes ready", timeout: 30) {
+            self.session.webView.url?.path == "/" && self.session.presentation.hasLoadedChats &&
+            self.session.presentation.hasChatInterface && self.session.loadState.failure == nil
+        }
+        let ready = try await boolean("!!document.querySelector('#prompt')?.getClientRects().length")
+        XCTAssertTrue(ready)
+    }
+
+    func testMissingEmbeddedPageDoesNotReplaceWorkspaceWithRecovery() async throws {
+        _ = try await js("""
+        (()=>{const frame=document.createElement('iframe');
+          frame.onload=()=>{window.__missingFrameFinished=true};
+          frame.src='/missing-artifact-route';document.body.append(frame);return true})()
+        """)
+        try await waitFor("embedded HTTP 404 completes") { try await self.boolean("window.__missingFrameFinished===true") }
+        XCTAssertNil(session.loadState.failure)
+        XCTAssertTrue(session.presentation.hasLoadedChats)
+        XCTAssertTrue(session.presentation.hasChatInterface)
+    }
+
     func testStartupFailureRestoresRecoveryNavigationAndRetries() async throws {
         let web = session.webView
         _ = try await js("window.webkit.messageHandlers.kindredAccounts.postMessage({action:'startup-failed'});true")
