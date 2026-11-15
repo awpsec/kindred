@@ -128,7 +128,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         // Bind the fixture's exact shared candidate, not a stale connected UI.
         _ = try await js("fetch('/fixture/ready').then(r=>r.json()).then(m=>{window.__sendSurfaceFixture=m.ui_sha256}).catch(()=>{window.__sendSurfaceFixture=null});true")
         try await waitFor("exact Send candidate UI manifest") {
-            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='2f5cd05baff000cd9f5acfdb63c1900db374053635470437da7bfcc602666944' && window.__sendSurfaceFixture?.['app.js']==='719b3fc226dab3ab4027d42813ea174da0285f4ba8fa5096e5a173dd90a4e22d' && window.__sendSurfaceFixture?.['progress.css']==='ed96bc9859b1028a41ef711b527a9cb17b12d116720e18151998f866447c8a1a' && window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d'")
+            try await self.boolean("window.__sendSurfaceFixture?.['style.css']==='2f5cd05baff000cd9f5acfdb63c1900db374053635470437da7bfcc602666944' && window.__sendSurfaceFixture?.['app.js']==='719b3fc226dab3ab4027d42813ea174da0285f4ba8fa5096e5a173dd90a4e22d' && window.__sendSurfaceFixture?.['progress.css']==='ed96bc9859b1028a41ef711b527a9cb17b12d116720e18151998f866447c8a1a' && window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d' && window.__sendSurfaceFixture?.['document-preview.js']==='181f1b8f2583cd236c708c69d0f0c7af079608ae91da9bde4df45dabe486775a'")
         }
         try await waitFor("injected native capability reconciles through bridge") {
             try await self.boolean("window.__KINDRED_IOS_DICTATION?.onDeviceAvailable===true && window.__KINDRED_IOS_DICTATION?.recognizerAvailable===true")
@@ -391,73 +391,6 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         try await waitFor("bot switch preserves fixed accent") { try await self.boolean("document.querySelector('#prompt')?.getAttribute('data-placeholder')?.includes('Vivienne') && document.documentElement.dataset.accent==='blue' && document.documentElement.style.getPropertyValue('--bot-accent')===''") }
         let report=XCTAttachment(data:try JSONSerialization.data(withJSONObject:["controls":observations,"fixedChoiceSurvivesReloadAndSwitch":true],options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json")
         report.name="native-bot-accent-acceptance";report.lifetime = .keepAlways;add(report)
-    }
-
-    /// Diagnostic reproduction: the operator selects Fit width and another
-    /// disposable document through Device Hub's native accessibility controls.
-    func testArtifactFitWidthNativeMenuTouchProbe() async throws {
-        guard #available(iOS 26.0,*) else { throw XCTSkip("Native controls require iOS 26") }
-        _ = try await js("window.__artifactProbeManifest=null;fetch('/fixture/ready').then(r=>r.json()).then(m=>window.__artifactProbeManifest=m);true")
-        try await waitFor("artifact probe fixture manifest") { try await self.boolean("!!window.__artifactProbeManifest") }
-        guard try await boolean("__artifactProbeManifest.fixture==='artifact-touch-uikit'") else { throw XCTSkip("Operator-driven artifact probe requires its disposable fixture") }
-        _ = try await js("""
-        window.__artifactProbe={frames:0,mutations:0,resizes:0,beats:0,maxBeatGap:0,lastBeat:performance.now(),touches:[]};
-        for(const type of ['touchstart','touchmove','touchend','touchcancel'])document.addEventListener(type,event=>{if(__artifactProbe.touches.length<1000)__artifactProbe.touches.push({type,trusted:event.isTrusted,count:event.touches.length,document:!!event.target.closest?.('.document-pdf,.document-word')})},{capture:true,passive:true});
-        const originalFrame=window.requestAnimationFrame.bind(window);
-        window.requestAnimationFrame=callback=>originalFrame(time=>{__artifactProbe.frames++;callback(time)});
-        const OriginalResize=window.ResizeObserver;
-        window.ResizeObserver=class extends OriginalResize{constructor(callback){super((entries,observer)=>{__artifactProbe.resizes++;callback(entries,observer)})}};
-        new MutationObserver(records=>{__artifactProbe.mutations+=records.length}).observe(document.body,{subtree:true,attributes:true,childList:true,characterData:true});
-        setInterval(()=>{const now=performance.now();__artifactProbe.maxBeatGap=Math.max(__artifactProbe.maxBeatGap,now-__artifactProbe.lastBeat);__artifactProbe.lastBeat=now;__artifactProbe.beats++},100);
-        window.__artifactSnapshot=()=>{
-          const row=document.querySelector('[data-artifact-id="touch-two"]'),r=row?.getBoundingClientRect(),v=document.querySelector('.document-pdf,.document-word');
-          return {at:performance.now(),probe:{...__artifactProbe},view:document.querySelector('.artifact-studio')?.dataset.iosArtifactView,
-            title:document.querySelector('.artifact-title-input')?.value,wordPages:document.querySelector('.document-word')?.shadowRoot?.querySelectorAll('section.docx').length||0,zoom:document.querySelector('.ios-document-zoom-trigger')?.textContent,
-            widthSelected:document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent,
-            popovers:[...document.querySelectorAll(':popover-open')].map(n=>n.className),dialogs:[...document.querySelectorAll('dialog[open]')].map(n=>n.className),
-            inert:[...document.querySelectorAll('[inert]')].map(n=>n.className),shields:document.querySelectorAll('.pane-resize-shield').length,
-            libraryHit:r?{x:r.x+r.width/2,y:r.y+r.height/2,element:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('[data-artifact-id]')?.dataset.artifactId}:null,
-            surface:v?{width:v.clientWidth,height:v.clientHeight,scrollWidth:v.scrollWidth,scrollHeight:v.scrollHeight,scrollTop:v.scrollTop,scrollLeft:v.scrollLeft,touchAction:getComputedStyle(v).touchAction}:null,
-            viewport:{width:innerWidth,height:innerHeight}}};
-        window.__kindredDuoActions.perform('artifacts');true
-        """)
-        try await waitFor("disposable artifact list") { try await self.boolean("!!document.querySelector('[data-artifact-id=\"touch-one\"]')") }
-        _ = try await js("document.querySelector('[data-artifact-id=\"touch-one\"]').click();true")
-        try await waitFor("disposable twenty-page Word preview",timeout:60) { try await self.boolean("document.querySelector('.document-word')?.shadowRoot?.querySelectorAll('section.docx').length===20 && !!document.querySelector('.ios-document-zoom-trigger')") }
-        try await waitFor("native artifact zoom") {
-            self.session.glassControls.subviews.compactMap{$0 as? UIButton}.contains{$0.accessibilityIdentifier=="kindred-glass-artifact-zoom" && !$0.isHidden && $0.alpha>0.9}
-        }
-        let zoom=try XCTUnwrap(session.glassControls.subviews.compactMap{$0 as? UIButton}.first{$0.accessibilityIdentifier=="kindred-glass-artifact-zoom"})
-        let before=await boundedFailurePage("window.__artifactSnapshot()")
-        zoom.sendActions(for:.primaryActionTriggered)
-        try await waitFor("actual native artifact zoom menu") { (self.window.rootViewController?.presentedViewController as? UIAlertController)?.actions.contains{$0.title=="Fit width"} == true }
-        print("ARTIFACT_PROBE_NATIVE_MENU_READY — select Fit width in Device Hub")
-        try await waitFor("operator selects native Fit width",timeout:300) { self.window.rootViewController?.presentedViewController == nil }
-        let after=await boundedFailurePage("window.__artifactSnapshot()")
-        var evidence:[String:Any]=["before":before,"after":after,"presentedController":window.rootViewController?.presentedViewController.map{String(describing:type(of:$0))} ?? "none","webScrollZoomScale":session.webView.scrollView.zoomScale,"nativePinchEnabled":session.webView.scrollView.pinchGestureRecognizer?.isEnabled ?? false]
-        if let page=after["page"] as? [String:Any],let point=page["libraryHit"] as? [String:Any],let x=point["x"] as? Double,let y=point["y"] as? Double {
-            let p=window.convert(CGPoint(x:x,y:y),from:session.webView)
-            if let hit=window.hitTest(p,with:nil){evidence["nativeLibraryHitClass"]=String(describing:type(of:hit));evidence["nativeLibraryHitInsideWebView"]=hit.isDescendant(of:session.webView)}
-        }
-        let report=XCTAttachment(data:try JSONSerialization.data(withJSONObject:evidence,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");report.name="artifact-fit-width-native-menu-evidence";report.lifetime = .keepAlways;add(report)
-        let screenshot=XCTAttachment(image:UIGraphicsImageRenderer(bounds:window.bounds).image{_ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true)});screenshot.name="artifact-after-native-fit-width";screenshot.lifetime = .keepAlways;add(screenshot)
-        XCTAssertNil(after["javascriptTimeout"],"JavaScript must respond after Fit width")
-        if try await boolean("__artifactProbeManifest.manual_gestures===true") {
-            print("ARTIFACT_PROBE_PAN_READY — drag the document upward in Device Hub")
-            try await waitFor("real document touch pan",timeout:300) { try await self.boolean("document.querySelector('.document-pdf,.document-word')?.scrollTop>60") }
-            let pan=await boundedFailurePage("window.__artifactSnapshot()")
-            let panReport=XCTAttachment(data:try JSONSerialization.data(withJSONObject:pan,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");panReport.name="artifact-after-real-touch-pan";panReport.lifetime = .keepAlways;add(panReport)
-            print("ARTIFACT_PROBE_PINCH_READY — pinch the document in Device Hub")
-            try await waitFor("real two-finger document touch delivery",timeout:300) { try await self.boolean("__artifactProbe.touches.some(e=>e.document&&e.count===2)") }
-            try await Task.sleep(nanoseconds:1_000_000_000)
-            let pinch=await boundedFailurePage("window.__artifactSnapshot()")
-            let pinchReport=XCTAttachment(data:try JSONSerialization.data(withJSONObject:pinch,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");pinchReport.name="artifact-after-real-two-finger-touch";pinchReport.lifetime = .keepAlways;add(pinchReport)
-        }
-        print("ARTIFACT_PROBE_DOCUMENT_READY — select Touch review two in Device Hub")
-        try await waitFor("operator switches disposable document after Fit width",timeout:300) { try await self.boolean("document.querySelector('.artifact-title-input')?.value==='Touch review two' && !!document.querySelector('.document-pdf-page canvas')") }
-        startedLandscape = window.windowScene?.interfaceOrientation.isLandscape ?? startedLandscape
-        let switched=await boundedFailurePage("window.__artifactSnapshot()")
-        let last=XCTAttachment(data:try JSONSerialization.data(withJSONObject:switched,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");last.name="artifact-after-document-switch";last.lifetime = .keepAlways;add(last)
     }
 
     func testNativeComposerTypingKeyboardAndSend() async throws {
@@ -945,6 +878,34 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         _ = try await checkComposer(label:"four-line-final-empty")
     }
 
+    func testHTTPPageFailureRestoresRecoveryAndRetriesWorkspaceRoot() async throws {
+        session.open(URL(string: "https://localhost:8765/missing-artifact-route")!)
+        try await waitFor("HTTP 404 restores native recovery") { self.session.loadState.failure != nil }
+        XCTAssertTrue(try XCTUnwrap(session.loadState.failure).contains("HTTP 404"))
+        XCTAssertFalse(session.presentation.hasChatInterface)
+        XCTAssertFalse(session.presentation.hasLoadedChats)
+
+        session.reload()
+        try await waitFor("retry opens the workspace root and becomes ready", timeout: 30) {
+            self.session.webView.url?.path == "/" && self.session.presentation.hasLoadedChats &&
+            self.session.presentation.hasChatInterface && self.session.loadState.failure == nil
+        }
+        let ready = try await boolean("!!document.querySelector('#prompt')?.getClientRects().length")
+        XCTAssertTrue(ready)
+    }
+
+    func testMissingEmbeddedPageDoesNotReplaceWorkspaceWithRecovery() async throws {
+        _ = try await js("""
+        (()=>{const frame=document.createElement('iframe');
+          frame.onload=()=>{window.__missingFrameFinished=true};
+          frame.src='/missing-artifact-route';document.body.append(frame);return true})()
+        """)
+        try await waitFor("embedded HTTP 404 completes") { try await self.boolean("window.__missingFrameFinished===true") }
+        XCTAssertNil(session.loadState.failure)
+        XCTAssertTrue(session.presentation.hasLoadedChats)
+        XCTAssertTrue(session.presentation.hasChatInterface)
+    }
+
     func testStartupFailureRestoresRecoveryNavigationAndRetries() async throws {
         let web = session.webView
         _ = try await js("window.webkit.messageHandlers.kindredAccounts.postMessage({action:'startup-failed'});true")
@@ -1212,7 +1173,7 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
             (()=>{const rect=e=>{if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
               const p=document.querySelector('#prompt'),shell=document.querySelector('#app'),v=visualViewport;
               return {draftMatches:p?.textContent==='Keyboard ownership fixture draft',sendCount:window.__composerSends.length,
-                uiMatches:window.__sendSurfaceFixture?.['style.css']==='2f5cd05baff000cd9f5acfdb63c1900db374053635470437da7bfcc602666944'&&window.__sendSurfaceFixture?.['app.js']==='719b3fc226dab3ab4027d42813ea174da0285f4ba8fa5096e5a173dd90a4e22d' && window.__sendSurfaceFixture?.['progress.css']==='ed96bc9859b1028a41ef711b527a9cb17b12d116720e18151998f866447c8a1a'&&window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d',
+                uiMatches:window.__sendSurfaceFixture?.['style.css']==='2f5cd05baff000cd9f5acfdb63c1900db374053635470437da7bfcc602666944'&&window.__sendSurfaceFixture?.['app.js']==='719b3fc226dab3ab4027d42813ea174da0285f4ba8fa5096e5a173dd90a4e22d' && window.__sendSurfaceFixture?.['progress.css']==='ed96bc9859b1028a41ef711b527a9cb17b12d116720e18151998f866447c8a1a'&&window.__sendSurfaceFixture?.['commands.js']==='f396e4df7d346efbdb26405542cc4a179ebb42136416c65dc2d4489c498a4396' && window.__sendSurfaceFixture?.['dictation.js']==='e591c4b7b8359bf490a900d3ae5800d1a3567f2d78706016593a0ae625fb9bab' && window.__sendSurfaceFixture?.['voice.js']==='fa2c95a550dc8a9dfc5c761e809649e15233702fcc0657aaa52604280ed899cb' && window.__sendSurfaceFixture?.['slack-monitoring.js']==='21688f0586c50af8ab709ef72f563c7d405a416e79af872bc859340a54ed2293' && window.__sendSurfaceFixture?.['gmail-monitoring.js']==='0ded4b499f4facf82dcb394a834150eca31422f713c4b0c7596f537fe7dbf82c' && window.__sendSurfaceFixture?.['characters.js']==='d90d3db700ca981662b837e8e27fd357f6974ac56e26a87d9ad35aa4cd4ac74d' && window.__sendSurfaceFixture?.['document-preview.js']==='181f1b8f2583cd236c708c69d0f0c7af079608ae91da9bde4df45dabe486775a',
                 uiManifest:window.__sendSurfaceFixture,viewport:{width:innerWidth,height:innerHeight},
                 client:{width:document.documentElement.clientWidth,height:document.documentElement.clientHeight},
                 visual:v?{width:v.width,height:v.height,offsetTop:v.offsetTop,offsetLeft:v.offsetLeft,scale:v.scale}:null,

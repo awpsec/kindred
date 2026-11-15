@@ -31,7 +31,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    window.webkit={messageHandlers:{kindredAccounts:{postMessage:()=>{}},kindredNavigation:{postMessage:()=>{}},kindredSession:{postMessage:()=>{}}}};
    window.__KINDRED_IOS_LAYOUT={topInset:0,bottomInset:24,leftInset:0,rightInset:duo?84:0,railSide:duo?'right':'none',isDuo:duo,isDuoInner:false,usesNativeRail:duo,isPortrait:width<height,viewportHeight:height};
    window.__KINDRED_NATIVE_GEOMETRY={width,height,windowWidth:width,windowHeight:height,reservedRegions:[]};
-   window.__KINDRED_IOS_TOOLBAR=duo?{x:width-84,y:100,width:84,height:250}:null;
+   window.__KINDRED_IOS_TOOLBAR=duo?{x:width-74,y:100,width:52,height:250}:null;
    addEventListener('DOMContentLoaded',()=>{const style=document.createElement('style');style.textContent=css;document.head.append(style);(0,eval)(js);},{once:true});
   },{width,css:fs.readFileSync(path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web/MobileLayout.css'),'utf8'),js:fs.readFileSync(path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web/MobileLayout.js'),'utf8')});
   await page.goto(origin);await page.getByText('The attachments match.',{exact:false}).waitFor();assert.equal(await page.locator('.summary-progress').count(),0);await page.locator('#prompt').fill('Keep my unsent draft');
@@ -42,7 +42,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    await page.waitForTimeout(280);
    const rects=await page.locator('#content>.activity-receipt:visible,#content>.activity-pager:visible,#content>.task-commentary-block:visible').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {class:n.className,left:r.left,right:r.right,width:r.width,overflow:n.scrollWidth-n.clientWidth};}));
    assert(rects.length>=2,label+': active item and navigation are present');
-   for(const r of rects){assert(r.right<=width-(width===390?0:84)+1,label+': activity clears rail '+JSON.stringify(r));assert(r.left>=0,label+': left stays on screen');assert(r.overflow<=1,label+': no horizontal content overflow '+JSON.stringify(r));}
+   for(const r of rects){assert(r.right<=width-(width===390?0:90)+1,label+': activity clears rail with breathing room '+JSON.stringify(r));assert(r.left>=0,label+': left stays on screen');assert(r.overflow<=1,label+': no horizontal content overflow '+JSON.stringify(r));}
    return rects;
   };
   const widths=[];

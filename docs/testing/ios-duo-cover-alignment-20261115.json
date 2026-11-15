@@ -1,0 +1,242 @@
+{
+  "status": "installed and launched; native simulator alignment checks passed; final physical visual check blocked by Mac lock",
+  "native_source": "71af2fba3e25aa45fa1a74d74c25930eba718d2f",
+  "version": "0.90.7",
+  "build": "10",
+  "supersedes_private_builds": [
+    "8",
+    "9"
+  ],
+  "change": [
+    "Remove cover-chat computer shortcut; retain it on the inner display and computer close route",
+    "Prevent SwiftUI safe-area processing from shifting visible glass outside its native hosting frame",
+    "Anchor the vertical dock to the public UIKit bar layout rectangle",
+    "Retain the existing fixed chat gutters without compensating for a misplaced dock"
+  ],
+  "measured_before": {
+    "system_bar_x": 392,
+    "system_bar_width": 52,
+    "host_x": 398,
+    "host_width": 52,
+    "visible_rail_x": 372,
+    "visible_rail_width": 94,
+    "actual_search_button_x": 376,
+    "actual_search_button_width": 44
+  },
+  "measured_after": {
+    "portrait": {
+      "system_bar_x": 392,
+      "visible_rail_x": 392,
+      "visible_rail_width": 52,
+      "search_button_x": 396,
+      "search_button_width": 44
+    },
+    "landscape": {
+      "system_bar_x": 604,
+      "visible_rail_x": 604,
+      "visible_rail_width": 52,
+      "search_button_x": 608,
+      "search_button_width": 44
+    }
+  },
+  "production_files_identical_to_simulator_fixture": {
+    "mobile/ios/KindredCompanion/Web/WebContainerView.swift": "3f4fa47fec7275d673fdd00e20b6782b56e16e1e9d4fbeec1b2fdab14c5bcf9b",
+    "mobile/ios/KindredCompanion/Web/MobileLayout.js": "e1f1d7f602d4d5c362ba36e0e2a0896bbeef99c2f4734396a587c9deea218661",
+    "mobile/ios/KindredCompanion/Views/DuoToolbarContent.swift": "b66f52b2a0292a043dbf8695752df0540e70231a897401a550612acf9cb958fd"
+  },
+  "native_checks": [
+    {
+      "source": "14a3f21aefca9a310fcd6de6e30ce9acdebe4981",
+      "shared_source": "765cb3ce631132bd7070874c0f59c159be088d57",
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "KindredCompanion.xcodeproj",
+        "-scheme",
+        "KindredCompanion",
+        "-destination",
+        "platform=iOS Simulator,id=19C796A3-A517-49FC-8A51-0575921222E0",
+        "-destination-timeout",
+        "90",
+        "-parallel-testing-enabled",
+        "NO",
+        "-maximum-concurrent-test-simulator-destinations",
+        "1",
+        "-derivedDataPath",
+        "/Users/chris/Documents/ChatGPT/Kindred - Local/ios-qa/20261115-artifact-xcui/derived",
+        "-resultBundlePath",
+        "/Users/chris/Documents/ChatGPT/Kindred - Local/ios-qa/20261115-artifact-xcui/cover-rail-alignment-portrait/Kindred.xcresult",
+        "CODE_SIGNING_ALLOWED=NO",
+        "KINDRED_SOURCE_REVISION=14a3f21aefca9a310fcd6de6e30ce9acdebe4981",
+        "-only-testing:KindredCompanionUITests/ArtifactTouchUIKitTests/testRealKeyboardDraftAndRailNavigation"
+      ],
+      "real_xcui_gestures": true,
+      "constructed_dom_touches": false,
+      "automatic_retry": false,
+      "exit_code": 0,
+      "seconds": 30.12
+    },
+    {
+      "source": "ca9237108c1acb457588fe2003a4dcc40d9b7874",
+      "shared_source": "765cb3ce631132bd7070874c0f59c159be088d57",
+      "command": [
+        "xcodebuild",
+        "test",
+        "-project",
+        "KindredCompanion.xcodeproj",
+        "-scheme",
+        "KindredCompanion",
+        "-destination",
+        "platform=iOS Simulator,id=19C796A3-A517-49FC-8A51-0575921222E0",
+        "-destination-timeout",
+        "90",
+        "-parallel-testing-enabled",
+        "NO",
+        "-maximum-concurrent-test-simulator-destinations",
+        "1",
+        "-derivedDataPath",
+        "/Users/chris/Documents/ChatGPT/Kindred - Local/ios-qa/20261115-artifact-xcui/derived",
+        "-resultBundlePath",
+        "/Users/chris/Documents/ChatGPT/Kindred - Local/ios-qa/20261115-artifact-xcui/cover-rail-alignment-landscape-scene/Kindred.xcresult",
+        "CODE_SIGNING_ALLOWED=NO",
+        "KINDRED_SOURCE_REVISION=ca9237108c1acb457588fe2003a4dcc40d9b7874",
+        "-only-testing:KindredCompanionUITests/ArtifactTouchUIKitTests/testLandscapeKeyboardDraftAndRailNavigation"
+      ],
+      "real_xcui_gestures": true,
+      "constructed_dom_touches": false,
+      "automatic_retry": false,
+      "exit_code": 0,
+      "seconds": 30.29
+    }
+  ],
+  "browser_checks": [
+    {
+      "source": "71af2fba3e25aa45fa1a74d74c25930eba718d2f",
+      "command": [
+        "node",
+        "tools/frontend/test-ios-message-clearance-motion.cjs"
+      ],
+      "engine": "webkit",
+      "exit_code": 0,
+      "seconds": 3.8,
+      "automatic_retry": false
+    },
+    {
+      "source": "71af2fba3e25aa45fa1a74d74c25930eba718d2f",
+      "command": [
+        "node",
+        "tools/frontend/test-ios-duo-list-height.cjs"
+      ],
+      "engine": "webkit",
+      "exit_code": 0,
+      "seconds": 3.69,
+      "automatic_retry": false
+    },
+    {
+      "source": "71af2fba3e25aa45fa1a74d74c25930eba718d2f",
+      "command": [
+        "node",
+        "tools/frontend/test-ios-activity-margins.cjs"
+      ],
+      "engine": "webkit",
+      "exit_code": 0,
+      "seconds": 11.86,
+      "automatic_retry": false
+    }
+  ],
+  "earlier_attempts": [
+    {
+      "source": "daebd1c5e9f2d8632df712f0ac938477c7478362",
+      "result": "UI test compilation failed: duplicate local variable name; corrected in 14a3f21"
+    },
+    {
+      "source": "14a3f21aefca9a310fcd6de6e30ce9acdebe4981",
+      "test": "testLandscapeKeyboardDraftAndRailNavigation",
+      "result": "failed orientation precondition: simulator retained portrait; corrected fixture uses public scene geometry request, and the genuine landscape run passed at ca92371"
+    }
+  ],
+  "normal_build": {
+    "source": "71af2fba3e25aa45fa1a74d74c25930eba718d2f",
+    "version": "0.90.7",
+    "build": "10",
+    "bundle_id": "dev.kindred.companion",
+    "team": "92Y82K5BUS",
+    "command": [
+      "xcodebuild",
+      "build",
+      "-project",
+      "KindredCompanion.xcodeproj",
+      "-scheme",
+      "KindredPersonal",
+      "-configuration",
+      "Personal",
+      "-destination",
+      "generic/platform=iOS",
+      "-derivedDataPath",
+      "/Users/chris/Documents/ChatGPT/Kindred - Local/ios-qa/PersonalDevice",
+      "CONFIGURATION_BUILD_DIR=/Users/chris/Documents/ChatGPT/Kindred - Local/ios-qa/20261115-cover-alignment/final-device-products",
+      "KINDRED_SOURCE_REVISION=71af2fba3e25aa45fa1a74d74c25930eba718d2f"
+    ],
+    "installed": false,
+    "normal_app": true,
+    "diagnostic_artifact_host": false,
+    "exit_code": 0,
+    "seconds": 7.59
+  },
+  "signature": {
+    "source": "71af2fba3e25aa45fa1a74d74c25930eba718d2f",
+    "version": "0.90.7",
+    "build": "10",
+    "bundle_id": "dev.kindred.companion",
+    "same_developer_certificate": true,
+    "certificate_sha256": "581b0ee4c93775fc21b7728da362d6d382d769a94928172dbf1798cb54e60131",
+    "main": {
+      "team": [
+        "92Y82K5BUS"
+      ],
+      "application_identifier": "92Y82K5BUS.dev.kindred.companion",
+      "expires": "2026-11-20T02:34:50+00:00"
+    },
+    "voice": {
+      "team": [
+        "92Y82K5BUS"
+      ],
+      "application_identifier": "92Y82K5BUS.dev.kindred.companion.voice",
+      "expires": "2026-11-20T02:34:51+00:00"
+    },
+    "native_binary_sha256": {
+      "Kindred": "49ae100cd68a2d3ed553436a1fdc249ae8797c27201283cf142d5753cdf74f04",
+      "Kindred.debug.dylib": "3e42872661107835d055efde8d9d78ba9afb21a9c76c834f8656908f54ac7640",
+      "PlugIns/KindredVoiceActivity.appex/KindredVoiceActivity": "6848157c349b001b35e63e3dc13b540343c4be5e0fce220d3105dd7440d33db6"
+    },
+    "normal_app": true,
+    "diagnostic_artifact_host": false,
+    "installed": false
+  },
+  "physical_install": {
+    "source": "71af2fba3e25aa45fa1a74d74c25930eba718d2f",
+    "version": "0.90.7",
+    "build": "10",
+    "bundle_id": "dev.kindred.companion",
+    "team": "92Y82K5BUS",
+    "installed": true,
+    "launched": true,
+    "accounts_or_keychain_edited": false,
+    "uninstalled_or_reset": false,
+    "normal_build_without_xctest": true,
+    "started_utc": "2026-11-15T14:48:47.990117+00:00",
+    "account_count_before": 2,
+    "accounts_preserved": true,
+    "account_count_after": 2,
+    "active_selection_unchanged": true,
+    "account_metadata_byte_identical": true,
+    "installed_version_verified": true,
+    "completed_utc": "2026-11-15T14:48:55.243242+00:00"
+  },
+  "limitations": [
+    "Mac locked before final physical visual inspection; on-phone alignment acceptance is not claimed",
+    "Original artifact gesture acceptance is still pending on hardware; no simulated gesture is substituted for a physical result"
+  ],
+  "publication_or_production_deployment": false
+}

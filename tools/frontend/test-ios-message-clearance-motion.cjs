@@ -23,7 +23,7 @@ const near=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
    // The fixed reading lane must also work before that measurement arrives.
    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
    const beforeToolbar=await page.locator('#content [data-message="61"]').evaluate(n=>n.getBoundingClientRect().width);
-   await page.evaluate(()=>{__KINDRED_IOS_TOOLBAR={x:382,y:170,width:84,height:156};dispatchEvent(new Event('kindred-ios-toolbar'));});
+   await page.evaluate(()=>{__KINDRED_IOS_TOOLBAR={x:392,y:170,width:52,height:156};dispatchEvent(new Event('kindred-ios-toolbar'));});
    await page.waitForFunction(()=>document.documentElement.hasAttribute('data-ios-message-flow'));
    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
    near(await page.locator('#content [data-message="61"]').evaluate(n=>n.getBoundingClientRect().width),beforeToolbar,'late toolbar measurement does not change wrapping');
@@ -42,13 +42,14 @@ const near=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
    const start=await page.evaluate(()=>messageSample());
    assert(start.top>350&&start.top<450,'the animated user bubble is on screen: '+start.top);
    near(start.bubble[0],start.width,'a long user bubble fills its available lane');
-   near(start.right,376,'user bubbles stop six points before the rail even below it');
+   near(start.right,376,'user bubbles clear the rail and its camera lane even below it');
    const shapes=()=>page.locator('#content>.message-group').evaluateAll(nodes=>nodes.map(n=>{
     const b=n.querySelector('.message-bubble'),r=n.getBoundingClientRect(),br=b.getBoundingClientRect();
     const range=document.createRange();range.selectNodeContents(b);
     return {left:r.left,right:r.right,width:r.width,height:r.height,bubble:[br.width,br.height],lines:[...range.getClientRects()].map(v=>[v.width,v.height,v.top-br.top])};
    }));
    const baseline=await shapes();
+   assert(baseline.every(row=>row.right<=376.5),'both authors retain breathing room beside the cover controls');
    for(const y of [170,400,1200,0,170]) {
     await page.evaluate(y=>setDock(y),y);await page.waitForTimeout(80);
     assert.deepEqual(await shapes(),baseline,'vertical dock movement cannot rewrap messages');
@@ -78,7 +79,7 @@ const near=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
     await page.evaluate(()=>setDock(1200));await page.waitForTimeout(60);
     near((await page.evaluate(()=>messageSample())).right,start.right,reduce+' keeps fixed margin');
    }
-   await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{railSide:'left',leftInset:84,rightInset:0});Object.assign(__KINDRED_IOS_TOOLBAR,{x:0,y:170});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));dispatchEvent(new Event('kindred-ios-toolbar'));});
+   await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{railSide:'left',leftInset:84,rightInset:0});Object.assign(__KINDRED_IOS_TOOLBAR,{x:22,y:170});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));dispatchEvent(new Event('kindred-ios-toolbar'));});
    await page.waitForFunction(()=>document.documentElement.dataset.iosRailSide==='left'&&parseFloat(document.querySelector('.conversation').style.getPropertyValue('--ios-message-lane-left'))>0);
    assert(await page.locator('#content .message-group').evaluateAll(nodes=>nodes.every(n=>n.getBoundingClientRect().left>=89)),'both authors clear a leading dock after rotation');
    assert.deepEqual(errors,[]);reports.push({side,fixedReadingLane:true,scrollNeverRewraps:true,keyboard:true,reducedMotion:true,draftPreserved:true});await page.close();

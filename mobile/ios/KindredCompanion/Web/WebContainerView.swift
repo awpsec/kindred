@@ -36,6 +36,26 @@ enum DisplayCornerContour {
     }
 }
 
+enum DuoRailGeometry {
+    /// The compact hardware occlusion and the system controls share a column.
+    /// A bar's fitted rectangle can have asymmetric corner padding, so its
+    /// midpoint alone is not a reliable anchor for a custom glass capsule.
+    static func centerX(in bounds: CGRect, bar: CGRect, onLeft: Bool,
+                        edgeInset: CGFloat, occlusions: [CGRect]) -> CGFloat {
+        let strip = max(52, edgeInset)
+        let candidates = occlusions.filter { rect in
+            guard !rect.isNull, [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite),
+                  rect.width > 0, rect.height > 0, max(rect.width, rect.height) <= strip,
+                  abs(rect.width - rect.height) <= max(rect.width, rect.height) * 0.15,
+                  bounds.intersects(rect) else { return false }
+            return onLeft ? rect.midX <= bounds.minX + strip : rect.midX >= bounds.maxX - strip
+        }
+        let fallback = bar.isNull ? (onLeft ? bounds.minX + 42 : bounds.maxX - 42) : bar.midX
+        let center = candidates.min { abs($0.midX - fallback) < abs($1.midX - fallback) }?.midX ?? fallback
+        return min(bounds.maxX - 26, max(bounds.minX + 26, center.rounded()))
+    }
+}
+
 /// Hosts an account's existing WKWebView. The web view belongs to its
 /// WebSession, not to SwiftUI, so rotation, split view, Stage Manager resizing
 /// and account switches move the same view (and its page state) between hosts
@@ -67,6 +87,7 @@ final class WebHostView: UIView {
     private var hasDivision = false
     private var railSampleScheduled = false
     private var railOnLeft = false
+    private var duoRailController: UIHostingController<AnyView>?
     @objc private func sceneDidActivate(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene,
               scene === window?.windowScene else { return }
@@ -91,6 +112,10 @@ final class WebHostView: UIView {
     private func sampleRailControls() {
         guard let session, let window, window.windowScene?.activationState == .foregroundActive else { return }
         let web = session.webView
+        if let rail = duoRailController?.view, rail.superview === self, !rail.isHidden {
+            session.updateRailFrame(web.convert(rail.bounds, from: rail), identity: session.toolbarIdentityFrame)
+            return
+        }
         guard session.presentation.usesNativeRail else { session.updateRailFrame(nil); return }
         if session.presentation.isDuoInner {
             let identity = session.toolbarIdentityFrame
@@ -170,9 +195,61 @@ final class WebHostView: UIView {
                              composerBottomInset: keyboardVisible ? 0 : composerBottom, keyboardVisible: keyboardVisible, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
                              viewportHeight: session.webView.bounds.height,
                              isPortrait: windowBounds.height >= windowBounds.width)
+        if #available(iOS 27.1, *), usesNativeRail {
+            let vertical = railSide != "none"
+            let edge: UIRectEdge = railSide == "left" ? .left : railSide == "right" ? .right : .top
+            let fittingInsets = session.webView.edgeInsets(for: .bar(onEdge: edge, extent: 52))
+            let area = session.webView.bounds.inset(by: fittingInsets)
+            let measured = vertical ? area.height : area.width
+            let fallback = vertical ? session.webView.bounds.height - 160 : session.webView.bounds.width - 140
+            let available = !area.isNull && measured.isFinite && measured >= 60 ? measured : fallback
+            session.updateToolbarLayout(vertical: vertical, length: max(44, available - 16))
+            updateDuoRail(session: session, vertical: vertical, insets: insets, area: area)
+        } else { duoRailController?.view.isHidden = true }
         session.refreshSystemTextSize()
         publishGeometry()
         session.restoreComputerKeyboard()
+    }
+
+    @available(iOS 27.1, *)
+    private func updateDuoRail(session: WebSession, vertical: Bool, insets: UIEdgeInsets, area: CGRect) {
+        guard vertical, session.presentation.hasChatInterface, session.loadState.failure == nil else {
+            duoRailController?.view.isHidden = true; return
+        }
+        let controller: UIHostingController<AnyView>
+        if let existing = duoRailController { controller = existing }
+        else {
+            controller = UIHostingController(rootView: AnyView(DuoRailButtons(session: session, manageAccounts: { [weak session] in session?.requestAccountsFromRail() })))
+            // This host is already placed inside UIKit's fitted bar region.
+            // Applying the parent window's safe area again shifts the visible
+            // glass out of its measured frame and into the conversation.
+            controller.safeAreaRegions = []
+            controller.view.backgroundColor = .clear
+            controller.view.isOpaque = false
+            duoRailController = controller
+        }
+        var responder: UIResponder? = self
+        while let current = responder, !(current is UIViewController) { responder = current.next }
+        if let parent = responder as? UIViewController, controller.parent !== parent {
+            controller.willMove(toParent: nil); controller.removeFromParent()
+            parent.addChild(controller); controller.didMove(toParent: parent)
+        }
+        if controller.view.superview !== self { addSubview(controller.view) }
+        controller.view.isHidden = false
+        let web = session.webView
+        let size = controller.sizeThatFits(in: CGSize(width: 52, height: session.presentation.toolbarLength))
+        let fitted = !area.isNull && [area.minX, area.minY, area.width, area.height].allSatisfy(\.isFinite)
+            && area.width >= 52 && area.height >= 60 && web.bounds.insetBy(dx: -0.5, dy: -0.5).contains(area)
+        let hardwareOcclusions = web.reservedRegions(kind: .occlusion).filter(\.isActive)
+            .map { $0.frame.inset(by: $0.margins) }
+        let centerX = DuoRailGeometry.centerX(in: web.bounds, bar: fitted ? area : .null,
+            onLeft: railOnLeft, edgeInset: railOnLeft ? insets.left : insets.right, occlusions: hardwareOcclusions)
+        let x = centerX - 26
+        let top = fitted ? area.minY + 8 : max(8, insets.top)
+        let availableHeight = fitted ? area.height - 16 : web.bounds.maxY - top - 8
+        let height = min(max(44, size.height), max(44, availableHeight))
+        controller.view.frame = convert(CGRect(x: x, y: top, width: 52, height: height), from: web)
+        bringSubviewToFront(controller.view)
     }
 
     @objc private func keyboardDidHide() {
@@ -184,6 +261,8 @@ final class WebHostView: UIView {
         session?.computerHostAttachmentChanged()
         if window == nil {
             session?.detachVisibleHost()
+            duoRailController?.willMove(toParent: nil)
+            duoRailController?.removeFromParent()
         }
         setNeedsLayout()
     }
@@ -255,6 +334,12 @@ final class WebHostView: UIView {
     }
 
     func attach(_ session: WebSession) {
+        if self.session !== session {
+            duoRailController?.willMove(toParent: nil)
+            duoRailController?.view.removeFromSuperview()
+            duoRailController?.removeFromParent()
+            duoRailController = nil
+        }
         self.session = session
         hasDivision = hasDivision || session.presentation.isDuo
         let webView = session.webView

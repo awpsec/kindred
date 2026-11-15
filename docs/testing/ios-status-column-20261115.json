@@ -1,0 +1,91 @@
+{
+  "installed_source": "a06b5acf9d21d90ac09a9327bb3860a7cf27be30",
+  "version": "0.90.7",
+  "build": "11",
+  "diagnostic_test_source": "99f0ef49e3f32ecb1111312755cf3cffa2cf403c",
+  "tested_files_identical": {
+    "mobile/ios/KindredCompanion/Web/WebContainerView.swift": "3a43b92bfe54dda07f9dd8f6ae0fbf4679c7eada185a48726573ff8ee143526b",
+    "mobile/ios/KindredCompanion/Views/DuoToolbarContent.swift": "b66f52b2a0292a043dbf8695752df0540e70231a897401a550612acf9cb958fd",
+    "mobile/ios/KindredCompanion/Web/MobileLayout.js": "e1f1d7f602d4d5c362ba36e0e2a0896bbeef99c2f4734396a587c9deea218661"
+  },
+  "native_checks": {
+    "portrait_system_reference_and_keyboard": "passed",
+    "landscape_system_reference_and_keyboard": "passed",
+    "geometry_unit_cases": 3,
+    "tests_failed": 0,
+    "checks": [
+      "Actual native ToolbarItem center agrees with glass and button centers within 0.5pt",
+      "Real onscreen keyboard; Return newline; rail above keyboard; draft retained through Artifacts/Chats"
+    ]
+  },
+  "physical_alignment": {
+    "dock_center_x": 1253.5,
+    "image_height": 2034,
+    "image_width": 1398,
+    "installed_build": "11",
+    "method": "median symmetric Wi-Fi arc and capsule edge spans, native 3x screenshot",
+    "offset_pixels": -0.5,
+    "system_center_x": 1254
+  },
+  "physical_ui": [
+    "Normal signed build on physical iOS27.3 Duo",
+    "Viewed artifact and chat routes without edits or Send",
+    "Captured native screenshots privately; no images or document contents committed",
+    "Device Hub screen sharing stopped after verification"
+  ],
+  "physical_install": {
+    "source": "a06b5acf9d21d90ac09a9327bb3860a7cf27be30",
+    "version": "0.90.7",
+    "build": "11",
+    "bundle_id": "dev.kindred.companion",
+    "team": "92Y82K5BUS",
+    "installed": true,
+    "launched": true,
+    "accounts_or_keychain_edited": false,
+    "uninstalled_or_reset": false,
+    "normal_build_without_xctest": true,
+    "started_utc": "2026-11-15T15:02:54.930721+00:00",
+    "account_count_before": 2,
+    "accounts_preserved": true,
+    "account_count_after": 2,
+    "active_selection_unchanged": true,
+    "account_metadata_byte_identical": true,
+    "installed_version_verified": true,
+    "completed_utc": "2026-11-15T15:02:59.223287+00:00"
+  },
+  "signature": {
+    "source": "a06b5acf9d21d90ac09a9327bb3860a7cf27be30",
+    "version": "0.90.7",
+    "build": "11",
+    "bundle_id": "dev.kindred.companion",
+    "same_developer_certificate": true,
+    "certificate_sha256": "581b0ee4c93775fc21b7728da362d6d382d769a94928172dbf1798cb54e60131",
+    "main": {
+      "team": [
+        "92Y82K5BUS"
+      ],
+      "application_identifier": "92Y82K5BUS.dev.kindred.companion",
+      "expires": "2026-11-20T02:34:50+00:00"
+    },
+    "voice": {
+      "team": [
+        "92Y82K5BUS"
+      ],
+      "application_identifier": "92Y82K5BUS.dev.kindred.companion.voice",
+      "expires": "2026-11-20T02:34:51+00:00"
+    },
+    "native_binary_sha256": {
+      "Kindred": "f1f6cc8f75508bb26b0443ba45518e0195c7b62603c6fb423d30272bfba1ad91",
+      "Kindred.debug.dylib": "e621c1d88508aec8ed9d08f9f504450c6dfde4e53c7af99e3c448d13237d1eda",
+      "PlugIns/KindredVoiceActivity.appex/KindredVoiceActivity": "b7aaf8494f26f488bdae6d106535cbcd4d540a43491afa321ef319ee34c122b2"
+    },
+    "normal_app": true,
+    "diagnostic_artifact_host": false,
+    "installed": false
+  },
+  "remaining": [
+    "Owner requests a shorter combined Accounts/Settings/Marketplace menu and larger icons; work continues",
+    "Active server document-preview.js a2479bd3fcf495f90672f4f3aee048e31b4b42ad579d49aa5df927b202207126 has no touch gesture handlers; normal phone gesture acceptance is not claimed"
+  ],
+  "publication_or_production_deployment": false
+}

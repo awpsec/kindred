@@ -35,6 +35,10 @@ final class WebPresentationState {
     var collaboration: NativeCollaborationStatus?
     var listVisible = false
     var artifactLibraryVisible = false
+    var artifactControls: DuoArtifactControls?
+    var toolbarVertical = false
+    var reduceMotion = false
+    var toolbarLength: CGFloat = 280
 }
 
 @MainActor
@@ -215,6 +219,33 @@ final class WebSession: NSObject {
         case back, computer, botSettings, chats, chatHome, settings, artifacts, marketplace, search, newChat, newBot, newConversation, expandComputer, botDetails
     }
 
+    func requestAccountsFromRail() {
+        guard presentation.usesNativeRail, presentation.hasChatInterface, !nativeNavigationBlocked,
+              loadState.failure == nil else { return }
+        host?.webSessionRequestedAccounts(self)
+    }
+
+    func performArtifactControl(_ action:String,snapshot:DuoArtifactControls,filter:String?=nil,value:String?=nil) {
+        guard presentation.usesNativeRail,presentation.hasChatInterface,!nativeNavigationBlocked,loadState.failure == nil,
+              ["artifacts","artifact"].contains(presentation.route),origin.matches(webView.url),
+              let current=presentation.artifactControls,current.root==snapshot.root else{return}
+        var command:[String:Any]=["root":snapshot.root,"owner":snapshot.owner ?? "","action":action]
+        if action=="filter" {
+            guard let filter,let value,presentation.artifactLibraryVisible,
+                  let control=current.filters.first(where:{$0.id==filter}),
+                  control.options.contains(where:{$0.value==value&&$0.enabled}) else{return}
+            command["filter"]=filter;command["value"]=value
+        } else {
+            guard current.owner==snapshot.owner,snapshot.owner != nil else{return}
+            if action=="zoom" {
+                guard current.zoom != nil, let value, current.zoomOptions.contains(where: { $0.id == value && $0.enabled }) else { return }
+                command["value"] = value
+            }
+            else {guard current.actions.contains(where:{$0.id==action&&$0.enabled}) else{return}}
+        }
+        webView.callAsyncJavaScript("return window.__kindredDuoArtifacts?.perform(command)",arguments:["command":command],in:nil,in:.page){_ in}
+    }
+
     func performDuoAction(_ action: DuoAction) {
         guard presentation.usesNativeRail, presentation.hasChatInterface, !nativeNavigationBlocked,
               origin.matches(webView.url), loadState.failure == nil else { return }
@@ -284,6 +315,7 @@ final class WebSession: NSObject {
           window.__KINDRED_IOS_APP_VERSION = \(WebBootstrap.javaScriptString(versionLabel));
           window.__KINDRED_IOS_PUSH_AVAILABLE = \(hasPushSigning ? "true" : "false");
           window.__KINDRED_NATIVE_GLASS = \(hasNativeGlass ? "true" : "false");
+          window.__KINDRED_IOS_DUO_ARTIFACT_CONTROLS = 1;
           const appearance = \(WebBootstrap.javaScriptString(presentation.isDark.map { $0 ? "dark" : "light" } ?? "system"));
           if (appearance !== 'system') document.documentElement.dataset.theme = appearance;
         })();
@@ -343,6 +375,13 @@ final class WebSession: NSObject {
         computerHostAttachmentChanged()
         publishLayout()
         if usesNativeRail { refreshRailLayout() }
+    }
+
+    func updateToolbarLayout(vertical: Bool, length: CGFloat) {
+        guard length.isFinite else { return }
+        let bounded = max(44, min(2048, length.rounded(.down)))
+        if presentation.toolbarVertical != vertical { presentation.toolbarVertical = vertical }
+        if abs(presentation.toolbarLength - bounded) > 1 { presentation.toolbarLength = bounded }
     }
 
     private func refreshRailLayout() {
@@ -480,9 +519,11 @@ final class WebSession: NSObject {
 
     func reload() {
         edgeBack?.setNavigation(nil)
+        let recovering = loadState.failure != nil
         loadState.failure = nil
-        // A script can leave the main frame on about:blank; start over at the root.
-        if !origin.matches(webView.url) {
+        // Retry a failed deep link at the workspace root. Reloading the same
+        // missing page would leave recovery stuck on that route again.
+        if recovering || !origin.matches(webView.url) {
             webView.load(URLRequest(url: origin.rootURL))
         } else {
             webView.reload()
@@ -623,16 +664,23 @@ final class WebSession: NSObject {
                let route = body["route"] as? String,
                ["chat-list", "bot-chat", "computer", "details", "artifacts", "artifact", "marketplace"].contains(route),
                let title = body["title"] as? String, title.count <= 160, let listVisible = body["listVisible"] as? Bool {
+                let artifactControls:DuoArtifactControls?
+                if let row=body["artifactControls"] as? [String:Any] {
+                    guard let parsed=DuoArtifactControls(row) else{return};artifactControls=parsed
+                } else if body["artifactControls"] == nil || body["artifactControls"] is NSNull {artifactControls=nil}
+                else {return}
                 // Keep conditional toolbar items in the same native transaction
                 // so the glass bar and its controls change together.
                 let animate = presentation.hasLoadedChats && presentation.usesNativeRail &&
                     !UIAccessibility.isReduceMotionEnabled && (body["reduceMotion"] as? Bool != true)
                 withAnimation(animate ? .smooth(duration: 0.28) : nil) {
+                    presentation.reduceMotion = body["reduceMotion"] as? Bool == true
                     presentation.route = route
                     presentation.chatTitle = title
                     presentation.collaboration = route == "bot-chat" ? (body["collaboration"] as? [String: Any]).flatMap(NativeCollaborationStatus.init) : nil
                     presentation.listVisible = listVisible
                     presentation.artifactLibraryVisible = body["artifactLibraryVisible"] as? Bool == true && ["artifacts", "artifact"].contains(route)
+                    presentation.artifactControls = artifactControls
                     presentation.botSettingsAvailable = body["botSettingsAvailable"] as? Bool == true
                     presentation.botDetailsAvailable = body["botDetailsAvailable"] as? Bool == true
                     if let shape = body["botAvatarShape"] as? String,
@@ -647,6 +695,9 @@ final class WebSession: NSObject {
                     presentation.computerExpandAvailable = body["computerExpandAvailable"] as? Bool == true
                     presentation.computerExpanded = body["computerExpanded"] as? Bool == true
                     presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
+                }
+                if let artifactControls {
+                    webView.callAsyncJavaScript("window.__kindredDuoArtifacts?.ack(key)",arguments:["key":artifactControls.root],in:nil,in:.page){_ in}
                 }
                 refreshRailLayout()
                 return
@@ -1053,15 +1104,25 @@ extension WebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         let url = navigationResponse.response.url
+        if navigationResponse.isForMainFrame, !policy.allowsMainFrameResponse(from: url) {
+            decisionHandler(.cancel)
+            notify(NavigationRefusal.otherOrigin(host: url?.host).message)
+            return
+        }
+        if navigationResponse.isForMainFrame,
+           let response = navigationResponse.response as? HTTPURLResponse,
+           (400...599).contains(response.statusCode) {
+            presentation.hasChatInterface = false
+            presentation.hasLoadedChats = false
+            edgeBack?.setNavigation(nil)
+            loadState.failure = "Your server couldn’t open this page (HTTP \(response.statusCode)). Try again to return to your workspace."
+            decisionHandler(.cancel)
+            return
+        }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition")
         let attachment = disposition?.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment") ?? false
         if attachment || !navigationResponse.canShowMIMEType {
             decisionHandler(policy.allowsDownload(from: url) ? .download : .cancel)
-            return
-        }
-        if navigationResponse.isForMainFrame, !policy.allowsMainFrameResponse(from: url) {
-            decisionHandler(.cancel)
-            notify(NavigationRefusal.otherOrigin(host: url?.host).message)
             return
         }
         decisionHandler(.allow)

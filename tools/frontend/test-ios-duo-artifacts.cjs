@@ -4,6 +4,7 @@ const {server,token,profileID,snapshot}=require('./fixtures/duo.cjs');
 const resources=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
 const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-duo-artifacts';
 const baseline=!!process.env.KINDRED_TEST_BASELINE;
+const nativeDock=process.env.KINDRED_ARTIFACT_NATIVE_DOCK==='1';
 function pdf(count){
  const objects=['<< /Type /Catalog /Pages 2 0 R >>',`<< /Type /Pages /Kids [${Array.from({length:count},(_,i)=>`${4+i*2} 0 R`).join(' ')}] /Count ${count} >>`,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
  for(let i=0;i<count;i++){
@@ -18,7 +19,8 @@ function pdf(count){
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await(process.env.CHROMIUM?chromium:webkit).launch();fs.mkdirSync(out,{recursive:true});
  try{
  const p=await browser.newPage({viewport:{width:867,height:645},hasTouch:true});p.setDefaultTimeout(10000);const errors=[];p.on('pageerror',e=>errors.push(e.stack||e.message));
- await p.addInitScript(({token,profileID,css,js})=>{
+ await p.addInitScript(({token,profileID,css,js,nativeDock})=>{
+  if(nativeDock)window.__KINDRED_IOS_DUO_ARTIFACT_CONTROLS=1;
   if(window.top!==window)return; // Native user scripts apply to the main frame only.
   window.__KINDRED_MOBILE=true;window.__KINDRED_MOBILE_PLATFORM='ios';window.__KINDRED_MOBILE_PROFILE=profileID;window.__KINDRED_NATIVE_SESSION_BOOTSTRAP=true;window.__KINDRED_NATIVE_GLASS=true;
   window.__KINDRED_IOS_LAYOUT={topInset:0,bottomInset:0,leftInset:0,rightInset:84,isSlab:false,isDuo:true,isDuoInner:true,usesNativeRail:true,railSide:'right',isPortrait:false,viewportHeight:645};
@@ -26,7 +28,7 @@ function pdf(count){
   window.accountRequests=[];window.webkit={messageHandlers:{kindredAccounts:{postMessage:v=>accountRequests.push(v)},kindredNavigation:{postMessage:()=>{}},kindredSession:{postMessage:()=>{}}}};
   sessionStorage.setItem('kindred-token',token);
   document.addEventListener('DOMContentLoaded',()=>{const s=document.createElement('style');s.textContent=css;document.head.append(s);(0,eval)(js);},{once:true});
- },{token,profileID,css:fs.readFileSync(path.join(resources,'MobileLayout.css'),'utf8'),js:fs.readFileSync(path.join(resources,'MobileLayout.js'),'utf8')});
+ },{token,profileID,nativeDock,css:fs.readFileSync(path.join(resources,'MobileLayout.css'),'utf8'),js:fs.readFileSync(path.join(resources,'MobileLayout.js'),'utf8')});
  const example={id:'duo-document',title:'Weekly project review',language:'markdown',source:'# Weekly project review',state:{},revision:1,updated:1791302400,created:1791302400,type:'document'};
  const app={...example,id:'duo-app',title:'Project checklist',language:'html',type:'app',source:'<!doctype html><html><body style="font:16px system-ui;padding:24px"><h1>Project checklist</h1><p>A sample interactive artifact.</p><button id="counter" onclick="this.textContent=String(Number(this.textContent)+1)">0</button><div style="height:1000px"></div><p>End of checklist</p></body></html>'};
  const items=[example,app,...Array.from({length:12},(_,i)=>({...example,id:'duo-doc-'+i,title:'Project notes '+(i+1),updated:example.updated-i-1}))];
@@ -47,6 +49,73 @@ function pdf(count){
  await p.goto('http://127.0.0.1:'+server.address().port+'/#kindred-chat=dm-vivienne');await p.locator('#prompt').waitFor();await p.waitForFunction(()=>window.__kindredDuoActions);await action('artifacts');await p.locator('[data-artifact-id="duo-document"]').waitFor({state:'visible'});await settle();
  await p.screenshot({path:path.join(out,'inner-library.png')});
  await p.locator('[data-artifact-id="duo-document"]').click();await p.locator('.artifact-title-input').waitFor();await p.locator('.document-pdf-page[data-page="1"] canvas').waitFor();await settle();
+ if(nativeDock){
+  const read=()=>p.evaluate(()=>accountRequests.filter(v=>v.action==='duo-navigation').at(-1)?.artifactControls);
+  const perform=(command,model)=>p.evaluate(({command,model})=>__kindredDuoArtifacts.perform({root:model.root,owner:model.owner,...command}),{command,model});
+  const first=await read();assert(first&&first.zoom&&first.actions.some(a=>a.id==='refresh')&&first.filters.length===2);
+  assert(await p.locator('.ios-document-zoom-trigger').isVisible(),'web fallback remains until native dock acknowledges ownership');
+  assert.equal(await p.evaluate(root=>__kindredDuoArtifacts.ack(root),'stale-root'),false);
+  assert.equal(await p.evaluate(root=>__kindredDuoArtifacts.ack(root),first.root),true);await settle();
+  assert(await p.locator('.ios-document-zoom-trigger').isHidden());assert(await p.locator('.ios-artifact-document-actions').isHidden());assert(await p.locator('.artifact-library-filters').isHidden());
+  const zoomAction=async title=>{
+   const model=await read(),option=model.zoomOptions.find(option=>option.label===title);assert(option&&option.enabled);
+   assert(await perform({action:'zoom',value:option.id},model));
+   await p.waitForFunction(title=>document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent===title,title);
+   assert.equal(await p.locator('.ios-document-zoom-menu').evaluate(n=>n.matches(':popover-open')),false,'native dock zoom never opens a hidden web popover');
+  };
+  await zoomAction('Fit width');await zoomAction('Fit page');
+  assert.equal(await perform({action:'refresh'},{...first,root:'stale'}),false);
+  assert.equal(await perform({action:'refresh'},{...first,owner:'stale'}),false);
+  const refresh=p.locator('.artifact-workbench-actions button[aria-label="Refresh document"]');
+  await refresh.evaluate(n=>n.disabled=true);await settle();assert.equal((await read()).actions.find(a=>a.id==='refresh').enabled,false);assert.equal(await perform({action:'refresh'},await read()),false);
+  await refresh.evaluate(n=>n.disabled=false);await settle();
+  const old=await p.locator('.ios-document-zoom-menu').elementHandle();assert(await perform({action:'refresh'},await read()));
+  await p.waitForFunction(n=>!n.isConnected,old);await p.locator('.document-pdf-page canvas').first().waitFor();await p.waitForFunction(()=>/%$/.test(document.querySelector('.ios-document-zoom-trigger')?.textContent||''));
+  await zoomAction('Fit page');
+  const level=()=>p.locator('.ios-document-zoom-trigger').textContent().then(v=>Number(v.replace('%','')));
+  // In the narrow split pane Fit page can already equal Fit width. Begin at
+  // a distinct manual zoom so this assertion actually exercises a transition.
+  const fitPageLevel=await level();
+  assert(await perform({action:'zoom',value:'out'},await read()));
+  await p.waitForFunction(before=>parseFloat(document.querySelector('.ios-document-zoom-trigger').textContent)<before,fitPageLevel);
+  await settle();
+  const fitted=await level();await p.locator('.document-pdf-page canvas').first().waitFor();
+  const animated=await p.evaluate(async()=>{
+   document.documentElement.dataset.motion='on';const surface=document.querySelector('.document-pdf'),r=surface.getBoundingClientRect(),canvas=surface.querySelector('canvas');
+   surface.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:r.x+r.width/2,clientY:r.y+140}));
+   await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+   return {moving:surface.hasAttribute('data-document-pinching'),retained:canvas.isConnected,scale:visualViewport.scale};
+  });
+  assert(animated.moving&&animated.retained,'double-tap animates retained document pixels');assert.equal(animated.scale,1);
+  await p.waitForFunction(()=>!document.querySelector('.document-pdf').hasAttribute('data-document-pinching'));
+  assert(await level()>fitted,'double-tap fits the width');
+  assert.equal(await p.locator('.ios-document-zoom-menu button[aria-pressed=true]').textContent(),'Fit width');
+  await p.locator('.document-pdf').dblclick({position:{x:200,y:140}});
+  await p.waitForFunction(()=>!document.querySelector('.document-pdf').hasAttribute('data-document-pinching'));
+  assert(Math.abs(await level()-fitted)<=1,'second double-tap restores the previous manual zoom');
+  const reduced=await p.evaluate(async()=>{
+   document.documentElement.dataset.motion='off';const surface=document.querySelector('.document-pdf'),r=surface.getBoundingClientRect();
+   surface.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:r.x+r.width/2,clientY:r.y+140}));await new Promise(requestAnimationFrame);
+   return {moving:surface.hasAttribute('data-document-pinching'),level:parseFloat(document.querySelector('.ios-document-zoom-trigger').textContent),scale:visualViewport.scale};
+  });
+  assert(!reduced.moving&&reduced.level>fitted,'Reduce motion settles double-tap in one frame');assert.equal(reduced.scale,1);
+  await zoomAction('Fit page');
+  const beforeSwitch=await read();
+  await p.locator('[data-artifact-id="duo-doc-0"]').click();await p.locator('.document-pdf-page canvas').first().waitFor();await settle();
+  assert.notEqual((await read()).owner,beforeSwitch.owner,'switching documents invalidates delayed dock actions');assert.equal(await perform({action:'refresh'},beforeSwitch),false);
+  assert(await perform({action:'filter',filter:'type',value:'document'},await read()));assert.equal(await p.locator('select[aria-label="Artifact type"]').inputValue(),'document');
+  assert.equal(await perform({action:'filter',filter:'sort',value:'unrecognized'},await read()),false);
+  assert(await perform({action:'filter',filter:'sort',value:'name'},await read()));assert.equal(await p.locator('select[aria-label="Sort artifacts"]').inputValue(),'name');
+  assert(await perform({action:'filter',filter:'type',value:''},await read()),'All types uses the empty string value');
+  await p.locator('.artifact-studio-preview').evaluate(n=>n.dataset.nativeDockRetention='kept');
+  const poses=[['open-landscape',{}],['open-portrait',{width:669,height:951,side:'right',edge:84}],['cover',{width:466,height:678,inner:false}],['cover-rotated',{width:678,height:466,inner:false}],['book',{regions:[{kind:'division',active:true,x:400,y:0,width:40,height:645}]}],['tabletop',{width:867,height:900,regions:[{kind:'division',active:true,x:0,y:400,width:867,height:40}]}],['large-text',{scale:1.5}]];
+  for(const [name,pose]of poses){await relay(pose);const g=await geometry();assert(g.scroll<=Math.max(pose.width||867,867),'no document-wide horizontal overflow');assert(await p.locator('.ios-document-zoom-trigger').isHidden());assert.equal(await p.locator('.artifact-studio-preview').getAttribute('data-native-dock-retention'),'kept');await zoomAction('Fit width');await p.screenshot({path:path.join(out,'native-dock-'+name+'.png')});}
+  await relay({});await action('chats');await settle();assert.equal(await perform({action:'filter',filter:'type',value:'app'},await read()),false,'hidden library cannot receive stale filter selections');await action('chats');await settle();
+  await relay({width:390,height:700,inner:false,duo:false,side:'none',edge:0,top:24,bottom:20});
+  assert(await p.locator('.ios-document-zoom-trigger').isVisible(),'iPhone retains its compact header control');assert(await p.locator('.ios-artifact-document-actions').isVisible());
+  assert.equal(await perform({action:'refresh'},await read()),false,'Duo-only commands stop when the native rail is unavailable');
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,nativeDock:true,cases:['acknowledged ownership','native zoom menu and fit','refresh after fit','disabled refresh','stale document and root','filter and sort','all Duo poses','retained preview','iPhone fallback'],errors}));return;
+ }
  const zoom=p.locator('.ios-document-zoom-trigger');
  for(const [theme,surround] of [['dark','rgb(17, 17, 17)'],['light','rgb(233, 235, 239)']]){
   const colors=await p.evaluate(theme=>{document.documentElement.dataset.theme=theme;const view=document.querySelector('.document-pdf'),paper=view.querySelector('.document-pdf-page'),canvas=paper.querySelector('canvas');return {surround:getComputedStyle(view).backgroundColor,paper:getComputedStyle(paper).backgroundColor,filter:getComputedStyle(view).filter,pageFilter:getComputedStyle(canvas).filter};},theme);
