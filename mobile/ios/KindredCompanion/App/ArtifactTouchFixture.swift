@@ -64,6 +64,13 @@ private struct ArtifactTouchContent: View {
                 .toolbar {
                     if #available(iOS 27.1, *), session.presentation.usesNativeRail {
                         DuoToolbarContent(session: session, manageAccounts: {})
+                        if ProcessInfo.processInfo.environment["KINDRED_SYSTEM_RAIL_REFERENCE"]=="1" {
+                            ToolbarItem(placement:.topBarTrailing) {
+                                Button("System alignment reference",systemImage:"magnifyingglass") {}
+                                    .labelStyle(.iconOnly)
+                                    .accessibilityIdentifier("kindred-system-rail-reference")
+                            }
+                        }
                     }
                 }
                 .toolbarBackground(.hidden, for: .navigationBar)
@@ -156,6 +163,7 @@ final class ArtifactTouchFixtureController:UIViewController {
                     report["nativeStatusBarWindowFrame"]=rect(window.convert(status.statusBarFrame,from:scene.coordinateSpace))
                 }
                 report["nativeOcclusionWindowFrames"]=web.reservedRegions(kind:.occlusion).filter{$0.isActive}.map{rect(web.convert($0.frame,to:window))}
+                report["nativeOcclusionInsets"]=web.reservedRegions(kind:.occlusion).filter{$0.isActive}.map{insets($0.margins)}
                 report["nativeOverlayFrames"]=web.superview?.subviews.filter{$0 !== web && $0 !== self.fixture.session.glassControls}.map{["frame":rect($0.convert($0.bounds,to:window)),"safeArea":insets($0.safeAreaInsets)]}
             }
             if JSONSerialization.isValidJSONObject(report), let data=try? JSONSerialization.data(withJSONObject:report,options:[.sortedKeys]){self.telemetry.accessibilityValue=String(data:data,encoding:.utf8)}

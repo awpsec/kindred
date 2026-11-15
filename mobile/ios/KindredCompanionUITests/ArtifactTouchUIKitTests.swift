@@ -2,6 +2,24 @@ import XCTest
 
 /// Uses XCTest's genuine multitouch injection; no constructed DOM TouchEvents.
 final class ArtifactTouchUIKitTests:XCTestCase {
+    func testCaptureSystemRailCenterline() throws {
+        continueAfterFailure=false
+        XCUIDevice.shared.orientation = .portrait
+        let app=XCUIApplication()
+        app.launchEnvironment=["KINDRED_ARTIFACT_TOUCH_UI_TEST":"1","KINDRED_SYSTEM_RAIL_REFERENCE":"1"]
+        app.launch();defer{app.terminate()}
+        let telemetry=app.staticTexts["artifact-touch-telemetry"]
+        XCTAssertTrue(telemetry.waitForExistence(timeout:15))
+        let ready=XCTNSPredicateExpectation(predicate:NSPredicate{_,_ in
+            guard let s=telemetry.value as? String,let d=s.data(using:.utf8),let v=(try? JSONSerialization.jsonObject(with:d)) as? [String:Any] else{return false}
+            return v["ready"] as? Bool==true
+        },object:nil)
+        XCTAssertEqual(XCTWaiter.wait(for:[ready],timeout:60),.completed)
+        let reference=app.buttons["kindred-system-rail-reference"]
+        XCTAssertTrue(reference.waitForExistence(timeout:10))
+        let data=XCTAttachment(string:(telemetry.value as? String ?? "")+"\nSystem reference: \(reference.frame)\nRail: \(app.scrollViews["kindred-duo-navigation-rail"].frame)\n"+app.debugDescription)
+        data.name="native-system-status-centerline-reference";data.lifetime = .keepAlways;add(data)
+    }
     func testTwentyPageWordNativeFitWidthPinchPanAndNavigation() throws { try documentGestures("word") }
     func testTwentyPageConvertedPDFNativeFitWidthPinchPanAndNavigation() throws { try documentGestures("pdf") }
     func testCoverPortraitWordNativeGestures() throws { XCUIDevice.shared.orientation = .portrait; try documentGestures("word") }
