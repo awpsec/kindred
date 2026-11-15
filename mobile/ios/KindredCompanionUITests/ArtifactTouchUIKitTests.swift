@@ -54,6 +54,22 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         XCTAssertEqual(rail.frame.midX,expectedCenter,accuracy:0.5,"Visible glass follows the genuine system control column")
         XCTAssertEqual(rail.frame.width,52,accuracy:1.5,"The native rail does not extend into chat content")
         XCTAssertEqual(app.buttons["kindred-duo-search"].frame.midX,expectedCenter,accuracy:0.5,"The actual button aligns with the system control, not only its container")
+        XCTAssertLessThanOrEqual(rail.frame.height,280,"Combining account actions removes two rows from the cover chat dock")
+        XCTAssertFalse(app.buttons["kindred-duo-settings"].exists)
+        XCTAssertFalse(app.buttons["kindred-duo-marketplace"].exists)
+        tap("kindred-duo-accounts")
+        for name in ["Accounts","Settings","Marketplace"] {XCTAssertTrue(app.buttons[name].waitForExistence(timeout:5))}
+        app.buttons["Accounts"].tap()
+        let accounts=XCTNSPredicateExpectation(predicate:NSPredicate{_,_ in
+            guard let s=telemetry.value as? String,let d=s.data(using:.utf8),let v=(try? JSONSerialization.jsonObject(with:d)) as? [String:Any] else{return false}
+            return v["nativeAccountsRequests"] as? Int==1
+        },object:nil)
+        XCTAssertEqual(XCTWaiter.wait(for:[accounts],timeout:10),.completed)
+        tap("kindred-duo-accounts");app.buttons["Settings"].tap()
+        let closeSettings=app.webViews.buttons["Close settings sheet"]
+        XCTAssertTrue(closeSettings.waitForExistence(timeout:10));closeSettings.tap()
+        tap("kindred-duo-accounts");app.buttons["Marketplace"].tap()
+        let back=app.buttons["Back"];XCTAssertTrue(back.waitForExistence(timeout:10));back.tap()
         let editor=app.textViews["kindred-native-composer-editor"];XCTAssertTrue(editor.waitForExistence(timeout:15));editor.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:10),"A real native editor tap opens the software keyboard")
         let draft="Artifact navigation draft\nSecond line";editor.typeText(draft)
@@ -108,7 +124,7 @@ final class ArtifactTouchUIKitTests:XCTestCase {
             XCTAssertTrue(button.isHittable,"Native rail action is reachable by scrolling")
         }
         if isDuo {
-            let ids=["search","new","chats","marketplace","settings","accounts"]
+            let ids=["search","new","chats","accounts"]
             let buttons=ids.map { app.buttons["kindred-duo-"+$0] }
             var frames:[[String:Any]]=[]
             for (id,button) in zip(ids,buttons) {
@@ -127,11 +143,9 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         if isDuo {
             XCTAssertTrue(state()["nativeDock"] as? Bool==true)
             XCTAssertFalse(state()["headerZoomVisible"] as? Bool==true,"No duplicate header zoom after dock takes ownership")
-            let accounts=app.buttons["kindred-duo-accounts"],settings=app.buttons["kindred-duo-settings"]
+            let accounts=app.buttons["kindred-duo-accounts"]
             XCTAssertGreaterThan(accounts.frame.maxX,web.frame.midX,"The native toolbar is at the trailing edge")
             XCTAssertTrue(abs(zoom.frame.midX-accounts.frame.midX)<4 || abs(zoom.frame.midY-accounts.frame.midY)<4,"Zoom shares the native adaptive toolbar’s axis")
-            if abs(settings.frame.midX-accounts.frame.midX)<4 {XCTAssertLessThan(settings.frame.midY,accounts.frame.midY)}
-            else {XCTAssertLessThan(settings.frame.midX,accounts.frame.midX)}
             let refresh=app.buttons["kindred-duo-artifact-refresh"]
             XCTAssertTrue(refresh.exists)
             let generation=state()["generation"] as? Int ?? 0

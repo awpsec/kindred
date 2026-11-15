@@ -11,6 +11,7 @@ final class ArtifactTouchFixture: NSObject, WebSessionHost, WKNavigationDelegate
     static let active: ArtifactTouchFixture? = ProcessInfo.processInfo.environment["KINDRED_ARTIFACT_TOUCH_UI_TEST"] == "1" ? ArtifactTouchFixture() : nil
     let model: AppModel
     private(set) var session: WebSession!
+    private(set) var accountsRequests=0
 
     override init() {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory:true)
@@ -30,7 +31,7 @@ final class ArtifactTouchFixture: NSObject, WebSessionHost, WKNavigationDelegate
         """,injectionTime:.atDocumentStart,forMainFrameOnly:true))
     }
     func webSession(_ session:WebSession,didReceive message:SessionMessage) {}
-    func webSessionRequestedAccounts(_ session:WebSession) {}
+    func webSessionRequestedAccounts(_ session:WebSession) {accountsRequests+=1}
     func webSession(_ session:WebSession,show message:String,isError:Bool) {}
     func webSession(_ session:WebSession,didDownload file:URL) {}
     func webView(_ webView:WKWebView,didReceive challenge:URLAuthenticationChallenge,completionHandler:@escaping(URLSession.AuthChallengeDisposition,URLCredential?)->Void) {
@@ -144,6 +145,7 @@ final class ArtifactTouchFixtureController:UIViewController {
             report["nativeURL"]=self.fixture.session.webView.url?.absoluteString ?? "none"
             report["nativeLoading"]=self.fixture.session.webView.isLoading
             report["nativeFailure"]=String(describing:self.fixture.session.loadState.failure)
+            report["nativeAccountsRequests"]=self.fixture.accountsRequests
             if #available(iOS 27.1, *), let window=self.view.window {
                 let web=self.fixture.session.webView
                 func rect(_ value:CGRect)->[String:Double]{["x":Double(value.minX),"y":Double(value.minY),"width":Double(value.width),"height":Double(value.height)]}
