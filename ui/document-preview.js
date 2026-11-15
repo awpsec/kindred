@@ -7,7 +7,7 @@ const letters=n=>{let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCod
 // fit is capped at actual size; an explicit zoom remains stable across resizing.
 function documentZoom(body, surface, dimensions, apply, initialMode='page') {
  const scope=body.parentElement,toolbar=el('div','document-zoom');toolbar.setAttribute('role','group');toolbar.setAttribute('aria-label','Document zoom');
- let mode=initialMode,scale=1,manual=1,frame=0,disposed=false,pinch=null,pinchPoint=null;
+ let mode=initialMode,scale=1,manual=1,frame=0,disposed=false,pinch=null,pinchPoint=null,tapZoom=null,tapRestore=null,tapCandidate=null,lastTap=null,lastTouchZoom=0;
  surface.classList.add('document-touch-surface');
  const minus=button('−',()=>adjust(-.1)),plus=button('+',()=>adjust(.1)),value=el('output','document-zoom-value');
  minus.setAttribute('aria-label','Zoom out');plus.setAttribute('aria-label','Zoom in');value.setAttribute('aria-label','Zoom level');
@@ -20,17 +20,21 @@ function documentZoom(body, surface, dimensions, apply, initialMode='page') {
   const width=surface.clientWidth-(parseFloat(css.paddingLeft)||0)-(parseFloat(css.paddingRight)||0);
   const height=surface.clientHeight-(parseFloat(css.paddingTop)||0)-(parseFloat(css.paddingBottom)||0);
   if(width<=0||height<=0||!size.width||!size.height)return;
-  scale=mode==='manual'?manual:Math.max(.05,Math.min(1,width/size.width,mode==='page'?height/size.height:Infinity));
-  const anchor=pinchPoint&&pinch?.anchor;
+  const target=mode==='manual'?manual:Math.max(.05,Math.min(1,width/size.width,mode==='page'?height/size.height:Infinity));
+  const progress=tapZoom?.duration?Math.min(1,(performance.now()-tapZoom.started)/tapZoom.duration):1;
+  scale=tapZoom?tapZoom.from+(target-tapZoom.from)*(1-Math.pow(1-progress,3)):target;
+  const point=pinchPoint||tapZoom?.point,anchor=pinchPoint&&pinch?.anchor||tapZoom?.anchor;
   apply(scale);
-  if(anchor?.node.isConnected){const r=anchor.node.getBoundingClientRect();surface.scrollLeft+=r.left+r.width*anchor.x-pinchPoint.x;surface.scrollTop+=r.top+r.height*anchor.y-pinchPoint.y;}
+  if(anchor?.node.isConnected){const r=anchor.node.getBoundingClientRect();surface.scrollLeft+=r.left+r.width*anchor.x-point.x;surface.scrollTop+=r.top+r.height*anchor.y-point.y;}
   const label=Math.round(scale*100)+'%';if(value.textContent!==label)value.textContent=label;
   minus.disabled=scale<=.25;plus.disabled=scale>=3;
   fitPage.setAttribute('aria-pressed',String(mode==='page'));fitWidth.setAttribute('aria-pressed',String(mode==='width'));
+  if(tapZoom){if(progress<1)schedule();else cancelTapZoom();}
  }
  function schedule(){if(!disposed&&!frame)frame=requestAnimationFrame(refresh);}
- function setMode(next){finishPinch();mode=next;schedule();}
- function adjust(delta){manual=Math.max(.25,Math.min(3,Math.round(((mode==='manual'?manual:scale)+delta)*100)/100));mode='manual';schedule();}
+ function cancelTapZoom(){if(!tapZoom)return;tapZoom=null;if(!pinch){delete surface.dataset.documentPinching;surface.dispatchEvent(new Event('kindred-document-pinch-end'));}}
+ function setMode(next){finishPinch();cancelTapZoom();tapRestore=null;mode=next;schedule();}
+ function adjust(delta){cancelTapZoom();tapRestore=null;manual=Math.max(.25,Math.min(3,Math.round(((mode==='manual'?manual:scale)+delta)*100)/100));mode='manual';schedule();}
  const key=event=>{
   if(!(event.ctrlKey||event.metaKey)||event.altKey||event.target.closest?.('input,textarea,[contenteditable="true"]'))return;
   if(['+','=','-','0'].includes(event.key)){event.preventDefault();event.stopPropagation();if(event.key==='0')setMode(initialMode);else adjust(event.key==='-'?-.1:.1);}
@@ -39,15 +43,33 @@ function documentZoom(body, surface, dimensions, apply, initialMode='page') {
  // Preserve native one-finger scrolling. Only a two-finger gesture belongs
  // to document zoom, and it never changes the app's viewport scale.
  const touchPair=touches=>{if(touches.length!==2)return null;const [a,b]=touches;return {distance:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};};
- const touchStart=event=>{
-  const point=touchPair(event.touches);if(!point||point.distance<1)return;
+ const anchorAt=point=>{
   const nodes=[...surface.querySelectorAll('.document-pdf-page'),...(surface.shadowRoot?.querySelectorAll('section.docx')||[])];
   const node=nodes.find(n=>{const r=n.getBoundingClientRect();return r.top<=point.y&&r.bottom>=point.y;})||nodes[0]||surface.shadowRoot?.querySelector('.paper')||surface.firstElementChild;
   const r=node?.getBoundingClientRect();
-  pinch={distance:point.distance,scale,anchor:r?.width&&r?.height?{node,x:(point.x-r.left)/r.width,y:(point.y-r.top)/r.height}:null};pinchPoint=point;
+  return r?.width&&r?.height?{node,x:(point.x-r.left)/r.width,y:(point.y-r.top)/r.height}:null;
+ };
+ const doubleTap=point=>{
+  if(disposed||surface.closest('[inert],[hidden]'))return;
+  finishPinch();cancelTapZoom();
+  if(tapRestore){mode=tapRestore.mode;manual=tapRestore.manual;tapRestore=null;}
+  else if(scale>=2.99){mode='width';}
+  else {tapRestore={mode,manual};manual=Math.min(3,Math.max(1,scale*2));mode='manual';}
+  const reduced=document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion:reduce)').matches;
+  tapZoom={from:scale,point,anchor:anchorAt(point),started:performance.now(),duration:reduced?0:180};
+  surface.dataset.documentPinching='true';schedule();
+ };
+ const interactive=event=>event.composedPath().some(n=>n.matches?.('a[href],button,input,textarea,select,[contenteditable="true"]'));
+ const touchStart=event=>{
+  if(event.touches.length===1&&!interactive(event)){const t=event.touches[0];tapCandidate={x:t.clientX,y:t.clientY,started:performance.now()};}
+  else {tapCandidate=null;lastTap=null;}
+  const point=touchPair(event.touches);if(!point||point.distance<1)return;
+  cancelTapZoom();tapRestore=null;
+  pinch={distance:point.distance,scale,anchor:anchorAt(point)};pinchPoint=point;
   surface.dataset.documentPinching='true';event.preventDefault();
  };
  const touchMove=event=>{
+  if(tapCandidate&&event.touches.length===1){const t=event.touches[0];if(Math.hypot(t.clientX-tapCandidate.x,t.clientY-tapCandidate.y)>12){tapCandidate=null;lastTap=null;}}
   const point=touchPair(event.touches);if(!pinch||!point)return;
   event.preventDefault();pinchPoint=point;manual=Math.max(.05,Math.min(3,pinch.scale*point.distance/pinch.distance));mode='manual';schedule();
  };
@@ -56,12 +78,22 @@ function documentZoom(body, surface, dimensions, apply, initialMode='page') {
   cancelAnimationFrame(frame);refresh();pinch=null;pinchPoint=null;delete surface.dataset.documentPinching;
   surface.dispatchEvent(new Event('kindred-document-pinch-end'));
  }
- const touchEnd=event=>{if(event.touches.length!==2)finishPinch();};
+ const touchEnd=event=>{
+  const pinching=!!pinch;if(event.touches.length!==2)finishPinch();
+  const candidate=tapCandidate;tapCandidate=null;
+  if(pinching||event.touches.length||!candidate||performance.now()-candidate.started>280)return;
+  const now=performance.now();
+  if(lastTap&&now-lastTap.time<320&&Math.hypot(candidate.x-lastTap.x,candidate.y-lastTap.y)<28){
+   event.preventDefault();lastTap=null;lastTouchZoom=now;doubleTap(candidate);
+  }else lastTap={...candidate,time:now};
+ };
+ const doubleClick=event=>{if(!window.__KINDRED_MOBILE||window.__KINDRED_MOBILE_PLATFORM!=='ios'||performance.now()-lastTouchZoom<600||interactive(event))return;event.preventDefault();doubleTap({x:event.clientX,y:event.clientY});};
+ const cancelTouch=()=>{tapCandidate=null;lastTap=null;finishPinch();};
  surface.addEventListener('touchstart',touchStart,{passive:false});surface.addEventListener('touchmove',touchMove,{passive:false});
- surface.addEventListener('touchend',touchEnd);surface.addEventListener('touchcancel',finishPinch);
+ surface.addEventListener('touchend',touchEnd);surface.addEventListener('touchcancel',cancelTouch);surface.addEventListener('dblclick',doubleClick);
  scope.addEventListener('keydown',key);surface.addEventListener('wheel',wheel,{passive:false});
  const observer=new ResizeObserver(schedule);observer.observe(surface);schedule();
- return {refresh:schedule,dispose:()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();pinch=null;delete surface.dataset.documentPinching;surface.removeEventListener('touchstart',touchStart);surface.removeEventListener('touchmove',touchMove);surface.removeEventListener('touchend',touchEnd);surface.removeEventListener('touchcancel',finishPinch);scope.removeEventListener('keydown',key);surface.removeEventListener('wheel',wheel);toolbar.remove();}};
+ return {refresh:schedule,dispose:()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();pinch=null;tapZoom=null;tapCandidate=null;lastTap=null;delete surface.dataset.documentPinching;surface.removeEventListener('touchstart',touchStart);surface.removeEventListener('touchmove',touchMove);surface.removeEventListener('touchend',touchEnd);surface.removeEventListener('touchcancel',cancelTouch);surface.removeEventListener('dblclick',doubleClick);scope.removeEventListener('keydown',key);surface.removeEventListener('wheel',wheel);toolbar.remove();}};
 }
 // Static Word content never navigates a subframe. WKWebView passes srcdoc
 // navigation through the native origin guard, which correctly rejects it.
