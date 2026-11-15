@@ -1,0 +1,56 @@
+{
+  "requested_shared_source": "765cb3ce631132bd7070874c0f59c159be088d57",
+  "normal_native_source": "722c8048c260ce42967470a5310f05b29015d100",
+  "normal_private_build": "0.90.6 (7)",
+  "normal_build_signed": true,
+  "normal_build7_installed": false,
+  "diagnostic_app_source": "3bc24bf",
+  "diagnostic_app_not_in_normal_build": true,
+  "test": "ArtifactTouchUIKitTests/testTwentyPageWordNativeFitWidthPinchPanAndNavigation",
+  "result": "passed",
+  "device": {
+    "model": "iPhone Duo simulator",
+    "name": "Kindred Duo QA",
+    "ios": "27.1",
+    "udid": "19C796A3-A517-49FC-8A51-0575921222E0"
+  },
+  "pose": "open landscape",
+  "viewport": {
+    "height": 635,
+    "width": 867
+  },
+  "actual_word_pages": 20,
+  "renderer": "DOCX Word layout fallback; conversion preview deliberately returns 503",
+  "constructed_dom_touch_events": false,
+  "genuine_xcui_two_finger_events": true,
+  "trusted_touch_pairs": 2,
+  "fit_width_zoom": 0.747239,
+  "pinch_zoom": 2.509982,
+  "pan_scroll_top": 974,
+  "root_scale": 1,
+  "native_menu_dismissed": true,
+  "fit_page_after_gesture": true,
+  "library_row_tapped_after_gesture": true,
+  "dock_specific_taps": "Pending requested native Artifacts dock corrections; this test exercises native header Zoom and Fit Page, then the library row.",
+  "continuous_pdf_native_gesture_case": "Pending; earlier small PDF native menu/navigation worked but did not establish genuine pinch acceptance.",
+  "physical_duo": {
+    "installed": "0.90.6 (6)",
+    "latest_observed_lock_state": "locked",
+    "new_artifacts_acceptance": false,
+    "real_accounts_or_artifacts_edited": false
+  },
+  "native_regular_suite": {
+    "iphone": {
+      "passed": 25,
+      "failed": 0
+    },
+    "duo": {
+      "passed": 17,
+      "failed": 8,
+      "failure_disposition": "Unresolved software-keyboard didShow failures. The same symptom was observed on build6; owner toggle and simulator restart did not resolve it. No assertions relaxed."
+    }
+  },
+  "specific_original_fit_width_lock": "Unresolved; this synthetic twenty-page Word fallback did not reproduce an overlay or layout stall. Original file identity unknown.",
+  "owner_new_scope": "Move Artifacts zoom/actions/refresh/filter/sort to Duo native dock; native production commits will be separate.",
+  "published_release_or_backend_changes": false
+}
