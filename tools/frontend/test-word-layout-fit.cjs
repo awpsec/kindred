@@ -33,15 +33,15 @@ const engine=process.env.WEBKIT?'webkit':'chromium',out=process.env.KINDRED_TEST
 
    if(width===390&&cycle===0){
     const gesture=await page.evaluate(async()=>{
-     const n=document.querySelector('.document-word'),paper=n.shadowRoot.querySelector('.paper'),r=n.getBoundingClientRect(),start=Number(paper.style.zoom);
+     const n=document.querySelector('.document-word'),paper=n.shadowRoot.querySelector('.paper'),r=n.getBoundingClientRect(),start=Number(paper.style.zoom),section=paper.querySelector('section.docx'),startWidth=section.getBoundingClientRect().width;
      const fire=(type,touches)=>{const e=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(e,'touches',{value:touches});n.dispatchEvent(e);return e.defaultPrevented;};
      const points=d=>[{clientX:r.left+r.width/2-d/2,clientY:r.top+100},{clientX:r.left+r.width/2+d/2,clientY:r.top+100}];
      const oneFinger=fire('touchstart',[points(100)[0]]);
      fire('touchstart',points(100));fire('touchmove',points(200));await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
-     const scaled=Number(paper.style.zoom);fire('touchcancel',[]);n.scrollLeft=40;
-     return {oneFinger,start,scaled,panning:n.scrollLeft>0,ended:!n.hasAttribute('data-document-pinching')};
+     const duringLayout=Number(paper.style.zoom),scaled=start*section.getBoundingClientRect().width/startWidth;fire('touchcancel',[]);const committed=Number(paper.style.zoom);n.scrollLeft=40;
+     return {oneFinger,start,scaled,duringLayout,committed,panning:n.scrollLeft>0,ended:!n.hasAttribute('data-document-pinching')};
     });
-    assert.equal(gesture.oneFinger,false,'one-finger pan remains native');assert(Math.abs(gesture.scaled-gesture.start*2)<.02,'pinch scales actual Word paper');assert(gesture.panning&&gesture.ended,'zoomed Word surface pans and cancellation releases the gesture');
+    assert.equal(gesture.oneFinger,false,'one-finger pan remains native');assert.equal(gesture.duringLayout,gesture.start,'pinch retains the text layout scale while fingers move');assert(Math.abs(gesture.scaled-gesture.start*2)<.02,'pinch visually scales actual Word paper');assert(Math.abs(gesture.committed-gesture.start*2)<.02,'gesture end commits the new layout scale');assert(gesture.panning&&gesture.ended,'zoomed Word surface pans and cancellation releases the gesture');
    }
    const cleanup=await page.evaluate(async()=>{const n=document.querySelector('.document-word'),paper=n.shadowRoot.querySelector('.paper');window.wordHandle.dispose();const zoom=paper.style.zoom;for(let i=0;i<3;i++)await new Promise(requestAnimationFrame);return {removed:!document.querySelector('.document-inline'),zoomUnchanged:paper.style.zoom===zoom};});
    assert.deepEqual(cleanup,{removed:true,zoomUnchanged:true});
