@@ -185,9 +185,12 @@ export async function renderWordLayout(buffer,name){
   const content=root.querySelector('.paper');
   if(!content)return;
   content.style.minWidth='0';content.style.margin='0 auto';
+  // Measure before applying zoom. WebKit rounds offset sizes differently at
+  // fractional zooms; feeding those rounded sizes back into fit causes drift.
+  const sections=[...content.querySelectorAll('section.docx')],natural={width:Math.max(0,...sections.map(n=>n.offsetWidth)),height:Math.max(0,...sections.map(n=>n.offsetHeight))};
   let settledScale=1;
   content.style.transformOrigin='0 0';
-  zoom=documentZoom(body,page,()=>({width:Math.max(0,...[...content.querySelectorAll('section.docx')].map(n=>n.offsetWidth)),height:Math.max(0,...[...content.querySelectorAll('section.docx')].map(n=>n.offsetHeight))}),(scale,preview)=>{
+  zoom=documentZoom(body,page,()=>natural,(scale,preview)=>{
    // Scale the retained text while fingers move. Repeated CSS zoom changes
    // re-rasterize Word's glyphs and make their hinting visibly tremble.
    // Commit the document's layout zoom once, with its focal point retained.
