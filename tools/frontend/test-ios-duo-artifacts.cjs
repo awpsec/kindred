@@ -71,6 +71,28 @@ function pdf(count){
   await refresh.evaluate(n=>n.disabled=false);await settle();
   const old=await p.locator('.ios-document-zoom-menu').elementHandle();assert(await perform({action:'refresh'},await read()));
   await p.waitForFunction(n=>!n.isConnected,old);await p.locator('.document-pdf-page canvas').first().waitFor();await p.waitForFunction(()=>/%$/.test(document.querySelector('.ios-document-zoom-trigger')?.textContent||''));
+  await zoomAction('Fit width');
+  const level=()=>p.locator('.ios-document-zoom-trigger').textContent().then(v=>Number(v.replace('%','')));
+  const fitted=await level();await p.locator('.document-pdf-page canvas').first().waitFor();
+  const animated=await p.evaluate(async()=>{
+   document.documentElement.dataset.motion='on';const surface=document.querySelector('.document-pdf'),r=surface.getBoundingClientRect(),canvas=surface.querySelector('canvas');
+   surface.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:r.x+r.width/2,clientY:r.y+140}));
+   await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+   return {moving:surface.hasAttribute('data-document-pinching'),retained:canvas.isConnected,scale:visualViewport.scale};
+  });
+  assert(animated.moving&&animated.retained,'double-tap animates retained document pixels');assert.equal(animated.scale,1);
+  await p.waitForFunction(()=>!document.querySelector('.document-pdf').hasAttribute('data-document-pinching'));
+  assert(await level()>fitted*1.5,'double-tap zooms the document');
+  await p.locator('.document-pdf').dblclick({position:{x:200,y:140}});
+  await p.waitForFunction(()=>!document.querySelector('.document-pdf').hasAttribute('data-document-pinching'));
+  assert(Math.abs(await level()-fitted)<=1,'second double-tap restores the previous fit');
+  const reduced=await p.evaluate(async()=>{
+   document.documentElement.dataset.motion='off';const surface=document.querySelector('.document-pdf'),r=surface.getBoundingClientRect();
+   surface.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:r.x+r.width/2,clientY:r.y+140}));await new Promise(requestAnimationFrame);
+   return {moving:surface.hasAttribute('data-document-pinching'),level:parseFloat(document.querySelector('.ios-document-zoom-trigger').textContent),scale:visualViewport.scale};
+  });
+  assert(!reduced.moving&&reduced.level>fitted*1.5,'Reduce motion settles double-tap in one frame');assert.equal(reduced.scale,1);
+  await zoomAction('Fit page');
   const beforeSwitch=await read();
   await p.locator('[data-artifact-id="duo-doc-0"]').click();await p.locator('.document-pdf-page canvas').first().waitFor();await settle();
   assert.notEqual((await read()).owner,beforeSwitch.owner,'switching documents invalidates delayed dock actions');assert.equal(await perform({action:'refresh'},beforeSwitch),false);
