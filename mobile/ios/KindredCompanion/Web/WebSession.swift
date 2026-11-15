@@ -37,6 +37,7 @@ final class WebPresentationState {
     var artifactLibraryVisible = false
     var artifactControls: DuoArtifactControls?
     var toolbarVertical = false
+    var reduceMotion = false
     var toolbarLength: CGFloat = 280
 }
 
@@ -671,6 +672,7 @@ final class WebSession: NSObject {
                 let animate = presentation.hasLoadedChats && presentation.usesNativeRail &&
                     !UIAccessibility.isReduceMotionEnabled && (body["reduceMotion"] as? Bool != true)
                 withAnimation(animate ? .smooth(duration: 0.28) : nil) {
+                    presentation.reduceMotion = body["reduceMotion"] as? Bool == true
                     presentation.route = route
                     presentation.chatTitle = title
                     presentation.collaboration = route == "bot-chat" ? (body["collaboration"] as? [String: Any]).flatMap(NativeCollaborationStatus.init) : nil
