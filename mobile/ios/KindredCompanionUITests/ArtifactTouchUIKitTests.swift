@@ -38,7 +38,7 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         XCTAssertTrue(zoom.waitForExistence(timeout:10));zoom.tap()
         let fit=app.buttons["Fit width"];XCTAssertTrue(fit.waitForExistence(timeout:8));fit.tap()
         wait("fit-width-menu-dismissed"){$0["fit"] as? String=="Fit width" && $0["nativeMenuPresented"] as? Bool==false}
-                capture("native-fit-width")
+        capture("native-fit-width")
         if isDuo {
             XCTAssertTrue(state()["nativeDock"] as? Bool==true)
             XCTAssertFalse(state()["headerZoomVisible"] as? Bool==true,"No duplicate header zoom after dock takes ownership")
@@ -70,6 +70,19 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         capture("native-pan")
         zoom.tap();let page=app.buttons["Fit page"];XCTAssertTrue(page.waitForExistence(timeout:8));page.tap()
         wait("fit-page-after-real-gesture"){$0["fit"] as? String=="Fit page" && $0["nativeMenuPresented"] as? Bool==false}
+        if isDuo {
+            if state()["libraryVisible"] as? Bool != true {
+                let back=app.buttons["Artifact list"];XCTAssertTrue(back.exists);back.tap()
+                wait("cover-hamburger-restores-library"){$0["libraryVisible"] as? Bool==true}
+                capture("native-cover-library")
+            }
+            let filter=app.buttons["kindred-duo-artifact-filter"];XCTAssertTrue(filter.exists);filter.tap()
+            let name=app.buttons["Name A–Z"]
+            if !name.waitForExistence(timeout:2),app.buttons["Sort artifacts"].exists {app.buttons["Sort artifacts"].tap()}
+            XCTAssertTrue(name.waitForExistence(timeout:8));name.tap()
+            wait("native-sort-selection-applied"){$0["sortValue"] as? String=="name"}
+            capture("native-library-sort")
+        }
         let s=state()
         if s["libraryVisible"] as? Bool==true,let row=s["row"] as? [String:Double],let x=row["x"],let y=row["y"] {
             web.coordinate(withNormalizedOffset:.zero).withOffset(CGVector(dx:x,dy:y)).tap()
