@@ -36,7 +36,14 @@ const root=path.resolve(__dirname,'../..'),out=process.env.KINDRED_TEST_ARTIFACT
   await page.locator('#bot-center-library').waitFor({state:'visible'});
   await page.locator('.bot-library-open').getByText('Project notes.md',{exact:true}).waitFor();
   await page.screenshot({path:path.join(out,(legacy?'installed':'current')+'-library.png')});
-  await page.getByRole('button',{name:'Open Project notes.md',exact:true}).click();
+  const fileRow=page.locator('.bot-library-row').filter({hasText:'Project notes.md'});
+  assert(await fileRow.evaluate(n=>n.classList.contains('is-compact')));
+  assert(await fileRow.locator('.bot-library-meta').isVisible());
+  assert(await fileRow.locator('.bot-library-preview-button').isVisible());
+  for(const action of await fileRow.locator('.bot-library-preview-button,.bot-library-download').all()){
+   const b=await action.boundingBox();assert(b.width>=44&&b.height>=44,'library file actions keep touch targets');
+  }
+  await fileRow.locator('.bot-library-preview-button').click();
   await page.locator('.document-dialog').waitFor({state:'visible'});
   await page.locator('.document-dialog').getByRole('button',{name:'Close preview',exact:true}).click();
   await page.locator('.document-dialog').waitFor({state:'detached'});

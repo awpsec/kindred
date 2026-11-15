@@ -7,7 +7,8 @@ const letters=n=>{let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCod
 // fit is capped at actual size; an explicit zoom remains stable across resizing.
 function documentZoom(body, surface, dimensions, apply, initialMode='page') {
  const scope=body.parentElement,toolbar=el('div','document-zoom');toolbar.setAttribute('role','group');toolbar.setAttribute('aria-label','Document zoom');
- let mode=initialMode,scale=1,manual=1,frame=0,disposed=false;
+ let mode=initialMode,scale=1,manual=1,frame=0,disposed=false,pinch=null,pinchPoint=null;
+ surface.classList.add('document-touch-surface');
  const minus=button('−',()=>adjust(-.1)),plus=button('+',()=>adjust(.1)),value=el('output','document-zoom-value');
  minus.setAttribute('aria-label','Zoom out');plus.setAttribute('aria-label','Zoom in');value.setAttribute('aria-label','Zoom level');
  const fitPage=button('Fit page',()=>setMode('page')),fitWidth=button('Fit width',()=>setMode('width'));
@@ -20,21 +21,47 @@ function documentZoom(body, surface, dimensions, apply, initialMode='page') {
   const height=surface.clientHeight-(parseFloat(css.paddingTop)||0)-(parseFloat(css.paddingBottom)||0);
   if(width<=0||height<=0||!size.width||!size.height)return;
   scale=mode==='manual'?manual:Math.max(.05,Math.min(1,width/size.width,mode==='page'?height/size.height:Infinity));
-  apply(scale);value.textContent=Math.round(scale*100)+'%';
+  const anchor=pinchPoint&&pinch?.anchor;
+  apply(scale);
+  if(anchor?.node.isConnected){const r=anchor.node.getBoundingClientRect();surface.scrollLeft+=r.left+r.width*anchor.x-pinchPoint.x;surface.scrollTop+=r.top+r.height*anchor.y-pinchPoint.y;}
+  const label=Math.round(scale*100)+'%';if(value.textContent!==label)value.textContent=label;
   minus.disabled=scale<=.25;plus.disabled=scale>=3;
   fitPage.setAttribute('aria-pressed',String(mode==='page'));fitWidth.setAttribute('aria-pressed',String(mode==='width'));
  }
  function schedule(){if(!disposed&&!frame)frame=requestAnimationFrame(refresh);}
- function setMode(next){mode=next;schedule();}
+ function setMode(next){finishPinch();mode=next;schedule();}
  function adjust(delta){manual=Math.max(.25,Math.min(3,Math.round(((mode==='manual'?manual:scale)+delta)*100)/100));mode='manual';schedule();}
  const key=event=>{
   if(!(event.ctrlKey||event.metaKey)||event.altKey||event.target.closest?.('input,textarea,[contenteditable="true"]'))return;
   if(['+','=','-','0'].includes(event.key)){event.preventDefault();event.stopPropagation();if(event.key==='0')setMode(initialMode);else adjust(event.key==='-'?-.1:.1);}
  };
  const wheel=event=>{if(!event.ctrlKey&&!event.metaKey)return;event.preventDefault();event.stopPropagation();if(event.deltaY)adjust(event.deltaY<0?.1:-.1);};
+ // Preserve native one-finger scrolling. Only a two-finger gesture belongs
+ // to document zoom, and it never changes the app's viewport scale.
+ const touchPair=touches=>{if(touches.length!==2)return null;const [a,b]=touches;return {distance:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};};
+ const touchStart=event=>{
+  const point=touchPair(event.touches);if(!point||point.distance<1)return;
+  const nodes=[...surface.querySelectorAll('.document-pdf-page'),...(surface.shadowRoot?.querySelectorAll('section.docx')||[])];
+  const node=nodes.find(n=>{const r=n.getBoundingClientRect();return r.top<=point.y&&r.bottom>=point.y;})||nodes[0]||surface.shadowRoot?.querySelector('.paper')||surface.firstElementChild;
+  const r=node?.getBoundingClientRect();
+  pinch={distance:point.distance,scale,anchor:r?.width&&r?.height?{node,x:(point.x-r.left)/r.width,y:(point.y-r.top)/r.height}:null};pinchPoint=point;
+  surface.dataset.documentPinching='true';event.preventDefault();
+ };
+ const touchMove=event=>{
+  const point=touchPair(event.touches);if(!pinch||!point)return;
+  event.preventDefault();pinchPoint=point;manual=Math.max(.05,Math.min(3,pinch.scale*point.distance/pinch.distance));mode='manual';schedule();
+ };
+ function finishPinch(){
+  if(!pinch)return;
+  cancelAnimationFrame(frame);refresh();pinch=null;pinchPoint=null;delete surface.dataset.documentPinching;
+  surface.dispatchEvent(new Event('kindred-document-pinch-end'));
+ }
+ const touchEnd=event=>{if(event.touches.length!==2)finishPinch();};
+ surface.addEventListener('touchstart',touchStart,{passive:false});surface.addEventListener('touchmove',touchMove,{passive:false});
+ surface.addEventListener('touchend',touchEnd);surface.addEventListener('touchcancel',finishPinch);
  scope.addEventListener('keydown',key);surface.addEventListener('wheel',wheel,{passive:false});
  const observer=new ResizeObserver(schedule);observer.observe(surface);schedule();
- return {refresh:schedule,dispose:()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();scope.removeEventListener('keydown',key);surface.removeEventListener('wheel',wheel);toolbar.remove();}};
+ return {refresh:schedule,dispose:()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();pinch=null;delete surface.dataset.documentPinching;surface.removeEventListener('touchstart',touchStart);surface.removeEventListener('touchmove',touchMove);surface.removeEventListener('touchend',touchEnd);surface.removeEventListener('touchcancel',finishPinch);scope.removeEventListener('keydown',key);surface.removeEventListener('wheel',wheel);toolbar.remove();}};
 }
 // Static Word content never navigates a subframe. WKWebView passes srcdoc
 // navigation through the native origin guard, which correctly rejects it.
@@ -134,17 +161,17 @@ function renderContinuousPdf(pdf, name, body, foot, paginatedWord, firstSize) {
  const viewport=el('div','document-pdf document-pdf-continuous');
  viewport.tabIndex=0;viewport.setAttribute('role','region');viewport.setAttribute('aria-label',name+' pages');
  body.replaceChildren(viewport);
- let disposed=false,frame=0,rendering=false,active=null,zoomScale=0,revision=0,resolveReady;
+ let disposed=false,frame=0,rendering=false,active=null,zoomScale=0,revision=0,resolveReady,pinchDirty=false;
  const ready=new Promise(resolve=>{resolveReady=resolve;});
  const pages=[],near=new Set();
  const release=entry=>{if(entry.canvas){entry.canvas.width=0;entry.canvas.height=0;entry.canvas.remove();entry.canvas=null;}};
  const schedule=()=>{if(!disposed&&!frame)frame=requestAnimationFrame(update);};
  const renderNext=async()=>{
-  if(rendering||disposed)return;rendering=true;
+  if(rendering||disposed||viewport.dataset.documentPinching)return;rendering=true;
   try{
-   while(!disposed){
+   while(!disposed&&!viewport.dataset.documentPinching){
     const mid=viewport.getBoundingClientRect().top+viewport.clientHeight/2;
-    const entry=[...near].filter(p=>!p.canvas&&!p.failed).sort((a,b)=>Math.abs(a.node.getBoundingClientRect().top-mid)-Math.abs(b.node.getBoundingClientRect().top-mid))[0];
+    const entry=[...near].filter(p=>(!p.canvas||p.renderedScale!==zoomScale)&&!p.failed).sort((a,b)=>Math.abs(a.node.getBoundingClientRect().top-mid)-Math.abs(b.node.getBoundingClientRect().top-mid))[0];
     if(!entry)break;
     const version=revision;let page=null,canvas=null;
     entry.node.setAttribute('aria-busy','true');
@@ -159,7 +186,7 @@ function renderContinuousPdf(pdf, name, body, foot, paginatedWord, firstSize) {
      active={entry,task:page.render({canvasContext:canvas.getContext('2d'),viewport:view})};
      await active.task.promise;
      if(disposed||version!==revision||!near.has(entry))continue;
-     entry.canvas=canvas;entry.node.append(canvas);canvas=null;resolveReady();schedule();
+     release(entry);entry.canvas=canvas;entry.renderedScale=zoomScale;entry.node.append(canvas);canvas=null;resolveReady();schedule();
     }catch(error){
      if(!disposed&&version===revision&&near.has(entry)&&error.name!=='RenderingCancelledException'){
       entry.failed=true;entry.node.append(el('p','document-status','Could not render this page. Download to view the original.'));resolveReady();
@@ -191,6 +218,8 @@ function renderContinuousPdf(pdf, name, body, foot, paginatedWord, firstSize) {
   node.setAttribute('role','group');node.setAttribute('aria-label',`Page ${number} of ${pdf.numPages}`);
   viewport.append(node);pages.push({node,number,size:firstSize,canvas:null,failed:false});
  }
+ const finishPinch=()=>{if(pinchDirty){pinchDirty=false;revision++;active?.task.cancel();}schedule();};
+ viewport.addEventListener('kindred-document-pinch-end',finishPinch);
  viewport.addEventListener('scroll',schedule,{passive:true});
  const zoom=documentZoom(body,viewport,()=>({width:Math.max(...pages.map(p=>p.size.width)),height:Math.max(...pages.map(p=>p.size.height))}),scale=>{
   if(scale!==zoomScale){
@@ -200,14 +229,15 @@ function renderContinuousPdf(pdf, name, body, foot, paginatedWord, firstSize) {
    const anchor=pages.find(p=>p.node.getBoundingClientRect().bottom>bounds.top);
    const offset=anchor?(bounds.top-anchor.node.getBoundingClientRect().top)/anchor.node.clientHeight:0;
    zoomScale=scale;revision++;active?.task.cancel();
-   for(const entry of pages){release(entry);entry.node.style.width=(entry.size.width*scale)+'px';}
+   pinchDirty ||= !!viewport.dataset.documentPinching;
+   for(const entry of pages){if(!viewport.dataset.documentPinching)release(entry);entry.node.style.width=(entry.size.width*scale)+'px';}
    // A pending fit must not move an end-of-document navigation back a page.
    if(atEnd)viewport.scrollTop=viewport.scrollHeight;
    else if(anchor)viewport.scrollTop+=anchor.node.getBoundingClientRect().top-bounds.top+offset*anchor.node.clientHeight;
   }
   schedule();
  });
- return {ready,dispose:()=>{if(disposed)return;disposed=true;revision++;resolveReady();cancelAnimationFrame(frame);zoom.dispose();viewport.removeEventListener('scroll',schedule);active?.task.cancel();for(const entry of pages)release(entry);near.clear();}};
+ return {ready,dispose:()=>{if(disposed)return;disposed=true;revision++;resolveReady();cancelAnimationFrame(frame);zoom.dispose();viewport.removeEventListener('kindred-document-pinch-end',finishPinch);viewport.removeEventListener('scroll',schedule);active?.task.cancel();for(const entry of pages)release(entry);near.clear();}};
 }
 // Treat Markdown attachments as editable source, never as document instructions.
 export function renderMarkdownSource(text,name){

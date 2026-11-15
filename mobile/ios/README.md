@@ -425,8 +425,11 @@ WebKit fixture checks cover menu actions, stale action rejection, timestamps,
 vertical scrolling and the portable press menu. Native tests cover UIKit menu
 construction. A physical press/swipe on an iPhone still needs hands-on checking.
 
-iOS also omits artifact source editing in the library and inline chat cards.
-Preview, refresh, creation, and metadata controls remain available. Established
+iOS exposes artifact editing, export/download, preview, refresh, creation, and
+metadata controls in the library and inline chat cards. The native Document
+actions menu keeps the header compact; shared save/conflict and unsaved-change
+checks apply. PDF and Word reading surfaces handle two-finger pinch separately
+from the fixed app viewport and retain native one-finger scrolling. Established
 web navigation stays in charge during route changes/reloads so opening an
 artifact cannot briefly restore the native account toolbar; a page failure
 still exposes native recovery controls.

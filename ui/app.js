@@ -2600,11 +2600,9 @@ async function settingsGeneral(revision) {
   const accentControl=node('span','accent-control');accentControl.append(accentSwatch,accent);
   const paintAccent=()=>accentSwatch.style.backgroundColor=accentColors.find(([id])=>id===accent.value)?.[2]||'#777777';paintAccent();accent.addEventListener('change',paintAccent);
   appearance.body.append(settingRow('Theme',theme),settingRow('Accent color',accentControl),motion.label);
-  if(!document.documentElement.hasAttribute('data-mobile')){
   const messageStyle=select([['bubbles','Chat bubbles'],['prose','Open text']],window.KindredBotMessageStyle.get());
   messageStyle.setAttribute('aria-label','Bot messages');messageStyle.onchange=()=>window.KindredBotMessageStyle.set(messageStyle.value);
   const messageStyleRow=settingRow('Bot messages',messageStyle);messageStyleRow.dataset.devicePreference='true';appearance.body.append(messageStyleRow);
-  }
   const interfaceFont=window.KindredInterfaceFont;
   if(interfaceFont&&!interfaceFont.systemManaged){
     const font=select([['inter','Inter'],['dm-sans','DM Sans'],['manrope','Manrope']],interfaceFont.get());
@@ -10084,7 +10082,7 @@ function renderAttachments(target, attachments) {
     }
     let end=index+1;while(end<attachments.length&&attachments[end].kind==='file'&&!chatMediaType(attachments[end]))end++;
     if(end-index>3){
-      const stack=node('details','document-stack'+(!window.__KINDRED_MOBILE&&!window.__KINDRED_MOBILE_PLATFORM?' compact-file-stack':'')),summary=node('summary','document-stack-summary'),copy=node('span','document-stack-copy'),body=node('div','document-stack-body chat-disclosure-body');
+      const stack=node('details','document-stack compact-file-stack'),summary=node('summary','document-stack-summary'),copy=node('span','document-stack-copy'),body=node('div','document-stack-body chat-disclosure-body');
       copy.append(node('strong','',(end-index)+' files'),node('span','muted',attachments.slice(index,end).map(a=>a.name||a.title||'File').join(' · ')));
       summary.append(icon('paperclip',18),copy,icon('chevron',16));stack.append(summary,body);
       for(let at=index;at<end;at++)renderAttachments(body,[attachments[at]]);
@@ -10700,7 +10698,7 @@ async function openBotLibraryItem(item,origin){
   const blob=await response.blob();if(state.token!==token)throw Error('Connection changed');if(blob.size>32*1024*1024)throw Error('Preview exceeds limit');return blob;
  }:null;
  const {openDocumentPreview}=await import('./document-preview.js');
- const delivery=!window.__KINDRED_MOBILE&&!window.__KINDRED_MOBILE_PLATFORM?botLibraryDownload(item):null;
+ const delivery=botLibraryDownload(item);
  await openDocumentPreview({card:origin,name,extension,getBlob,getPagePreview,download,createDownloadButton:delivery?()=>delivery.createButton():undefined,renderMarkdown:markdown,artifactPreview});
 }
 

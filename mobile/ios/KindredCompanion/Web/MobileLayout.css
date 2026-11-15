@@ -230,7 +230,6 @@ html[data-kindred-ios] .artifact-workbench-header { flex-direction:row; flex-wra
 html[data-kindred-ios] .artifact-workbench-title { flex:1; min-width:80px; }
 html[data-kindred-ios] .artifact-workbench-actions { margin-left:auto; }
 html[data-kindred-ios] .artifact-workbench-actions button { width:44px; height:44px; min-width:44px; min-height:44px; padding:11px; border-radius:50%; color:var(--fg); }
-html[data-kindred-ios] .artifact-workbench-actions button[aria-label=Download] { display:none; }
 html[data-kindred-ios] .ios-document-zoom { display:flex; align-items:center; flex:none; }
 html[data-kindred-ios] .artifact-studio .ios-document-zoom-trigger { width:64px; min-width:64px; height:44px; padding:0 8px; font-size:calc(13px * var(--text-scale,1)); font-variant-numeric:tabular-nums; }
 html[data-kindred-ios] .ios-document-zoom-menu { position:fixed; inset:auto; margin:0; width:220px; max-width:calc(100% - 16px); padding:6px; border:1px solid var(--line); border-radius:18px; background:var(--surface); color:var(--fg); }
@@ -240,7 +239,7 @@ html[data-kindred-ios] .ios-document-zoom-menu .document-zoom-value { display:no
 html[data-kindred-ios] .ios-document-zoom-menu button { min-height:44px; text-align:left; }
 html[data-kindred-ios] .document-body[data-ios-header-zoom] { overflow:hidden; }
 html[data-kindred-ios] .document-body[data-ios-header-zoom]>.document-word { flex:1; min-height:0; flex-shrink:1; }
-html[data-kindred-ios] :is(.artifact-workbench-actions button[aria-label^="Edit "],.artifact-workbench-actions button[aria-label="Finish editing"],.workspace-artifact-actions>button:first-child,[data-message-action=edit]) { display:none; }
+html[data-kindred-ios] [data-message-action=edit] { display:none; }
 html[data-kindred-ios] .artifact-workbench-body { padding:16px; }
 html[data-kindred-ios] .artifact-workbench-body:has(>.artifact-studio-preview) { padding:0; }
 html[data-kindred-ios] .artifact-studio :is(.artifact-new-dialog,.artifact-metadata-dialog) { max-width:calc(100% - 24px); max-height:calc(100% - 24px); overflow:auto; border-radius:24px; }
@@ -301,7 +300,7 @@ html[data-kindred-ios][data-ios-duo=true] .ios-artifact-navigation { height:0; m
 html[data-kindred-ios][data-ios-duo=true] #app .artifact-studio { display:block; }
 html[data-kindred-ios][data-ios-duo=true] #app .artifact-studio :is(.artifact-studio-library,.artifact-workbench) { position:absolute; inset:var(--ios-artifact-y,0px) auto auto var(--ios-artifact-x,0px); width:var(--ios-artifact-width,100%); height:var(--ios-artifact-height,100%); max-width:none; max-height:none; min-width:0; min-height:0; box-sizing:border-box; padding-bottom:12px; overflow:hidden; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-workbench-header [aria-label="Back to artifacts"] { display:none; }
-html[data-kindred-ios][data-ios-duo=true] .artifact-workbench-header>.ios-artifact-more { display:none; }
+html[data-kindred-ios][data-ios-duo=true] .artifact-workbench-header>.ios-artifact-more:not(.ios-artifact-document-actions) { display:none; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-studio>.ios-duo-resizer:not([hidden]) { display:block; position:absolute; width:24px; z-index:35; touch-action:none; user-select:none; -webkit-user-select:none; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-studio[data-ios-artifact-library-hidden=true]>.artifact-studio-library { opacity:0; pointer-events:none; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-studio[data-ios-artifact-compact=true] .artifact-studio-library :is(.artifact-studio-library-heading,.artifact-library-filters,.artifact-studio-library-search,.artifact-studio-library-status,.artifact-folder-heading,.artifact-library-copy,.artifact-item-pin,time) { display:none; }
@@ -732,3 +731,11 @@ html[data-kindred-ios] #composer :is(#composer-actions,#send,.dictation-button,.
 html[data-kindred-ios] #composer :is(#send,.dictation-button)::before{inset:7px;}
 html[data-kindred-ios] #composer .voice-start{position:relative;isolation:isolate;width:44px;height:44px;min-width:44px;min-height:44px;padding:0;background:transparent;}
 html[data-kindred-ios] #composer .voice-start::before{content:'';position:absolute;inset:7px;border-radius:50%;background:var(--user-bubble);z-index:-1;pointer-events:none;}
+
+/* Native WKWebView already owns viewport scaling. Settings values use the
+   same 13pt Dynamic Type base as their rows, not Safari's 16px focus floor. */
+html[data-kindred-ios] :is(#settings-dialog,#details-content,#bot-dialog,.voice-call-options,.app-detail-dialog,.server-admin-dialog) :is(input,textarea,select){font-size:calc(13px * var(--text-scale,1));}
+/* Native action sheets retain every shared action without a desktop toolbar. */
+html[data-kindred-ios] .artifact-workbench-actions[data-ios-document-actions]{position:fixed;inset:auto;margin:0;max-width:calc(100% - 16px);}
+html[data-kindred-ios] .artifact-workbench-actions[data-ios-document-actions]:not(:popover-open){display:none;}
+html[data-kindred-ios] .artifact-workbench-actions[data-ios-document-actions] button{width:100%;justify-content:flex-start;gap:8px;}

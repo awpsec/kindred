@@ -56,13 +56,34 @@ function pdf(count){
  await p.waitForFunction(()=>{const trigger=document.querySelector('.ios-document-zoom-trigger'),control=accountRequests.filter(v=>v.action==='glass-controls').at(-1)?.controls.find(c=>c.id==='artifact-zoom');return /%$/.test(trigger?.textContent||'')&&control?.title===trigger.textContent;});
  const zoomPlacement=await p.evaluate(()=>{const r=n=>{const b=n.getBoundingClientRect();return {top:b.top,bottom:b.bottom,left:b.left,right:b.right,height:b.height};};return {header:r(document.querySelector('.artifact-workbench-header')),trigger:r(document.querySelector('.ios-document-zoom-trigger')),body:r(document.querySelector('.document-body')),pages:r(document.querySelector('.document-pdf-continuous')),menu:getComputedStyle(document.querySelector('.ios-document-zoom-menu')).display};});
  assert(zoomPlacement.trigger.top>=zoomPlacement.header.top&&zoomPlacement.trigger.bottom<=zoomPlacement.header.bottom,'zoom belongs to the document header');assert(zoomPlacement.header.height<=80&&zoomPlacement.pages.top<=zoomPlacement.body.top+1,'no separate toolbar row takes document height');assert.equal(zoomPlacement.menu,'none');
- const nativeControls=await p.evaluate(()=>accountRequests.filter(v=>v.action==='glass-controls').at(-1).controls);assert(nativeControls.some(c=>c.id==='artifact-refresh'&&c.symbol==='arrow.clockwise'));
+ const nativeControls=await p.evaluate(()=>accountRequests.filter(v=>v.action==='glass-controls').at(-1).controls);assert(nativeControls.some(c=>c.id==='artifact-document-more'&&c.symbol==='ellipsis'));
  const zoomAction=async title=>{const count=await p.evaluate(()=>accountRequests.length);await zoom.click();await p.waitForFunction(count=>accountRequests.slice(count).some(v=>v.action==='native-menu'&&v.title.startsWith('Document zoom')),count);const model=await p.evaluate(()=>accountRequests.filter(v=>v.action==='native-menu').at(-1));assert.deepEqual(model.items.map(i=>i.title),['Zoom out','Zoom in','Fit page','Fit width']);await p.evaluate(id=>__kindredNativeMenus.perform(id),model.items.find(i=>i.title===title).id);};
  const initialZoom=Number((await zoom.textContent()).replace('%',''));await zoomAction('Zoom in');await p.waitForFunction(before=>Number(document.querySelector('.ios-document-zoom-trigger').textContent.replace('%',''))>before,initialZoom);
  await zoomAction('Fit width');await p.waitForFunction(()=>document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent==='Fit width');
+
+ await p.locator('.document-pdf-page canvas').first().waitFor();
+ await p.evaluate(()=>{
+  const surface=document.querySelector('.document-pdf-continuous'),r=surface.getBoundingClientRect();
+  window.documentTouch=(type,distance)=>{const event=new Event(type,{bubbles:true,cancelable:true});Object.defineProperty(event,'touches',{value:distance?[{clientX:r.left+r.width/2-distance/2,clientY:r.top+120},{clientX:r.left+r.width/2+distance/2,clientY:r.top+120}]:[]});surface.dispatchEvent(event);return event.defaultPrevented;};
+  window.pinchStartLevel=Number(document.querySelector('.ios-document-zoom-trigger').textContent.replace('%',''));
+  window.retainedPinchCanvas=surface.querySelector('canvas');
+  documentTouch('touchstart',100);documentTouch('touchmove',150);
+ });
+ await p.waitForFunction(()=>Number(document.querySelector('.ios-document-zoom-trigger').textContent.replace('%',''))>pinchStartLevel*1.35);
+ assert(await p.evaluate(()=>retainedPinchCanvas?.isConnected),'pinch keeps rendered pixels instead of blanking the document');
+ assert(await p.evaluate(()=>{documentTouch('touchend',0);return retainedPinchCanvas.isConnected;}),'settling zoom retains old pixels until the sharp replacement is ready');
+ await p.waitForFunction(()=>!document.querySelector('.document-pdf-continuous').hasAttribute('data-document-pinching'));
+ await p.locator('.document-pdf-page canvas').first().waitFor();
+ // A selected fit mode must settle rather than continually republishing zoom.
+ await p.evaluate(()=>{window.zoomMutations=0;window.zoomWatch=new MutationObserver(records=>zoomMutations+=records.length);zoomWatch.observe(document.querySelector('.document-zoom-value'),{childList:true,subtree:true});});
+ await p.waitForTimeout(500);assert(await p.evaluate(()=>zoomMutations)<4,'document zoom settles');
+ await p.evaluate(()=>zoomWatch.disconnect());
  await zoomAction('Fit page');await p.waitForFunction(()=>document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent==='Fit page');
  const previousZoom=await p.locator('.ios-document-zoom-menu').elementHandle();
- await p.getByRole('button',{name:'Refresh document',exact:true}).click();
+ await p.locator('.ios-artifact-document-actions').click();
+ await p.waitForFunction(()=>accountRequests.filter(v=>v.action==='native-menu').at(-1)?.title==='Document actions');
+ const actions=await p.evaluate(()=>accountRequests.filter(v=>v.action==='native-menu').at(-1));
+ await p.evaluate(id=>__kindredNativeMenus.perform(id),actions.items.find(i=>i.title==='Refresh document').id);
  // The previous canvas remains visible while Refresh is loading. Wait for the
  // replacement controller before starting fold/retention checks.
  await p.waitForFunction(n=>!n.isConnected,previousZoom);

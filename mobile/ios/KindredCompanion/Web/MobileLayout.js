@@ -203,9 +203,9 @@
   const messages = document.querySelector('.messages');
   if (messages) observeUI(adaptStops).observe(messages,{childList:true,subtree:true});
   adaptStops();
-  // Editing message/artifact source is a desktop workflow. Preserve reply,
+  // Message editing remains a separate mobile workflow. Preserve reply,
   // copy, reactions, previews and metadata controls in the iOS app.
-  const desktopEditControl = '[data-message-action="edit"],.artifact-workbench-actions button[aria-label^="Edit "],.artifact-workbench-actions button[aria-label="Finish editing"],.workspace-artifact-actions>button:first-child';
+  const desktopEditControl = '[data-message-action="edit"]';
   document.addEventListener('click', event => {
     const action = event.target.closest?.('button');
     const teaching = action?.id === 'teach-task' || (action?.closest('#composer-menu') && action.textContent.trim() === 'Teach a task');
@@ -428,8 +428,17 @@
     library.prepend(nav);
     const back = artifactButton('Back to artifacts', '<path d="M4 6h16M4 12h16M4 18h16"/>');
     const documentMore=artifactButton('More options', '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>');
-    documentMore.classList.add('ios-artifact-more');documentMore.setAttribute('aria-haspopup','menu');
-    documentMore.onclick=()=>openLibraryMenu(documentMore);
+    documentMore.classList.add('ios-artifact-more','ios-artifact-document-actions');documentMore.setAttribute('aria-haspopup','menu');
+    documentMore.setAttribute('aria-label','Document actions');
+    documentMore.onclick=()=>{
+      const actions=toolbar.querySelector('.artifact-workbench-actions');if(!actions)return;
+      lastMenuSource=documentMore;actions.togglePopover();
+    };
+    const placeDocumentActions=()=>{
+      const actions=toolbar.querySelector('.artifact-workbench-actions');if(!actions||actions.dataset.iosDocumentActions)return;
+      actions.dataset.iosDocumentActions='true';actions.setAttribute('popover','auto');actions.setAttribute('role','menu');actions.setAttribute('aria-label','Document actions');
+      for(const button of actions.querySelectorAll('button')){const label=document.createElement('span');label.textContent=button.getAttribute('aria-label')||button.title;button.append(label);}
+    };
     // Keep the renderer's zoom/fit closures and output alive, but put their
     // mobile entry point in the header instead of reserving a preview row.
     let headerZoom=null;
@@ -438,6 +447,7 @@
       headerZoom.observer.disconnect();headerZoom.holder.remove();delete headerZoom.body.dataset.iosHeaderZoom;headerZoom=null;
     };
     const placeHeaderZoom=()=>{
+      placeDocumentActions();
       if(headerZoom&&(!workbench.contains(headerZoom.body)||headerZoom.menu.parentElement!==headerZoom.body))clearHeaderZoom();
       const source=workbench.querySelector('.document-body>.document-zoom:not(.ios-document-zoom-menu)');
       if(source){

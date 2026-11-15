@@ -6395,11 +6395,11 @@ html[data-system-text-size] :is(.settings-dialog,.voice-call-options,.app-detail
 html[data-motion="off"] .client-update span{transition:none}
 @media(prefers-reduced-motion:reduce){.client-update span{transition:none}}
 
-/* Outcome first: desktop answers read as prose. Identity, progress, handoffs,
-   decisions and mobile message surfaces retain their separate treatments. */
-:root:not([data-mobile]):not([data-bot-message-style="bubbles"]) #content .conversation-answer>.message-row.assistant>.message-bubble{background:transparent;border:0;box-shadow:none;border-radius:0;padding:4px 0;max-width:100%}
+/* The device preference applies to completed bot answers on every platform.
+   Identity, progress, handoffs and decisions keep their own treatments. */
+:root[data-bot-message-style="prose"] #content .conversation-answer>.message-row.assistant>.message-bubble{background:transparent;border:0;box-shadow:none;border-radius:0;padding:4px 0;max-width:100%}
 /* Preserve the quote destination cue on prose outcomes without changing layout. */
-:root:not([data-mobile]):not([data-bot-message-style="bubbles"]) #content .conversation-answer.quoted-highlight>.message-row.assistant>.message-bubble{box-shadow:0 0 0 2px var(--muted);border-radius:6px}
+:root[data-bot-message-style="prose"] #content .conversation-answer.quoted-highlight>.message-row.assistant>.message-bubble{box-shadow:0 0 0 2px var(--muted);border-radius:6px}
 
 /* One stable email action row, with optional actions in a local popover. */
 .connector-artifact.email-notice{border:1px solid var(--line);border-radius:16px;background:var(--panel);box-shadow:none}
@@ -6476,7 +6476,7 @@ html[data-motion="off"] .client-update span{transition:none}
 }
 @media(pointer:coarse){.document-review button{min-height:44px;min-width:44px}}
 
-/* Desktop file rows share a quiet baseline with the working Library pane. */
+/* Shared file rows keep the same quiet baseline on desktop and mobile. */
 .deliverable-card.is-compact{border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none;margin:0;}
 .deliverable-card.is-compact:hover,.deliverable-card.is-compact:focus-within{background:var(--hover);border-color:var(--line);box-shadow:none;}
 .deliverable-card.is-compact .deliverable-heading{padding:12px 0;gap:9px;}
@@ -6551,3 +6551,7 @@ html[data-motion=off] .composer-file-remove{transition:none;}
 :root[data-motion="off"] .work-visual>*,:root[data-motion="off"] .work-phase-dots i{transition:none;animation:none}
 @media(prefers-reduced-motion:reduce){.work-visual>*,.work-phase-dots i{transition:none;animation:none}}
 :root[data-page-hidden] .work-phase-dots i{animation-play-state:paused!important}
+
+/* The document handles pinch zoom; native scrolling still owns one-finger pan. */
+.document-touch-surface{touch-action:pan-x pan-y;}
+.document-touch-surface[data-document-pinching]{overflow-anchor:none;scroll-behavior:auto;}

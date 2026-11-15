@@ -165,7 +165,7 @@ export function enhanceMarkdown(root,{sourceText}={}){
 const fileSvg=(path)=>{const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.7');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');svg.setAttribute('aria-hidden','true');const p=document.createElementNS(svg.namespaceURI,'path');p.setAttribute('d',path);svg.append(p);return svg;};
 export function fileCard(attachment,{getBlob,getPagePreview,nativeSave,nativeLookup,nativeReveal,nativeOpen,downloadScope,folderLabel,notice,renderMarkdown}){
  const name=attachment.name||attachment.title||'File',extension=name.split('.').pop().toLowerCase(),card=element('section','deliverable-card'),heading=element('div','deliverable-heading'),badge=element('span','deliverable-type'),copy=element('div','deliverable-copy');
- card.classList.toggle('is-compact',!window.__KINDRED_MOBILE&&!window.__KINDRED_MOBILE_PLATFORM);
+ card.classList.add('is-compact');
  const markdownFile=['md','markdown'].includes(extension);
  const kind=markdownFile?'source':['xlsx','xls','csv'].includes(extension)?'sheet':['docx','doc','txt'].includes(extension)?'word':extension==='pdf'?'pdf':'file';card.dataset.kind=kind;badge.dataset.kind=kind;badge.title=extension.toUpperCase()+' file';
  badge.append(fileSvg(kind==='sheet'?'M5 3h10l4 4v14H5z M14 3v5h5 M8 11h8v7H8z M8 14h8 M12 11v7':kind==='word'?'M5 3h10l4 4v14H5z M14 3v5h5 M8 12h8 M8 15h8 M8 18h5':kind==='source'?'m8 8-4 4 4 4m8-8 4 4-4 4m-3-10-2 12':kind==='pdf'?'M5 3h10l4 4v14H5z M14 3v5h5 M8 17c4-6 3-8 2-7s1 8 5 6-6-1-7 1':'M5 3h10l4 4v14H5z M14 3v5h5'));
