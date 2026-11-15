@@ -1,0 +1,10 @@
+{
+  "status": "production candidate; native pose and physical acceptance pending",
+  "base": "765cb3ce631132bd7070874c0f59c159be088d57",
+  "shared_ui_changes": false,
+  "scope": ["Duo native right dock: zoom, refresh, document actions", "Native artifact type and sort menu", "Existing action closures and disabled state retained", "Stale root/document menu protection", "Web header remains the iPhone and older-host fallback"],
+  "basic_checks": {"mobile_layout_javascript_syntax": "passed", "normal_simulator_app_build_ios_27_1": "passed"},
+  "not_yet_accepted": ["actual native dock gestures in every Duo pose", "iPhone document control regression", "physical Duo original Fit Width case"],
+  "diagnostic_app_included": false,
+  "publication_or_deployment": false
+}

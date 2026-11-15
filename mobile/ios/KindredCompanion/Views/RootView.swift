@@ -8,7 +8,6 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -139,81 +138,7 @@ struct RootView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         if #available(iOS 27.1, *), usesDuoNavigation, let session = activeSession {
-            let artifacts = ["artifacts", "artifact"].contains(session.presentation.route)
-            if #available(iOS 27.1, *), session.presentation.toolbarIdentity,
-               session.presentation.route == "bot-chat", session.presentation.botDetailsAvailable {
-                ToolbarItem(placement: .topBarTrailing) {
-                    ToolbarAvatarButton(image: BotToolbarAvatar(shape: session.presentation.botAvatarShape, color: session.presentation.botAvatarColor).image(scale: displayScale),
-                                        title: session.presentation.chatTitle + " details",
-                                        action: { session.performDuoAction(.botDetails) },
-                                        frameChanged: { session.updateToolbarIdentityFrame(inWindow: $0) },
-                                        collaboration: session.presentation.collaboration,
-                                        interrupt: { session.interruptCollaboration(key: $0) })
-                        .frame(width: 44, height: 44)
-                }
-                .axisBehavior(session.presentation.isDuoInner ? .automatic : .verticalPreferred)
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if !["chat-list", "artifacts"].contains(session.presentation.route) && !(["bot-chat", "artifact"].contains(session.presentation.route) && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {
-                    Button {
-                        session.performDuoAction(.back)
-                    } label: { Label(artifacts ? "Artifact list" : session.presentation.route == "bot-chat" ? "Chat list" : "Back",
-                                   systemImage: ["bot-chat", "artifact"].contains(session.presentation.route) ? "line.3.horizontal" : "chevron.backward") }
-                }
-                if session.presentation.route == "details" && session.presentation.botSettingsAvailable {
-                    Button {
-                        session.performDuoAction(.botSettings)
-                    } label: { Label("Bot settings", systemImage: "gearshape") }
-                }
-                if session.presentation.route == "computer" && session.presentation.computerExpandAvailable {
-                    Button {
-                        session.performDuoAction(.expandComputer)
-                    } label: {
-                        Label(session.presentation.computerExpanded ? "Collapse computer" : "Expand computer",
-                              systemImage: session.presentation.computerExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    }
-                }
-                if session.presentation.listToggleAvailable {
-                    Button {
-                        session.performDuoAction(.chats)
-                    } label: { Label(artifacts ? (session.presentation.listVisible ? "Hide artifact list" : "Show artifact list") : (session.presentation.listVisible ? "Hide chat list" : "Show chat list"), systemImage: "sidebar.left") }
-                }
-                if session.presentation.route == "bot-chat" || (session.presentation.route == "computer" && !session.presentation.hasBotCenter) {
-                    Button {
-                        session.performDuoAction(.computer)
-                    } label: { Label(session.presentation.route == "computer" ? "Close computer" : "Bot computer", systemImage: "desktopcomputer") }
-                }
-                if artifacts || session.presentation.route == "chat-list" || session.presentation.listVisible {
-                    Menu {
-                        Button("Settings", systemImage: "gearshape") { session.performDuoAction(.settings) }
-                        if artifacts {
-                            Button("Chats", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.chatHome) }
-                        } else {
-                            Button("Artifacts", systemImage: "folder") { session.performDuoAction(.artifacts) }
-                        }
-                        Button("Marketplace", systemImage: "square.grid.2x2") { session.performDuoAction(.marketplace) }
-                        Divider()
-                        Button("Manage accounts", systemImage: "person.crop.circle") { model.sheet = .accounts }
-                    } label: { Label("More options", systemImage: "ellipsis") }
-                }
-                if !artifacts && (session.presentation.route == "chat-list" || session.presentation.listVisible) {
-                    Button {
-                        session.performDuoAction(.search)
-                    } label: { Label("Search chats", systemImage: "magnifyingglass") }
-                    Menu {
-                        Button("New bot", systemImage: "plus") { session.performDuoAction(.newBot) }
-                        Button("New chat", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.newConversation) }
-                    } label: { Label("New conversation", systemImage: "plus") }
-                }
-                if session.presentation.route == "artifacts" || session.presentation.artifactLibraryVisible {
-                    Button {
-                        session.performDuoAction(.search)
-                    } label: { Label("Search artifacts", systemImage: "magnifyingglass") }
-                    Button {
-                        session.performDuoAction(.newChat)
-                    } label: { Label("New artifact", systemImage: "plus") }
-                }
-            }
+            DuoToolbarContent(session: session, manageAccounts: { model.sheet = .accounts })
         } else {
         ToolbarItem(placement: .principal) {
             if let account = model.activeAccount {
