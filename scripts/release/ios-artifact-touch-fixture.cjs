@@ -29,7 +29,7 @@ const server=https.createServer({cert:fs.readFileSync(cert),key:fs.readFileSync(
   const parts=route.split('/').filter(Boolean),item=items.find(item=>item.id===parts[2]);
   if(parts[3]==='preview'&&item?.id==='touch-one'){res.writeHead(503,{'Content-Type':'application/json'});return res.end(JSON.stringify({error:'Disposable fixture exercises Word layout fallback'}));}
   if(parts[3]==='preview'&&item){fixture.securityHeaders(req,res);res.writeHead(200,{'Content-Type':'application/pdf','Cache-Control':'no-store'});return res.end(pdf(item.title,item.id==="touch-pdf"?20:4));}
-  if(parts[3]==='file'&&item){res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});return res.end(item.id==='touch-one'?wordBytes:fs.readFileSync(path.join(root,'tools/frontend/fixtures/document-originals/original-v1.docx')));}
+  if(parts[3]==='file'&&item){res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});return res.end(item.language==='file'?wordBytes:fs.readFileSync(path.join(root,'tools/frontend/fixtures/document-originals/original-v1.docx')));}
   return json(parts.length===2?items:item||{error:'Unknown disposable artifact'});
  }
  return original(req,res);

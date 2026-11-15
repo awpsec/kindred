@@ -41,6 +41,7 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         web.pinch(withScale:1.6,velocity:1)
         wait("trusted-two-finger-zoom") { s in (s["trustedPairs"] as? Int ?? 0)>0 && (s["zoom"] as? Double ?? 0)>before*1.15 }
         XCTAssertEqual(state()["rootScale"] as? Double,1)
+        if document=="pdf"{XCTAssertGreaterThanOrEqual(state()["canvasMinDuringPinch"] as? Int ?? 0,1,"Real native pinch keeps a visible PDF canvas")}
         capture("native-pinch")
         let start=web.coordinate(withNormalizedOffset:CGVector(dx:0.75,dy:0.75)),end=web.coordinate(withNormalizedOffset:CGVector(dx:0.75,dy:0.35))
         start.press(forDuration:0.05,thenDragTo:end)

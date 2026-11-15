@@ -26,6 +26,7 @@ final class ArtifactTouchFixture: NSObject, WebSessionHost, WKNavigationDelegate
         window.__artifactUITarget="\(ProcessInfo.processInfo.environment["KINDRED_ARTIFACT_DOCUMENT"]=="pdf" ? "touch-pdf" : "touch-one")";
         window.__artifactUIProbe={opened:false,selected:false,trustedPairs:0,trustedTouches:0,generation:0,word:null};
         document.addEventListener('touchstart',event=>{const p=window.__artifactUIProbe;if(!event.isTrusted)return;p.trustedTouches++;if(event.touches.length===2&&event.target.closest?.('.document-word,.document-pdf'))p.trustedPairs++},{capture:true,passive:true});
+        for(const type of ['touchstart','touchmove','touchend'])document.addEventListener(type,event=>{const p=__artifactUIProbe,v=event.target.closest?.('.document-word,.document-pdf');if(!event.isTrusted||!v)return;if(event.touches.length===2){const [a,b]=event.touches,d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);if(!p.pairActive){p.pairStart=d;p.pairActive=true}p.pairLast=d;if(v.matches('.document-pdf'))p.canvasMin=Math.min(p.canvasMin??Infinity,v.querySelectorAll('canvas').length)}else if(type==='touchend')p.pairActive=false},{capture:true,passive:true});
         """,injectionTime:.atDocumentStart,forMainFrameOnly:true))
     }
     func webSession(_ session:WebSession,didReceive message:SessionMessage) {}
@@ -89,7 +90,7 @@ final class ArtifactTouchFixtureController:UIViewController {
             zoom:paper?Number(paper.style.zoom):parseFloat(document.querySelector('.ios-document-zoom-trigger')?.textContent||'0')/100,
             fit:document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent||'',
             scrollTop:v?.scrollTop||0,scrollLeft:v?.scrollLeft||0,rootScale:visualViewport?.scale||1,
-            trustedPairs:p.trustedPairs,trustedTouches:p.trustedTouches,generation:p.generation,
+            trustedPairs:p.trustedPairs,trustedTouches:p.trustedTouches,pinchStartDistance:p.pairStart||0,pinchLastDistance:p.pairLast||0,canvasMinDuringPinch:p.canvasMin??null,generation:p.generation,
             viewport:{width:innerWidth,height:innerHeight},
             libraryVisible:!!library&&!library.inert&&getComputedStyle(library).visibility!=='hidden'&&!!row?.getClientRects().length,
             row:r?{x:r.x+r.width/2,y:r.y+r.height/2}:null};
