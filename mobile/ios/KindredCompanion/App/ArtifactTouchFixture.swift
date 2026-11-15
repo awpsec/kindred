@@ -26,6 +26,7 @@ final class ArtifactTouchFixture: NSObject, WebSessionHost, WKNavigationDelegate
         window.__KINDRED_MOBILE=true;window.__KINDRED_MOBILE_PLATFORM='ios';
         window.__artifactUITarget="\(ProcessInfo.processInfo.environment["KINDRED_ARTIFACT_DOCUMENT"]=="pdf" ? "touch-pdf" : "touch-one")";
         window.__artifactUIProbe={opened:false,selected:false,trustedPairs:0,trustedTouches:0,generation:0,word:null};
+        fetch('/fixture/ready').then(r=>r.json()).then(v=>{window.__artifactUIProbe.rendererSHA=v.ui_sha256?.['document-preview.js']||''}).catch(()=>{});
         document.addEventListener('touchstart',event=>{const p=window.__artifactUIProbe;if(!event.isTrusted)return;p.trustedTouches++;if(event.touches.length===2&&event.target.closest?.('.document-word,.document-pdf'))p.trustedPairs++},{capture:true,passive:true});
         for(const type of ['touchstart','touchmove','touchend'])document.addEventListener(type,event=>{const p=__artifactUIProbe,v=event.target.closest?.('.document-word,.document-pdf');if(!event.isTrusted||!v)return;if(event.touches.length===2){const [a,b]=event.touches,d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);if(!p.pairActive){p.pairStart=d;p.pairActive=true}p.pairLast=d;if(v.matches('.document-pdf'))p.canvasMin=Math.min(p.canvasMin??Infinity,v.querySelectorAll('canvas').length)}else if(type==='touchend')p.pairActive=false},{capture:true,passive:true});
         """,injectionTime:.atDocumentStart,forMainFrameOnly:true))
@@ -124,7 +125,7 @@ final class ArtifactTouchFixtureController:UIViewController {
           if(v&&p.word!==v){p.word=v;p.generation++}
           const wordPages=v?.shadowRoot?.querySelectorAll('section.docx').length||0,pdfPages=v?.querySelectorAll('.document-pdf-page').length||0,pages=wordPages||pdfPages;
           const row=document.querySelector('[data-artifact-id="touch-two"]'),r=row?.getBoundingClientRect(),library=document.querySelector('.artifact-studio-library');
-          return JSON.parse(JSON.stringify({ready:pages===20&&(wordPages>0||!!v?.querySelector('canvas')),renderer:wordPages?'word-layout':'continuous-pdf',pages,opened:p.opened,selected:p.selected,nativeLayout:window.__KINDRED_IOS_LAYOUT||null,readyState:document.readyState,bodyText:document.body?.innerText.slice(0,200)||'',duoActions:!!window.__kindredDuoActions,mobile:window.__KINDRED_MOBILE===true,title:document.querySelector('.artifact-title-input')?.value||'',wordPages,
+          return JSON.parse(JSON.stringify({ready:pages===20&&(wordPages>0||!!v?.querySelector('canvas')),rendererSHA:p.rendererSHA||'',renderer:wordPages?'word-layout':'continuous-pdf',pages,opened:p.opened,selected:p.selected,nativeLayout:window.__KINDRED_IOS_LAYOUT||null,readyState:document.readyState,bodyText:document.body?.innerText.slice(0,200)||'',duoActions:!!window.__kindredDuoActions,mobile:window.__KINDRED_MOBILE===true,title:document.querySelector('.artifact-title-input')?.value||'',wordPages,
             zoom:paper?Number(paper.style.zoom):parseFloat(document.querySelector('.ios-document-zoom-trigger')?.textContent||'0')/100,
             fit:document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent||'',
             scrollTop:v?.scrollTop||0,scrollLeft:v?.scrollLeft||0,rootScale:visualViewport?.scale||1,pinching:v?.hasAttribute('data-document-pinching')||false,

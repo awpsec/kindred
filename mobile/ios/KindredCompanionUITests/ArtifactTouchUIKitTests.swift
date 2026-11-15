@@ -109,6 +109,7 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         var receipt:[[String:Any]]=[]
         func capture(_ label:String){var s=state();s["phase"]=label;receipt.append(s);let data=(try? JSONSerialization.data(withJSONObject:s,options:[.prettyPrinted,.sortedKeys])) ?? Data();let trace=XCTAttachment(data:data,uniformTypeIdentifier:"public.json");trace.name=label+"-state";trace.lifetime = .keepAlways;add(trace);let a=XCTAttachment(screenshot:app.screenshot());a.name=label;a.lifetime = .keepAlways;add(a)}
         wait("twenty-word-pages",timeout:60){$0["ready"] as? Bool == true}
+        wait("matching-document-renderer-source"){$0["rendererSHA"] as? String=="181f1b8f2583cd236c708c69d0f0c7af079608ae91da9bde4df45dabe486775a"}
         capture("word-ready")
         let web=app.webViews["artifact-touch-webview"]
         XCTAssertTrue(web.exists)
@@ -162,9 +163,11 @@ final class ArtifactTouchUIKitTests:XCTestCase {
             wait("dock-more-dismissed"){$0["nativeMenuPresented"] as? Bool==false}
         }
         wait("document-ready-before-double-tap"){$0["ready"] as? Bool==true}
+        if isDuo{reveal(zoom)};zoom.tap();let initialPage=app.buttons["Fit page"];XCTAssertTrue(initialPage.waitForExistence(timeout:8));initialPage.tap()
+        wait("fit-page-before-double-tap"){$0["fit"] as? String=="Fit page" && $0["nativeMenuPresented"] as? Bool==false}
         let fitted=state()["zoom"] as? Double ?? 0
         web.doubleTap()
-        wait("genuine-double-tap-zooms-document") {($0["zoom"] as? Double ?? 0)>fitted*1.3 && $0["pinching"] as? Bool != true}
+        wait("genuine-double-tap-fits-width") {$0["fit"] as? String=="Fit width" && $0["pinching"] as? Bool != true}
         XCTAssertEqual(state()["rootScale"] as? Double,1)
         capture("native-double-tap-zoom")
         web.doubleTap()
@@ -176,6 +179,10 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         XCTAssertEqual(state()["rootScale"] as? Double,1)
         if document=="pdf"{XCTAssertGreaterThanOrEqual(state()["canvasMinDuringPinch"] as? Int ?? 0,1,"Real native pinch keeps a visible PDF canvas")}
         capture("native-pinch")
+        let manual=state()["zoom"] as? Double ?? 0
+        web.doubleTap();wait("manual-double-tap-fits-width"){$0["fit"] as? String=="Fit width" && $0["pinching"] as? Bool != true}
+        web.doubleTap();wait("manual-double-tap-restores-zoom"){abs(($0["zoom"] as? Double ?? 0)-manual)<0.02 && $0["pinching"] as? Bool != true}
+        capture("native-manual-zoom-restore")
         let start=web.coordinate(withNormalizedOffset:CGVector(dx:0.75,dy:0.75)),end=web.coordinate(withNormalizedOffset:CGVector(dx:0.75,dy:0.35))
         start.press(forDuration:0.05,thenDragTo:end)
         wait("native-one-finger-pan"){($0["scrollTop"] as? Double ?? 0)>50}

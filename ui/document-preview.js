@@ -7,7 +7,7 @@ const letters=n=>{let s='';for(n++;n;n=Math.floor((n-1)/26))s=String.fromCharCod
 // fit is capped at actual size; an explicit zoom remains stable across resizing.
 function documentZoom(body, surface, dimensions, apply, initialMode='page') {
  const scope=body.parentElement,toolbar=el('div','document-zoom');toolbar.setAttribute('role','group');toolbar.setAttribute('aria-label','Document zoom');
- let mode=initialMode,scale=1,manual=1,frame=0,disposed=false,pinch=null,pinchPoint=null,tapZoom=null,tapRestore=null,tapCandidate=null,lastTap=null,lastTouchZoom=0;
+ let mode=initialMode,scale=1,manual=1,frame=0,disposed=false,pinch=null,pinchPoint=null,settling=null,tapZoom=null,tapRestore=null,tapCandidate=null,lastTap=null,lastTouchZoom=0;
  surface.classList.add('document-touch-surface');
  const minus=button('−',()=>adjust(-.1)),plus=button('+',()=>adjust(.1)),value=el('output','document-zoom-value');
  minus.setAttribute('aria-label','Zoom out');plus.setAttribute('aria-label','Zoom in');value.setAttribute('aria-label','Zoom level');
@@ -23,8 +23,8 @@ function documentZoom(body, surface, dimensions, apply, initialMode='page') {
   const target=mode==='manual'?manual:Math.max(.05,Math.min(1,width/size.width,mode==='page'?height/size.height:Infinity));
   const progress=tapZoom?.duration?Math.min(1,(performance.now()-tapZoom.started)/tapZoom.duration):1;
   scale=tapZoom?tapZoom.from+(target-tapZoom.from)*(1-Math.pow(1-progress,3)):target;
-  const point=pinchPoint||tapZoom?.point,anchor=pinchPoint&&pinch?.anchor||tapZoom?.anchor;
-  apply(scale);
+  const point=pinchPoint||tapZoom?.point||settling?.point,anchor=pinchPoint&&pinch?.anchor||tapZoom?.anchor||settling?.anchor;
+  apply(scale,!!pinch||!!tapZoom&&progress<1);
   if(anchor?.node.isConnected){const r=anchor.node.getBoundingClientRect();surface.scrollLeft+=r.left+r.width*anchor.x-point.x;surface.scrollTop+=r.top+r.height*anchor.y-point.y;}
   const label=Math.round(scale*100)+'%';if(value.textContent!==label)value.textContent=label;
   minus.disabled=scale<=.25;plus.disabled=scale>=3;
@@ -53,8 +53,7 @@ function documentZoom(body, surface, dimensions, apply, initialMode='page') {
   if(disposed||surface.closest('[inert],[hidden]'))return;
   finishPinch();cancelTapZoom();
   if(tapRestore){mode=tapRestore.mode;manual=tapRestore.manual;tapRestore=null;}
-  else if(scale>=2.99){mode='width';}
-  else {tapRestore={mode,manual};manual=Math.min(3,Math.max(1,scale*2));mode='manual';}
+  else {tapRestore={mode,manual};mode='width';}
   const reduced=document.documentElement.dataset.motion==='off'||matchMedia('(prefers-reduced-motion:reduce)').matches;
   tapZoom={from:scale,point,anchor:anchorAt(point),started:performance.now(),duration:reduced?0:180};
   surface.dataset.documentPinching='true';schedule();
@@ -75,7 +74,9 @@ function documentZoom(body, surface, dimensions, apply, initialMode='page') {
  };
  function finishPinch(){
   if(!pinch)return;
-  cancelAnimationFrame(frame);refresh();pinch=null;pinchPoint=null;delete surface.dataset.documentPinching;
+  cancelAnimationFrame(frame);refresh();
+  settling={point:pinchPoint,anchor:pinch.anchor};pinch=null;pinchPoint=null;
+  refresh();settling=null;delete surface.dataset.documentPinching;
   surface.dispatchEvent(new Event('kindred-document-pinch-end'));
  }
  const touchEnd=event=>{
@@ -87,7 +88,7 @@ function documentZoom(body, surface, dimensions, apply, initialMode='page') {
    event.preventDefault();lastTap=null;lastTouchZoom=now;doubleTap(candidate);
   }else lastTap={...candidate,time:now};
  };
- const doubleClick=event=>{if(!window.__KINDRED_MOBILE||window.__KINDRED_MOBILE_PLATFORM!=='ios'||performance.now()-lastTouchZoom<600||interactive(event))return;event.preventDefault();doubleTap({x:event.clientX,y:event.clientY});};
+ const doubleClick=event=>{if(!window.__KINDRED_MOBILE||window.__KINDRED_MOBILE_PLATFORM!=='ios'||lastTouchZoom>0&&performance.now()-lastTouchZoom<600||interactive(event))return;event.preventDefault();doubleTap({x:event.clientX,y:event.clientY});};
  const cancelTouch=()=>{tapCandidate=null;lastTap=null;finishPinch();};
  surface.addEventListener('touchstart',touchStart,{passive:false});surface.addEventListener('touchmove',touchMove,{passive:false});
  surface.addEventListener('touchend',touchEnd);surface.addEventListener('touchcancel',cancelTouch);surface.addEventListener('dblclick',doubleClick);
@@ -184,7 +185,15 @@ export async function renderWordLayout(buffer,name){
   const content=root.querySelector('.paper');
   if(!content)return;
   content.style.minWidth='0';content.style.margin='0 auto';
-  zoom=documentZoom(body,page,()=>({width:Math.max(0,...[...content.querySelectorAll('section.docx')].map(n=>n.offsetWidth)),height:Math.max(0,...[...content.querySelectorAll('section.docx')].map(n=>n.offsetHeight))}),scale=>{content.style.zoom=String(scale);});
+  let settledScale=1;
+  content.style.transformOrigin='0 0';
+  zoom=documentZoom(body,page,()=>({width:Math.max(0,...[...content.querySelectorAll('section.docx')].map(n=>n.offsetWidth)),height:Math.max(0,...[...content.querySelectorAll('section.docx')].map(n=>n.offsetHeight))}),(scale,preview)=>{
+   // Scale the retained text while fingers move. Repeated CSS zoom changes
+   // re-rasterize Word's glyphs and make their hinting visibly tremble.
+   // Commit the document's layout zoom once, with its focal point retained.
+   if(preview)content.style.transform='scale('+scale/settledScale+')';
+   else {content.style.zoom=String(scale);content.style.removeProperty('transform');settledScale=scale;}
+  });
  },dispose:()=>{zoom?.dispose();embedded.forEach(face=>document.fonts.delete(face));}};
 }
 // Keep the whole document in one scroll surface, but only retain canvases near
