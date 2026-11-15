@@ -2,13 +2,15 @@ import XCTest
 
 /// Uses XCTest's genuine multitouch injection; no constructed DOM TouchEvents.
 final class ArtifactTouchUIKitTests:XCTestCase {
-    func testTwentyPageWordNativeFitWidthPinchPanAndNavigation() throws {
+    func testTwentyPageWordNativeFitWidthPinchPanAndNavigation() throws { try documentGestures("word") }
+    func testTwentyPageConvertedPDFNativeFitWidthPinchPanAndNavigation() throws { try documentGestures("pdf") }
+    private func documentGestures(_ document:String) throws {
         #if !targetEnvironment(simulator)
         throw XCTSkip("This isolated loopback fixture is simulator-only")
         #else
         continueAfterFailure=false
         let app=XCUIApplication()
-        app.launchEnvironment=["KINDRED_ARTIFACT_TOUCH_UI_TEST":"1"]
+        app.launchEnvironment=["KINDRED_ARTIFACT_TOUCH_UI_TEST":"1","KINDRED_ARTIFACT_DOCUMENT":document]
         app.launch()
         defer{app.terminate()}
         let telemetry=app.staticTexts["artifact-touch-telemetry"]

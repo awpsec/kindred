@@ -23,6 +23,7 @@ final class ArtifactTouchFixture: NSObject, WebSessionHost, WKNavigationDelegate
         session.webView.accessibilityIdentifier = "artifact-touch-webview"
         session.webView.configuration.userContentController.addUserScript(WKUserScript(source:"""
         window.__KINDRED_MOBILE=true;window.__KINDRED_MOBILE_PLATFORM='ios';
+        window.__artifactUITarget="\(ProcessInfo.processInfo.environment["KINDRED_ARTIFACT_DOCUMENT"]=="pdf" ? "touch-pdf" : "touch-one")";
         window.__artifactUIProbe={opened:false,selected:false,trustedPairs:0,trustedTouches:0,generation:0,word:null};
         document.addEventListener('touchstart',event=>{const p=window.__artifactUIProbe;if(!event.isTrusted)return;p.trustedTouches++;if(event.touches.length===2&&event.target.closest?.('.document-word,.document-pdf'))p.trustedPairs++},{capture:true,passive:true});
         """,injectionTime:.atDocumentStart,forMainFrameOnly:true))
@@ -79,12 +80,12 @@ final class ArtifactTouchFixtureController:UIViewController {
           const p=window.__artifactUIProbe;if(!p)return {ready:false};
           const opener=document.querySelector('#artifacts-button');
           if(!p.opened&&document.querySelector('#prompt')?.getClientRects().length&&window.__KINDRED_NATIVE_GEOMETRY&&typeof opener?.onclick==='function'){p.opened=true;opener.click()}
-          if(!p.selected&&document.querySelector('[data-artifact-id="touch-one"]')?.getClientRects().length){p.selected=true;document.querySelector('[data-artifact-id="touch-one"]').click()}
+          if(!p.selected&&document.querySelector('[data-artifact-id="'+__artifactUITarget+'"]')?.getClientRects().length){p.selected=true;document.querySelector('[data-artifact-id="'+__artifactUITarget+'"]').click()}
           const v=document.querySelector('.document-word,.document-pdf'),paper=v?.shadowRoot?.querySelector('.paper');
           if(v&&p.word!==v){p.word=v;p.generation++}
-          const pages=v?.shadowRoot?.querySelectorAll('section.docx').length||0;
+          const wordPages=v?.shadowRoot?.querySelectorAll('section.docx').length||0,pdfPages=v?.querySelectorAll('.document-pdf-page').length||0,pages=wordPages||pdfPages;
           const row=document.querySelector('[data-artifact-id="touch-two"]'),r=row?.getBoundingClientRect(),library=document.querySelector('.artifact-studio-library');
-          return {ready:pages===20,opened:p.opened,selected:p.selected,nativeLayout:window.__KINDRED_IOS_LAYOUT||null,readyState:document.readyState,bodyText:document.body?.innerText.slice(0,200)||'',duoActions:!!window.__kindredDuoActions,mobile:window.__KINDRED_MOBILE===true,title:document.querySelector('.artifact-title-input')?.value||'',wordPages:pages,
+          return {ready:pages===20&&(wordPages>0||!!v?.querySelector('canvas')),renderer:wordPages?'word-layout':'continuous-pdf',pages,opened:p.opened,selected:p.selected,nativeLayout:window.__KINDRED_IOS_LAYOUT||null,readyState:document.readyState,bodyText:document.body?.innerText.slice(0,200)||'',duoActions:!!window.__kindredDuoActions,mobile:window.__KINDRED_MOBILE===true,title:document.querySelector('.artifact-title-input')?.value||'',wordPages,
             zoom:paper?Number(paper.style.zoom):parseFloat(document.querySelector('.ios-document-zoom-trigger')?.textContent||'0')/100,
             fit:document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent||'',
             scrollTop:v?.scrollTop||0,scrollLeft:v?.scrollLeft||0,rootScale:visualViewport?.scale||1,
