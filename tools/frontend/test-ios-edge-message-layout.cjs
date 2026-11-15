@@ -36,7 +36,16 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
    };
   });
   await page.waitForFunction(()=>!document.querySelector('#app').dataset.mobileResizing&&[...document.querySelectorAll('#content>*')].every(n=>n.getAnimations().every(a=>a.playState!=='running')));
-  const baseline=await page.evaluate(()=>edgeSample());
+  // The setup scroll queues a reading-lane measurement. Let that finish
+  // before comparing the gesture against the resting message geometry.
+  const baseline=await page.evaluate(async()=>{
+   let previous='',stable=0;
+   for(let i=0;i<60;i++){
+    await new Promise(requestAnimationFrame);const sample=edgeSample(),key=JSON.stringify(sample);
+    stable=key===previous?stable+1:0;previous=key;if(stable>=3)return sample;
+   }
+   throw Error('Reading geometry did not settle before the edge gesture');
+  });
   const compare=(sample,label)=>{
    const near=(a,b)=>assert(Math.abs(a-b)<1,label+': '+a+' != '+b);
    near(sample.paneWidth,baseline.paneWidth);near(sample.scroll,baseline.scroll);
