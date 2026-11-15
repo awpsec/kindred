@@ -1,10 +1,108 @@
 {
-  "status": "production candidate; native pose and physical acceptance pending",
+  "status": "normal signed build prepared; physical installation and acceptance pending owner unlock",
+  "native_source": "ce60d28f8672884867d03caeeb8be7bae519a160",
   "base": "765cb3ce631132bd7070874c0f59c159be088d57",
-  "shared_ui_changes": false,
-  "scope": ["Duo native right dock: zoom, refresh, document actions", "Native artifact type and sort menu", "Existing action closures and disabled state retained", "Stale root/document menu protection", "Web header remains the iPhone and older-host fallback"],
-  "basic_checks": {"mobile_layout_javascript_syntax": "passed", "normal_simulator_app_build_ios_27_1": "passed"},
-  "not_yet_accepted": ["actual native dock gestures in every Duo pose", "iPhone document control regression", "physical Duo original Fit Width case"],
-  "diagnostic_app_included": false,
-  "publication_or_deployment": false
+  "integrated_release_patches": [
+    "9ad050c",
+    "c924dee",
+    "aa405e4"
+  ],
+  "shared_renderer_commit": "57be029515af15f736aab8e7961c8d4d033d2f51",
+  "shared_renderer_sha256": "3dd225edb74c8c8331a33a155f36b1c73c401ce56c6881847c71e6db0350822f",
+  "scope": [
+    "Duo native Liquid Glass rail: document zoom, refresh and document actions",
+    "Native artifact type/sort controls",
+    "Direct Search and New first; contextual actions; Chats or Artifacts, Marketplace, Settings and Accounts last",
+    "Bounded scrolling above keyboard and within fitted native edge regions",
+    "Retained original handlers with root/document identity validation",
+    "Word/PDF anchored double-tap zoom and restore; two-finger pinch; single-finger native pan",
+    "Kindred and system Reduce Motion; iPhone compact native header fallback"
+  ],
+  "normal_build": {
+    "version": "0.90.7",
+    "private_build": "8",
+    "bundle_id": "dev.kindred.companion",
+    "team": "92Y82K5BUS",
+    "same_development_certificate": true,
+    "signature_verified": true,
+    "installed": false,
+    "diagnostic_artifact_host": false
+  },
+  "passed_checks": {
+    "production_dto_and_webhost_lifecycle": {
+      "source": "59e015e3e7a511bfd29f53dd660b9e92332b5e8b",
+      "passed": 6,
+      "failed": 0
+    },
+    "webkit": {
+      "source": "9209ac0a939aad80944f28929156801ad88c6de1",
+      "passed": 7,
+      "failed": 0,
+      "suites": [
+        "adaptive artifact dock and ownership",
+        "artifact/iPhone fallback",
+        "progress arrival",
+        "fixed chat list",
+        "fixed messages",
+        "activity receipts",
+        "sheets"
+      ]
+    },
+    "genuine_xcui": [
+      {
+        "source": "1cc7ed87413c77917b52df2250951553f60b9163",
+        "device": "Duo simulator iOS27.1",
+        "pose": "closed landscape",
+        "documents": [
+          "Word fallback20pages",
+          "converted DOCX/PDF20pages"
+        ],
+        "result": "passed"
+      },
+      {
+        "source": "10a002e201f60d44916819df6d494120b618471d",
+        "device": "Duo simulator iOS27.1",
+        "pose": "closed portrait",
+        "documents": [
+          "Word fallback20pages",
+          "converted DOCX/PDF20pages"
+        ],
+        "result": "passed"
+      },
+      {
+        "source": "1cc7ed87413c77917b52df2250951553f60b9163",
+        "device": "iPhone simulator iOS27.2",
+        "documents": [
+          "Word fallback20pages"
+        ],
+        "result": "passed"
+      },
+      {
+        "source": "10a002e201f60d44916819df6d494120b618471d",
+        "device": "iPhone simulator iOS27.2",
+        "documents": [
+          "converted DOCX/PDF20pages"
+        ],
+        "result": "passed"
+      }
+    ],
+    "gesture_checks": [
+      "real double-tap zoom/restore",
+      "trusted two-finger pinch",
+      "native pan",
+      "viewport remains unzoomed",
+      "Fit Width and Fit Page",
+      "refresh",
+      "native sort",
+      "document switching"
+    ]
+  },
+  "limitations": [
+    "Mac relocked before remaining native open/book/tabletop visual checks; browser geometry coverage includes these poses",
+    "Physical UI runner provisioning blocked: Xcode No Accounts and missing UITest runner profile",
+    "Duo auto-locked before normal app installation; physical acceptance is not claimed",
+    "Original specific live-document Fit Width report is not marked resolved solely from fixture results"
+  ],
+  "diagnostic_app_in_production": false,
+  "publication_or_production_deployment": false
 }
