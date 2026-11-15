@@ -150,6 +150,12 @@ final class ArtifactTouchFixtureController:UIViewController {
                 report["nativeCornerSafeArea"]=insets(web.edgeInsets(for:.safeArea(cornerAdaptation:.horizontal)))
                 report["nativeWebWindowFrame"]=rect(web.convert(web.bounds,to:window))
                 report["nativeWindowBounds"]=rect(window.bounds)
+                if let scene=window.windowScene, let status=scene.statusBarManager {
+                    report["nativeStatusBarFrame"]=rect(status.statusBarFrame)
+                    report["nativeStatusBarHidden"]=status.isStatusBarHidden
+                    report["nativeStatusBarWindowFrame"]=rect(window.convert(status.statusBarFrame,from:scene.coordinateSpace))
+                }
+                report["nativeOcclusionWindowFrames"]=web.reservedRegions(kind:.occlusion).filter{$0.isActive}.map{rect(web.convert($0.frame,to:window))}
                 report["nativeOverlayFrames"]=web.superview?.subviews.filter{$0 !== web && $0 !== self.fixture.session.glassControls}.map{["frame":rect($0.convert($0.bounds,to:window)),"safeArea":insets($0.safeAreaInsets)]}
             }
             if JSONSerialization.isValidJSONObject(report), let data=try? JSONSerialization.data(withJSONObject:report,options:[.sortedKeys]){self.telemetry.accessibilityValue=String(data:data,encoding:.utf8)}
