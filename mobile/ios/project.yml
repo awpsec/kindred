@@ -125,6 +125,19 @@ targets:
         TEST_TARGET_NAME: KindredCompanion
         DEVELOPMENT_TEAM: $(KINDRED_DEVELOPMENT_TEAM)
 schemes:
+  KindredArtifactAcceptanceTests:
+    build:
+      targets:
+        KindredCompanion: all
+        KindredCompanionUITests: [test]
+    test:
+      config: Personal
+      environmentVariables:
+        KINDRED_TEST_PHYSICAL_ARTIFACTS: "1"
+      targets:
+        - name: KindredCompanionUITests
+          selectedTests:
+            - ArtifactPhysicalAcceptanceTests
   KindredVoiceCaptureTests:
     build:
       targets:
