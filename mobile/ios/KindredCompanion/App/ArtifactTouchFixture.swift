@@ -107,7 +107,7 @@ final class ArtifactTouchFixtureController:UIViewController {
           if(v&&p.word!==v){p.word=v;p.generation++}
           const wordPages=v?.shadowRoot?.querySelectorAll('section.docx').length||0,pdfPages=v?.querySelectorAll('.document-pdf-page').length||0,pages=wordPages||pdfPages;
           const row=document.querySelector('[data-artifact-id="touch-two"]'),r=row?.getBoundingClientRect(),library=document.querySelector('.artifact-studio-library');
-          return {ready:pages===20&&(wordPages>0||!!v?.querySelector('canvas')),renderer:wordPages?'word-layout':'continuous-pdf',pages,opened:p.opened,selected:p.selected,nativeLayout:window.__KINDRED_IOS_LAYOUT||null,readyState:document.readyState,bodyText:document.body?.innerText.slice(0,200)||'',duoActions:!!window.__kindredDuoActions,mobile:window.__KINDRED_MOBILE===true,title:document.querySelector('.artifact-title-input')?.value||'',wordPages,
+          return JSON.parse(JSON.stringify({ready:pages===20&&(wordPages>0||!!v?.querySelector('canvas')),renderer:wordPages?'word-layout':'continuous-pdf',pages,opened:p.opened,selected:p.selected,nativeLayout:window.__KINDRED_IOS_LAYOUT||null,readyState:document.readyState,bodyText:document.body?.innerText.slice(0,200)||'',duoActions:!!window.__kindredDuoActions,mobile:window.__KINDRED_MOBILE===true,title:document.querySelector('.artifact-title-input')?.value||'',wordPages,
             zoom:paper?Number(paper.style.zoom):parseFloat(document.querySelector('.ios-document-zoom-trigger')?.textContent||'0')/100,
             fit:document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent||'',
             scrollTop:v?.scrollTop||0,scrollLeft:v?.scrollLeft||0,rootScale:visualViewport?.scale||1,
@@ -119,7 +119,7 @@ final class ArtifactTouchFixtureController:UIViewController {
             sortValue:document.querySelector('select[aria-label="Sort artifacts"]')?.value||'',
             previewRect:v?{x:v.getBoundingClientRect().x,y:v.getBoundingClientRect().y,width:v.clientWidth,height:v.clientHeight}:null,
             libraryVisible:!!library&&!library.inert&&getComputedStyle(library).visibility!=='hidden'&&!!row?.getClientRects().length,
-            row:r?{x:r.x+r.width/2,y:r.y+r.height/2}:null};
+            row:r?{x:r.x+r.width/2,y:r.y+r.height/2}:null}));
         })()
         """){[weak self] value,error in
             guard let self else{return};self.publishing=false
@@ -128,7 +128,7 @@ final class ArtifactTouchFixtureController:UIViewController {
             report["nativeURL"]=self.fixture.session.webView.url?.absoluteString ?? "none"
             report["nativeLoading"]=self.fixture.session.webView.isLoading
             report["nativeFailure"]=String(describing:self.fixture.session.loadState.failure)
-            if let data=try? JSONSerialization.data(withJSONObject:report,options:[.sortedKeys]){self.telemetry.accessibilityValue=String(data:data,encoding:.utf8)}
+            if JSONSerialization.isValidJSONObject(report), let data=try? JSONSerialization.data(withJSONObject:report,options:[.sortedKeys]){self.telemetry.accessibilityValue=String(data:data,encoding:.utf8)}
         }
     }
     deinit{timer?.invalidate()}
