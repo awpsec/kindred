@@ -58,11 +58,10 @@ function pdf(count){
   assert.equal(await p.evaluate(root=>__kindredDuoArtifacts.ack(root),first.root),true);await settle();
   assert(await p.locator('.ios-document-zoom-trigger').isHidden());assert(await p.locator('.ios-artifact-document-actions').isHidden());assert(await p.locator('.artifact-library-filters').isHidden());
   const zoomAction=async title=>{
-   const count=await p.evaluate(()=>accountRequests.length);assert(await perform({action:'zoom'},await read()));
-   await p.waitForFunction(n=>accountRequests.slice(n).some(v=>v.action==='native-menu'&&v.title.startsWith('Document zoom')),count);
-   const model=await p.evaluate(()=>accountRequests.filter(v=>v.action==='native-menu').at(-1));
-   await p.evaluate(id=>__kindredNativeMenus.perform(id),model.items.find(i=>i.title===title).id);
+   const model=await read(),option=model.zoomOptions.find(option=>option.label===title);assert(option&&option.enabled);
+   assert(await perform({action:'zoom',value:option.id},model));
    await p.waitForFunction(title=>document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent===title,title);
+   assert.equal(await p.locator('.ios-document-zoom-menu').evaluate(n=>n.matches(':popover-open')),false,'native dock zoom never opens a hidden web popover');
   };
   await zoomAction('Fit width');await zoomAction('Fit page');
   assert.equal(await perform({action:'refresh'},{...first,root:'stale'}),false);

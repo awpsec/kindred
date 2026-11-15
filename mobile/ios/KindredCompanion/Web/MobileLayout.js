@@ -2115,6 +2115,13 @@
     download:'button[aria-label="Download"],button[aria-label="Download original"]',
     refresh:'button[aria-label="Refresh document"]',
   };
+  const artifactZoomButtons = root => {
+    const labels={out:'Zoom out',in:'Zoom in',page:'Fit page',width:'Fit width'};
+    return Object.entries(labels).flatMap(([id,label])=>{
+      const button=[...root.querySelectorAll('.ios-document-zoom-menu button')].find(node=>node.textContent.trim()===label);
+      return button?[{id,label,button}]:[];
+    });
+  };
   const artifactDockSnapshot = root => {
     if (!root || window.__KINDRED_IOS_DUO_ARTIFACT_CONTROLS !== 1) return null;
     const owner=root.querySelector('.artifact-workbench-actions');
@@ -2127,7 +2134,9 @@
       const select=root.querySelector(`.artifact-library-filters select[aria-label="${label}"]`);
       return !select?[]:[{id,label,value:select.value,options:[...select.options].map(option=>({value:option.value,label:option.textContent.trim().slice(0,100),enabled:!select.disabled&&!option.disabled}))}];
     });
-    return {root:artifactControlKey(root),owner:artifactControlKey(owner),zoom:owner&&/^[0-9]{1,3}%$/.test(zoom)?zoom:null,actions,filters};
+    const zoomOptions=artifactZoomButtons(root).map(({id,label,button})=>({id,label,enabled:!button.disabled&&button.getAttribute('aria-disabled')!=='true',selected:button.getAttribute('aria-pressed')==='true'}));
+    const hasZoom=owner&&/^[0-9]{1,3}%$/.test(zoom)&&zoomOptions.length===4;
+    return {root:artifactControlKey(root),owner:artifactControlKey(owner),zoom:hasZoom?zoom:null,zoomOptions:hasZoom?zoomOptions:[],actions,filters};
   };
   window.__kindredDuoArtifacts = {
     ack(key) {
@@ -2147,7 +2156,10 @@
       if (!current.owner || command.owner!==current.owner || root.dataset.iosArtifactView!=='document' || root.querySelector('.artifact-workbench')?.inert) return false;
       if (command.action==='zoom') {
         if (!current.zoom) return false;
-        openToolbarMenu(root.querySelector('.ios-document-zoom-trigger'),root.querySelector('.artifact-workbench'),'.ios-document-zoom-menu');return true;
+        const option=current.zoomOptions.find(option=>option.id===command.value&&option.enabled);
+        const target=option&&artifactZoomButtons(root).find(row=>row.id===option.id)?.button;
+        if (!target || target.disabled) return false;
+        target.click();publishDuoNavigation();return true;
       }
       if (!Object.hasOwn(artifactActionSelectors,command.action)) return false;
       const button=root.querySelector('.artifact-workbench-actions')?.querySelector(artifactActionSelectors[command.action]);
