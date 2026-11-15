@@ -8,6 +8,8 @@ const fixture=require(path.join(root,'tools/frontend/fixtures/desktop.cjs'));
 const original=fixture.server.listeners('request')[0];
 const hashes=Object.fromEntries(fs.readdirSync(path.join(root,'ui')).filter(name=>/\.(js|css|html|txt)$/.test(name)).sort().map(name=>[name,crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'ui',name))).digest('hex')]));
 const items=['one','two','three'].map((name,i)=>({id:'touch-'+name,title:'Touch review '+name,language:'markdown',source:'# Touch review '+name,state:{},revision:1,updated:1791302400-i,created:1791302400,type:'document'}));
+const wordBytes=fs.readFileSync(path.join(root,'tools/frontend/fixtures/document-originals/twenty-page-touch.docx'));
+items[0]={...items[0],title:'Twenty-page Word review',kind:'document',language:'file',source:'',path:'/artifacts/touch-one',chat_id:'dm-piper',archived:false,file:{id:'touch-word-file',name:'Twenty-page touch review.docx',extension:'docx',size:wordBytes.length,sha256:crypto.createHash('sha256').update(wordBytes).digest('hex'),bot_id:'piper'}};
 function pdf(label){
  const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R 10 0 R] /Count 4 >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
  for(let i=0;i<4;i++){
@@ -24,8 +26,9 @@ const server=https.createServer({cert:fs.readFileSync(cert),key:fs.readFileSync(
  if(route.startsWith('/api/workspace-artifacts')){
   if(req.method!=='GET'){res.writeHead(405);return res.end();}
   const parts=route.split('/').filter(Boolean),item=items.find(item=>item.id===parts[2]);
+  if(parts[3]==='preview'&&item?.id==='touch-one'){res.writeHead(503,{'Content-Type':'application/json'});return res.end(JSON.stringify({error:'Disposable fixture exercises Word layout fallback'}));}
   if(parts[3]==='preview'&&item){fixture.securityHeaders(req,res);res.writeHead(200,{'Content-Type':'application/pdf','Cache-Control':'no-store'});return res.end(pdf(item.title));}
-  if(parts[3]==='file'&&item){res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});return res.end(fs.readFileSync(path.join(root,'tools/frontend/fixtures/document-originals/original-v1.docx')));}
+  if(parts[3]==='file'&&item){res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});return res.end(item.id==='touch-one'?wordBytes:fs.readFileSync(path.join(root,'tools/frontend/fixtures/document-originals/original-v1.docx')));}
   return json(parts.length===2?items:item||{error:'Unknown disposable artifact'});
  }
  return original(req,res);
