@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-15T21:54:10.383415+00:00",
+  "at": "2026-11-15T22:32:02.178936+00:00",
   "version": "0.90.7",
   "build": "14",
   "native_source": "d5b1a4f0fe57ff406b07c0f84cddb4d7e4e1dd8a",
@@ -158,7 +158,20 @@
   "managed_server": {
     "release_task_owns_rollout": true,
     "published_or_deployed_from_this_task": false,
-    "usual_server_still_old_at_last_probe": true
+    "usual_server_still_old_at_last_probe": false,
+    "matching_viewer_available": true,
+    "readback": {
+      "at": "2026-11-15T22:32:02.178936+00:00",
+      "endpoint": "usual workspace document viewer",
+      "http_status": 200,
+      "bytes": 35329,
+      "sha256": "13ad9825525590e9407c71d43a7e2a15c629b12445094f183e5b80603e127e2f",
+      "matches_tested_viewer": true,
+      "tls_verification_disabled": false
+    },
+    "release_task_reported_desktop_source": "9f541f4a94c8df0f209fd3c0c1cd9088a3f9ac9b",
+    "release_task_reported_server_source": "e2de8c266264d63c0c6ce8ceb4f64c2c8a0f7cff",
+    "reinstall_required": false
   },
   "signed_build": {
     "source": "d5b1a4f0fe57ff406b07c0f84cddb4d7e4e1dd8a",
