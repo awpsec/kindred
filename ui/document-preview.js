@@ -88,7 +88,7 @@ function documentZoom(body, surface, dimensions, apply, initialMode='page') {
    event.preventDefault();lastTap=null;lastTouchZoom=now;doubleTap(candidate);
   }else lastTap={...candidate,time:now};
  };
- const doubleClick=event=>{if(!window.__KINDRED_MOBILE||window.__KINDRED_MOBILE_PLATFORM!=='ios'||performance.now()-lastTouchZoom<600||interactive(event))return;event.preventDefault();doubleTap({x:event.clientX,y:event.clientY});};
+ const doubleClick=event=>{if(!window.__KINDRED_MOBILE||window.__KINDRED_MOBILE_PLATFORM!=='ios'||lastTouchZoom>0&&performance.now()-lastTouchZoom<600||interactive(event))return;event.preventDefault();doubleTap({x:event.clientX,y:event.clientY});};
  const cancelTouch=()=>{tapCandidate=null;lastTap=null;finishPinch();};
  surface.addEventListener('touchstart',touchStart,{passive:false});surface.addEventListener('touchmove',touchMove,{passive:false});
  surface.addEventListener('touchend',touchEnd);surface.addEventListener('touchcancel',cancelTouch);surface.addEventListener('dblclick',doubleClick);
