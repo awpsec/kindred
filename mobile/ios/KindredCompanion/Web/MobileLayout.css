@@ -738,6 +738,8 @@ html[data-kindred-ios] #composer .voice-start::before{content:'';position:absolu
 html[data-kindred-ios] :is(#settings-dialog,#details-content,#bot-dialog,.voice-call-options,.app-detail-dialog,.server-admin-dialog) :is(input,textarea,select){font-size:calc(13px * var(--text-scale,1));}
 html[data-kindred-ios] :is(.vm-resource-settings,.server-update-settings) h3{font-size:calc(14px * var(--text-scale,1));}
 html[data-kindred-ios] .vm-resource-form label{font-size:calc(12px * var(--text-scale,1));}
+html[data-kindred-ios] #settings-dialog .progress-choice-description{font-size:calc(12px * var(--text-scale,1));}
+html[data-kindred-ios] #settings-dialog .archive-section-title{font-size:calc(13px * var(--text-scale,1));}
 html[data-kindred-ios][data-large-text] .ios-account-copy strong{white-space:normal;overflow-wrap:anywhere;}
 /* Native action sheets retain every shared action without a desktop toolbar. */
 html[data-kindred-ios] .artifact-workbench-actions[data-ios-document-actions]{position:fixed;inset:auto;margin:0;max-width:calc(100% - 16px);}
