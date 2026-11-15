@@ -2163,7 +2163,11 @@
       if (!await window.__KINDRED_NAVIGATION_SEARCH?.close()) return;
       if (action === 'back' || action === 'search') return;
     }
-    const route = duoRoute();
+    let route = duoRoute();
+    if (route === 'marketplace' && !['back','marketplace'].includes(action)) {
+      document.querySelector('#marketplace-dialog')?.close();
+      await new Promise(requestAnimationFrame);route=duoRoute();
+    }
     if (!nativeDuo || (document.querySelector('dialog[open]') && !(action === 'back' && route === 'marketplace'))) return;
     if (action === 'chats') {
       if(['artifacts','artifact'].includes(route))artifactPages.get(document.querySelector('.artifact-studio'))?.toggle();
@@ -2178,8 +2182,16 @@
       if (!botCenter() && route === 'computer' && html.dataset.iosDuoInner === 'true') document.querySelector('#computer-expand')?.click();
       publishDuoNavigation(); return;
     }
+    if (['search','newChat'].includes(action) && ['artifacts','artifact'].includes(route)) {
+      const root=document.querySelector('.artifact-studio'),library=root?.querySelector('.artifact-studio-library');
+      if (library?.inert) artifactPages.get(root)?.toggle();
+      if (!library || library.inert) return;
+      if (action==='search') root.querySelector('.ios-artifact-navigation [aria-label="Search artifacts"]')?.click();
+      else openToolbarMenu(root.querySelector('.artifact-add'),library,'.artifact-add-menu');
+      publishDuoNavigation();return;
+    }
     if (action === 'newBot' || action === 'newConversation') {
-      if (!['chat-list','bot-chat','computer'].includes(route)) return;
+      if (!['chat-list','bot-chat','computer','details'].includes(route)) return;
       const menu = document.querySelector('#new-menu');
       const choice = [...(menu?.querySelectorAll('button') || [])].find(button => button.textContent.trim() === (action === 'newBot' ? 'New bot' : 'New chat'));
       if (choice && !choice.disabled) { menuActions.clear(); menu.hidden = true; choice.click(); }
@@ -2211,7 +2223,7 @@
     publishDuoNavigation();
   }};
   observeUI(publishDuoNavigation).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','inert','class','data-ios-artifact-view','data-ios-artifact-layout','data-ios-artifact-toggle-available','data-ios-artifact-library-hidden','data-shape','data-avatar-body','data-avatar-color']});
-  observeUI(publishDuoNavigation).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open','disabled','aria-disabled','aria-label','hidden','inert']});
+  observeUI(publishDuoNavigation).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open','disabled','aria-disabled','aria-label','aria-pressed','hidden','inert']});
   observeUI(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo','data-ios-duo-inner','data-ios-sidebar-hidden','data-ios-native-sidebar','data-ios-native-sidebar-hidden','data-motion']});
   matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',publishDuoNavigation);
   publishDuoNavigation();
