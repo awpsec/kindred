@@ -32,12 +32,33 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         capture("word-ready")
         let web=app.webViews["artifact-touch-webview"]
         XCTAssertTrue(web.exists)
-        let zoom=app.buttons["kindred-glass-artifact-zoom"]
+        let duo=state()["nativeLayout"] as? [String:Any]
+        let isDuo=duo?["isDuo"] as? Bool==true
+        let zoom=app.buttons[isDuo ? "kindred-duo-artifact-zoom" : "kindred-glass-artifact-zoom"]
         XCTAssertTrue(zoom.waitForExistence(timeout:10));zoom.tap()
         let fit=app.buttons["Fit width"];XCTAssertTrue(fit.waitForExistence(timeout:8));fit.tap()
         wait("fit-width-menu-dismissed"){$0["fit"] as? String=="Fit width" && $0["nativeMenuPresented"] as? Bool==false}
-        let initial=state(),before=(initial["zoom"] as? Double) ?? 0
-        capture("native-fit-width")
+                capture("native-fit-width")
+        if isDuo {
+            XCTAssertTrue(state()["nativeDock"] as? Bool==true)
+            XCTAssertFalse(state()["headerZoomVisible"] as? Bool==true,"No duplicate header zoom after dock takes ownership")
+            XCTAssertGreaterThan(zoom.frame.midX,web.frame.midX,"Document zoom stays on Duo’s right edge")
+            let refresh=app.buttons["kindred-duo-artifact-refresh"]
+            XCTAssertTrue(refresh.exists)
+            let generation=state()["generation"] as? Int ?? 0
+            refresh.tap()
+            wait("dock-refresh-after-fit-width",timeout:60){($0["generation"] as? Int ?? 0)>generation && $0["ready"] as? Bool==true}
+            capture("native-dock-refresh")
+            // Refresh can restore Fit Page; retain the actual menu and fit closures.
+            zoom.tap();let width=app.buttons["Fit width"];XCTAssertTrue(width.waitForExistence(timeout:8));width.tap()
+            wait("fit-width-after-refresh"){$0["fit"] as? String=="Fit width"}
+            let more=app.buttons["kindred-duo-artifact-more"];XCTAssertTrue(more.exists);more.tap()
+            let chats=app.buttons["Chats"];XCTAssertTrue(chats.waitForExistence(timeout:8))
+            // Tap the same dock item to dismiss, without navigating away from the document.
+            web.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.8)).tap()
+            wait("dock-more-dismissed"){$0["nativeMenuPresented"] as? Bool==false}
+        }
+        let before=(state()["zoom"] as? Double) ?? 0
         web.pinch(withScale:1.6,velocity:1)
         wait("trusted-two-finger-zoom") { s in (s["trustedPairs"] as? Int ?? 0)>0 && (s["zoom"] as? Double ?? 0)>before*1.15 }
         XCTAssertEqual(state()["rootScale"] as? Double,1)
@@ -56,8 +77,8 @@ final class ArtifactTouchUIKitTests:XCTestCase {
             capture("native-document-switch")
         } else {
             let generation=s["generation"] as? Int ?? 0
-            let actions=app.buttons["kindred-glass-artifact-document-more"];XCTAssertTrue(actions.exists);actions.tap()
-            let refresh=app.buttons["Refresh document"];XCTAssertTrue(refresh.waitForExistence(timeout:8));refresh.tap()
+            if !isDuo {let actions=app.buttons["kindred-glass-artifact-document-more"];XCTAssertTrue(actions.exists);actions.tap()}
+            let refresh=app.buttons[isDuo ? "kindred-duo-artifact-refresh" : "Refresh document"];XCTAssertTrue(refresh.waitForExistence(timeout:8));refresh.tap()
             wait("native-refresh-after-gestures",timeout:60){($0["generation"] as? Int ?? 0)>generation && $0["ready"] as? Bool==true && $0["nativeMenuPresented"] as? Bool==false}
             capture("native-document-refresh")
         }

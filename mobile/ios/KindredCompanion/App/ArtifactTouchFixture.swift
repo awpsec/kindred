@@ -53,15 +53,36 @@ struct ArtifactTouchFixtureView:UIViewControllerRepresentable {
     func updateUIViewController(_ controller:ArtifactTouchFixtureController,context:Context){}
 }
 
+private struct ArtifactTouchContent: View {
+    let session: WebSession
+    var body: some View {
+        NavigationStack {
+            WebContainerView(session: session)
+                .ignoresSafeArea()
+                .ignoresSafeArea(.keyboard)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    if #available(iOS 27.1, *), session.presentation.usesNativeRail {
+                        DuoToolbarContent(session: session, manageAccounts: {})
+                    }
+                }
+                .toolbarBackground(.hidden, for: .navigationBar)
+                .toolbar(session.presentation.usesNativeRail ? .visible : .hidden, for: .navigationBar)
+                .tint(.primary)
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
 @MainActor
 final class ArtifactTouchFixtureController:UIViewController {
     let fixture:ArtifactTouchFixture
-    private let host:UIHostingController<WebContainerView>
+    private let host:UIHostingController<ArtifactTouchContent>
     private let telemetry=UILabel()
     private var timer:Timer?
     private var publishing=false
     private var started=false
-    init(fixture:ArtifactTouchFixture){self.fixture=fixture;host=UIHostingController(rootView:WebContainerView(session:fixture.session));super.init(nibName:nil,bundle:nil)}
+    init(fixture:ArtifactTouchFixture){self.fixture=fixture;host=UIHostingController(rootView:ArtifactTouchContent(session:fixture.session));super.init(nibName:nil,bundle:nil)}
     required init?(coder:NSCoder){fatalError("Synthetic artifact fixture only")}
     override func viewDidLoad(){
         super.viewDidLoad();overrideUserInterfaceStyle = .dark
@@ -92,6 +113,11 @@ final class ArtifactTouchFixtureController:UIViewController {
             scrollTop:v?.scrollTop||0,scrollLeft:v?.scrollLeft||0,rootScale:visualViewport?.scale||1,
             trustedPairs:p.trustedPairs,trustedTouches:p.trustedTouches,pinchStartDistance:p.pairStart||0,pinchLastDistance:p.pairLast||0,canvasMinDuringPinch:p.canvasMin??null,generation:p.generation,
             viewport:{width:innerWidth,height:innerHeight},
+            nativeDock:document.querySelector('.artifact-studio')?.dataset.iosNativeArtifactDock==='true',
+            headerZoomVisible:!!document.querySelector('.ios-document-zoom-trigger')?.getClientRects().length,
+            filterValue:document.querySelector('select[aria-label="Artifact type"]')?.value||'',
+            sortValue:document.querySelector('select[aria-label="Sort artifacts"]')?.value||'',
+            previewRect:v?{x:v.getBoundingClientRect().x,y:v.getBoundingClientRect().y,width:v.clientWidth,height:v.clientHeight}:null,
             libraryVisible:!!library&&!library.inert&&getComputedStyle(library).visibility!=='hidden'&&!!row?.getClientRects().length,
             row:r?{x:r.x+r.width/2,y:r.y+r.height/2}:null};
         })()
