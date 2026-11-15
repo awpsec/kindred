@@ -393,6 +393,73 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         report.name="native-bot-accent-acceptance";report.lifetime = .keepAlways;add(report)
     }
 
+    /// Diagnostic reproduction: the operator selects Fit width and another
+    /// disposable document through Device Hub's native accessibility controls.
+    func testArtifactFitWidthNativeMenuTouchProbe() async throws {
+        guard #available(iOS 26.0,*) else { throw XCTSkip("Native controls require iOS 26") }
+        _ = try await js("window.__artifactProbeManifest=null;fetch('/fixture/ready').then(r=>r.json()).then(m=>window.__artifactProbeManifest=m);true")
+        try await waitFor("artifact probe fixture manifest") { try await self.boolean("!!window.__artifactProbeManifest") }
+        guard try await boolean("__artifactProbeManifest.fixture==='artifact-touch-uikit'") else { throw XCTSkip("Operator-driven artifact probe requires its disposable fixture") }
+        _ = try await js("""
+        window.__artifactProbe={frames:0,mutations:0,resizes:0,beats:0,maxBeatGap:0,lastBeat:performance.now(),touches:[]};
+        for(const type of ['touchstart','touchmove','touchend','touchcancel'])document.addEventListener(type,event=>{if(__artifactProbe.touches.length<1000)__artifactProbe.touches.push({type,trusted:event.isTrusted,count:event.touches.length,document:!!event.target.closest?.('.document-pdf,.document-word')})},{capture:true,passive:true});
+        const originalFrame=window.requestAnimationFrame.bind(window);
+        window.requestAnimationFrame=callback=>originalFrame(time=>{__artifactProbe.frames++;callback(time)});
+        const OriginalResize=window.ResizeObserver;
+        window.ResizeObserver=class extends OriginalResize{constructor(callback){super((entries,observer)=>{__artifactProbe.resizes++;callback(entries,observer)})}};
+        new MutationObserver(records=>{__artifactProbe.mutations+=records.length}).observe(document.body,{subtree:true,attributes:true,childList:true,characterData:true});
+        setInterval(()=>{const now=performance.now();__artifactProbe.maxBeatGap=Math.max(__artifactProbe.maxBeatGap,now-__artifactProbe.lastBeat);__artifactProbe.lastBeat=now;__artifactProbe.beats++},100);
+        window.__artifactSnapshot=()=>{
+          const row=document.querySelector('[data-artifact-id="touch-two"]'),r=row?.getBoundingClientRect(),v=document.querySelector('.document-pdf,.document-word');
+          return {at:performance.now(),probe:{...__artifactProbe},view:document.querySelector('.artifact-studio')?.dataset.iosArtifactView,
+            title:document.querySelector('.artifact-title-input')?.value,wordPages:document.querySelector('.document-word')?.shadowRoot?.querySelectorAll('section.docx').length||0,zoom:document.querySelector('.ios-document-zoom-trigger')?.textContent,
+            widthSelected:document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent,
+            popovers:[...document.querySelectorAll(':popover-open')].map(n=>n.className),dialogs:[...document.querySelectorAll('dialog[open]')].map(n=>n.className),
+            inert:[...document.querySelectorAll('[inert]')].map(n=>n.className),shields:document.querySelectorAll('.pane-resize-shield').length,
+            libraryHit:r?{x:r.x+r.width/2,y:r.y+r.height/2,element:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('[data-artifact-id]')?.dataset.artifactId}:null,
+            surface:v?{width:v.clientWidth,height:v.clientHeight,scrollWidth:v.scrollWidth,scrollHeight:v.scrollHeight,scrollTop:v.scrollTop,scrollLeft:v.scrollLeft,touchAction:getComputedStyle(v).touchAction}:null,
+            viewport:{width:innerWidth,height:innerHeight}}};
+        window.__kindredDuoActions.perform('artifacts');true
+        """)
+        try await waitFor("disposable artifact list") { try await self.boolean("!!document.querySelector('[data-artifact-id=\"touch-one\"]')") }
+        _ = try await js("document.querySelector('[data-artifact-id=\"touch-one\"]').click();true")
+        try await waitFor("disposable twenty-page Word preview",timeout:60) { try await self.boolean("document.querySelector('.document-word')?.shadowRoot?.querySelectorAll('section.docx').length===20 && !!document.querySelector('.ios-document-zoom-trigger')") }
+        try await waitFor("native artifact zoom") {
+            self.session.glassControls.subviews.compactMap{$0 as? UIButton}.contains{$0.accessibilityIdentifier=="kindred-glass-artifact-zoom" && !$0.isHidden && $0.alpha>0.9}
+        }
+        let zoom=try XCTUnwrap(session.glassControls.subviews.compactMap{$0 as? UIButton}.first{$0.accessibilityIdentifier=="kindred-glass-artifact-zoom"})
+        let before=await boundedFailurePage("window.__artifactSnapshot()")
+        zoom.sendActions(for:.primaryActionTriggered)
+        try await waitFor("actual native artifact zoom menu") { (self.window.rootViewController?.presentedViewController as? UIAlertController)?.actions.contains{$0.title=="Fit width"} == true }
+        print("ARTIFACT_PROBE_NATIVE_MENU_READY — select Fit width in Device Hub")
+        try await waitFor("operator selects native Fit width",timeout:300) { self.window.rootViewController?.presentedViewController == nil }
+        let after=await boundedFailurePage("window.__artifactSnapshot()")
+        var evidence:[String:Any]=["before":before,"after":after,"presentedController":window.rootViewController?.presentedViewController.map{String(describing:type(of:$0))} ?? "none","webScrollZoomScale":session.webView.scrollView.zoomScale,"nativePinchEnabled":session.webView.scrollView.pinchGestureRecognizer?.isEnabled ?? false]
+        if let page=after["page"] as? [String:Any],let point=page["libraryHit"] as? [String:Any],let x=point["x"] as? Double,let y=point["y"] as? Double {
+            let p=window.convert(CGPoint(x:x,y:y),from:session.webView)
+            if let hit=window.hitTest(p,with:nil){evidence["nativeLibraryHitClass"]=String(describing:type(of:hit));evidence["nativeLibraryHitInsideWebView"]=hit.isDescendant(of:session.webView)}
+        }
+        let report=XCTAttachment(data:try JSONSerialization.data(withJSONObject:evidence,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");report.name="artifact-fit-width-native-menu-evidence";report.lifetime = .keepAlways;add(report)
+        let screenshot=XCTAttachment(image:UIGraphicsImageRenderer(bounds:window.bounds).image{_ in window.drawHierarchy(in:window.bounds,afterScreenUpdates:true)});screenshot.name="artifact-after-native-fit-width";screenshot.lifetime = .keepAlways;add(screenshot)
+        XCTAssertNil(after["javascriptTimeout"],"JavaScript must respond after Fit width")
+        if try await boolean("__artifactProbeManifest.manual_gestures===true") {
+            print("ARTIFACT_PROBE_PAN_READY — drag the document upward in Device Hub")
+            try await waitFor("real document touch pan",timeout:300) { try await self.boolean("document.querySelector('.document-pdf,.document-word')?.scrollTop>60") }
+            let pan=await boundedFailurePage("window.__artifactSnapshot()")
+            let panReport=XCTAttachment(data:try JSONSerialization.data(withJSONObject:pan,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");panReport.name="artifact-after-real-touch-pan";panReport.lifetime = .keepAlways;add(panReport)
+            print("ARTIFACT_PROBE_PINCH_READY — pinch the document in Device Hub")
+            try await waitFor("real two-finger document touch delivery",timeout:300) { try await self.boolean("__artifactProbe.touches.some(e=>e.document&&e.count===2)") }
+            try await Task.sleep(nanoseconds:1_000_000_000)
+            let pinch=await boundedFailurePage("window.__artifactSnapshot()")
+            let pinchReport=XCTAttachment(data:try JSONSerialization.data(withJSONObject:pinch,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");pinchReport.name="artifact-after-real-two-finger-touch";pinchReport.lifetime = .keepAlways;add(pinchReport)
+        }
+        print("ARTIFACT_PROBE_DOCUMENT_READY — select Touch review two in Device Hub")
+        try await waitFor("operator switches disposable document after Fit width",timeout:300) { try await self.boolean("document.querySelector('.artifact-title-input')?.value==='Touch review two' && !!document.querySelector('.document-pdf-page canvas')") }
+        startedLandscape = window.windowScene?.interfaceOrientation.isLandscape ?? startedLandscape
+        let switched=await boundedFailurePage("window.__artifactSnapshot()")
+        let last=XCTAttachment(data:try JSONSerialization.data(withJSONObject:switched,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");last.name="artifact-after-document-switch";last.lifetime = .keepAlways;add(last)
+    }
+
     func testNativeComposerTypingKeyboardAndSend() async throws {
         guard #available(iOS 26.0,*) else { throw XCTSkip("Native Liquid Glass requires iOS 26") }
         try await waitFor("genuine native composer") { self.session.glassControls.composer.model != nil && !self.session.glassControls.composer.isHidden }
