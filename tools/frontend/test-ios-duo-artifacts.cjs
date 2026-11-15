@@ -150,8 +150,13 @@ function pdf(count){
  await p.screenshot({path:path.join(out,'outer-workbook.png')});
  await p.evaluate(()=>document.querySelector('.document-dialog').close());
 
+ assert.equal(await p.locator('.artifact-studio-preview').getAttribute('data-retention-probe'),'kept','rail and cover changes retain preview DOM before navigation');
  await action('back');await p.waitForURL('**/artifacts');g=await geometry();assert(g.library.visible&&!g.document.visible);
  await p.locator('[data-artifact-id="duo-document"]').click();await p.waitForURL('**/artifacts/duo-document');
+ // Returning through the library creates a new preview. Check folding against
+ // that mounted document, not the intentionally closed navigation instance.
+ await p.locator('.document-pdf-page canvas').first().waitFor();
+ await p.locator('.artifact-studio-preview').evaluate(n=>n.dataset.retentionProbe='kept');
  await relay({regions:[{kind:'division',active:true,x:400,y:0,width:40,height:645}]});g=await geometry();assert.equal(g.layout,'split');assert(g.library.x+g.library.width<=400);assert(g.document.x>=440);await p.screenshot({path:path.join(out,'book-document.png')});
  await relay({regions:[{kind:'division',active:true,x:400,y:0,width:40,height:645},{kind:'division',active:true,x:0,y:300,width:867,height:40}]});g=await geometry();for(const pane of [g.library,g.document])assert(pane.y+pane.height<=300||pane.y>=340,'both active folds are reserved');
  await relay({width:867,height:900,regions:[{kind:'division',active:true,x:0,y:400,width:867,height:40}]});g=await geometry();assert.equal(g.layout,'stacked');assert(g.document.y+g.document.height<=400);assert(g.library.y>=440);await p.screenshot({path:path.join(out,'tabletop-document.png')});
