@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-15T16:31:37.253288+00:00",
+  "at": "2026-11-15T21:54:10.383415+00:00",
   "version": "0.90.7",
   "build": "14",
   "native_source": "d5b1a4f0fe57ff406b07c0f84cddb4d7e4e1dd8a",
@@ -132,17 +132,28 @@
       "build": "14",
       "bundle_id": "dev.kindred.companion",
       "team": "92Y82K5BUS",
-      "installed": false,
-      "launched": false,
+      "installed": true,
+      "launched": true,
       "accounts_or_keychain_edited": false,
       "uninstalled_or_reset": false,
       "normal_build_without_xctest": true,
-      "started_utc": "2026-11-15T16:28:03.488472+00:00",
-      "blocker": "Duo is locked or disconnected",
-      "completed_utc": "2026-11-15T16:29:35.590069+00:00"
+      "started_utc": "2026-11-15T21:53:15.767394+00:00",
+      "account_count_before": 3,
+      "accounts_preserved": true,
+      "account_count_after": 3,
+      "active_selection_unchanged": true,
+      "account_metadata_byte_identical": true,
+      "installed_version_verified": true,
+      "completed_utc": "2026-11-15T21:53:23.332323+00:00"
     },
     "original_saved_accounts_preserved": true,
-    "usual_account_restoration": "QA account retained for the owner\u2019s ongoing layout review; the two usual accounts remain saved."
+    "usual_account_restoration": "QA account retained for the owner\u2019s ongoing layout review; the two usual accounts remain saved.",
+    "prior_install_attempt": {
+      "result": "Duo locked; no installation attempted",
+      "receipt": "ios-qa/20261115-bottom-settings/build14-locked-attempt-20261115-1628/install-receipt.json"
+    },
+    "saved_accounts_after_install": 3,
+    "account_metadata_byte_identical_after_install": true
   },
   "managed_server": {
     "release_task_owns_rollout": true,
