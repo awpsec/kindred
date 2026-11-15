@@ -198,7 +198,7 @@ export async function renderWordLayout(buffer,name){
 }
 // Keep the whole document in one scroll surface, but only retain canvases near
 // the reader. Page placeholders preserve scroll position when canvases are freed.
-function renderContinuousPdf(pdf, name, body, foot, paginatedWord, firstSize) {
+function renderContinuousPdf(pdf, name, body, foot, firstSize) {
  const viewport=el('div','document-pdf document-pdf-continuous');
  viewport.tabIndex=0;viewport.setAttribute('role','region');viewport.setAttribute('aria-label',name+' pages');
  body.replaceChildren(viewport);
@@ -249,7 +249,7 @@ function renderContinuousPdf(pdf, name, body, foot, paginatedWord, firstSize) {
   if(active&&!near.has(active.entry))active.task.cancel();
   const atEnd=viewport.scrollTop>0&&viewport.scrollTop+height>=viewport.scrollHeight-2;
   const current=atEnd?pages.at(-1):pages.find(entry=>entry.node.getBoundingClientRect().bottom>bounds.top+Math.min(80,height/3))||pages.at(-1);
-  if(current)foot.textContent=`Page ${current.number} of ${pdf.numPages}`+(paginatedWord?' · Document preview · Font substitutions may differ from Word.':' · PDF preview');
+  if(current)foot.textContent=`Page ${current.number} of ${pdf.numPages}`;
   void renderNext();
  }
  // A single lightweight placeholder per page makes keyboard and touch scrolling
@@ -294,7 +294,7 @@ export async function openDocumentPreview(options){
  if(!mount&&documentPreviewHost){const hosted=documentPreviewHost(options);if(hosted)return hosted;}
  const dialog=el(mount?'section':'dialog',mount?'document-inline':'document-dialog'),head=el('header','document-header'),body=el('div','document-body'),foot=el('footer','document-footer','Quick preview · Download for the original formatting.');
  const title=el('strong','',name);dialog.setAttribute('aria-label',name+' preview');
- const conversionAbort=new AbortController(),lifecycleAbort=new AbortController();let paginatedWord=false,conversionFailed=false;
+ const conversionAbort=new AbortController(),lifecycleAbort=new AbortController();let paginatedWord=false;
  let closed=false,worker=null,pdfTask=null,timer=null,cancelWork=null,passwordRequired=false,wordDispose=null,pagesDispose=null;
  const cleanup=()=>{if(closed)return;closed=true;lifecycleAbort.abort();conversionAbort.abort();clearTimeout(timer);cancelWork?.();pagesDispose?.();wordDispose?.();worker?.terminate();pdfTask?.destroy().catch(()=>{});observer.disconnect();dialog.remove();};
  const handle={root:dialog,dispose:cleanup};
@@ -310,7 +310,7 @@ export async function openDocumentPreview(options){
   if(extension==='docx'&&getPagePreview){
    body.firstChild.textContent='Laying out document…';
    timer=setTimeout(()=>conversionAbort.abort(),90000);
-   try{blob=await getPagePreview(conversionAbort.signal);paginatedWord=true;extension='pdf';}catch{conversionFailed=true;}finally{clearTimeout(timer);}
+   try{blob=await getPagePreview(conversionAbort.signal);paginatedWord=true;extension='pdf';}catch{/* Fall back to the original Word layout. */}finally{clearTimeout(timer);}
    if(closed)return;
   }
   if(!blob)blob=await getBlob(lifecycleAbort.signal);if(closed)return;if(blob.size>(paginatedWord?32:8)*1024*1024)throw Error('Preview supports files up to 8 MB. Download to view this file.');
@@ -319,7 +319,7 @@ export async function openDocumentPreview(options){
    const result=await new Promise((resolve,reject)=>{cancelWork=()=>reject(Error('Preview closed.'));worker=new Worker(new URL('./document-worker.js',import.meta.url));timer=setTimeout(()=>{worker.terminate();reject(Error('This preview took too long. Download to view the file.'));},20000);worker.onmessage=({data})=>{cancelWork=null;clearTimeout(timer);worker.terminate();data.error?reject(Error(data.error)):resolve(data);};worker.onerror=()=>{cancelWork=null;clearTimeout(timer);worker.terminate();reject(Error('Unable to read this document. You can still download the original.'));};worker.postMessage({buffer,extension},[buffer]);});
    if(closed)return;body.replaceChildren();
    if(extension==='docx'){
-    const rendered=await renderWordLayout(result.buffer,name);if(closed){rendered.dispose();return;}wordDispose=rendered.dispose;body.append(rendered.page);rendered.connectZoom(body);foot.textContent=(conversionFailed?'Quick preview · Page layout unavailable on this server. ':'')+rendered.note;
+    const rendered=await renderWordLayout(result.buffer,name);if(closed){rendered.dispose();return;}wordDispose=rendered.dispose;body.append(rendered.page);foot.remove();rendered.connectZoom(body);
    }else{
     const tabs=el('div','document-sheets'),grid=el('div','document-grid');tabs.setAttribute('aria-label','Worksheets');grid.tabIndex=0;grid.setAttribute('role','region');body.append(tabs,grid);
     if(!result.sheets.length){body.append(el('p','document-status','No visible worksheets.'));return handle;}
@@ -328,14 +328,14 @@ export async function openDocumentPreview(options){
     result.sheets.forEach((sheet,i)=>tabs.append(button(sheet.name,()=>select(i))));select(0);
    }
   }else if(extension==='pdf'){
-   if(paginatedWord)foot.textContent='Document page preview · Font substitutions may differ from Word.';
+   foot.textContent='';
    const {getDocument,GlobalWorkerOptions}=await import('./document-vendor.js');if(closed)return;GlobalWorkerOptions.workerSrc=new URL('./pdf-worker.js',import.meta.url).href;
    const data=new Uint8Array(await blob.arrayBuffer());if(closed)return;
    pdfTask=getDocument({data,isEvalSupported:false,useSystemFonts:true,useWasm:false,disableFontFace:false,maxImageSize:16000000,isOffscreenCanvasSupported:false});
    pdfTask.onPassword=()=>{passwordRequired=true;pdfTask.destroy().catch(()=>{});if(!closed)body.replaceChildren(el('p','document-status','This PDF is password protected. Download it to open with your password.'));};
    timer=setTimeout(()=>pdfTask.destroy().catch(()=>{}),20000);const pdf=await pdfTask.promise;clearTimeout(timer);if(closed)return;
    const first=await pdf.getPage(1);if(closed)return;const natural=first.getViewport({scale:4/3});first.cleanup();
-   const pages=renderContinuousPdf(pdf,name,body,foot,paginatedWord,{width:natural.width,height:natural.height});pagesDispose=pages.dispose;await pages.ready;
+   const pages=renderContinuousPdf(pdf,name,body,foot,{width:natural.width,height:natural.height});pagesDispose=pages.dispose;await pages.ready;
   }else if(['html','htm','jsx'].includes(extension)){
    if(blob.size>256*1024)throw Error('Interactive preview supports files up to 256 KB.');const text=await blob.text();if(closed)return;const preview=artifactPreview(text,extension==='jsx'?'jsx':'html',name);body.replaceChildren(preview);preview.querySelector('button').click();
   }else if(['png','jpg','jpeg','webp','gif'].includes(extension)){
