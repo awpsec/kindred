@@ -24,7 +24,7 @@ struct AccountsSheet: View {
                                 model.reloadActive()
                                 dismiss()
                             } label: {
-                                Label("Reload Conversation", systemImage: "arrow.clockwise")
+                                Label("Refresh Workspace", systemImage: "arrow.clockwise")
                             }
                         }
                     }
