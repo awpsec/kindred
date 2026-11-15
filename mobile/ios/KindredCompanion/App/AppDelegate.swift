@@ -5,7 +5,9 @@ import WebKit
 
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate {
-    #if DEBUG
+    #if DEBUG && targetEnvironment(simulator)
+    let model = ArtifactTouchFixture.active?.model ?? AccountsAppearanceFixture.active?.model ?? AppModel()
+    #elseif DEBUG
     let model = AccountsAppearanceFixture.active?.model ?? AppModel()
     #else
     let model = AppModel()
@@ -15,6 +17,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         #if DEBUG
+        #if targetEnvironment(simulator)
+        if ArtifactTouchFixture.active != nil { return true }
+        #endif
         if AccountsAppearanceFixture.active != nil { return true }
         #endif
         // Set before launch finishes so a tap that launched the app is delivered.
