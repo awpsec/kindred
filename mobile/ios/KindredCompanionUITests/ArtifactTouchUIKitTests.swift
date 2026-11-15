@@ -6,12 +6,14 @@ final class ArtifactTouchUIKitTests:XCTestCase {
     func testTwentyPageConvertedPDFNativeFitWidthPinchPanAndNavigation() throws { try documentGestures("pdf") }
     func testCoverPortraitWordNativeGestures() throws { XCUIDevice.shared.orientation = .portrait; try documentGestures("word") }
     func testCoverPortraitPDFNativeGestures() throws { XCUIDevice.shared.orientation = .portrait; try documentGestures("pdf") }
-    func testRealKeyboardDraftAndRailNavigation() throws {
+    func testRealKeyboardDraftAndRailNavigation() throws { try keyboardAndRail(portrait:true) }
+    func testLandscapeKeyboardDraftAndRailNavigation() throws { try keyboardAndRail(portrait:false) }
+    private func keyboardAndRail(portrait:Bool) throws {
         #if !targetEnvironment(simulator)
         throw XCTSkip("The loopback host is simulator-only")
         #else
         continueAfterFailure=false
-        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.orientation = portrait ? .portrait : .landscapeLeft
         let app=XCUIApplication();app.launchEnvironment=["KINDRED_ARTIFACT_TOUCH_UI_TEST":"1"];app.launch();defer{app.terminate()}
         let telemetry=app.staticTexts["artifact-touch-telemetry"];XCTAssertTrue(telemetry.waitForExistence(timeout:15))
         let ready=XCTNSPredicateExpectation(predicate:NSPredicate{_,_ in
@@ -25,6 +27,13 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         XCTAssertFalse(app.buttons["kindred-duo-computer"].exists,"The cover chat rail omits the computer shortcut")
         let geometry=XCTAttachment(string:(telemetry.value as? String ?? "")+"\nRail frame: \(rail.frame)\n"+app.debugDescription)
         geometry.name="cover-chat-native-rail-geometry";geometry.lifetime = .keepAlways;add(geometry)
+        let state=try XCTUnwrap(try JSONSerialization.jsonObject(with:Data((telemetry.value as? String ?? "{}").utf8)) as? [String:Any])
+        XCTAssertEqual((state["nativeLayout"] as? [String:Any])?["isPortrait"] as? Bool,portrait)
+        let bar=try XCTUnwrap(state["nativeBarWindowFrame"] as? [String:Double])
+        let expectedX=try XCTUnwrap(bar["x"]),expectedWidth=try XCTUnwrap(bar["width"])
+        XCTAssertEqual(rail.frame.minX,expectedX,accuracy:1.5,"Visible glass follows UIKit's bar frame, without a second safe-area shift")
+        XCTAssertEqual(rail.frame.width,52,accuracy:1.5,"The native rail does not extend into chat content")
+        XCTAssertEqual(app.buttons["kindred-duo-search"].frame.midX,expectedX+expectedWidth/2,accuracy:1.5,"The actual button aligns with the bar, not only its container")
         let editor=app.textViews["kindred-native-composer-editor"];XCTAssertTrue(editor.waitForExistence(timeout:15));editor.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:10),"A real native editor tap opens the software keyboard")
         let draft="Artifact navigation draft\nSecond line";editor.typeText(draft)

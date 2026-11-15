@@ -199,7 +199,11 @@ final class WebHostView: UIView {
         let controller: UIHostingController<AnyView>
         if let existing = duoRailController { controller = existing }
         else {
-            controller = UIHostingController(rootView: AnyView(DuoRailButtons(session: session, manageAccounts: { [weak session] in session?.requestAccountsFromRail() }).ignoresSafeArea()))
+            controller = UIHostingController(rootView: AnyView(DuoRailButtons(session: session, manageAccounts: { [weak session] in session?.requestAccountsFromRail() })))
+            // This host is already placed inside UIKit's fitted bar region.
+            // Applying the parent window's safe area again shifts the visible
+            // glass out of its measured frame and into the conversation.
+            controller.safeAreaRegions = []
             controller.view.backgroundColor = .clear
             controller.view.isOpaque = false
             duoRailController = controller
@@ -214,10 +218,12 @@ final class WebHostView: UIView {
         controller.view.isHidden = false
         let web = session.webView
         let size = controller.sizeThatFits(in: CGSize(width: 52, height: session.presentation.toolbarLength))
-        let strip = max(68, railOnLeft ? insets.left : insets.right)
-        let x = railOnLeft ? max(8, (strip - 52) / 2) : max(8, web.bounds.width - strip + (strip - 52) / 2)
-        let top = area.isNull ? max(8, insets.top) : max(8, area.minY + 8)
-        let height = min(max(44, size.height), max(44, web.bounds.height - top - 8))
+        let fitted = !area.isNull && [area.minX, area.minY, area.width, area.height].allSatisfy(\.isFinite)
+            && area.width >= 52 && area.height >= 60 && web.bounds.insetBy(dx: -0.5, dy: -0.5).contains(area)
+        let x = fitted ? area.minX : railOnLeft ? web.bounds.minX + 16 : web.bounds.maxX - 68
+        let top = fitted ? area.minY + 8 : max(8, insets.top)
+        let availableHeight = fitted ? area.height - 16 : web.bounds.maxY - top - 8
+        let height = min(max(44, size.height), max(44, availableHeight))
         controller.view.frame = convert(CGRect(x: x, y: top, width: 52, height: height), from: web)
         bringSubviewToFront(controller.view)
     }
