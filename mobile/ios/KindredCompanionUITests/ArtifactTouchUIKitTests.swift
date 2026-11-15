@@ -27,13 +27,25 @@ final class ArtifactTouchUIKitTests:XCTestCase {
             XCTAssertEqual(result,.completed,label)
         }
         var receipt:[[String:Any]]=[]
-        func capture(_ label:String){var s=state();s["phase"]=label;receipt.append(s);let a=XCTAttachment(screenshot:app.screenshot());a.name=label;a.lifetime = .keepAlways;add(a)}
+        func capture(_ label:String){var s=state();s["phase"]=label;receipt.append(s);let data=(try? JSONSerialization.data(withJSONObject:s,options:[.prettyPrinted,.sortedKeys])) ?? Data();let trace=XCTAttachment(data:data,uniformTypeIdentifier:"public.json");trace.name=label+"-state";trace.lifetime = .keepAlways;add(trace);let a=XCTAttachment(screenshot:app.screenshot());a.name=label;a.lifetime = .keepAlways;add(a)}
         wait("twenty-word-pages",timeout:60){$0["ready"] as? Bool == true}
         capture("word-ready")
         let web=app.webViews["artifact-touch-webview"]
         XCTAssertTrue(web.exists)
         let duo=state()["nativeLayout"] as? [String:Any]
         let isDuo=duo?["isDuo"] as? Bool==true
+        if isDuo {
+            let ids=["search","new","chats","marketplace","settings","accounts"]
+            let buttons=ids.map { app.buttons["kindred-duo-"+$0] }
+            var frames:[[String:Any]]=[]
+            for (id,button) in zip(ids,buttons) {
+                let exists=button.waitForExistence(timeout:3),r=button.frame
+                frames.append(["id":id,"exists":exists,"hittable":button.isHittable,"x":r.minX,"y":r.minY,"width":r.width,"height":r.height])
+            }
+            let trace=XCTAttachment(data:try JSONSerialization.data(withJSONObject:frames,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");trace.name="native-direct-button-frames";trace.lifetime = .keepAlways;add(trace)
+            let tree=XCTAttachment(string:app.debugDescription);tree.name="native-direct-toolbar-hierarchy";tree.lifetime = .keepAlways;add(tree)
+            for button in buttons {XCTAssertTrue(button.exists,"All requested actions remain individual native buttons");XCTAssertTrue(button.isHittable,"Every action remains reachable");XCTAssertGreaterThanOrEqual(button.frame.height,44)}
+        }
         let zoom=app.buttons[isDuo ? "kindred-duo-artifact-zoom" : "kindred-glass-artifact-zoom"]
         XCTAssertTrue(zoom.waitForExistence(timeout:10));zoom.tap()
         let fit=app.buttons["Fit width"];XCTAssertTrue(fit.waitForExistence(timeout:8));fit.tap()
@@ -42,7 +54,11 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         if isDuo {
             XCTAssertTrue(state()["nativeDock"] as? Bool==true)
             XCTAssertFalse(state()["headerZoomVisible"] as? Bool==true,"No duplicate header zoom after dock takes ownership")
-            XCTAssertGreaterThan(zoom.frame.midX,web.frame.midX,"Document zoom stays on Duo’s right edge")
+            let accounts=app.buttons["kindred-duo-accounts"],settings=app.buttons["kindred-duo-settings"]
+            XCTAssertGreaterThan(accounts.frame.maxX,web.frame.midX,"The native toolbar is at the trailing edge")
+            XCTAssertTrue(abs(zoom.frame.midX-accounts.frame.midX)<4 || abs(zoom.frame.midY-accounts.frame.midY)<4,"Zoom shares the native adaptive toolbar’s axis")
+            if abs(settings.frame.midX-accounts.frame.midX)<4 {XCTAssertLessThan(settings.frame.midY,accounts.frame.midY)}
+            else {XCTAssertLessThan(settings.frame.midX,accounts.frame.midX)}
             let refresh=app.buttons["kindred-duo-artifact-refresh"]
             XCTAssertTrue(refresh.exists)
             let generation=state()["generation"] as? Int ?? 0
@@ -53,7 +69,7 @@ final class ArtifactTouchUIKitTests:XCTestCase {
             zoom.tap();let width=app.buttons["Fit width"];XCTAssertTrue(width.waitForExistence(timeout:8));width.tap()
             wait("fit-width-after-refresh"){$0["fit"] as? String=="Fit width"}
             let more=app.buttons["kindred-duo-artifact-more"];XCTAssertTrue(more.exists);more.tap()
-            let chats=app.buttons["Chats"];XCTAssertTrue(chats.waitForExistence(timeout:8))
+            let download=app.buttons["Download original"];XCTAssertTrue(download.waitForExistence(timeout:8))
             // Tap the same dock item to dismiss, without navigating away from the document.
             web.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.8)).tap()
             wait("dock-more-dismissed"){$0["nativeMenuPresented"] as? Bool==false}
