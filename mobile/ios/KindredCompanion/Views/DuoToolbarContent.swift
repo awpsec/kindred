@@ -28,6 +28,10 @@ struct DuoRailButtons: View {
     let manageAccounts: () -> Void
     private var artifacts: Bool { ["artifacts", "artifact"].contains(session.presentation.route) }
     private var vertical: Bool { session.presentation.toolbarVertical }
+    private var showsComputer: Bool {
+        let p = session.presentation
+        return (p.route == "bot-chat" && p.isDuoInner) || (p.route == "computer" && !p.hasBotCenter)
+    }
     private var length: CGFloat { min(session.presentation.toolbarLength, CGFloat(buttonCount) * 44 + 8) }
     private var buttonCount: Int {
         let p = session.presentation, controls = p.artifactControls
@@ -36,7 +40,7 @@ struct DuoRailButtons: View {
             p.toolbarIdentity && p.route == "bot-chat" && p.botDetailsAvailable,
             back, p.route == "details" && p.botSettingsAvailable,
             p.route == "computer" && p.computerExpandAvailable, p.listToggleAvailable,
-            p.route == "bot-chat" || (p.route == "computer" && !p.hasBotCenter),
+            showsComputer,
             artifacts && p.artifactLibraryVisible && !(controls?.filters.isEmpty ?? true),
             artifacts && p.route == "artifact" && controls?.zoom != nil,
             artifacts && p.route == "artifact" && controls?.actions.contains(where: { $0.id == "refresh" }) == true,
@@ -118,10 +122,11 @@ struct DuoRailButtons: View {
                     session.performDuoAction(.chats)
                 } label: { railLabel(artifacts ? (session.presentation.listVisible ? "Hide artifact list" : "Show artifact list") : (session.presentation.listVisible ? "Hide chat list" : "Show chat list"), systemImage: "sidebar.left") }
             }
-            if session.presentation.route == "bot-chat" || (session.presentation.route == "computer" && !session.presentation.hasBotCenter) {
+            if showsComputer {
                 Button {
                     session.performDuoAction(.computer)
                 } label: { railLabel(session.presentation.route == "computer" ? "Close computer" : "Bot computer", systemImage: "desktopcomputer") }
+                .accessibilityIdentifier("kindred-duo-computer")
             }
             if artifacts, let controls = session.presentation.artifactControls {
                 if session.presentation.artifactLibraryVisible, !controls.filters.isEmpty {
