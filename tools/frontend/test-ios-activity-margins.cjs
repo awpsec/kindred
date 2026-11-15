@@ -42,7 +42,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    await page.waitForTimeout(280);
    const rects=await page.locator('#content>.activity-receipt:visible,#content>.activity-pager:visible,#content>.task-commentary-block:visible').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {class:n.className,left:r.left,right:r.right,width:r.width,overflow:n.scrollWidth-n.clientWidth};}));
    assert(rects.length>=2,label+': active item and navigation are present');
-   for(const r of rects){assert(r.right<=width-(width===390?0:84)+1,label+': activity clears rail '+JSON.stringify(r));assert(r.left>=0,label+': left stays on screen');assert(r.overflow<=1,label+': no horizontal content overflow '+JSON.stringify(r));}
+   for(const r of rects){assert(r.right<=width-(width===390?0:96)+1,label+': activity clears rail with breathing room '+JSON.stringify(r));assert(r.left>=0,label+': left stays on screen');assert(r.overflow<=1,label+': no horizontal content overflow '+JSON.stringify(r));}
    return rects;
   };
   const widths=[];

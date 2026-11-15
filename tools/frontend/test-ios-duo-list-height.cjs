@@ -47,6 +47,7 @@ const bundle = path.resolve(__dirname, '../../mobile/ios/KindredCompanion/Web');
     assert(before.summary.bottom<=before.list.bottom,'six bots, group, and Bot conversations fit before any scrolling');
     assert.equal(before.scrollTop,0);
     const first=page.locator('#bots .nav-entry .bot-link').first();
+    assert(await page.locator('#bots .nav-entry').evaluateAll(nodes=>nodes.every(node=>node.getBoundingClientRect().right<=376.5)),'cover chat rows leave a fixed gap before the right controls');
     const firstTop=await first.evaluate(node=>node.getBoundingClientRect().top);
     assert(firstTop>=16,'the first cover conversation clears the display contour with breathing room');
     assert(await first.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+r.width/2,r.top+2));}),'the first row is tappable at its top edge, not clipped by the contour');

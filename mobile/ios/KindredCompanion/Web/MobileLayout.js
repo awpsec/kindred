@@ -1602,12 +1602,13 @@
     const lane = historyRect && {left:historyRect.left+history.clientLeft+(parseFloat(historyStyle.paddingLeft)||0),right:historyRect.left+history.clientLeft+history.clientWidth-(parseFloat(historyStyle.paddingRight)||0)};
     // One reading lane for both authors, above and below the controls. Seed
     // from native rail insets so delayed toolbar measurement cannot widen it.
-    let laneLeft = lane && flow ? Math.max(0,edgeLeft-lane.left+6) : 0;
-    let laneRight = lane && flow ? Math.max(0,lane.right-(innerWidth-edgeRight)+6) : 0;
+    const laneGap = 12;
+    let laneLeft = lane && flow ? Math.max(0,edgeLeft-lane.left+laneGap) : 0;
+    let laneRight = lane && flow ? Math.max(0,lane.right-(innerWidth-edgeRight)+laneGap) : 0;
     for (const zone of lane && flow ? zones : []) {
       if (zone.x >= lane.right || zone.x+zone.width <= lane.left) continue;
-      if (zone.x+zone.width/2 > (lane.left+lane.right)/2) laneRight = Math.max(laneRight,lane.right-zone.x+6);
-      else laneLeft = Math.max(laneLeft,zone.x+zone.width+6-lane.left);
+      if (zone.x+zone.width/2 > (lane.left+lane.right)/2) laneRight = Math.max(laneRight,lane.right-zone.x+laneGap);
+      else laneLeft = Math.max(laneLeft,zone.x+zone.width+laneGap-lane.left);
     }
     setContentInset(conversation,'--ios-message-lane-left',laneLeft);
     setContentInset(conversation,'--ios-message-lane-right',laneRight);
@@ -1619,6 +1620,10 @@
     const base = readingRect(sidebar), sidebarStyle = getComputedStyle(sidebar);
     const contentLeft = base.left+(parseFloat(sidebarStyle.paddingLeft)||0), contentRight = base.right-(parseFloat(sidebarStyle.paddingRight)||0);
     const inset = insetFor({left:contentLeft,right:contentRight,width:contentRight-contentLeft});
+    if (flow) {
+      if (inset.left > 0) inset.left = Math.min(contentRight-contentLeft,inset.left+6);
+      if (inset.right > 0) inset.right = Math.min(contentRight-contentLeft,inset.right+6);
+    }
     const scroll = document.querySelector('#bots'), viewport = scroll ? readingRect(scroll,sidebar) : base;
     const rows = [...sidebar.querySelectorAll('#bots .nav-entry')];
     const contour = nativeDuo && viewport.width > 0 && viewport.height > 0 ? displayContour(viewport) : null;
