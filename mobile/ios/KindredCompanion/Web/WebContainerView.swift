@@ -67,6 +67,7 @@ final class WebHostView: UIView {
     private var hasDivision = false
     private var railSampleScheduled = false
     private var railOnLeft = false
+    private var duoRailController: UIHostingController<AnyView>?
     @objc private func sceneDidActivate(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene,
               scene === window?.windowScene else { return }
@@ -91,6 +92,10 @@ final class WebHostView: UIView {
     private func sampleRailControls() {
         guard let session, let window, window.windowScene?.activationState == .foregroundActive else { return }
         let web = session.webView
+        if let rail = duoRailController?.view, rail.superview === self, !rail.isHidden {
+            session.updateRailFrame(web.convert(rail.bounds, from: rail), identity: session.toolbarIdentityFrame)
+            return
+        }
         guard session.presentation.usesNativeRail else { session.updateRailFrame(nil); return }
         if session.presentation.isDuoInner {
             let identity = session.toolbarIdentityFrame
@@ -179,10 +184,42 @@ final class WebHostView: UIView {
             let fallback = vertical ? session.webView.bounds.height - 160 : session.webView.bounds.width - 140
             let available = !area.isNull && measured.isFinite && measured >= 60 ? measured : fallback
             session.updateToolbarLayout(vertical: vertical, length: max(44, available - 16))
-        }
+            updateDuoRail(session: session, vertical: vertical, insets: insets, area: area)
+        } else { duoRailController?.view.isHidden = true }
         session.refreshSystemTextSize()
         publishGeometry()
         session.restoreComputerKeyboard()
+    }
+
+    @available(iOS 27.1, *)
+    private func updateDuoRail(session: WebSession, vertical: Bool, insets: UIEdgeInsets, area: CGRect) {
+        guard vertical, session.presentation.hasChatInterface, session.loadState.failure == nil else {
+            duoRailController?.view.isHidden = true; return
+        }
+        let controller: UIHostingController<AnyView>
+        if let existing = duoRailController { controller = existing }
+        else {
+            controller = UIHostingController(rootView: AnyView(DuoRailButtons(session: session, manageAccounts: { [weak session] in session?.requestAccountsFromRail() }).ignoresSafeArea()))
+            controller.view.backgroundColor = .clear
+            controller.view.isOpaque = false
+            duoRailController = controller
+        }
+        var responder: UIResponder? = self
+        while let current = responder, !(current is UIViewController) { responder = current.next }
+        if let parent = responder as? UIViewController, controller.parent !== parent {
+            controller.willMove(toParent: nil); controller.removeFromParent()
+            parent.addChild(controller); controller.didMove(toParent: parent)
+        }
+        if controller.view.superview !== self { addSubview(controller.view) }
+        controller.view.isHidden = false
+        let web = session.webView
+        let size = controller.sizeThatFits(in: CGSize(width: 52, height: session.presentation.toolbarLength))
+        let strip = max(68, railOnLeft ? insets.left : insets.right)
+        let x = railOnLeft ? max(8, (strip - 52) / 2) : max(8, web.bounds.width - strip + (strip - 52) / 2)
+        let top = area.isNull ? max(8, insets.top) : max(8, area.minY + 8)
+        let height = min(max(44, size.height), max(44, web.bounds.height - top - 8))
+        controller.view.frame = convert(CGRect(x: x, y: top, width: 52, height: height), from: web)
+        bringSubviewToFront(controller.view)
     }
 
     @objc private func keyboardDidHide() {
@@ -265,6 +302,12 @@ final class WebHostView: UIView {
     }
 
     func attach(_ session: WebSession) {
+        if self.session !== session {
+            duoRailController?.willMove(toParent: nil)
+            duoRailController?.view.removeFromSuperview()
+            duoRailController?.removeFromParent()
+            duoRailController = nil
+        }
         self.session = session
         hasDivision = hasDivision || session.presentation.isDuo
         let webView = session.webView

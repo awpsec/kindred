@@ -34,6 +34,15 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         XCTAssertTrue(web.exists)
         let duo=state()["nativeLayout"] as? [String:Any]
         let isDuo=duo?["isDuo"] as? Bool==true
+        func reveal(_ button: XCUIElement) {
+            let rail=app.scrollViews["kindred-duo-navigation-rail"]
+            for _ in 0..<6 where !button.isHittable && rail.exists {
+                let r=button.frame,b=rail.frame
+                if b.height>b.width {if r.midY>b.midY {rail.swipeUp()} else {rail.swipeDown()}}
+                else {if r.midX>b.midX {rail.swipeLeft()} else {rail.swipeRight()}}
+            }
+            XCTAssertTrue(button.isHittable,"Native rail action is reachable by scrolling")
+        }
         if isDuo {
             let ids=["search","new","chats","marketplace","settings","accounts"]
             let buttons=ids.map { app.buttons["kindred-duo-"+$0] }
@@ -44,10 +53,10 @@ final class ArtifactTouchUIKitTests:XCTestCase {
             }
             let trace=XCTAttachment(data:try JSONSerialization.data(withJSONObject:frames,options:[.prettyPrinted,.sortedKeys]),uniformTypeIdentifier:"public.json");trace.name="native-direct-button-frames";trace.lifetime = .keepAlways;add(trace)
             let tree=XCTAttachment(string:app.debugDescription);tree.name="native-direct-toolbar-hierarchy";tree.lifetime = .keepAlways;add(tree)
-            for button in buttons {XCTAssertTrue(button.exists,"All requested actions remain individual native buttons");XCTAssertTrue(button.isHittable,"Every action remains reachable");XCTAssertGreaterThanOrEqual(button.frame.height,44)}
+            for button in buttons {XCTAssertTrue(button.exists,"All requested actions remain individual native buttons");reveal(button);XCTAssertGreaterThanOrEqual(button.frame.height,44)}
         }
         let zoom=app.buttons[isDuo ? "kindred-duo-artifact-zoom" : "kindred-glass-artifact-zoom"]
-        XCTAssertTrue(zoom.waitForExistence(timeout:10));zoom.tap()
+        XCTAssertTrue(zoom.waitForExistence(timeout:10));if isDuo{reveal(zoom)};zoom.tap()
         let fit=app.buttons["Fit width"];XCTAssertTrue(fit.waitForExistence(timeout:8));fit.tap()
         wait("fit-width-menu-dismissed"){$0["fit"] as? String=="Fit width" && $0["nativeMenuPresented"] as? Bool==false}
         capture("native-fit-width")
@@ -62,13 +71,13 @@ final class ArtifactTouchUIKitTests:XCTestCase {
             let refresh=app.buttons["kindred-duo-artifact-refresh"]
             XCTAssertTrue(refresh.exists)
             let generation=state()["generation"] as? Int ?? 0
-            refresh.tap()
+            reveal(refresh);refresh.tap()
             wait("dock-refresh-after-fit-width",timeout:60){($0["generation"] as? Int ?? 0)>generation && $0["ready"] as? Bool==true}
             capture("native-dock-refresh")
             // Refresh can restore Fit Page; retain the actual menu and fit closures.
-            zoom.tap();let width=app.buttons["Fit width"];XCTAssertTrue(width.waitForExistence(timeout:8));width.tap()
+            reveal(zoom);zoom.tap();let width=app.buttons["Fit width"];XCTAssertTrue(width.waitForExistence(timeout:8));width.tap()
             wait("fit-width-after-refresh"){$0["fit"] as? String=="Fit width"}
-            let more=app.buttons["kindred-duo-artifact-more"];XCTAssertTrue(more.exists);more.tap()
+            let more=app.buttons["kindred-duo-artifact-more"];XCTAssertTrue(more.exists);reveal(more);more.tap()
             let download=app.buttons["Download original"];XCTAssertTrue(download.waitForExistence(timeout:8))
             // Tap the same dock item to dismiss, without navigating away from the document.
             web.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.8)).tap()
@@ -84,15 +93,15 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         start.press(forDuration:0.05,thenDragTo:end)
         wait("native-one-finger-pan"){($0["scrollTop"] as? Double ?? 0)>50}
         capture("native-pan")
-        zoom.tap();let page=app.buttons["Fit page"];XCTAssertTrue(page.waitForExistence(timeout:8));page.tap()
+        if isDuo{reveal(zoom)};zoom.tap();let page=app.buttons["Fit page"];XCTAssertTrue(page.waitForExistence(timeout:8));page.tap()
         wait("fit-page-after-real-gesture"){$0["fit"] as? String=="Fit page" && $0["nativeMenuPresented"] as? Bool==false}
         if isDuo {
             if state()["libraryVisible"] as? Bool != true {
-                let back=app.buttons["Artifact list"];XCTAssertTrue(back.exists);back.tap()
+                let back=app.buttons["Artifact list"];XCTAssertTrue(back.exists);reveal(back);back.tap()
                 wait("cover-hamburger-restores-library"){$0["libraryVisible"] as? Bool==true}
                 capture("native-cover-library")
             }
-            let filter=app.buttons["kindred-duo-artifact-filter"];XCTAssertTrue(filter.exists);filter.tap()
+            let filter=app.buttons["kindred-duo-artifact-filter"];XCTAssertTrue(filter.exists);reveal(filter);filter.tap()
             let name=app.buttons["Name A–Z"]
             if !name.waitForExistence(timeout:2),app.buttons["Sort artifacts"].exists {app.buttons["Sort artifacts"].tap()}
             XCTAssertTrue(name.waitForExistence(timeout:8));name.tap()

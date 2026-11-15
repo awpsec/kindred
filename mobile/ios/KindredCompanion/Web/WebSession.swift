@@ -218,6 +218,12 @@ final class WebSession: NSObject {
         case back, computer, botSettings, chats, chatHome, settings, artifacts, marketplace, search, newChat, newBot, newConversation, expandComputer, botDetails
     }
 
+    func requestAccountsFromRail() {
+        guard presentation.usesNativeRail, presentation.hasChatInterface, !nativeNavigationBlocked,
+              loadState.failure == nil else { return }
+        host?.webSessionRequestedAccounts(self)
+    }
+
     func performArtifactControl(_ action:String,snapshot:DuoArtifactControls,filter:String?=nil,value:String?=nil) {
         guard presentation.usesNativeRail,presentation.hasChatInterface,!nativeNavigationBlocked,loadState.failure == nil,
               ["artifacts","artifact"].contains(presentation.route),origin.matches(webView.url),

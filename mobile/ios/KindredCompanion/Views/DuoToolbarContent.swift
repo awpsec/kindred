@@ -7,18 +7,21 @@ import SwiftUI
 struct DuoToolbarContent: ToolbarContent {
     let session: WebSession
     let manageAccounts: () -> Void
+    @ToolbarContentBuilder
     var body: some ToolbarContent {
+        if !session.presentation.toolbarVertical {
         ToolbarItem(placement: .topBarTrailing) {
             DuoRailButtons(session: session, manageAccounts: manageAccounts)
         }
         .sharedBackgroundVisibility(.hidden)
-        .axisBehavior(session.presentation.toolbarVertical ? .verticalPreferred : .horizontalOnly)
+        .axisBehavior(.horizontalOnly)
+        }
     }
 }
 
 @available(iOS 27.1, *)
 @MainActor
-private struct DuoRailButtons: View {
+struct DuoRailButtons: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let session: WebSession
