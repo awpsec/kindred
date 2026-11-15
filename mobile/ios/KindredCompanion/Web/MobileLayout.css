@@ -130,15 +130,15 @@ html[data-kindred-ios][data-ios-short-viewport] .conversation-header,html[data-k
   html[data-kindred-ios] .ios-settings-header { display:flex; flex-direction:column; flex:none; gap:20px; padding:16px 16px 12px; }
   html[data-kindred-ios] .ios-settings-header>.icon-button { display:flex; justify-content:center; align-items:center; width:44px; height:44px; min-height:44px; min-width:44px; padding:11px; border-radius:50%; border:1px solid var(--line); background:var(--surface); }
   html[data-kindred-ios] #ios-settings-account { display:flex; align-items:center; gap:12px; width:100%; min-height:84px; padding:16px; text-align:left; background:var(--surface); border-radius:20px; }
-  html[data-kindred-ios] .ios-account-initial { display:grid; place-items:center; flex:none; width:44px; height:44px; border-radius:50%; background:var(--hover); color:var(--soft); font-size:16px; font-weight:600; }
+  html[data-kindred-ios] .ios-account-initial { display:grid; place-items:center; flex:none; width:44px; height:44px; border-radius:50%; background:var(--hover); color:var(--soft); font-size:calc(16px * var(--text-scale,1)); font-weight:600; }
   html[data-kindred-ios] .ios-account-copy { display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }
-  html[data-kindred-ios] .ios-account-copy strong { font-size:16px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  html[data-kindred-ios] .ios-account-copy>span { color:var(--muted); font-size:13px; }
+  html[data-kindred-ios] .ios-account-copy strong { font-size:calc(16px * var(--text-scale,1)); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  html[data-kindred-ios] .ios-account-copy>span { color:var(--muted); font-size:calc(13px * var(--text-scale,1)); }
   html[data-kindred-ios] #ios-settings-account>span:last-child { color:var(--muted); }
   html[data-kindred-ios] #settings-dialog>.settings-nav { width:100%; padding:0 16px 10px; background:transparent; border:0; min-width:0; }
   html[data-kindred-ios] #settings-dialog .settings-nav :is(h2,.settings-version) { display:none; }
   html[data-kindred-ios] #settings-nav { display:flex; flex-wrap:nowrap; gap:6px; overflow-x:auto; padding:4px 0; scrollbar-width:none; }
-  html[data-kindred-ios] #settings-nav button { width:auto; flex:none; min-height:44px; margin:0; padding:10px 14px; border-radius:22px; white-space:nowrap; font-size:14px; }
+  html[data-kindred-ios] #settings-nav button { width:auto; flex:none; min-height:44px; margin:0; padding:10px 14px; border-radius:22px; white-space:nowrap; font-size:calc(14px * var(--text-scale,1)); }
   html[data-kindred-ios] #settings-dialog .settings-main>header { display:none; }
   html[data-kindred-ios] #settings-content { padding:12px 16px 24px; scroll-padding:12px; }
   html[data-kindred-ios] #settings-content .setting-box { border-radius:20px; }
@@ -225,7 +225,7 @@ html[data-kindred-ios] .artifact-folder-more { min-height:44px; font-size:14px; 
 html[data-kindred-ios] :is(.artifact-studio-library-item,.artifact-folder-heading) * { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 html[data-kindred-ios] .artifact-studio-library-status { padding:12px 24px 0; font-size:12px; }
 html[data-kindred-ios] .artifact-studio-library-empty { padding:24px 16px; font-size:16px; }
-html[data-kindred-ios] .artifact-workbench { padding-bottom:var(--ios-safe-bottom); }
+html[data-kindred-ios] .artifact-workbench { padding-bottom:0; }
 html[data-kindred-ios] .artifact-workbench-header { flex-direction:row; flex-wrap:nowrap; align-items:center; gap:8px; min-height:calc(72px + var(--ios-safe-top)); padding:calc(12px + var(--ios-safe-top)) 16px 12px; border:0; }
 html[data-kindred-ios] .artifact-workbench-title { flex:1; min-width:80px; }
 html[data-kindred-ios] .artifact-workbench-actions { margin-left:auto; }
@@ -299,6 +299,7 @@ html[data-kindred-ios][data-ios-duo=true] .ios-artifact-navigation { height:0; m
    active fold. Native Back/Search/Add remain the only navigation controls. */
 html[data-kindred-ios][data-ios-duo=true] #app .artifact-studio { display:block; }
 html[data-kindred-ios][data-ios-duo=true] #app .artifact-studio :is(.artifact-studio-library,.artifact-workbench) { position:absolute; inset:var(--ios-artifact-y,0px) auto auto var(--ios-artifact-x,0px); width:var(--ios-artifact-width,100%); height:var(--ios-artifact-height,100%); max-width:none; max-height:none; min-width:0; min-height:0; box-sizing:border-box; padding-bottom:12px; overflow:hidden; }
+html[data-kindred-ios][data-ios-duo=true] #app .artifact-studio .artifact-workbench { padding-bottom:0; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-workbench-header [aria-label="Back to artifacts"] { display:none; }
 html[data-kindred-ios][data-ios-duo=true] .artifact-workbench-header>.ios-artifact-more:not(.ios-artifact-document-actions) { display:none; }
 /* Hide redundant web chrome only after the native dock accepts this root. */
@@ -629,7 +630,7 @@ html[data-kindred-ios] dialog[data-ios-sheet] .dialog-header {
  position:sticky; top:0; z-index:3; min-height:64px; padding:10px 20px; margin:0;
  background:var(--panel); border-bottom:1px solid var(--line); gap:12px;
 }
-html[data-kindred-ios] dialog[data-ios-sheet] .dialog-header h2 { margin:0; font-size:16px; }
+html[data-kindred-ios] dialog[data-ios-sheet] .dialog-header h2 { margin:0; font-size:calc(16px * var(--text-scale,1)); }
 html[data-kindred-ios] dialog[data-ios-sheet] .dialog-header>button { display:flex; align-items:center; justify-content:center; flex:none; width:44px; height:44px; padding:12px; border-radius:50%; }
 html[data-kindred-ios] dialog[data-ios-sheet]:is(.chat-dialog,.server-chat-dialog)>:not(.dialog-header) { margin:0; padding:20px; }
 html[data-kindred-ios] dialog[data-ios-sheet].bot-dialog form { padding:20px; }
@@ -735,6 +736,9 @@ html[data-kindred-ios] #composer .voice-start::before{content:'';position:absolu
 /* Native WKWebView already owns viewport scaling. Settings values use the
    same 13pt Dynamic Type base as their rows, not Safari's 16px focus floor. */
 html[data-kindred-ios] :is(#settings-dialog,#details-content,#bot-dialog,.voice-call-options,.app-detail-dialog,.server-admin-dialog) :is(input,textarea,select){font-size:calc(13px * var(--text-scale,1));}
+html[data-kindred-ios] :is(.vm-resource-settings,.server-update-settings) h3{font-size:calc(14px * var(--text-scale,1));}
+html[data-kindred-ios] .vm-resource-form label{font-size:calc(12px * var(--text-scale,1));}
+html[data-kindred-ios][data-large-text] .ios-account-copy strong{white-space:normal;overflow-wrap:anywhere;}
 /* Native action sheets retain every shared action without a desktop toolbar. */
 html[data-kindred-ios] .artifact-workbench-actions[data-ios-document-actions]{position:fixed;inset:auto;margin:0;max-width:calc(100% - 16px);}
 html[data-kindred-ios] .artifact-workbench-actions[data-ios-document-actions]:not(:popover-open){display:none;}

@@ -385,6 +385,11 @@
       library=avoid({x:left,y:top,width:width-left-right,height:height-top-bottom},regions);
       documentFrame=avoid(frame,cover?regions.filter(r=>r.kind==='division'):regions);
     }
+    // The reading surface may paint beneath the home indicator. Keep the
+    // library and controls safe, and never extend through a fold or occlusion.
+    if(fullCover&&documentFrame&&Math.abs(documentFrame.y+documentFrame.height-frame.y-frame.height)<.5) {
+      documentFrame={...documentFrame,height:documentFrame.height+bottom};
+    }
     return {mode,library,document:documentFrame,resizable,maximum};
   };
   const artifactButton = (label, path) => {
