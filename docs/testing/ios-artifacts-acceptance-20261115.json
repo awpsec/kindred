@@ -1,0 +1,167 @@
+{
+  "at": "2026-11-15T16:31:37.253288+00:00",
+  "version": "0.90.7",
+  "build": "14",
+  "native_source": "d5b1a4f0fe57ff406b07c0f84cddb4d7e4e1dd8a",
+  "bundle_id": "dev.kindred.companion",
+  "same_signing_identity": true,
+  "viewer_sha256": "13ad9825525590e9407c71d43a7e2a15c629b12445094f183e5b80603e127e2f",
+  "viewer_source": "81f57f821b7c6332c2de847a00bf24aadf452865",
+  "changes": [
+    "Remove redundant Word fallback footer; PDF footer is page position only",
+    "Retain Word glyph layout during zoom and restore pre-double-tap zoom",
+    "Anchor native controls under the system status column",
+    "Group Accounts, Settings and Marketplace; enlarge native symbols",
+    "Remove new-conversation action from chat detail, retain it on chat list",
+    "Extend document reading through bottom safe area without crossing folds",
+    "Scale native Settings name, tabs, captions and section headings with Dynamic Type",
+    "Rename Refresh Workspace and recover main-frame HTTP errors"
+  ],
+  "checks": [
+    {
+      "check": "Word retained-text zoom, Fit Width/manual restore, reduced motion",
+      "source": "81f57f821b7c6332c2de847a00bf24aadf452865",
+      "seconds": 2.27,
+      "exit_code": 0,
+      "receipt": "ios-qa/20261115-document-footer/word-final/run.json",
+      "automatic_retry": false
+    },
+    {
+      "check": "PDF pages, Word fallback and cancellation",
+      "source": "81f57f821b7c6332c2de847a00bf24aadf452865",
+      "seconds": 2.59,
+      "exit_code": 0,
+      "receipt": "ios-qa/20261115-document-footer/pages-final/run.json",
+      "automatic_retry": false
+    },
+    {
+      "check": "File-backed document workflow, six browser layouts",
+      "source": "d5e179c0a6e06171cd0cacb4350209d53ac1387c",
+      "seconds": 19.64,
+      "exit_code": 0,
+      "receipt": "ios-qa/20261115-document-footer/files-unavailable-formula/run.json",
+      "automatic_retry": false
+    },
+    {
+      "check": "Artifacts all poses and bottom-safe-area reading surface",
+      "source": "43c7e5e54c7b35b79d5a02aebccd287b634662f2",
+      "seconds": 3.86,
+      "exit_code": 0,
+      "receipt": "ios-qa/20261115-bottom-settings/artifacts/run.json",
+      "automatic_retry": false
+    },
+    {
+      "check": "Six Settings sections at small/large sizes on phone and two Duo poses",
+      "source": "d5b1a4f0fe57ff406b07c0f84cddb4d7e4e1dd8a",
+      "seconds": 5.03,
+      "exit_code": 0,
+      "receipt": "ios-qa/20261115-bottom-settings/settings-final/run.json",
+      "automatic_retry": false
+    },
+    {
+      "check": "Genuine native final Word pinch/double-tap/pan and navigation",
+      "source": "51b19b30954f7bcf5ad386cb26908941c7213a88",
+      "seconds": 100.54,
+      "exit_code": 0,
+      "receipt": "ios-qa/20261115-artifact-xcui/word-clean-footer-synced/run.json",
+      "automatic_retry": false
+    },
+    {
+      "check": "Genuine native PDF gestures and Fit Width/manual restore",
+      "source": "b3cb7046c60563b0e7b3d0a64ba713db359e8f68",
+      "seconds": 76.61,
+      "exit_code": 0,
+      "receipt": "ios-qa/20261115-artifact-xcui/pdf-fit-width-toggle/run.json",
+      "automatic_retry": false
+    },
+    {
+      "check": "Native chat-list-only create control, real keyboard/draft, menus and status alignment",
+      "source": "8b7a69dd0861af10a8bb5a16226b98054098ccc7",
+      "seconds": 58.03,
+      "exit_code": 0,
+      "receipt": "ios-qa/20261115-artifact-xcui/chat-create-list-only-and-keyboard/run.json",
+      "automatic_retry": false
+    },
+    {
+      "check": "iPhone native HTTP-error and startup recovery, three tests",
+      "source": "23a3eaeffe4246f1f128172fd4882f1f6c527f58",
+      "seconds": 22.18,
+      "exit_code": 0,
+      "receipt": "ios-qa/20261115-workspace-refresh/iphone-recovery/run.json",
+      "automatic_retry": false
+    },
+    {
+      "check": "Duo startup recovery after local fixture abort handling fix",
+      "source": "23a3eaeffe4246f1f128172fd4882f1f6c527f58",
+      "seconds": 6.59,
+      "exit_code": 0,
+      "receipt": "ios-qa/20261115-workspace-refresh/duo-startup-after-fixture-fix/run.json",
+      "automatic_retry": false
+    }
+  ],
+  "duo_initial_recovery_run": {
+    "receipt": "ios-qa/20261115-workspace-refresh/run.json",
+    "result": "Five of six cases passed; the local test fixture aborted during teardown, so startup could not begin. Startup passed after fixing fixture request rejection handling.",
+    "preserved": true
+  },
+  "non_acceptance_attempts": [
+    {
+      "receipt": "ios-qa/20261115-artifact-xcui/word-clean-footer-final/run.json",
+      "result": "Cancelled before acceptance because diagnostic source synchronization had not completed; superseded by clean-source word-clean-footer-synced."
+    },
+    {
+      "receipt": "ios-qa/20261115-document-footer/word/run.json",
+      "result": "Detected fractional-zoom measurement drift after footer removal; fixed by measuring natural page sizes before zoom."
+    },
+    {
+      "receipt": "ios-qa/20261115-bottom-settings/settings/run.json",
+      "result": "Detected additional fixed-size progress caption and Archived headings; fixed and final 54-case audit passed."
+    }
+  ],
+  "physical": {
+    "earlier_owner_acceptance": "Steady text; zoom toggle works",
+    "earlier_native_build": "13",
+    "earlier_native_source": "23a3eaeffe4246f1f128172fd4882f1f6c527f58",
+    "earlier_viewer_sha256": "181f1b8f2583cd236c708c69d0f0c7af079608ae91da9bde4df45dabe486775a",
+    "screen_viewing_off_for_owner_gestures": true,
+    "clean_footer_observed_on_device": true,
+    "refresh_workspace_label_observed_on_device": true,
+    "build14_install": {
+      "source": "d5b1a4f0fe57ff406b07c0f84cddb4d7e4e1dd8a",
+      "version": "0.90.7",
+      "build": "14",
+      "bundle_id": "dev.kindred.companion",
+      "team": "92Y82K5BUS",
+      "installed": false,
+      "launched": false,
+      "accounts_or_keychain_edited": false,
+      "uninstalled_or_reset": false,
+      "normal_build_without_xctest": true,
+      "started_utc": "2026-11-15T16:28:03.488472+00:00",
+      "blocker": "Duo is locked or disconnected",
+      "completed_utc": "2026-11-15T16:29:35.590069+00:00"
+    },
+    "original_saved_accounts_preserved": true,
+    "usual_account_restoration": "QA account retained for the owner\u2019s ongoing layout review; the two usual accounts remain saved."
+  },
+  "managed_server": {
+    "release_task_owns_rollout": true,
+    "published_or_deployed_from_this_task": false,
+    "usual_server_still_old_at_last_probe": true
+  },
+  "signed_build": {
+    "source": "d5b1a4f0fe57ff406b07c0f84cddb4d7e4e1dd8a",
+    "version": "0.90.7",
+    "build": "14",
+    "bundle_id": "dev.kindred.companion",
+    "same_developer_certificate": true,
+    "certificate_sha256": "581b0ee4c93775fc21b7728da362d6d382d769a94928172dbf1798cb54e60131",
+    "native_binary_sha256": {
+      "Kindred": "c7b97c820df41bcc84176ed1a02f31b0d0ba410c2381a33b199eb02118065ec7",
+      "Kindred.debug.dylib": "66fcc6eafc75f63a41bcb4fe8b3d9fe6505a20c10d59a3a2a028a8eb7689322d",
+      "PlugIns/KindredVoiceActivity.appex/KindredVoiceActivity": "22b382c668b002b5aabaf264003e049e9be17aab1bbfcdbd7ec90c67aaccef1a"
+    },
+    "normal_app": true,
+    "diagnostic_artifact_host": false
+  }
+}
