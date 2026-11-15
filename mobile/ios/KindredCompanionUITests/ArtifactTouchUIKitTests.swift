@@ -17,6 +17,7 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for:[ready],timeout:60),.completed)
         let reference=app.buttons["kindred-system-rail-reference"]
         XCTAssertTrue(reference.waitForExistence(timeout:10))
+        XCTAssertEqual(app.scrollViews["kindred-duo-navigation-rail"].frame.midX,reference.frame.midX,accuracy:0.5,"Glass shares the genuine system control's column")
         let data=XCTAttachment(string:(telemetry.value as? String ?? "")+"\nSystem reference: \(reference.frame)\nRail: \(app.scrollViews["kindred-duo-navigation-rail"].frame)\n"+app.debugDescription)
         data.name="native-system-status-centerline-reference";data.lifetime = .keepAlways;add(data)
     }
@@ -32,7 +33,7 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         #else
         continueAfterFailure=false
         XCUIDevice.shared.orientation = portrait ? .portrait : .landscapeLeft
-        let app=XCUIApplication();app.launchEnvironment=["KINDRED_ARTIFACT_TOUCH_UI_TEST":"1","KINDRED_ARTIFACT_UI_ORIENTATION":portrait ? "portrait" : "landscape"];app.launch();defer{app.terminate()}
+        let app=XCUIApplication();app.launchEnvironment=["KINDRED_ARTIFACT_TOUCH_UI_TEST":"1","KINDRED_SYSTEM_RAIL_REFERENCE":"1","KINDRED_ARTIFACT_UI_ORIENTATION":portrait ? "portrait" : "landscape"];app.launch();defer{app.terminate()}
         let telemetry=app.staticTexts["artifact-touch-telemetry"];XCTAssertTrue(telemetry.waitForExistence(timeout:15))
         let ready=XCTNSPredicateExpectation(predicate:NSPredicate{_,_ in
             guard let s=telemetry.value as? String,let d=s.data(using:.utf8),let v=(try? JSONSerialization.jsonObject(with:d)) as? [String:Any] else{return false}
@@ -47,11 +48,12 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         geometry.name="cover-chat-native-rail-geometry";geometry.lifetime = .keepAlways;add(geometry)
         let state=try XCTUnwrap(try JSONSerialization.jsonObject(with:Data((telemetry.value as? String ?? "{}").utf8)) as? [String:Any])
         XCTAssertEqual((state["nativeLayout"] as? [String:Any])?["isPortrait"] as? Bool,portrait)
-        let systemBar=try XCTUnwrap(state["nativeBarWindowFrame"] as? [String:Double])
-        let expectedX=try XCTUnwrap(systemBar["x"]),expectedWidth=try XCTUnwrap(systemBar["width"])
-        XCTAssertEqual(rail.frame.minX,expectedX,accuracy:1.5,"Visible glass follows UIKit's bar frame, without a second safe-area shift")
+        let systemReference=app.buttons["kindred-system-rail-reference"]
+        XCTAssertTrue(systemReference.waitForExistence(timeout:10))
+        let expectedCenter=systemReference.frame.midX
+        XCTAssertEqual(rail.frame.midX,expectedCenter,accuracy:0.5,"Visible glass follows the genuine system control column")
         XCTAssertEqual(rail.frame.width,52,accuracy:1.5,"The native rail does not extend into chat content")
-        XCTAssertEqual(app.buttons["kindred-duo-search"].frame.midX,expectedX+expectedWidth/2,accuracy:1.5,"The actual button aligns with the bar, not only its container")
+        XCTAssertEqual(app.buttons["kindred-duo-search"].frame.midX,expectedCenter,accuracy:0.5,"The actual button aligns with the system control, not only its container")
         let editor=app.textViews["kindred-native-composer-editor"];XCTAssertTrue(editor.waitForExistence(timeout:15));editor.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:10),"A real native editor tap opens the software keyboard")
         let draft="Artifact navigation draft\nSecond line";editor.typeText(draft)
