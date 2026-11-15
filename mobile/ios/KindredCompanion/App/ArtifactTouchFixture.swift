@@ -93,7 +93,16 @@ final class ArtifactTouchFixtureController:UIViewController {
         telemetry.accessibilityIdentifier="artifact-touch-telemetry";telemetry.accessibilityLabel="Artifact touch telemetry";view.addSubview(telemetry)
         timer=Timer.scheduledTimer(withTimeInterval:0.1,repeats:true){[weak self] _ in MainActor.assumeIsolated{self?.publish()}}
     }
-    override func viewDidAppear(_ animated:Bool){super.viewDidAppear(animated);if !started{started=true;fixture.session.webView.load(URLRequest(url:URL(string:"https://localhost:8765/")!))}}
+    override func viewDidAppear(_ animated:Bool){
+        super.viewDidAppear(animated)
+        if !started {
+            started=true
+            if ProcessInfo.processInfo.environment["KINDRED_ARTIFACT_UI_ORIENTATION"]=="landscape" {
+                view.window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations:.landscapeLeft))
+            }
+            fixture.session.webView.load(URLRequest(url:URL(string:"https://localhost:8765/")!))
+        }
+    }
     override func viewDidLayoutSubviews(){super.viewDidLayoutSubviews();telemetry.frame=CGRect(x:1,y:view.bounds.height-2,width:1,height:1)}
     private func publish(){
         guard !publishing else{return};publishing=true
