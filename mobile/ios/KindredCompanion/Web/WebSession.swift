@@ -35,6 +35,7 @@ final class WebPresentationState {
     var collaboration: NativeCollaborationStatus?
     var listVisible = false
     var artifactLibraryVisible = false
+    var artifactControls: DuoArtifactControls?
 }
 
 @MainActor
@@ -215,6 +216,24 @@ final class WebSession: NSObject {
         case back, computer, botSettings, chats, chatHome, settings, artifacts, marketplace, search, newChat, newBot, newConversation, expandComputer, botDetails
     }
 
+    func performArtifactControl(_ action:String,snapshot:DuoArtifactControls,filter:String?=nil,value:String?=nil) {
+        guard presentation.usesNativeRail,presentation.hasChatInterface,!nativeNavigationBlocked,loadState.failure == nil,
+              ["artifacts","artifact"].contains(presentation.route),origin.matches(webView.url),
+              let current=presentation.artifactControls,current.root==snapshot.root else{return}
+        var command:[String:Any]=["root":snapshot.root,"owner":snapshot.owner ?? "","action":action]
+        if action=="filter" {
+            guard let filter,let value,presentation.artifactLibraryVisible,
+                  let control=current.filters.first(where:{$0.id==filter}),
+                  control.options.contains(where:{$0.value==value&&$0.enabled}) else{return}
+            command["filter"]=filter;command["value"]=value
+        } else {
+            guard current.owner==snapshot.owner,snapshot.owner != nil else{return}
+            if action=="zoom" {guard current.zoom != nil else{return}}
+            else {guard current.actions.contains(where:{$0.id==action&&$0.enabled}) else{return}}
+        }
+        webView.callAsyncJavaScript("return window.__kindredDuoArtifacts?.perform(command)",arguments:["command":command],in:nil,in:.page){_ in}
+    }
+
     func performDuoAction(_ action: DuoAction) {
         guard presentation.usesNativeRail, presentation.hasChatInterface, !nativeNavigationBlocked,
               origin.matches(webView.url), loadState.failure == nil else { return }
@@ -284,6 +303,7 @@ final class WebSession: NSObject {
           window.__KINDRED_IOS_APP_VERSION = \(WebBootstrap.javaScriptString(versionLabel));
           window.__KINDRED_IOS_PUSH_AVAILABLE = \(hasPushSigning ? "true" : "false");
           window.__KINDRED_NATIVE_GLASS = \(hasNativeGlass ? "true" : "false");
+          window.__KINDRED_IOS_DUO_ARTIFACT_CONTROLS = 1;
           const appearance = \(WebBootstrap.javaScriptString(presentation.isDark.map { $0 ? "dark" : "light" } ?? "system"));
           if (appearance !== 'system') document.documentElement.dataset.theme = appearance;
         })();
@@ -623,6 +643,11 @@ final class WebSession: NSObject {
                let route = body["route"] as? String,
                ["chat-list", "bot-chat", "computer", "details", "artifacts", "artifact", "marketplace"].contains(route),
                let title = body["title"] as? String, title.count <= 160, let listVisible = body["listVisible"] as? Bool {
+                let artifactControls:DuoArtifactControls?
+                if let row=body["artifactControls"] as? [String:Any] {
+                    guard let parsed=DuoArtifactControls(row) else{return};artifactControls=parsed
+                } else if body["artifactControls"] == nil || body["artifactControls"] is NSNull {artifactControls=nil}
+                else {return}
                 // Keep conditional toolbar items in the same native transaction
                 // so the glass bar and its controls change together.
                 let animate = presentation.hasLoadedChats && presentation.usesNativeRail &&
@@ -633,6 +658,7 @@ final class WebSession: NSObject {
                     presentation.collaboration = route == "bot-chat" ? (body["collaboration"] as? [String: Any]).flatMap(NativeCollaborationStatus.init) : nil
                     presentation.listVisible = listVisible
                     presentation.artifactLibraryVisible = body["artifactLibraryVisible"] as? Bool == true && ["artifacts", "artifact"].contains(route)
+                    presentation.artifactControls = artifactControls
                     presentation.botSettingsAvailable = body["botSettingsAvailable"] as? Bool == true
                     presentation.botDetailsAvailable = body["botDetailsAvailable"] as? Bool == true
                     if let shape = body["botAvatarShape"] as? String,
@@ -647,6 +673,9 @@ final class WebSession: NSObject {
                     presentation.computerExpandAvailable = body["computerExpandAvailable"] as? Bool == true
                     presentation.computerExpanded = body["computerExpanded"] as? Bool == true
                     presentation.listToggleAvailable = body["listToggleAvailable"] as? Bool == true
+                }
+                if let artifactControls {
+                    webView.callAsyncJavaScript("window.__kindredDuoArtifacts?.ack(key)",arguments:["key":artifactControls.root],in:nil,in:.page){_ in}
                 }
                 refreshRailLayout()
                 return

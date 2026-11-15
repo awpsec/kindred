@@ -2102,6 +2102,59 @@
     if (shell.hidden) return 'marketplace';
     return html.dataset.iosLayout === 'compact' && shell.classList.contains('sidebar-open') ? 'chat-list' : 'bot-chat';
   };
+  // The native Duo dock owns these controls. Retain the original elements and
+  // handlers, with separate list/document identities for delayed native taps.
+  const artifactControlKeys = new WeakMap();
+  const artifactControlKey = node => {
+    if (!node) return null;
+    if (!artifactControlKeys.has(node)) artifactControlKeys.set(node,crypto.randomUUID());
+    return artifactControlKeys.get(node);
+  };
+  const artifactActionSelectors = {
+    edit:'button[aria-label^="Edit "],button[aria-label="Finish editing"]',
+    download:'button[aria-label="Download"],button[aria-label="Download original"]',
+    refresh:'button[aria-label="Refresh document"]',
+  };
+  const artifactDockSnapshot = root => {
+    if (!root || window.__KINDRED_IOS_DUO_ARTIFACT_CONTROLS !== 1) return null;
+    const owner=root.querySelector('.artifact-workbench-actions');
+    const zoom=root.querySelector('.ios-document-zoom-trigger')?.textContent.trim()||'';
+    const actions=owner?Object.entries(artifactActionSelectors).flatMap(([id,selector])=>{
+      const button=owner.querySelector(selector);
+      return !button||button.hidden||button.closest('[hidden]')?[]:[{id,label:(button.getAttribute('aria-label')||button.title).slice(0,100),enabled:!button.disabled&&button.getAttribute('aria-disabled')!=='true'}];
+    }):[];
+    const filters=[['type','Artifact type'],['sort','Sort artifacts']].flatMap(([id,label])=>{
+      const select=root.querySelector(`.artifact-library-filters select[aria-label="${label}"]`);
+      return !select?[]:[{id,label,value:select.value,options:[...select.options].map(option=>({value:option.value,label:option.textContent.trim().slice(0,100),enabled:!select.disabled&&!option.disabled}))}];
+    });
+    return {root:artifactControlKey(root),owner:artifactControlKey(owner),zoom:owner&&/^[0-9]{1,3}%$/.test(zoom)?zoom:null,actions,filters};
+  };
+  window.__kindredDuoArtifacts = {
+    ack(key) {
+      const root=document.querySelector('.artifact-studio');
+      if (!nativeDuo || !root || artifactControlKey(root)!==key) return false;
+      root.dataset.iosNativeArtifactDock='true';return true;
+    },
+    perform(command) {
+      const root=document.querySelector('.artifact-studio'),current=artifactDockSnapshot(root);
+      if (!nativeDuo || !root || !current || command?.root!==current.root || root.closest('[hidden],[inert]') || document.querySelector('dialog[open]')) return false;
+      if (command.action==='filter') {
+        const filter=current.filters.find(row=>row.id===command.filter),library=root.querySelector('.artifact-studio-library');
+        if (!library || library.inert || !filter?.options.some(option=>option.value===command.value&&option.enabled)) return false;
+        const select=root.querySelector(`.artifact-library-filters select[aria-label="${filter.label}"]`);
+        select.value=command.value;select.dispatchEvent(new Event('change',{bubbles:true}));publishDuoNavigation();return true;
+      }
+      if (!current.owner || command.owner!==current.owner || root.dataset.iosArtifactView!=='document' || root.querySelector('.artifact-workbench')?.inert) return false;
+      if (command.action==='zoom') {
+        if (!current.zoom) return false;
+        openToolbarMenu(root.querySelector('.ios-document-zoom-trigger'),root.querySelector('.artifact-workbench'),'.ios-document-zoom-menu');return true;
+      }
+      if (!Object.hasOwn(artifactActionSelectors,command.action)) return false;
+      const button=root.querySelector('.artifact-workbench-actions')?.querySelector(artifactActionSelectors[command.action]);
+      if (!button || button.hidden || button.disabled || button.getAttribute('aria-disabled')==='true') return false;
+      button.click();publishDuoNavigation();return true;
+    },
+  };
   let lastDuoNavigation = '';
   const publishDuoNavigation = () => {
     if (!nativeDuo) return;
@@ -2116,6 +2169,7 @@
       botAvatarColor:/^#[0-9a-f]{6}$/i.test(color) ? color : '#2475ff',
       botDetailsAvailable:['bot-chat','computer'].includes(route) && !!document.querySelector('#bot-details') && !document.querySelector('#bot-details').disabled,
       artifactLibraryVisible:['artifacts','artifact'].includes(route) && document.querySelector('.artifact-studio-library')?.inert === false,
+      artifactControls:artifacts ? artifactDockSnapshot(artifactRoot) : null,
       listVisible:artifacts ? artifactRoot?.querySelector('.artifact-studio-library')?.inert===false : listAvailable && !nativeSidebarHidden,
       listToggleAvailable:listAvailable,
       computerExpandAvailable:!botCenter() && route === 'computer' && html.dataset.iosDuoInner === 'true' && !!document.querySelector('#computer-expand') && !document.querySelector('#computer-expand').disabled,
@@ -2182,7 +2236,7 @@
     publishDuoNavigation();
   }};
   observeUI(publishDuoNavigation).observe(shell,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','inert','class','data-ios-artifact-view','data-ios-artifact-layout','data-ios-artifact-toggle-available','data-ios-artifact-library-hidden','data-shape','data-avatar-body','data-avatar-color']});
-  observeUI(publishDuoNavigation).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
+  observeUI(publishDuoNavigation).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open','disabled','aria-disabled','aria-label','hidden','inert']});
   observeUI(publishDuoNavigation).observe(html,{attributes:true,attributeFilter:['data-ios-layout','data-ios-duo','data-ios-duo-inner','data-ios-sidebar-hidden','data-ios-native-sidebar','data-ios-native-sidebar-hidden','data-motion']});
   matchMedia('(prefers-reduced-motion:reduce)').addEventListener('change',publishDuoNavigation);
   publishDuoNavigation();
