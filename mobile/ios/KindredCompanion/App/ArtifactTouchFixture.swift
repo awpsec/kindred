@@ -77,13 +77,14 @@ final class ArtifactTouchFixtureController:UIViewController {
         fixture.session.webView.evaluateJavaScript("""
         (()=>{
           const p=window.__artifactUIProbe;if(!p)return {ready:false};
-          if(!p.opened&&document.querySelector('#prompt')&&window.__kindredDuoActions){p.opened=true;__kindredDuoActions.perform('artifacts')}
-          if(!p.selected&&document.querySelector('[data-artifact-id="touch-one"]')){p.selected=true;document.querySelector('[data-artifact-id="touch-one"]').click()}
+          const opener=document.querySelector('#artifacts-button');
+          if(!p.opened&&document.querySelector('#prompt')?.getClientRects().length&&window.__KINDRED_NATIVE_GEOMETRY&&typeof opener?.onclick==='function'){p.opened=true;opener.click()}
+          if(!p.selected&&document.querySelector('[data-artifact-id="touch-one"]')?.getClientRects().length){p.selected=true;document.querySelector('[data-artifact-id="touch-one"]').click()}
           const v=document.querySelector('.document-word,.document-pdf'),paper=v?.shadowRoot?.querySelector('.paper');
           if(v&&p.word!==v){p.word=v;p.generation++}
           const pages=v?.shadowRoot?.querySelectorAll('section.docx').length||0;
           const row=document.querySelector('[data-artifact-id="touch-two"]'),r=row?.getBoundingClientRect(),library=document.querySelector('.artifact-studio-library');
-          return {ready:pages===20,readyState:document.readyState,bodyText:document.body?.innerText.slice(0,200)||'',duoActions:!!window.__kindredDuoActions,mobile:window.__KINDRED_MOBILE===true,title:document.querySelector('.artifact-title-input')?.value||'',wordPages:pages,
+          return {ready:pages===20,opened:p.opened,selected:p.selected,nativeLayout:window.__KINDRED_IOS_LAYOUT||null,readyState:document.readyState,bodyText:document.body?.innerText.slice(0,200)||'',duoActions:!!window.__kindredDuoActions,mobile:window.__KINDRED_MOBILE===true,title:document.querySelector('.artifact-title-input')?.value||'',wordPages:pages,
             zoom:paper?Number(paper.style.zoom):parseFloat(document.querySelector('.ios-document-zoom-trigger')?.textContent||'0')/100,
             fit:document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent||'',
             scrollTop:v?.scrollTop||0,scrollLeft:v?.scrollLeft||0,rootScale:visualViewport?.scale||1,
