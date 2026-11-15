@@ -84,7 +84,7 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
       assert.equal(content.side,side);assert.equal(side==='right'?content.insets.rightInset:content.insets.leftInset,84,'the fixture publishes the measured rail inset for its physical side');
       assert(content.history.left>=Math.max(content.conversation.left,side==='left'?84:0)-1);
       assert(content.history.right<=Math.min(content.conversation.right,side==='right'?1196:1280)+1,'reading history excludes the native side gutter');
-      close(content.latest.right,content.composer.right,'Latest reaches the trailing bottom lane');
+      close((content.latest.left+content.latest.right)/2,(content.composer.left+content.composer.right)/2,'compact Latest stays centered over the composer');
       close(content.composer.left,content.conversation.left+10,'the bottom composer keeps its full lane');close(content.composer.right,content.conversation.right-10,'the bottom composer does not inherit the reading gutter');
       await action('computer');await page.waitForFunction(()=>window.__duoFixtureRFB&&!document.querySelector('#computer-panel').hidden);await settled();
       const canvas=await rect('#desktop canvas:not(.desktop-glass)');assert(canvas.x>=Math.max(0,side==='left'?84:0)-1&&canvas.x+canvas.width<=1280-(side==='right'?84:0)+1,'the real connected computer canvas clears the native rail');
@@ -115,16 +115,15 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
         return [...scroll.querySelectorAll('.nav-entry')].map(node=>{const r=node.getBoundingClientRect(),css=getComputedStyle(node),link=node.querySelector('.bot-link');return {id:link?.dataset.sidebarId,left:r.left,right:r.right,width:r.width,top:r.top,bottom:r.bottom,visible:r.height>0&&r.bottom>Math.max(base.top,view.top)&&r.top<Math.min(base.bottom,view.bottom),leftInset:parseFloat(node.style.getPropertyValue('--ios-list-left'))||0,rightInset:parseFloat(node.style.getPropertyValue('--ios-list-right'))||0,corner:node.hasAttribute('data-ios-leading-corner'),radius:css.borderTopLeftRadius,linkRadius:getComputedStyle(link).borderTopLeftRadius,transition:css.transitionDuration};});
       });
       const assertRows=async(phase,searching=false)=>{
-        // The search field occupies one compact slot. With it hidden, the
-        // fifth card uses that slot; this is the requested list design rule.
+        // Every row keeps the same margin while scrolling and reordering.
         const upperCount=searching?4:5;
         await settled();const list=await rows(),visible=list.filter(row=>row.visible);assert(visible.length>upperCount,'the fixture has upper and lower visible cards');
         for(const [index,row] of visible.entries()) {
-          close(side==='left'?row.leftInset:row.rightInset,index<upperCount?84:0,phase+': only the designated upper visible cards use the side gutter');
+          close(side==='left'?row.leftInset:row.rightInset,84,phase+': every visible card uses the same side gutter');
           close(side==='left'?row.rightInset:row.leftInset,0,phase+': the opposite side stays available');
           assert.equal(row.corner,false,phase+': cards do not own a guessed physical corner');
         }
-        close(visible[upperCount].width-visible[0].width,84,phase+': lower rows remain full width');
+        close(visible[upperCount].width,visible[0].width,phase+': lower rows keep the same width');
         assert.notEqual(visible[0].radius,'48px','the physical contour belongs to the viewport');return visible;
       };
       const first=await assertRows('initial');
@@ -162,7 +161,7 @@ const close=(a,b,why)=>assert(Math.abs(a-b)<1,`${why}: ${a} != ${b}`);
       await page.evaluate(()=>{Object.assign(__KINDRED_IOS_LAYOUT,{isDuoInner:true,isSlab:false,isPortrait:false,keyboardVisible:true});dispatchEvent(new CustomEvent('kindred-ios-layout',{detail:__KINDRED_IOS_LAYOUT}));});
       await settled();close((await rect('.conversation>.composer-area')).width,(await rect('.conversation')).width,'an opened keyboard-shortened viewport retains the full composer lane');
       assert.deepEqual(errors,[]);await page.screenshot({path:path.join(out,`v${version}-${side}.png`)});
-      reports.push({serverVersion:version,railSide:side,safeRailTotal:totalRail,railPreference:76,railPersistsThroughDetailsGearBack:true,detailsOverlay:true,quarterWidthMaximum:true,historyClearRailLatestAtTrailingEdge:true,fullComposerLane:true,connectedCanvasClearRail:true,computerSharesBotCenter:true,controlledGutterPointer:true,cancelledTouchGuard:true,closedUpperFiveRows:true,searchUpperFourRows:true,finiteWAAPIReorderReclassifies:true,scrollAndReorderReclassify:true,searchSafeSide:true,reducedMotion:true,nativeDockReduceMotion:true,nativeViewportContour:true,closedLandscapeCompactComposer:true,liveComposerBackdrop:true,nativeScrollIndicator:true,innerKeyboardFullComposer:true});await page.close();
+      reports.push({serverVersion:version,railSide:side,safeRailTotal:totalRail,railPreference:76,railPersistsThroughDetailsGearBack:true,detailsOverlay:true,quarterWidthMaximum:true,historyClearRailLatestCentered:true,fullComposerLane:true,connectedCanvasClearRail:true,computerSharesBotCenter:true,controlledGutterPointer:true,cancelledTouchGuard:true,fixedListMargins:true,stableWidthDuringReorder:true,stableWidthDuringScroll:true,searchSafeSide:true,reducedMotion:true,nativeDockReduceMotion:true,nativeViewportContour:true,closedLandscapeCompactComposer:true,liveComposerBackdrop:true,nativeScrollIndicator:true,innerKeyboardFullComposer:true});await page.close();
     }
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(reports,null,2));console.log(JSON.stringify({passed:true,engine:'webkit',reports}));
   }finally{await browser.close();server.closeAllConnections();server.close();}

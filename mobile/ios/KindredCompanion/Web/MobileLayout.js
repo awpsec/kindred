@@ -1527,25 +1527,21 @@
     const height = nativeHeight || window.visualViewport?.height || innerHeight;
     const reserved = html.dataset.iosReserved === 'true' || html.dataset.iosNativeReserved === 'true';
     const divided = (window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).some(r => r.kind === 'division' && r.active !== false && r.width > 0 && r.height > 0 && r.x < innerWidth && r.x+r.width > 0 && r.y < height && r.y+r.height > 0);
-    // A camera/status corner is handled by side insets (or individual search
-    // rows), rather than cutting the whole sheet down below that corner.
+    // A camera/status corner is handled by fixed side insets, rather than
+    // cutting the whole sheet down below that corner.
     const safe = reserved && divided ? {x:read('--ios-safe-x'),y:read('--ios-safe-y'),width:read('--ios-safe-width'),height:read('--ios-safe-height')} : {x:0,y:0,width:innerWidth,height};
     if (!(safe.width > 0 && safe.height > 0)) return;
-    const toolbar = window.__KINDRED_IOS_TOOLBAR;
-    const zones = nativeDuo ? [toolbar,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).filter(r => r.kind === 'occlusion' && r.active !== false)]
-      .filter(r => r && ['x','y','width','height'].every(key => Number.isFinite(r[key])) && r.width > 0 && r.height > 0) : [];
     for (const dialog of document.querySelectorAll(sheetSelector)) {
       if (!dialog.open) continue;
       const search = dialog.classList.contains('navigation-search');
       const preferences = dialog.id === 'settings-dialog';
       if (preferences && !nativeDuo) { dialog.removeAttribute('data-ios-sheet'); continue; }
-      // Wide sheets sit in the usable center. On the cover, Search keeps the
-      // full lower lane and projects each row around the measured native dock.
-      const flow = search && nativeDuo && layout.isDuoInner !== true;
+      // Search and settings share a fixed safe interval beside the native rail.
+      // Results never change width as they scroll past its controls.
       const region = safe;
       const top = Math.max(region.y,Number(layout.topInset)||0), bottom = Math.min(height,region.y+region.height)-(Number(layout.bottomInset)||0);
-      const left = Math.max(region.x,flow ? 0 : Number(layout.leftInset)||0);
-      const right = Math.min(region.x+region.width,innerWidth-(flow ? 0 : Number(layout.rightInset)||0));
+      const left = Math.max(region.x,Number(layout.leftInset)||0);
+      const right = Math.min(region.x+region.width,innerWidth-(Number(layout.rightInset)||0));
       const gap = Math.min(12,Math.max(0,(bottom-top)/8));
       const width = Math.max(0,Math.min(preferences ? 760 : search ? 680 : dialog.classList.contains('voice-call-options') ? 380 : 600,right-left-2*gap));
       const sheetHeight = Math.max(0,Math.min(search ? 680 : 760,bottom-top-2*gap));
@@ -1555,24 +1551,6 @@
       setContentInset(dialog,'--ios-sheet-width',width);
       setContentInset(dialog,'--ios-sheet-height',sheetHeight);
       dialog.toggleAttribute('data-ios-sheet',true);
-      const frame = dialog.getBoundingClientRect(), scale = frame.width/(dialog.offsetWidth || frame.width) || 1;
-      // Start from the stable parent interval, never the already-inset row.
-      // Search's shared enter/exit scale is visual; don't bake that temporary
-      // scale or translation into native point-space collision measurements.
-      for (const node of dialog.querySelectorAll('.navigation-search-heading,.navigation-search-results>*')) {
-        const rect = node.getBoundingClientRect(), parent = node.parentElement.getBoundingClientRect();
-        const parentStyle = getComputedStyle(node.parentElement);
-        const base = {left:x+(parent.left-frame.left)/scale+(parseFloat(parentStyle.paddingLeft)||0),right:x+(parent.right-frame.left)/scale-(parseFloat(parentStyle.paddingRight)||0)};
-        const rowTop = y+(rect.top-frame.top)/scale, rowBottom = y+(rect.bottom-frame.top)/scale;
-        let leading = 0, trailing = 0;
-        for (const zone of flow ? zones : []) {
-          if (rowTop >= zone.y+zone.height+12 || rowBottom <= zone.y-12 || zone.x >= base.right || zone.x+zone.width <= base.left) continue;
-          if (zone.x+zone.width/2 > (base.left+base.right)/2) trailing = Math.max(trailing,base.right-zone.x+12);
-          else leading = Math.max(leading,zone.x+zone.width+12-base.left);
-        }
-        setContentInset(node,'--ios-search-left',leading);
-        setContentInset(node,'--ios-search-right',trailing);
-      }
     }
   }
   function updateNativeContentClearance() {
@@ -1643,24 +1621,18 @@
     const inset = insetFor({left:contentLeft,right:contentRight,width:contentRight-contentLeft});
     const scroll = document.querySelector('#bots'), viewport = scroll ? readingRect(scroll,sidebar) : base;
     const rows = [...sidebar.querySelectorAll('#bots .nav-entry')];
-    const visible = rows.filter(node => {const r=readingRect(node,sidebar);return r.height>0 && r.bottom>Math.max(base.top,viewport.top) && r.top<Math.min(base.bottom,viewport.bottom);});
     const contour = nativeDuo && viewport.width > 0 && viewport.height > 0 ? displayContour(viewport) : null;
     if (contour && scroll.style.getPropertyValue('--ios-display-contour') !== contour) scroll.style.setProperty('--ios-display-contour',contour);
     if (!contour) scroll?.style.removeProperty('--ios-display-contour');
-    // The compact-list design shortens four rows below search. When search
-    // is hidden, one more row occupies its slot. This is a content rule, not
-    // a fabricated system rail/occlusion frame.
-    const upper = new Set(visible.slice(0,sidebar.classList.contains('ios-searching') ? 4 : 5));
+    // All chat-list rows use the same rail-safe width, regardless of scroll
+    // position, ordering, or whether search is open.
     for (const row of rows) {
-      setContentInset(row,'--ios-list-left',upper.has(row)?inset.left:0);
-      setContentInset(row,'--ios-list-right',upper.has(row)?inset.right:0);
+      setContentInset(row,'--ios-list-left',inset.left);
+      setContentInset(row,'--ios-list-right',inset.right);
     }
     const search = sidebar.querySelector(':scope>.search');
     setContentInset(search,'--ios-list-left',inset.left);
     setContentInset(search,'--ios-list-right',inset.right);
-    // The server's keyed row glide uses Web Animations without mutating DOM
-    // as it moves. Keep classification current through that finite movement.
-    if (rows.some(row => row.getAnimations().some(animation => animation.playState === 'running' && Number.isFinite(animation.effect?.getComputedTiming().endTime)))) scheduleContentClearance();
   }
   let contentClearanceFrame = 0;
   const scheduleContentClearance = () => {
