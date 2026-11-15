@@ -83,6 +83,15 @@ final class ArtifactTouchUIKitTests:XCTestCase {
             web.coordinate(withNormalizedOffset:CGVector(dx:0.5,dy:0.8)).tap()
             wait("dock-more-dismissed"){$0["nativeMenuPresented"] as? Bool==false}
         }
+        wait("document-ready-before-double-tap"){$0["ready"] as? Bool==true}
+        let fitted=state()["zoom"] as? Double ?? 0
+        web.doubleTap()
+        wait("genuine-double-tap-zooms-document") {($0["zoom"] as? Double ?? 0)>fitted*1.3 && $0["pinching"] as? Bool != true}
+        XCTAssertEqual(state()["rootScale"] as? Double,1)
+        capture("native-double-tap-zoom")
+        web.doubleTap()
+        wait("second-double-tap-restores-fit") {abs(($0["zoom"] as? Double ?? 0)-fitted)<0.02 && $0["pinching"] as? Bool != true}
+        capture("native-double-tap-restore")
         let before=(state()["zoom"] as? Double) ?? 0
         web.pinch(withScale:1.6,velocity:1)
         wait("trusted-two-finger-zoom") { s in (s["trustedPairs"] as? Int ?? 0)>0 && (s["zoom"] as? Double ?? 0)>before*1.15 }

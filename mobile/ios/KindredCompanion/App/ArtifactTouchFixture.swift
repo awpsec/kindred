@@ -110,7 +110,7 @@ final class ArtifactTouchFixtureController:UIViewController {
           return JSON.parse(JSON.stringify({ready:pages===20&&(wordPages>0||!!v?.querySelector('canvas')),renderer:wordPages?'word-layout':'continuous-pdf',pages,opened:p.opened,selected:p.selected,nativeLayout:window.__KINDRED_IOS_LAYOUT||null,readyState:document.readyState,bodyText:document.body?.innerText.slice(0,200)||'',duoActions:!!window.__kindredDuoActions,mobile:window.__KINDRED_MOBILE===true,title:document.querySelector('.artifact-title-input')?.value||'',wordPages,
             zoom:paper?Number(paper.style.zoom):parseFloat(document.querySelector('.ios-document-zoom-trigger')?.textContent||'0')/100,
             fit:document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent||'',
-            scrollTop:v?.scrollTop||0,scrollLeft:v?.scrollLeft||0,rootScale:visualViewport?.scale||1,
+            scrollTop:v?.scrollTop||0,scrollLeft:v?.scrollLeft||0,rootScale:visualViewport?.scale||1,pinching:v?.hasAttribute('data-document-pinching')||false,
             trustedPairs:p.trustedPairs,trustedTouches:p.trustedTouches,pinchStartDistance:p.pairStart||0,pinchLastDistance:p.pairLast||0,canvasMinDuringPinch:p.canvasMin??null,generation:p.generation,
             viewport:{width:innerWidth,height:innerHeight},
             nativeDock:document.querySelector('.artifact-studio')?.dataset.iosNativeArtifactDock==='true',
