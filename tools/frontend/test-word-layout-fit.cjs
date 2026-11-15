@@ -4,7 +4,8 @@ const {chromium,webkit}=require(process.env.KINDRED_PLAYWRIGHT_MODULE||'playwrig
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const engine=process.env.WEBKIT?'webkit':'chromium',out=process.env.KINDRED_TEST_ARTIFACTS;
 (async()=>{
- const bytes=fs.readFileSync(path.join(__dirname,'fixtures/document-originals/original-v1.docx')).toString('base64');
+ const fixtureName=process.env.KINDRED_WORD_FIXTURE||'original-v1.docx';
+ const bytes=fs.readFileSync(path.join(__dirname,'fixtures/document-originals',fixtureName)).toString('base64');
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
  const browser=await(process.env.WEBKIT?webkit:chromium).launch();const receipts=[];
  try{for(const width of [1000,390]){
@@ -19,6 +20,10 @@ const engine=process.env.WEBKIT?'webkit':'chromium',out=process.env.KINDRED_TEST
   const geometries=[];
   for(let cycle=0;cycle<3;cycle++){
    await page.evaluate(()=>openWord());await page.locator('.document-word').getByText('Original Word revision one',{exact:true}).waitFor();
+   if(fixtureName==='twenty-page-touch.docx')assert.equal(await page.locator('.document-word section.docx').count(),20,'the native reproduction uses twenty actual Word pages');
+   await page.getByRole('button',{name:'Fit width',exact:true}).click();
+   await page.waitForFunction(()=>[...document.querySelectorAll('.document-zoom button')].some(n=>n.textContent==='Fit width'&&n.getAttribute('aria-pressed')==='true'));
+   await page.getByRole('button',{name:'Fit page',exact:true}).click();
    for(const nextWidth of [width,320,900,width]){
     await page.setViewportSize({width:nextWidth,height:900});
     await page.waitForFunction(()=>{const n=document.querySelector('.document-word'),paper=n?.shadowRoot.querySelector('section.docx');if(!paper)return false;const css=getComputedStyle(n),available=n.clientWidth-parseFloat(css.paddingLeft)-parseFloat(css.paddingRight);return paper.getBoundingClientRect().width>0&&paper.getBoundingClientRect().width<=available+2;});
@@ -45,6 +50,6 @@ const engine=process.env.WEBKIT?'webkit':'chromium',out=process.env.KINDRED_TEST
   receipts.push({width,cycles:3,geometries,errors});await context.close();
  }
  if(out){fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,engine+'-word-fit-results.json'),JSON.stringify({passed:true,engine,receipts},null,2));}
- console.log(JSON.stringify({passed:true,engine,contexts:receipts.length,cyclesEach:3}));
+ console.log(JSON.stringify({passed:true,engine,fixture:fixtureName,contexts:receipts.length,cyclesEach:3}));
  }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;server.close();});
