@@ -40,7 +40,7 @@ const bundle=path.resolve(__dirname,'../../mobile/ios/KindredCompanion/Web');
    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
    await page.waitForFunction(()=>[...document.querySelectorAll('#content>[data-ios-user-message]')].every(n=>n.getAnimations().every(a=>a.playState!=='running')));
    const flow=await page.evaluate(()=>[...document.querySelectorAll('#content>.message-group')].map(n=>{const r=n.getBoundingClientRect();return {top:r.top,bottom:r.bottom,right:r.right,user:n.hasAttribute('data-ios-user-message')};}).filter(r=>r.bottom>0&&r.top<innerHeight-100));
-   assert(flow.some(r=>r.user&&r.top>329&&r.right>400),'user messages below native controls reclaim the right gutter');assert(flow.filter(r=>r.top<329&&r.bottom>0).every(r=>r.right<=382),'messages beside the toolbar/status stay clear');
+   assert(flow.some(r=>r.user&&r.top>329),'fixture includes user messages below the controls');assert(flow.every(r=>r.right<=382),'both authors retain the right gutter below the controls');assert(flow.filter(r=>r.top<329&&r.bottom>0).every(r=>r.right<=382),'messages beside the toolbar/status stay clear');
   }
   assert.deepEqual(errors,[]);reports.push({pose,...fit});await page.close();
  }console.log(JSON.stringify({passed:true,reports}));}finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}

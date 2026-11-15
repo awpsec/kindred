@@ -1575,8 +1575,6 @@
       }
     }
   }
-  const messageClearance = new WeakMap();
-  let messageReadingEpoch = 0, messageGeometryEpoch = 0, messageReadingActive = false;
   function updateNativeContentClearance() {
     // Edge navigation translates whole panes, including its release animation.
     // Measure their resting layout against the stationary native controls:
@@ -1618,22 +1616,16 @@
       setContentInset(node,'--ios-content-right',inset.right);
     }
     const toolbar = window.__KINDRED_IOS_TOOLBAR;
-    const flow = nativeDuo && html.dataset.iosDuoInner !== 'true' && toolbar &&
-      ['x','y','width','height'].every(key => Number.isFinite(toolbar[key])) && toolbar.width > 0 && toolbar.height > 0;
+    const flow = nativeDuo && html.dataset.iosDuoInner !== 'true';
     html.toggleAttribute('data-ios-message-flow',!!flow);
-    const zones = flow ? [toolbar,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).filter(region => region.kind === 'occlusion' && region.active !== false)] : [];
+    const zones = flow ? [toolbar,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).filter(region => region.kind === 'occlusion' && region.active !== false)].filter(region => region && ['x','y','width','height'].every(key => Number.isFinite(region[key])) && region.width > 0 && region.height > 0) : [];
     const history = document.querySelector('#content'), historyRect = history && readingRect(history,conversation);
-    // WebKit can report an elastic offset while a touch is settling (including
-    // a gesture begun before the cover layout arrived). Classify the resting
-    // reading position so that stretch cannot resize and reflow a bubble.
-    const scrollTop = history?.scrollTop || 0;
-    const maxScrollTop = Math.max(0,history ? history.scrollHeight-history.clientHeight : 0);
-    const elasticOffset = scrollTop - Math.max(0,Math.min(scrollTop,maxScrollTop));
     const historyStyle = history && getComputedStyle(history);
     const lane = historyRect && {left:historyRect.left+history.clientLeft+(parseFloat(historyStyle.paddingLeft)||0),right:historyRect.left+history.clientLeft+history.clientWidth-(parseFloat(historyStyle.paddingRight)||0)};
-    let laneLeft = 0, laneRight = 0;
-    // Bot replies keep a stable line length on the cover. User messages only
-    // reserve this space while beside the controls, reclaiming it below.
+    // One reading lane for both authors, above and below the controls. Seed
+    // from native rail insets so delayed toolbar measurement cannot widen it.
+    let laneLeft = lane && flow ? Math.max(0,edgeLeft-lane.left+6) : 0;
+    let laneRight = lane && flow ? Math.max(0,lane.right-(innerWidth-edgeRight)+6) : 0;
     for (const zone of lane && flow ? zones : []) {
       if (zone.x >= lane.right || zone.x+zone.width <= lane.left) continue;
       if (zone.x+zone.width/2 > (lane.left+lane.right)/2) laneRight = Math.max(laneRight,lane.right-zone.x+6);
@@ -1644,23 +1636,6 @@
     for (const group of history?.children || []) {
       const user = !!group.querySelector('.message-row.user');
       group.toggleAttribute('data-ios-user-message',user);
-      const rect = readingRect(group,conversation);
-      const previous = messageClearance.get(group);
-      const buffer = previous?.blocked ? 12 : 6;
-      const overlaps = user && zones.some(zone => rect.top+elasticOffset < zone.y+zone.height+buffer && rect.bottom+elasticOffset > zone.y-buffer);
-      let blocked = !!flow && overlaps;
-      const sameGeometry = previous?.geometry === messageGeometryEpoch;
-      if (flow && previous && sameGeometry && blocked !== previous.blocked) {
-        // Width reflows can restore the reading anchor or turn bottom-follow
-        // on/off. Those generated scrolls must not reverse their own resize.
-        const moving = group.getAnimations().some(a => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime));
-        if (moving || (!blocked && previous.reading === messageReadingEpoch)) blocked = previous.blocked;
-      }
-      messageClearance.set(group,{blocked,geometry:messageGeometryEpoch,
-        reading:!previous || blocked !== previous.blocked ? messageReadingEpoch : previous.reading});
-      // Grow the trailing edge into the lower lane. A long bubble's leading
-      // edge stays put; short, right-aligned bubbles slide with that edge.
-      setContentInset(group,'--ios-user-clearance',blocked ? laneRight : 0);
     }
     if (!sidebar) return;
     const base = readingRect(sidebar), sidebarStyle = getComputedStyle(sidebar);
@@ -1691,19 +1666,7 @@
   const scheduleContentClearance = () => {
     if (!contentClearanceFrame) contentClearanceFrame = requestAnimationFrame(() => {contentClearanceFrame=0;updateNativeContentClearance();});
   };
-  const readingHistory = document.querySelector('#content');
-  const readingIntent = event => {
-    if (event.type === 'keydown' && (!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(event.key) || event.target.closest('input,textarea,[contenteditable=true]'))) return;
-    messageReadingEpoch++; messageReadingActive = true;
-  };
-  for (const name of ['wheel','touchstart','touchmove','pointerdown','keydown']) readingHistory?.addEventListener(name,readingIntent,{passive:true});
-  document.querySelector('.jump-latest')?.addEventListener('click',readingIntent);
-  readingHistory?.addEventListener('scrollend',() => {
-    if (!messageReadingActive) return;
-    messageReadingActive = false; messageReadingEpoch++; scheduleContentClearance();
-  });
-  readingHistory?.addEventListener('transitionend',scheduleContentClearance);
-  for (const name of ['resize','kindred-ios-layout','kindred-ios-toolbar','kindred-native-geometry']) window.addEventListener(name,() => { messageGeometryEpoch++; scheduleContentClearance(); });
+  for (const name of ['resize','kindred-ios-layout','kindred-ios-toolbar','kindred-native-geometry']) window.addEventListener(name,scheduleContentClearance);
   document.addEventListener('scroll',event => {if(event.target === document.querySelector('#bots') || event.target === sidebar || event.target === document.querySelector('#content') || event.target.matches?.('.navigation-search-results')) scheduleContentClearance();},true);
   observeUI(scheduleContentClearance).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
   window.addEventListener('resize',scheduleContentClearance);
