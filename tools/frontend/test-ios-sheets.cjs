@@ -76,12 +76,11 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-ios-sheets';
   await action('search');await page.locator('.navigation-search[data-ios-sheet]').waitFor();await settle();await bounds();
   const assertFlow=async()=>{
    const rows=await page.locator('.navigation-search-heading,.navigation-search-results>*').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width};}));
-   for(const r of rows.filter(r=>r.bottom>0&&r.top<740)){
-    const beside=r.top<457&&r.bottom>183||r.top<182;
-    if(beside)assert(side==='right'?r.right<=370.1:r.left>=95.9,'search items stay clear of status/camera and dock: '+JSON.stringify(rows));
-   }
-   const upper=rows.find(r=>r.top>183&&r.bottom<457),lower=rows.find(r=>r.top>457&&r.bottom<740);
-   assert(upper&&lower&&lower.width>upper.width+50,'rows below dock reclaim the full width: '+JSON.stringify(rows));
+   const visible=rows.filter(r=>r.bottom>0&&r.top<740);
+   assert(visible.length>2,'search includes several visible rows');
+   for(const r of visible)assert(side==='right'?r.right<=382:r.left>=84,'every search item clears the fixed rail: '+JSON.stringify(rows));
+   const results=rows.slice(1).filter(r=>r.bottom>0&&r.top<740);
+   assert(results.every(r=>Math.abs(r.width-results[0].width)<1),'search results retain a uniform width above and below the dock');
   };
   await assertFlow();await page.screenshot({path:path.join(out,side+'-outer-search.png')});
   await page.locator('.navigation-search-results').evaluate(n=>n.scrollTop=130);await settle();await assertFlow();

@@ -471,7 +471,7 @@ html[data-kindred-ios][data-ios-duo=true] .details-panel>.panel-content { paddin
 html[data-kindred-ios][data-ios-native-sidebar=true][data-ios-native-sidebar-draggable=false] .sidebar>.ios-duo-resizer { pointer-events:none; visibility:hidden; }
 html[data-kindred-ios][data-ios-duo=true] .computer-panel { box-sizing:border-box; padding-left:var(--ios-content-left,0px); padding-right:var(--ios-content-right,0px); }
 html[data-kindred-ios][data-ios-duo=true] .sidebar>.search { width:auto; margin-left:calc(12px + var(--ios-list-left,0px)); margin-right:calc(12px + var(--ios-list-right,0px)); }
-html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .nav-entry { box-sizing:border-box; width:calc(100% - var(--ios-list-left,0px) - var(--ios-list-right,0px)); margin-left:var(--ios-list-left,0px); transition:width .2s ease,margin-left .2s ease; }
+html[data-kindred-ios][data-ios-duo=true] .sidebar #bots .nav-entry { box-sizing:border-box; width:calc(100% - var(--ios-list-left,0px) - var(--ios-list-right,0px)); margin-left:var(--ios-list-left,0px); }
 html[data-kindred-ios][data-ios-native-sidebar-rail=true] .sidebar #bots .nav-entry { width:60px; margin-inline:auto; }
 /* One native continuous contour follows the actual display's independent
    corners through folding/rotation. Cards retain their ordinary corner radius;
@@ -554,6 +554,15 @@ html[data-kindred-ios][data-ios-message-flow] #content>* {
  margin-left:var(--ios-message-lane-left,0px); margin-right:var(--ios-message-lane-right,0px);
  max-width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-message-lane-right,0px));
 }
+/* Receipts and expanded journals use the same safe column as chat text.
+   Their shared desktop centering rules must not restore a full-screen width. */
+html[data-kindred-ios][data-ios-duo=true][data-ios-message-flow] #content>:is(.activity-receipt,.task-commentary-block,.activity-pager) {
+ --ios-activity-available:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-message-lane-right,0px));
+ box-sizing:border-box; min-width:0;
+ width:min(560px,var(--ios-activity-available)); max-width:var(--ios-activity-available);
+ margin-left:calc(var(--ios-message-lane-left,0px) + max(0px,(var(--ios-activity-available) - 560px) / 2));
+ margin-right:auto;
+}
 html[data-kindred-ios][data-ios-message-flow] #content>[data-ios-user-message] {
  /* Keep user messages right aligned within the same fixed reading lane. */
  --ios-user-leading-gap:clamp(32px,12%,56px);
@@ -611,9 +620,7 @@ html[data-kindred-ios] .navigation-search-results { flex:1; scrollbar-width:none
 html[data-kindred-ios] .navigation-search-heading { box-sizing:border-box; padding:8px 14px; min-height:64px; }
 html[data-kindred-ios] dialog[data-ios-sheet] :is(.navigation-search-heading,.navigation-search-results>*) {
  box-sizing:border-box;
- margin-left:var(--ios-search-left,0px); margin-right:var(--ios-search-right,0px);
- width:calc(100% - var(--ios-search-left,0px) - var(--ios-search-right,0px));
- transition:margin 200ms ease-out,width 200ms ease-out;
+ margin-inline:0; width:100%;
 }
 html[data-kindred-ios] .navigation-search-result { min-height:56px; border-radius:14px; padding:10px 12px; }
 html[data-kindred-ios] .navigation-search-tag { flex-shrink:1; }
