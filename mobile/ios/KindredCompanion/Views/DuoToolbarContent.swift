@@ -27,6 +27,7 @@ struct DuoRailButtons: View {
     let session: WebSession
     let manageAccounts: () -> Void
     private var artifacts: Bool { ["artifacts", "artifact"].contains(session.presentation.route) }
+    private var showsCreate: Bool { artifacts || session.presentation.route == "chat-list" }
     private var vertical: Bool { session.presentation.toolbarVertical }
     private var showsComputer: Bool {
         let p = session.presentation
@@ -36,7 +37,8 @@ struct DuoRailButtons: View {
     private var buttonCount: Int {
         let p = session.presentation, controls = p.artifactControls
         let back = !["chat-list", "artifacts"].contains(p.route) && !(["bot-chat", "artifact"].contains(p.route) && (p.listVisible || p.listToggleAvailable))
-        return 4 + [
+        return 3 + [
+            showsCreate,
             p.toolbarIdentity && p.route == "bot-chat" && p.botDetailsAvailable,
             back, p.route == "details" && p.botSettingsAvailable,
             p.route == "computer" && p.computerExpandAvailable, p.listToggleAvailable,
@@ -82,7 +84,7 @@ struct DuoRailButtons: View {
                     session.performDuoAction(.newChat)
                 } label: { railLabel("New artifact", systemImage: "plus") }
                 .accessibilityIdentifier("kindred-duo-new")
-            } else {
+            } else if showsCreate {
                 Menu {
                     Button("New bot", systemImage: "plus") { session.performDuoAction(.newBot) }
                     Button("New chat", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.newConversation) }
