@@ -34,7 +34,7 @@ const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
   await row('docx').scrollIntoViewIfNeeded();const chatScroll=await page.locator('#content').evaluate(n=>n.scrollTop);
   const tap=async locator=>touch?locator.tap():locator.click();await tap(row('docx').getByRole('button',{name:'Preview Client report',exact:true}));
   await page.locator('.artifact-studio').waitFor();await page.locator('.document-word').getByText('Original Word revision one',{exact:true}).waitFor();
-  assert.equal(await page.locator('dialog.document-dialog').count(),0,'reuse renderer inside full stage');assert((await page.locator('.document-footer').textContent()).includes('Page layout unavailable'));
+  assert.equal(await page.locator('dialog.document-dialog').count(),0,'reuse renderer inside full stage');assert.equal(await page.locator('.document-footer').count(),0);
   assert.equal(await page.locator('.artifact-workbench-actions').getByRole('button',{name:'Edit',exact:true}).count(),0);
   const download=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Download original',exact:true}).click()]).then(x=>x[0]);assert.equal(download.suggestedFilename(),'docx.docx');assert.equal(hash(fs.readFileSync(await download.path())),hash(files.docx));assert.equal(exports,0,'file originals use the displayed immutable revision route');assert(requests.filter(p=>p==='docx/file/1').length>=2);
   await page.screenshot({path:path.join(out,`${process.env.WEBKIT?'webkit':'chromium'}-${width}-${theme}-word.png`)});
