@@ -228,7 +228,10 @@ final class WebSession: NSObject {
             command["filter"]=filter;command["value"]=value
         } else {
             guard current.owner==snapshot.owner,snapshot.owner != nil else{return}
-            if action=="zoom" {guard current.zoom != nil else{return}}
+            if action=="zoom" {
+                guard current.zoom != nil, let value, current.zoomOptions.contains(where: { $0.id == value && $0.enabled }) else { return }
+                command["value"] = value
+            }
             else {guard current.actions.contains(where:{$0.id==action&&$0.enabled}) else{return}}
         }
         webView.callAsyncJavaScript("return window.__kindredDuoArtifacts?.perform(command)",arguments:["command":command],in:nil,in:.page){_ in}

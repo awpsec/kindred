@@ -42,14 +42,28 @@ struct DuoArtifactControls: Equatable {
             self.id=id;self.label=label;self.value=value;self.options=options
         }
     }
+    struct ZoomOption: Identifiable, Equatable {
+        let id: String
+        let label: String
+        let enabled: Bool
+        let selected: Bool
+        init?(_ row: [String: Any]) {
+            guard let id = row["id"] as? String, ["out", "in", "page", "width"].contains(id),
+                  let label = row["label"] as? String, !label.isEmpty, label.count <= 100,
+                  let enabled = row["enabled"] as? Bool, let selected = row["selected"] as? Bool else { return nil }
+            self.id = id; self.label = label; self.enabled = enabled; self.selected = selected
+        }
+    }
     let root:String
     let owner:String?
     let zoom:String?
+    let zoomOptions: [ZoomOption]
     let actions:[Action]
     let filters:[Filter]
     init?(_ row:[String:Any]) {
         guard let root=row["root"] as? String,UUID(uuidString:root) != nil,
               let actionRows=row["actions"] as? [[String:Any]],actionRows.count<=3,
+              let zoomRows=row["zoomOptions"] as? [[String:Any]],zoomRows.count<=4,
               let filterRows=row["filters"] as? [[String:Any]],filterRows.count<=2 else{return nil}
         let owner=row["owner"] as? String
         guard owner.map({UUID(uuidString:$0) != nil}) ?? (row["owner"] is NSNull),
@@ -59,10 +73,14 @@ struct DuoArtifactControls: Equatable {
             guard zoom.range(of:"^[0-9]{1,3}%$",options:.regularExpression) != nil,
                   let amount=Int(zoom.dropLast()),(1...300).contains(amount),owner != nil else{return nil}
         }
+        let zoomOptions = zoomRows.compactMap(ZoomOption.init)
+        guard zoomOptions.count == zoomRows.count,
+              Set(zoomOptions.map(\.id)).count == zoomOptions.count,
+              zoom == nil ? zoomOptions.isEmpty : zoomOptions.count == 4 else { return nil }
         let actions=actionRows.compactMap(Action.init),filters=filterRows.compactMap(Filter.init)
         guard actions.count==actionRows.count,filters.count==filterRows.count,
               Set(actions.map(\.id)).count==actions.count,Set(filters.map(\.id)).count==filters.count,
               actions.isEmpty || owner != nil else{return nil}
-        self.root=root;self.owner=owner;self.zoom=zoom;self.actions=actions;self.filters=filters
+        self.root=root;self.owner=owner;self.zoom=zoom;self.zoomOptions=zoomOptions;self.actions=actions;self.filters=filters
     }
 }

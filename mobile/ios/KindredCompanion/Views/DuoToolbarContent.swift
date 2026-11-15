@@ -72,8 +72,16 @@ struct DuoToolbarContent: ToolbarContent {
                     .accessibilityIdentifier("kindred-duo-artifact-filter")
                 }
                 if session.presentation.route == "artifact", let zoom = controls.zoom {
-                    Button {
-                        session.performArtifactControl("zoom", snapshot: controls)
+                    Menu {
+                        ForEach(controls.zoomOptions) { option in
+                            Button {
+                                session.performArtifactControl("zoom", snapshot: controls, value: option.id)
+                            } label: {
+                                if option.selected { Label(option.label, systemImage: "checkmark") }
+                                else { Text(option.label) }
+                            }
+                            .disabled(!option.enabled)
+                        }
                     } label: {
                         Text(zoom).font(.caption.monospacedDigit()).frame(minWidth: 36, minHeight: 44)
                     }
