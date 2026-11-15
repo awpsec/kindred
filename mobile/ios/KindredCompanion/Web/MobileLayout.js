@@ -1602,7 +1602,7 @@
     const lane = historyRect && {left:historyRect.left+history.clientLeft+(parseFloat(historyStyle.paddingLeft)||0),right:historyRect.left+history.clientLeft+history.clientWidth-(parseFloat(historyStyle.paddingRight)||0)};
     // One reading lane for both authors, above and below the controls. Seed
     // from native rail insets so delayed toolbar measurement cannot widen it.
-    const laneGap = 12;
+    const laneGap = 6;
     let laneLeft = lane && flow ? Math.max(0,edgeLeft-lane.left+laneGap) : 0;
     let laneRight = lane && flow ? Math.max(0,lane.right-(innerWidth-edgeRight)+laneGap) : 0;
     for (const zone of lane && flow ? zones : []) {
@@ -1620,10 +1620,6 @@
     const base = readingRect(sidebar), sidebarStyle = getComputedStyle(sidebar);
     const contentLeft = base.left+(parseFloat(sidebarStyle.paddingLeft)||0), contentRight = base.right-(parseFloat(sidebarStyle.paddingRight)||0);
     const inset = insetFor({left:contentLeft,right:contentRight,width:contentRight-contentLeft});
-    if (flow) {
-      if (inset.left > 0) inset.left = Math.min(contentRight-contentLeft,inset.left+6);
-      if (inset.right > 0) inset.right = Math.min(contentRight-contentLeft,inset.right+6);
-    }
     const scroll = document.querySelector('#bots'), viewport = scroll ? readingRect(scroll,sidebar) : base;
     const rows = [...sidebar.querySelectorAll('#bots .nav-entry')];
     const contour = nativeDuo && viewport.width > 0 && viewport.height > 0 ? displayContour(viewport) : null;
