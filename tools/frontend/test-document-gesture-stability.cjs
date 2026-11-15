@@ -17,24 +17,23 @@ const {server}=require('./fixtures/desktop.cjs');
    window.preview=await openDocumentPreview({card:document.body,name:'Gesture review.docx',extension:'docx',getBlob:signal=>fetch('/gesture.docx',{signal}).then(r=>r.blob())});
    window.sample=()=>{const s=document.querySelector('.document-word'),p=s.shadowRoot.querySelector('.paper'),section=p.querySelector('section.docx'),r=section.getBoundingClientRect();return {committed:Number(p.style.zoom),transform:p.style.transform,width:r.width,natural:[section.offsetWidth,section.offsetHeight],viewport:[s.clientWidth,s.clientHeight],active:s.hasAttribute('data-document-pinching'),mode:document.querySelector('.document-zoom button[aria-pressed=true]')?.textContent||'',rootScale:visualViewport.scale};};
    window.frames=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+   window.settled=async()=>{let previous='',stable=0;for(let i=0;i<60;i++){await new Promise(requestAnimationFrame);const s=sample(),key=JSON.stringify([s.committed,s.natural,s.viewport]);stable=!s.active&&key===previous?stable+1:0;previous=key;if(stable>=3)return s;}throw Error('Word zoom did not settle');};
    window.doubleTap=()=>{const s=document.querySelector('.document-word'),r=s.getBoundingClientRect();s.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:r.x+r.width/2,clientY:r.y+120}));};
    window.touch=(type,distance)=>{const s=document.querySelector('.document-word'),r=s.getBoundingClientRect(),e=new Event(type,{bubbles:true,cancelable:true}),x=r.x+r.width/2,y=r.y+150;Object.defineProperty(e,'touches',{value:distance?[{clientX:x-distance/2,clientY:y},{clientX:x+distance/2,clientY:y}]:[]});s.dispatchEvent(e);};
   });
   await page.waitForFunction(()=>document.querySelector('.document-word')?.shadowRoot?.querySelector('section.docx')&&document.querySelector('.document-zoom-value')?.textContent.endsWith('%'));
   const initial=await page.evaluate(async()=>{
    document.documentElement.dataset.motion='on';await document.fonts.ready;
-   let previous='',stable=0;
-   for(let i=0;i<60;i++){await new Promise(requestAnimationFrame);const s=sample(),key=JSON.stringify([s.committed,s.natural,s.viewport]);stable=key===previous?stable+1:0;previous=key;if(stable>=3)return s;}
-   throw Error('Word fit did not settle before the gesture');
+   return settled();
   });
   const moving=await page.evaluate(async()=>{doubleTap();await frames();return sample();});
   assert(moving.active&&moving.transform,'Word has a visual gesture preview: '+JSON.stringify({initial,moving}));
   assert.equal(moving.committed,initial.committed,'Live text keeps its rasterization scale during animation');
   assert(Math.abs(moving.width-initial.width)>0.5,'Retaining text does not freeze the visible zoom');
   await page.waitForFunction(()=>!sample().active);
-  const fitted=await page.evaluate(()=>sample());assert.equal(fitted.mode,'Fit width');assert.equal(fitted.transform,'');
+  const fitted=await page.evaluate(()=>settled());assert.equal(fitted.mode,'Fit width');assert.equal(fitted.transform,'');
   await page.evaluate(()=>doubleTap());await page.waitForFunction(()=>!sample().active);
-  let restored=await page.evaluate(()=>sample());assert.equal(restored.mode,initial.mode);assert(Math.abs(restored.committed-initial.committed)<0.0001,'Previous fit scale is restored: '+JSON.stringify({initial,moving,fitted,restored}));
+  let restored=await page.evaluate(()=>settled());assert.equal(restored.mode,initial.mode);assert(Math.abs(restored.committed-initial.committed)<0.0001,'Previous fit scale is restored: '+JSON.stringify({initial,moving,fitted,restored}));
   const pinch=await page.evaluate(async()=>{touch('touchstart',100);const rows=[];for(const d of [115,135,160,185]){touch('touchmove',d);await frames();rows.push(sample());}touch('touchend',0);await frames();return {rows,settled:sample()};});
   assert(pinch.rows.every(r=>r.committed===initial.committed&&r.transform),'Pinch never repeatedly changes Word glyph layout scale');
   assert(pinch.rows.at(-1).width>pinch.rows[0].width*1.4,'The preview tracks actual finger-distance changes');
