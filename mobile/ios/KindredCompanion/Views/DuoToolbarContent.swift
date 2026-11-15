@@ -1,32 +1,84 @@
 import SwiftUI
 
-/// Shared native Duo navigation. Artifact controls retain the web action owners
-/// so menus cannot act on a document or library that has since been replaced.
+/// A bounded native glass toolbar keeps every action directly reachable rather
+/// than handing the last actions to UIKit’s automatic overflow menu.
 @available(iOS 27.1, *)
 @MainActor
 struct DuoToolbarContent: ToolbarContent {
-    @Environment(\.displayScale) private var displayScale
     let session: WebSession
     let manageAccounts: () -> Void
-
-    @ToolbarContentBuilder
     var body: some ToolbarContent {
-        let artifacts = ["artifacts", "artifact"].contains(session.presentation.route)
-        ToolbarItemGroup(placement: .topBarTrailing) {
+        ToolbarItem(placement: .topBarTrailing) {
+            DuoRailButtons(session: session, manageAccounts: manageAccounts)
+        }
+        .sharedBackgroundVisibility(.hidden)
+        .axisBehavior(session.presentation.toolbarVertical ? .verticalPreferred : .horizontalOnly)
+    }
+}
+
+@available(iOS 27.1, *)
+@MainActor
+private struct DuoRailButtons: View {
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let session: WebSession
+    let manageAccounts: () -> Void
+    private var artifacts: Bool { ["artifacts", "artifact"].contains(session.presentation.route) }
+    private var vertical: Bool { session.presentation.toolbarVertical }
+    private var length: CGFloat { min(session.presentation.toolbarLength, CGFloat(buttonCount) * 44 + 8) }
+    private var buttonCount: Int {
+        let p = session.presentation, controls = p.artifactControls
+        let back = !["chat-list", "artifacts"].contains(p.route) && !(["bot-chat", "artifact"].contains(p.route) && (p.listVisible || p.listToggleAvailable))
+        return 6 + [
+            p.toolbarIdentity && p.route == "bot-chat" && p.botDetailsAvailable,
+            back, p.route == "details" && p.botSettingsAvailable,
+            p.route == "computer" && p.computerExpandAvailable, p.listToggleAvailable,
+            p.route == "bot-chat" || (p.route == "computer" && !p.hasBotCenter),
+            artifacts && p.artifactLibraryVisible && !(controls?.filters.isEmpty ?? true),
+            artifacts && p.route == "artifact" && controls?.zoom != nil,
+            artifacts && p.route == "artifact" && controls?.actions.contains(where: { $0.id == "refresh" }) == true,
+            artifacts && p.route == "artifact" && controls?.actions.contains(where: { $0.id != "refresh" }) == true
+        ].filter { $0 }.count
+    }
+    var body: some View {
+        ScrollView(vertical ? .vertical : .horizontal) {
+            AnyLayout(vertical ? VStackLayout(spacing: 0) : HStackLayout(spacing: 0)) {
+                buttons
+            }
+            .padding(4)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollIndicators(.hidden)
+        .frame(width: vertical ? 52 : length, height: vertical ? length : 52)
+        .glassEffect(.regular, in: .capsule)
+        .buttonStyle(.plain)
+        .labelStyle(.iconOnly)
+        .tint(.primary)
+        .accessibilityIdentifier("kindred-duo-navigation-rail")
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: vertical)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: length)
+    }
+    private func railLabel(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+    }
+    @ViewBuilder
+    private var buttons: some View {
             Button {
                 session.performDuoAction(.search)
-            } label: { Label(artifacts ? "Search artifacts" : "Search chats", systemImage: "magnifyingglass") }
+            } label: { railLabel(artifacts ? "Search artifacts" : "Search chats", systemImage: "magnifyingglass") }
             .accessibilityIdentifier("kindred-duo-search")
             if artifacts {
                 Button {
                     session.performDuoAction(.newChat)
-                } label: { Label("New artifact", systemImage: "plus") }
+                } label: { railLabel("New artifact", systemImage: "plus") }
                 .accessibilityIdentifier("kindred-duo-new")
             } else {
                 Menu {
                     Button("New bot", systemImage: "plus") { session.performDuoAction(.newBot) }
                     Button("New chat", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.newConversation) }
-                } label: { Label("New conversation", systemImage: "plus") }
+                } label: { railLabel("New conversation", systemImage: "plus") }
                 .accessibilityIdentifier("kindred-duo-new")
             }
         if session.presentation.toolbarIdentity,
@@ -42,13 +94,13 @@ struct DuoToolbarContent: ToolbarContent {
             if !["chat-list", "artifacts"].contains(session.presentation.route) && !(["bot-chat", "artifact"].contains(session.presentation.route) && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {
                 Button {
                     session.performDuoAction(.back)
-                } label: { Label(artifacts ? "Artifact list" : session.presentation.route == "bot-chat" ? "Chat list" : "Back",
+                } label: { railLabel(artifacts ? "Artifact list" : session.presentation.route == "bot-chat" ? "Chat list" : "Back",
                                systemImage: ["bot-chat", "artifact"].contains(session.presentation.route) ? "line.3.horizontal" : "chevron.backward") }
             }
             if session.presentation.route == "details" && session.presentation.botSettingsAvailable {
                 Button {
                     session.performDuoAction(.botSettings)
-                } label: { Label("Bot settings", systemImage: "gearshape") }
+                } label: { railLabel("Bot settings", systemImage: "gearshape") }
             }
             if session.presentation.route == "computer" && session.presentation.computerExpandAvailable {
                 Button {
@@ -61,12 +113,12 @@ struct DuoToolbarContent: ToolbarContent {
             if session.presentation.listToggleAvailable {
                 Button {
                     session.performDuoAction(.chats)
-                } label: { Label(artifacts ? (session.presentation.listVisible ? "Hide artifact list" : "Show artifact list") : (session.presentation.listVisible ? "Hide chat list" : "Show chat list"), systemImage: "sidebar.left") }
+                } label: { railLabel(artifacts ? (session.presentation.listVisible ? "Hide artifact list" : "Show artifact list") : (session.presentation.listVisible ? "Hide chat list" : "Show chat list"), systemImage: "sidebar.left") }
             }
             if session.presentation.route == "bot-chat" || (session.presentation.route == "computer" && !session.presentation.hasBotCenter) {
                 Button {
                     session.performDuoAction(.computer)
-                } label: { Label(session.presentation.route == "computer" ? "Close computer" : "Bot computer", systemImage: "desktopcomputer") }
+                } label: { railLabel(session.presentation.route == "computer" ? "Close computer" : "Bot computer", systemImage: "desktopcomputer") }
             }
             if artifacts, let controls = session.presentation.artifactControls {
                 if session.presentation.artifactLibraryVisible, !controls.filters.isEmpty {
@@ -81,7 +133,7 @@ struct DuoToolbarContent: ToolbarContent {
                                 }
                             }
                         }
-                    } label: { Label("Filter and sort artifacts", systemImage: "line.3.horizontal.decrease") }
+                    } label: { railLabel("Filter and sort artifacts", systemImage: "line.3.horizontal.decrease") }
                     .accessibilityIdentifier("kindred-duo-artifact-filter")
                 }
                 if session.presentation.route == "artifact", let zoom = controls.zoom {
@@ -104,7 +156,7 @@ struct DuoToolbarContent: ToolbarContent {
                 if session.presentation.route == "artifact", let refresh = controls.actions.first(where: { $0.id == "refresh" }) {
                     Button {
                         session.performArtifactControl("refresh", snapshot: controls)
-                    } label: { Label(refresh.label, systemImage: "arrow.clockwise") }
+                    } label: { railLabel(refresh.label, systemImage: "arrow.clockwise") }
                     .disabled(!refresh.enabled)
                     .accessibilityIdentifier("kindred-duo-artifact-refresh")
                 }
@@ -118,34 +170,32 @@ struct DuoToolbarContent: ToolbarContent {
                         }
                         .disabled(!action.enabled)
                     }
-                } label: { Label("Document actions", systemImage: "ellipsis") }
+                } label: { railLabel("Document actions", systemImage: "ellipsis") }
                 .accessibilityIdentifier("kindred-duo-artifact-more")
             }
             if artifacts {
                 Button {
                     session.performDuoAction(.chatHome)
-                } label: { Label("Chats", systemImage: "bubble.left.and.bubble.right") }
+                } label: { railLabel("Chats", systemImage: "bubble.left.and.bubble.right") }
                 .accessibilityIdentifier("kindred-duo-chats")
             } else {
                 Button {
                     session.performDuoAction(.artifacts)
-                } label: { Label("Artifacts", systemImage: "folder") }
+                } label: { railLabel("Artifacts", systemImage: "folder") }
                 .accessibilityIdentifier("kindred-duo-artifacts")
             }
             Button {
                 session.performDuoAction(.marketplace)
-            } label: { Label("Marketplace", systemImage: "square.grid.2x2") }
+            } label: { railLabel("Marketplace", systemImage: "square.grid.2x2") }
             .disabled(session.presentation.route == "marketplace")
             .accessibilityIdentifier("kindred-duo-marketplace")
             Button {
                 session.performDuoAction(.settings)
-            } label: { Label("Settings", systemImage: "gearshape") }
+            } label: { railLabel("Settings", systemImage: "gearshape") }
             .accessibilityIdentifier("kindred-duo-settings")
             Button {
                 manageAccounts()
-            } label: { Label("Manage accounts", systemImage: "person.crop.circle") }
+            } label: { railLabel("Manage accounts", systemImage: "person.crop.circle") }
             .accessibilityIdentifier("kindred-duo-accounts")
-        }
-        .axisBehavior(.verticalPreferred)
     }
 }

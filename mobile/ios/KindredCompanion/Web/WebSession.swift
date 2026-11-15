@@ -36,6 +36,8 @@ final class WebPresentationState {
     var listVisible = false
     var artifactLibraryVisible = false
     var artifactControls: DuoArtifactControls?
+    var toolbarVertical = false
+    var toolbarLength: CGFloat = 280
 }
 
 @MainActor
@@ -366,6 +368,13 @@ final class WebSession: NSObject {
         computerHostAttachmentChanged()
         publishLayout()
         if usesNativeRail { refreshRailLayout() }
+    }
+
+    func updateToolbarLayout(vertical: Bool, length: CGFloat) {
+        guard length.isFinite else { return }
+        let bounded = max(44, min(2048, length.rounded(.down)))
+        if presentation.toolbarVertical != vertical { presentation.toolbarVertical = vertical }
+        if abs(presentation.toolbarLength - bounded) > 1 { presentation.toolbarLength = bounded }
     }
 
     private func refreshRailLayout() {

@@ -170,6 +170,16 @@ final class WebHostView: UIView {
                              composerBottomInset: keyboardVisible ? 0 : composerBottom, keyboardVisible: keyboardVisible, isSlab: traitCollection.userInterfaceIdiom == .phone && !isDuoInner,
                              viewportHeight: session.webView.bounds.height,
                              isPortrait: windowBounds.height >= windowBounds.width)
+        if #available(iOS 27.1, *), usesNativeRail {
+            let vertical = railSide != "none"
+            let edge: UIRectEdge = railSide == "left" ? .left : railSide == "right" ? .right : .top
+            let fittingInsets = session.webView.edgeInsets(for: .bar(onEdge: edge, extent: 52))
+            let area = session.webView.bounds.inset(by: fittingInsets)
+            let measured = vertical ? area.height : area.width
+            let fallback = vertical ? session.webView.bounds.height - 160 : session.webView.bounds.width - 140
+            let available = !area.isNull && measured.isFinite && measured >= 60 ? measured : fallback
+            session.updateToolbarLayout(vertical: vertical, length: max(44, available - 16))
+        }
         session.refreshSystemTextSize()
         publishGeometry()
         session.restoreComputerKeyboard()
