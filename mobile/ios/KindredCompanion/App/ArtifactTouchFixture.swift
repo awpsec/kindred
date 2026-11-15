@@ -22,6 +22,7 @@ final class ArtifactTouchFixture: NSObject, WebSessionHost, WKNavigationDelegate
         session.webView.navigationDelegate = self
         session.webView.accessibilityIdentifier = "artifact-touch-webview"
         session.webView.configuration.userContentController.addUserScript(WKUserScript(source:"""
+        window.__KINDRED_MOBILE=true;window.__KINDRED_MOBILE_PLATFORM='ios';
         window.__artifactUIProbe={opened:false,selected:false,trustedPairs:0,trustedTouches:0,generation:0,word:null};
         document.addEventListener('touchstart',event=>{const p=window.__artifactUIProbe;if(!event.isTrusted)return;p.trustedTouches++;if(event.touches.length===2&&event.target.closest?.('.document-word,.document-pdf'))p.trustedPairs++},{capture:true,passive:true});
         """,injectionTime:.atDocumentStart,forMainFrameOnly:true))
@@ -57,6 +58,7 @@ final class ArtifactTouchFixtureController:UIViewController {
     private let telemetry=UILabel()
     private var timer:Timer?
     private var publishing=false
+    private var started=false
     init(fixture:ArtifactTouchFixture){self.fixture=fixture;host=UIHostingController(rootView:WebContainerView(session:fixture.session));super.init(nibName:nil,bundle:nil)}
     required init?(coder:NSCoder){fatalError("Synthetic artifact fixture only")}
     override func viewDidLoad(){
@@ -67,8 +69,8 @@ final class ArtifactTouchFixtureController:UIViewController {
         telemetry.text="·";telemetry.font = .systemFont(ofSize:1);telemetry.isAccessibilityElement=true
         telemetry.accessibilityIdentifier="artifact-touch-telemetry";telemetry.accessibilityLabel="Artifact touch telemetry";view.addSubview(telemetry)
         timer=Timer.scheduledTimer(withTimeInterval:0.1,repeats:true){[weak self] _ in MainActor.assumeIsolated{self?.publish()}}
-        fixture.session.webView.load(URLRequest(url:URL(string:"https://localhost:8765/")!))
     }
+    override func viewDidAppear(_ animated:Bool){super.viewDidAppear(animated);if !started{started=true;fixture.session.webView.load(URLRequest(url:URL(string:"https://localhost:8765/")!))}}
     override func viewDidLayoutSubviews(){super.viewDidLayoutSubviews();telemetry.frame=CGRect(x:1,y:view.bounds.height-2,width:1,height:1)}
     private func publish(){
         guard !publishing else{return};publishing=true
@@ -81,7 +83,7 @@ final class ArtifactTouchFixtureController:UIViewController {
           if(v&&p.word!==v){p.word=v;p.generation++}
           const pages=v?.shadowRoot?.querySelectorAll('section.docx').length||0;
           const row=document.querySelector('[data-artifact-id="touch-two"]'),r=row?.getBoundingClientRect(),library=document.querySelector('.artifact-studio-library');
-          return {ready:pages===20,title:document.querySelector('.artifact-title-input')?.value||'',wordPages:pages,
+          return {ready:pages===20,readyState:document.readyState,bodyText:document.body?.innerText.slice(0,200)||'',duoActions:!!window.__kindredDuoActions,mobile:window.__KINDRED_MOBILE===true,title:document.querySelector('.artifact-title-input')?.value||'',wordPages:pages,
             zoom:paper?Number(paper.style.zoom):parseFloat(document.querySelector('.ios-document-zoom-trigger')?.textContent||'0')/100,
             fit:document.querySelector('.ios-document-zoom-menu button[aria-pressed=true]')?.textContent||'',
             scrollTop:v?.scrollTop||0,scrollLeft:v?.scrollLeft||0,rootScale:visualViewport?.scale||1,
@@ -94,6 +96,9 @@ final class ArtifactTouchFixtureController:UIViewController {
             guard let self else{return};self.publishing=false
             var report=value as? [String:Any] ?? ["ready":false,"javascriptError":error != nil]
             report["nativeMenuPresented"]=self.view.window?.rootViewController?.presentedViewController != nil
+            report["nativeURL"]=self.fixture.session.webView.url?.absoluteString ?? "none"
+            report["nativeLoading"]=self.fixture.session.webView.isLoading
+            report["nativeFailure"]=String(describing:self.fixture.session.loadState.failure)
             if let data=try? JSONSerialization.data(withJSONObject:report,options:[.sortedKeys]){self.telemetry.accessibilityValue=String(data:data,encoding:.utf8)}
         }
     }
