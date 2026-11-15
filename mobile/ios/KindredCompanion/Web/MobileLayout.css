@@ -547,30 +547,21 @@ html[data-kindred-ios][data-ios-duo=true][data-motion=off] .conversation>.compos
  html[data-kindred-ios][data-ios-duo=true] .conversation>.composer-area>.jump-latest { transition:none; }
 }
 
-/* Bot replies keep a steady lane on the cover. User bubbles grow into the
-   full lower lane, easing their trailing edge around the measured controls. */
+/* Cover messages share one fixed reading lane beside the native controls.
+   Scrolling never changes line wrapping, for either author. */
 html[data-kindred-ios][data-ios-message-flow] .conversation>.conversation-history { margin-inline:0; }
 html[data-kindred-ios][data-ios-message-flow] #content>* {
  margin-left:var(--ios-message-lane-left,0px); margin-right:var(--ios-message-lane-right,0px);
  max-width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-message-lane-right,0px));
 }
 html[data-kindred-ios][data-ios-message-flow] #content>[data-ios-user-message] {
- /* Keep user messages visibly right aligned, including when their trailing
-    edge expands below the menu. The leading gutter stays still throughout. */
+ /* Keep user messages right aligned within the same fixed reading lane. */
  --ios-user-leading-gap:clamp(32px,12%,56px);
- width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-user-clearance,0px) - var(--ios-user-leading-gap));
- max-width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-user-clearance,0px) - var(--ios-user-leading-gap));
- margin-left:auto; margin-right:var(--ios-user-clearance,0px);
+ width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-message-lane-right,0px) - var(--ios-user-leading-gap));
+ max-width:calc(100% - var(--ios-message-lane-left,0px) - var(--ios-message-lane-right,0px) - var(--ios-user-leading-gap));
+ margin-left:auto; margin-right:var(--ios-message-lane-right,0px);
 }
 html[data-kindred-ios][data-ios-message-flow] #content .message-row>.message-bubble { max-width:100%; }
-html[data-kindred-ios][data-ios-duo=true] #content>[data-ios-user-message] {
- transition:width .28s cubic-bezier(.2,.8,.2,1),max-width .28s cubic-bezier(.2,.8,.2,1),margin-right .28s cubic-bezier(.2,.8,.2,1);
-}
-html[data-kindred-ios][data-ios-duo=true][data-motion=off] #content>[data-ios-user-message] { transition:none; }
-@media(prefers-reduced-motion:reduce) {
- html[data-kindred-ios][data-ios-duo=true] #content>[data-ios-user-message] { transition:none; }
-}
-
 /* Fit the computer and its status summary to the retained content width. */
 html[data-kindred-ios][data-ios-bot-center] #app.shell>.computer-panel.has-bot-center { overflow-x:hidden; }
 html[data-kindred-ios][data-ios-bot-center] .computer-panel :is(.desktop,.desktop-canvas,.ios-computer-controls,.desktop-toolbar,.resource-stats) { min-width:0; max-width:100%; box-sizing:border-box; }
