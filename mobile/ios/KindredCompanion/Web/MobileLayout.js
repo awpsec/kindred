@@ -2053,7 +2053,7 @@
   const artifactZoomButtons = root => {
     const labels={out:'Zoom out',in:'Zoom in',page:'Fit page',width:'Fit width'};
     return Object.entries(labels).flatMap(([id,label])=>{
-      const button=[...root.querySelectorAll('.ios-document-zoom-menu button')].find(node=>node.textContent.trim()===label);
+      const button=[...root.querySelectorAll('.ios-document-zoom-menu button')].find(node=>(node.getAttribute('aria-label')||node.textContent).trim()===label);
       return button?[{id,label,button}]:[];
     });
   };
