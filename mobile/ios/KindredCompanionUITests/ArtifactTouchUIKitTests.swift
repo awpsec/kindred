@@ -43,6 +43,7 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         let rail=app.scrollViews["kindred-duo-navigation-rail"]
         func tap(_ id:String){let b=app.buttons[id];XCTAssertTrue(b.waitForExistence(timeout:10));for _ in 0..<6 where !b.isHittable&&rail.exists{if rail.frame.height>rail.frame.width{if b.frame.midY>rail.frame.midY{rail.swipeUp()}else{rail.swipeDown()}}else{if b.frame.midX>rail.frame.midX{rail.swipeLeft()}else{rail.swipeRight()}}};XCTAssertTrue(b.isHittable);b.tap()}
         tap("kindred-duo-chats")
+        XCTAssertFalse(app.buttons["kindred-duo-new"].exists,"Create conversations belongs on the chat list, outside the current chat")
         XCTAssertFalse(app.buttons["kindred-duo-computer"].exists,"The cover chat rail omits the computer shortcut")
         let geometry=XCTAttachment(string:(telemetry.value as? String ?? "")+"\nRail frame: \(rail.frame)\n"+app.debugDescription)
         geometry.name="cover-chat-native-rail-geometry";geometry.lifetime = .keepAlways;add(geometry)
@@ -54,7 +55,7 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         XCTAssertEqual(rail.frame.midX,expectedCenter,accuracy:0.5,"Visible glass follows the genuine system control column")
         XCTAssertEqual(rail.frame.width,52,accuracy:1.5,"The native rail does not extend into chat content")
         XCTAssertEqual(app.buttons["kindred-duo-search"].frame.midX,expectedCenter,accuracy:0.5,"The actual button aligns with the system control, not only its container")
-        XCTAssertLessThanOrEqual(rail.frame.height,280,"Combining account actions removes two rows from the cover chat dock")
+        XCTAssertLessThanOrEqual(rail.frame.height,236,"The cover chat dock omits the create-conversation row")
         XCTAssertFalse(app.buttons["kindred-duo-settings"].exists)
         XCTAssertFalse(app.buttons["kindred-duo-marketplace"].exists)
         tap("kindred-duo-accounts")
@@ -81,6 +82,9 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout:15));row.tap()
         tap("kindred-duo-chats")
         XCTAssertTrue(editor.waitForExistence(timeout:15));XCTAssertEqual(editor.value as? String,draft,"Leaving and reopening the chat retains its native draft")
+        app.buttons["Chat list"].tap()
+        let create=app.buttons["kindred-duo-new"];XCTAssertTrue(create.waitForExistence(timeout:10));create.tap()
+        for name in ["New bot","New chat"]{XCTAssertTrue(app.buttons[name].waitForExistence(timeout:5))}
         let attachment=XCTAttachment(string:"Real editor tap; software keyboard; Return newline; rail above keyboard; artifact round trip; draft retained; no Send");attachment.name="real-keyboard-navigation-receipt";attachment.lifetime = .keepAlways;add(attachment)
         #endif
     }
