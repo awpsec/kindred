@@ -6,6 +6,36 @@ final class ArtifactTouchUIKitTests:XCTestCase {
     func testTwentyPageConvertedPDFNativeFitWidthPinchPanAndNavigation() throws { try documentGestures("pdf") }
     func testCoverPortraitWordNativeGestures() throws { XCUIDevice.shared.orientation = .portrait; try documentGestures("word") }
     func testCoverPortraitPDFNativeGestures() throws { XCUIDevice.shared.orientation = .portrait; try documentGestures("pdf") }
+    func testRealKeyboardDraftAndRailNavigation() throws {
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("The loopback host is simulator-only")
+        #else
+        continueAfterFailure=false
+        XCUIDevice.shared.orientation = .portrait
+        let app=XCUIApplication();app.launchEnvironment=["KINDRED_ARTIFACT_TOUCH_UI_TEST":"1"];app.launch();defer{app.terminate()}
+        let telemetry=app.staticTexts["artifact-touch-telemetry"];XCTAssertTrue(telemetry.waitForExistence(timeout:15))
+        let ready=XCTNSPredicateExpectation(predicate:NSPredicate{_,_ in
+            guard let s=telemetry.value as? String,let d=s.data(using:.utf8),let v=(try? JSONSerialization.jsonObject(with:d)) as? [String:Any] else{return false}
+            return v["ready"] as? Bool==true
+        },object:nil)
+        XCTAssertEqual(XCTWaiter.wait(for:[ready],timeout:60),.completed)
+        let rail=app.scrollViews["kindred-duo-navigation-rail"]
+        func tap(_ id:String){let b=app.buttons[id];XCTAssertTrue(b.waitForExistence(timeout:10));for _ in 0..<6 where !b.isHittable&&rail.exists{if rail.frame.height>rail.frame.width{if b.frame.midY>rail.frame.midY{rail.swipeUp()}else{rail.swipeDown()}}else{if b.frame.midX>rail.frame.midX{rail.swipeLeft()}else{rail.swipeRight()}}};XCTAssertTrue(b.isHittable);b.tap()}
+        tap("kindred-duo-chats")
+        let editor=app.textViews["kindred-native-composer-editor"];XCTAssertTrue(editor.waitForExistence(timeout:15));editor.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:10),"A real native editor tap opens the software keyboard")
+        let draft="Artifact navigation draft\nSecond line";editor.typeText(draft)
+        XCTAssertEqual(editor.value as? String,draft)
+        let keyboard=app.keyboards.firstMatch.frame,bar=rail.frame
+        XCTAssertLessThanOrEqual(bar.maxY,keyboard.minY+1,"The scrolling rail fits above the actual keyboard")
+        tap("kindred-duo-artifacts")
+        let row=app.webViews.buttons.matching(NSPredicate(format:"label BEGINSWITH %@","Open Twenty-page Word review")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout:15));row.tap()
+        tap("kindred-duo-chats")
+        XCTAssertTrue(editor.waitForExistence(timeout:15));XCTAssertEqual(editor.value as? String,draft,"Leaving and reopening the chat retains its native draft")
+        let attachment=XCTAttachment(string:"Real editor tap; software keyboard; Return newline; rail above keyboard; artifact round trip; draft retained; no Send");attachment.name="real-keyboard-navigation-receipt";attachment.lifetime = .keepAlways;add(attachment)
+        #endif
+    }
     private func documentGestures(_ document:String) throws {
         #if !targetEnvironment(simulator)
         throw XCTSkip("This isolated loopback fixture is simulator-only")
