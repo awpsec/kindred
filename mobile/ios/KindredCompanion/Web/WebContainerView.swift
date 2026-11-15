@@ -231,6 +231,8 @@ final class WebHostView: UIView {
         session?.computerHostAttachmentChanged()
         if window == nil {
             session?.detachVisibleHost()
+            duoRailController?.willMove(toParent: nil)
+            duoRailController?.removeFromParent()
         }
         setNeedsLayout()
     }

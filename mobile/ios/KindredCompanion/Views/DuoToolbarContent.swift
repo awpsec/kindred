@@ -58,8 +58,8 @@ struct DuoRailButtons: View {
         .labelStyle(.iconOnly)
         .tint(.primary)
         .accessibilityIdentifier("kindred-duo-navigation-rail")
-        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: vertical)
-        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: length)
+        .animation(reduceMotion || session.presentation.reduceMotion ? nil : .smooth(duration: 0.25), value: vertical)
+        .animation(reduceMotion || session.presentation.reduceMotion ? nil : .smooth(duration: 0.25), value: length)
     }
     private func railLabel(_ title: String, systemImage: String) -> some View {
         Label(title, systemImage: systemImage)

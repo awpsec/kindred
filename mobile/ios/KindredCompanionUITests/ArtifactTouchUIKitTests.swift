@@ -4,6 +4,8 @@ import XCTest
 final class ArtifactTouchUIKitTests:XCTestCase {
     func testTwentyPageWordNativeFitWidthPinchPanAndNavigation() throws { try documentGestures("word") }
     func testTwentyPageConvertedPDFNativeFitWidthPinchPanAndNavigation() throws { try documentGestures("pdf") }
+    func testCoverPortraitWordNativeGestures() throws { XCUIDevice.shared.orientation = .portrait; try documentGestures("word") }
+    func testCoverPortraitPDFNativeGestures() throws { XCUIDevice.shared.orientation = .portrait; try documentGestures("pdf") }
     private func documentGestures(_ document:String) throws {
         #if !targetEnvironment(simulator)
         throw XCTSkip("This isolated loopback fixture is simulator-only")
