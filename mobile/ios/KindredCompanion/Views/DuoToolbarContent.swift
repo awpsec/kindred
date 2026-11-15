@@ -42,7 +42,7 @@ private struct DuoRailButtons: View {
     }
     var body: some View {
         ScrollView(vertical ? .vertical : .horizontal) {
-            AnyLayout(vertical ? VStackLayout(spacing: 0) : HStackLayout(spacing: 0)) {
+            (vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))) {
                 buttons
             }
             .padding(4)
