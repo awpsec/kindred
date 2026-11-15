@@ -84,6 +84,19 @@
           "converted DOCX/PDF20pages"
         ],
         "result": "passed"
+      },
+      {
+        "source": "8c44b16f23441394a8f0fdbd12ef19feea9bc724",
+        "device": "Duo simulator iOS27.1",
+        "pose": "closed portrait with software keyboard",
+        "result": "passed",
+        "checks": [
+          "real editor tap shows keyboard",
+          "Return retains newline",
+          "native rail fits above keyboard",
+          "artifact round trip preserves native draft",
+          "no Send"
+        ]
       }
     ],
     "gesture_checks": [
