@@ -32,7 +32,14 @@ const server=https.createServer({cert:fs.readFileSync(cert),key:fs.readFileSync(
   if(parts[3]==='file'&&item){res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});return res.end(item.language==='file'?wordBytes:fs.readFileSync(path.join(root,'tools/frontend/fixtures/document-originals/original-v1.docx')));}
   return json(parts.length===2?items:item||{error:'Unknown disposable artifact'});
  }
- return original(req,res);
+ // A test can tear down its WebView while a fixture POST is still streaming.
+ // Consume that request's rejection instead of terminating the shared server.
+ Promise.resolve(original(req,res)).catch(error=>{
+  if(req.aborted||res.destroyed)return;
+  console.error(error);
+  if(!res.headersSent)res.writeHead(500,{'Content-Type':'application/json'});
+  res.end(JSON.stringify({error:'Disposable fixture request failed'}));
+ });
 });
 server.listen(8765,'127.0.0.1',()=>console.log('Artifact touch fixture ready on loopback TLS'));
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>server.close(()=>process.exit(0)));
