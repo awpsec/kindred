@@ -12,9 +12,25 @@ struct DuoToolbarContent: ToolbarContent {
     @ToolbarContentBuilder
     var body: some ToolbarContent {
         let artifacts = ["artifacts", "artifact"].contains(session.presentation.route)
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Button {
+                session.performDuoAction(.search)
+            } label: { Label(artifacts ? "Search artifacts" : "Search chats", systemImage: "magnifyingglass") }
+            .accessibilityIdentifier("kindred-duo-search")
+            if artifacts {
+                Button {
+                    session.performDuoAction(.newChat)
+                } label: { Label("New artifact", systemImage: "plus") }
+                .accessibilityIdentifier("kindred-duo-new")
+            } else {
+                Menu {
+                    Button("New bot", systemImage: "plus") { session.performDuoAction(.newBot) }
+                    Button("New chat", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.newConversation) }
+                } label: { Label("New conversation", systemImage: "plus") }
+                .accessibilityIdentifier("kindred-duo-new")
+            }
         if session.presentation.toolbarIdentity,
            session.presentation.route == "bot-chat", session.presentation.botDetailsAvailable {
-            ToolbarItem(placement: .topBarTrailing) {
                 ToolbarAvatarButton(image: BotToolbarAvatar(shape: session.presentation.botAvatarShape, color: session.presentation.botAvatarColor).image(scale: displayScale),
                                     title: session.presentation.chatTitle + " details",
                                     action: { session.performDuoAction(.botDetails) },
@@ -22,10 +38,7 @@ struct DuoToolbarContent: ToolbarContent {
                                     collaboration: session.presentation.collaboration,
                                     interrupt: { session.interruptCollaboration(key: $0) })
                     .frame(width: 44, height: 44)
-            }
-            .axisBehavior(session.presentation.isDuoInner ? .automatic : .verticalPreferred)
         }
-        ToolbarItemGroup(placement: .topBarTrailing) {
             if !["chat-list", "artifacts"].contains(session.presentation.route) && !(["bot-chat", "artifact"].contains(session.presentation.route) && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {
                 Button {
                     session.performDuoAction(.back)
@@ -96,47 +109,43 @@ struct DuoToolbarContent: ToolbarContent {
                     .accessibilityIdentifier("kindred-duo-artifact-refresh")
                 }
             }
-            if artifacts || session.presentation.route == "chat-list" || session.presentation.listVisible {
+            if artifacts, session.presentation.route == "artifact", let controls = session.presentation.artifactControls,
+               controls.actions.contains(where: { $0.id != "refresh" }) {
                 Menu {
-                    if artifacts, session.presentation.route == "artifact", let controls = session.presentation.artifactControls {
-                        ForEach(controls.actions.filter { $0.id != "refresh" }) { action in
-                            Button(action.label, systemImage: action.id == "edit" ? "pencil" : "square.and.arrow.down") {
-                                session.performArtifactControl(action.id, snapshot: controls)
-                            }
-                            .disabled(!action.enabled)
+                    ForEach(controls.actions.filter { $0.id != "refresh" }) { action in
+                        Button(action.label, systemImage: action.id == "edit" ? "pencil" : "square.and.arrow.down") {
+                            session.performArtifactControl(action.id, snapshot: controls)
                         }
-                        if controls.actions.contains(where: { $0.id != "refresh" }) { Divider() }
+                        .disabled(!action.enabled)
                     }
-                    Button("Settings", systemImage: "gearshape") { session.performDuoAction(.settings) }
-                    if artifacts {
-                        Button("Chats", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.chatHome) }
-                    } else {
-                        Button("Artifacts", systemImage: "folder") { session.performDuoAction(.artifacts) }
-                    }
-                    Button("Marketplace", systemImage: "square.grid.2x2") { session.performDuoAction(.marketplace) }
-                    Divider()
-                    Button("Manage accounts", systemImage: "person.crop.circle") { manageAccounts() }
-                } label: { Label("More options", systemImage: "ellipsis") }
-                .accessibilityIdentifier(artifacts ? "kindred-duo-artifact-more" : "kindred-duo-more")
+                } label: { Label("Document actions", systemImage: "ellipsis") }
+                .accessibilityIdentifier("kindred-duo-artifact-more")
             }
-            if !artifacts && (session.presentation.route == "chat-list" || session.presentation.listVisible) {
+            if artifacts {
                 Button {
-                    session.performDuoAction(.search)
-                } label: { Label("Search chats", systemImage: "magnifyingglass") }
-                Menu {
-                    Button("New bot", systemImage: "plus") { session.performDuoAction(.newBot) }
-                    Button("New chat", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.newConversation) }
-                } label: { Label("New conversation", systemImage: "plus") }
+                    session.performDuoAction(.chatHome)
+                } label: { Label("Chats", systemImage: "bubble.left.and.bubble.right") }
+                .accessibilityIdentifier("kindred-duo-chats")
+            } else {
+                Button {
+                    session.performDuoAction(.artifacts)
+                } label: { Label("Artifacts", systemImage: "folder") }
+                .accessibilityIdentifier("kindred-duo-artifacts")
             }
-            if session.presentation.route == "artifacts" || session.presentation.artifactLibraryVisible {
-                Button {
-                    session.performDuoAction(.search)
-                } label: { Label("Search artifacts", systemImage: "magnifyingglass") }
-                Button {
-                    session.performDuoAction(.newChat)
-                } label: { Label("New artifact", systemImage: "plus") }
-            }
+            Button {
+                session.performDuoAction(.marketplace)
+            } label: { Label("Marketplace", systemImage: "square.grid.2x2") }
+            .disabled(session.presentation.route == "marketplace")
+            .accessibilityIdentifier("kindred-duo-marketplace")
+            Button {
+                session.performDuoAction(.settings)
+            } label: { Label("Settings", systemImage: "gearshape") }
+            .accessibilityIdentifier("kindred-duo-settings")
+            Button {
+                manageAccounts()
+            } label: { Label("Manage accounts", systemImage: "person.crop.circle") }
+            .accessibilityIdentifier("kindred-duo-accounts")
         }
-        .axisBehavior(artifacts ? .verticalPreferred : .automatic)
+        .axisBehavior(.verticalPreferred)
     }
 }
