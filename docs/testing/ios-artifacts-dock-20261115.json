@@ -1,5 +1,5 @@
 {
-  "status": "normal signed build prepared; physical installation and acceptance pending owner unlock",
+  "status": "normal signed build installed and launched on physical Duo; physical artifact gesture acceptance pending",
   "native_source": "ce60d28f8672884867d03caeeb8be7bae519a160",
   "base": "765cb3ce631132bd7070874c0f59c159be088d57",
   "integrated_release_patches": [
@@ -25,8 +25,10 @@
     "team": "92Y82K5BUS",
     "same_development_certificate": true,
     "signature_verified": true,
-    "installed": false,
-    "diagnostic_artifact_host": false
+    "installed": true,
+    "diagnostic_artifact_host": false,
+    "launched": true,
+    "installed_version_verified": true
   },
   "passed_checks": {
     "production_dto_and_webhost_lifecycle": {
@@ -111,11 +113,31 @@
     ]
   },
   "limitations": [
-    "Mac relocked before remaining native open/book/tabletop visual checks; browser geometry coverage includes these poses",
-    "Physical UI runner provisioning blocked: Xcode No Accounts and missing UITest runner profile",
-    "Duo auto-locked before normal app installation; physical acceptance is not claimed",
+    "Final native open/book/tabletop visual checks remain pending; browser geometry coverage includes these poses",
+    "Physical UI runner provisioning was blocked at last attempt: Xcode No Accounts and missing UITest runner profile",
+    "Physical artifact gestures have not yet been accepted; normal build installation and launch are verified",
     "Original specific live-document Fit Width report is not marked resolved solely from fixture results"
   ],
   "diagnostic_app_in_production": false,
-  "publication_or_production_deployment": false
+  "publication_or_production_deployment": false,
+  "physical_install": {
+    "source": "ce60d28f8672884867d03caeeb8be7bae519a160",
+    "version": "0.90.7",
+    "build": "8",
+    "bundle_id": "dev.kindred.companion",
+    "team": "92Y82K5BUS",
+    "installed": true,
+    "launched": true,
+    "accounts_or_keychain_edited": false,
+    "uninstalled_or_reset": false,
+    "normal_build_without_xctest": true,
+    "started_utc": "2026-11-15T14:29:58.537315+00:00",
+    "account_count_before": 2,
+    "accounts_preserved": true,
+    "account_count_after": 2,
+    "active_selection_unchanged": true,
+    "account_metadata_byte_identical": true,
+    "installed_version_verified": true,
+    "completed_utc": "2026-11-15T14:30:06.560415+00:00"
+  }
 }
