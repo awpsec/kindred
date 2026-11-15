@@ -36,7 +36,7 @@ struct DuoRailButtons: View {
     private var buttonCount: Int {
         let p = session.presentation, controls = p.artifactControls
         let back = !["chat-list", "artifacts"].contains(p.route) && !(["bot-chat", "artifact"].contains(p.route) && (p.listVisible || p.listToggleAvailable))
-        return 6 + [
+        return 4 + [
             p.toolbarIdentity && p.route == "bot-chat" && p.botDetailsAvailable,
             back, p.route == "details" && p.botSettingsAvailable,
             p.route == "computer" && p.computerExpandAvailable, p.listToggleAvailable,
@@ -67,6 +67,7 @@ struct DuoRailButtons: View {
     }
     private func railLabel(_ title: String, systemImage: String) -> some View {
         Label(title, systemImage: systemImage)
+            .font(.title3)
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
     }
@@ -113,7 +114,7 @@ struct DuoRailButtons: View {
                 Button {
                     session.performDuoAction(.expandComputer)
                 } label: {
-                    Label(session.presentation.computerExpanded ? "Collapse computer" : "Expand computer",
+                    railLabel(session.presentation.computerExpanded ? "Collapse computer" : "Expand computer",
                           systemImage: session.presentation.computerExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                 }
             }
@@ -156,7 +157,7 @@ struct DuoRailButtons: View {
                             .disabled(!option.enabled)
                         }
                     } label: {
-                        Text(zoom).font(.caption.monospacedDigit()).frame(minWidth: 36, minHeight: 44)
+                        Text(zoom).font(.callout.monospacedDigit()).frame(minWidth: 36, minHeight: 44)
                     }
                     .accessibilityLabel("Document zoom, " + zoom)
                     .accessibilityIdentifier("kindred-duo-artifact-zoom")
@@ -192,18 +193,19 @@ struct DuoRailButtons: View {
                 } label: { railLabel("Artifacts", systemImage: "folder") }
                 .accessibilityIdentifier("kindred-duo-artifacts")
             }
-            Button {
-                session.performDuoAction(.marketplace)
-            } label: { railLabel("Marketplace", systemImage: "square.grid.2x2") }
-            .disabled(session.presentation.route == "marketplace")
-            .accessibilityIdentifier("kindred-duo-marketplace")
-            Button {
-                session.performDuoAction(.settings)
-            } label: { railLabel("Settings", systemImage: "gearshape") }
-            .accessibilityIdentifier("kindred-duo-settings")
-            Button {
-                manageAccounts()
-            } label: { railLabel("Manage accounts", systemImage: "person.crop.circle") }
+            Menu {
+                Button("Accounts", systemImage: "person.crop.circle", action: manageAccounts)
+                    .accessibilityIdentifier("kindred-duo-manage-accounts")
+                Button("Settings", systemImage: "gearshape") {
+                    session.performDuoAction(.settings)
+                }
+                .accessibilityIdentifier("kindred-duo-settings")
+                Button("Marketplace", systemImage: "square.grid.2x2") {
+                    session.performDuoAction(.marketplace)
+                }
+                .disabled(session.presentation.route == "marketplace")
+                .accessibilityIdentifier("kindred-duo-marketplace")
+            } label: { railLabel("Accounts, settings and marketplace", systemImage: "person.crop.circle") }
             .accessibilityIdentifier("kindred-duo-accounts")
     }
 }
