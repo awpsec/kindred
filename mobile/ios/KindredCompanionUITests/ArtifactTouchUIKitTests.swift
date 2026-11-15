@@ -109,7 +109,7 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         var receipt:[[String:Any]]=[]
         func capture(_ label:String){var s=state();s["phase"]=label;receipt.append(s);let data=(try? JSONSerialization.data(withJSONObject:s,options:[.prettyPrinted,.sortedKeys])) ?? Data();let trace=XCTAttachment(data:data,uniformTypeIdentifier:"public.json");trace.name=label+"-state";trace.lifetime = .keepAlways;add(trace);let a=XCTAttachment(screenshot:app.screenshot());a.name=label;a.lifetime = .keepAlways;add(a)}
         wait("twenty-word-pages",timeout:60){$0["ready"] as? Bool == true}
-        wait("matching-document-renderer-source"){$0["rendererSHA"] as? String=="181f1b8f2583cd236c708c69d0f0c7af079608ae91da9bde4df45dabe486775a"}
+        wait("matching-document-renderer-source"){$0["rendererSHA"] as? String=="13ad9825525590e9407c71d43a7e2a15c629b12445094f183e5b80603e127e2f"}
         capture("word-ready")
         let web=app.webViews["artifact-touch-webview"]
         XCTAssertTrue(web.exists)
