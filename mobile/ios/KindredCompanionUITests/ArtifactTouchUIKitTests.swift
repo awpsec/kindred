@@ -23,6 +23,8 @@ final class ArtifactTouchUIKitTests:XCTestCase {
         func tap(_ id:String){let b=app.buttons[id];XCTAssertTrue(b.waitForExistence(timeout:10));for _ in 0..<6 where !b.isHittable&&rail.exists{if rail.frame.height>rail.frame.width{if b.frame.midY>rail.frame.midY{rail.swipeUp()}else{rail.swipeDown()}}else{if b.frame.midX>rail.frame.midX{rail.swipeLeft()}else{rail.swipeRight()}}};XCTAssertTrue(b.isHittable);b.tap()}
         tap("kindred-duo-chats")
         XCTAssertFalse(app.buttons["kindred-duo-computer"].exists,"The cover chat rail omits the computer shortcut")
+        let geometry=XCTAttachment(string:(telemetry.value as? String ?? "")+"\nRail frame: \(rail.frame)\n"+app.debugDescription)
+        geometry.name="cover-chat-native-rail-geometry";geometry.lifetime = .keepAlways;add(geometry)
         let editor=app.textViews["kindred-native-composer-editor"];XCTAssertTrue(editor.waitForExistence(timeout:15));editor.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout:10),"A real native editor tap opens the software keyboard")
         let draft="Artifact navigation draft\nSecond line";editor.typeText(draft)

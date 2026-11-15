@@ -128,6 +128,21 @@ final class ArtifactTouchFixtureController:UIViewController {
             report["nativeURL"]=self.fixture.session.webView.url?.absoluteString ?? "none"
             report["nativeLoading"]=self.fixture.session.webView.isLoading
             report["nativeFailure"]=String(describing:self.fixture.session.loadState.failure)
+            if #available(iOS 27.1, *), let window=self.view.window {
+                let web=self.fixture.session.webView
+                func rect(_ value:CGRect)->[String:Double]{["x":Double(value.minX),"y":Double(value.minY),"width":Double(value.width),"height":Double(value.height)]}
+                func insets(_ value:UIEdgeInsets)->[String:Double]{["top":Double(value.top),"left":Double(value.left),"bottom":Double(value.bottom),"right":Double(value.right)]}
+                let layout=report["nativeLayout"] as? [String:Any]
+                let edge:UIRectEdge=layout?["railSide"] as? String=="left" ? .left : .right
+                let area=web.bounds.inset(by:web.edgeInsets(for:.bar(onEdge:edge,extent:52)))
+                report["nativeBarRegion"]=rect(area)
+                report["nativeBarWindowFrame"]=rect(web.convert(area,to:window))
+                report["nativePlainSafeArea"]=insets(web.safeAreaInsets)
+                report["nativeCornerSafeArea"]=insets(web.edgeInsets(for:.safeArea(cornerAdaptation:.horizontal)))
+                report["nativeWebWindowFrame"]=rect(web.convert(web.bounds,to:window))
+                report["nativeWindowBounds"]=rect(window.bounds)
+                report["nativeOverlayFrames"]=web.superview?.subviews.filter{$0 !== web && $0 !== self.fixture.session.glassControls}.map{["frame":rect($0.convert($0.bounds,to:window)),"safeArea":insets($0.safeAreaInsets)]}
+            }
             if JSONSerialization.isValidJSONObject(report), let data=try? JSONSerialization.data(withJSONObject:report,options:[.sortedKeys]){self.telemetry.accessibilityValue=String(data:data,encoding:.utf8)}
         }
     }
