@@ -70,9 +70,8 @@ async function check(mobile,duo) {
       await detail.getByText('Limits unavailable',{exact:false}).first().waitFor();
       await detail.getByText('In Kindred · 31 tokens recorded',{exact:true}).waitFor();
       workLimitsUnavailable=false;
-      await detail.getByRole('button',{name:'Account usage in Connections'}).click();
-      await page.locator('.ai-account[data-provider=codex][open]').waitFor();
-      await page.evaluate(()=>document.querySelector('#settings-dialog').close());
+      assert.equal(await detail.locator('button, a').count(),0);
+      await page.keyboard.press('Escape');
     }
     await page.evaluate(async()=>{const app=await import('/app.js');await app.openSettings('connections');});
     const codex=page.locator('.ai-account[data-provider=codex]');

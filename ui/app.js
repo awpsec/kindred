@@ -3105,7 +3105,6 @@ async function settingsConnections(revision) {
     if(provider.kind==='subscription') {
       if(provider.accounts?.length) {
         subscriptionAccounts(row,provider);
-        if(connectionView.providerId===provider.id)row.card.open=true;
         if(provider.id==='codex')row.body.append(decisions);
       } else {
         subscriptionControls(row,provider);
@@ -8532,10 +8531,6 @@ async function renderProviderUsage(root,provider) {
       row.append(name,summary);root.append(row);
       return {account,summary};
     });
-    root.append(button('Account usage in Connections',()=>{
-      closeIdentityMenu();
-      return openSettings('connections',{providerId:provider.id});
-    },'usage-view-all'));
     await Promise.all(rows.map(async({account,summary})=>{
       let windows=[];
       try{windows=subscriptionWindows(provider.id,await accountApi(provider.id,'usage',account.id));}catch{}
