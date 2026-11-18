@@ -1913,7 +1913,7 @@ function renderBotSettings() {
       rows: 3,
       maxLength: 2000,
     }),
-    models = modelControls(b.provider, b.model, b.reasoning_effort || "");
+    models = modelControls(b.provider, b.model, b.reasoning_effort || "",false,b.profile?.provider_account_id);
   name.label.classList.add("bot-name-field");
   label.label.classList.add("bot-role-field");
   const provider = select(
@@ -1923,10 +1923,11 @@ function renderBotSettings() {
     pl = node("label", "", "AI provider");
   pl.append(provider);
   provider.setAttribute('aria-label','AI provider');
-  void loadProviderAccounts().then(()=>{if(!provider.isConnected)return;const chosen=provider.value;const updated=select(providerOptions(chosen),chosen);provider.replaceChildren(...Array.from(updated.options));provider.value=chosen;}).catch(()=>{});
+  const displayProvider=botProviderPicker(provider,b.profile?.provider_account_id);
+  void loadProviderAccounts().then(()=>{if(!provider.isConnected)return;const chosen=provider.value;const updated=select(providerOptions(chosen),chosen);provider.replaceChildren(...Array.from(updated.options));provider.value=chosen;displayProvider();updateSummaries();}).catch(()=>{});
   name.input.addEventListener("input",()=>replaceCharacter(avatar,{...draft.profile,name:name.input.value},90));
   const connectors=botConnectorPreferences(draft);
-  provider.onchange = () => {models.changeProvider(provider.value);connectors.setProvider(provider.value,false);};
+  provider.onchange = () => {displayProvider();models.changeProvider(provider.value,provider.dataset.accountId);connectors.setProvider(provider.value,false);};
   const automatic = approvalSelect(b.approval_mode || "inherit", true),
     primary = primaryBotControl(b),
     pinned = switchField("Pin in sidebar", profile(b).pinned),
@@ -1951,7 +1952,7 @@ function renderBotSettings() {
   const selectedText = input => input.selectedOptions?.[0]?.textContent || input.value;
   const updateSummaries = () => {
     summaries.get('identity').textContent = [name.input.value.trim() || 'Name required',label.input.value.trim()].filter(Boolean).join(' · ');
-    summaries.get('model').textContent = [selectedText(provider),selectedText(models.model),selectedText(models.effort)].filter(Boolean).join(' · ');
+    summaries.get('model').textContent = [pl.querySelector('.provider-picker-trigger span')?.textContent || selectedText(provider),selectedText(models.model),selectedText(models.effort)].filter(Boolean).join(' · ');
     summaries.get('behavior').textContent = [selectedText(progress.input),notifications.input.checked?'Notifications on':'Notifications off',initiative.input.checked?'Initiative on':''].filter(Boolean).join(' · ');
     summaries.get('access').textContent = [local.input.checked?'Local desktop enabled':'Bot computer',selectedText(automatic.input)].join(' · ');
   };
@@ -1972,7 +1973,7 @@ function renderBotSettings() {
     model: models.model.value, reasoning_effort: models.effort.value,
     preserve_text: true,
     auto_approve: false, approval_mode: automatic.input.value,
-    profile: {...profile(draft), label: label.input.value, description: description.input.value,
+    profile: {...profile(draft), provider_account_id:provider.dataset.accountId || '', label: label.input.value, description: description.input.value,
       initiative: initiative.input.checked, initiative_instructions: initiative.instructions(profile(draft).initiative_instructions||''),
       progress_updates:progress.input.value, pinned: pinned.input.checked, notifications: notifications.input.checked, animated: true, local_access: local.input.checked, local_device_id: local.device.value},
   }), value => {
@@ -2103,28 +2104,36 @@ async function newBot(proposal = null) {
   $("bot-dialog-title").textContent = proposal ? 'Teammate draft' : 'New bot';
   $("new-avatar-button").replaceChildren(character({...state.newProfile,name:fields.name.value},90));
   $("bot-dialog").showModal();
-  const models = modelControls(fields.provider.value, draft?.model || "", draft?.reasoning_effort || "");
+  fields.provider.parentElement.querySelector('.bot-provider-picker')?.remove();
+  botProviderPicker(fields.provider,draft?.profile?.provider_account_id);
+  const models = modelControls(fields.provider.value, draft?.model || "", draft?.reasoning_effort || "",false,fields.provider.dataset.accountId);
   $("new-model-controls").replaceChildren(models.root);
   $("bot-form").elements.provider.onchange = (e) =>
-    models.changeProvider(e.target.value);
+    models.changeProvider(e.target.value,e.target.dataset.accountId);
 }
 const modelCache = new Map();
-async function loadModels(provider, refresh = false) {
-  if (!refresh && modelCache.has(provider)) return modelCache.get(provider);
-  const request = api(
-    provider === "codex" ? "/codex/models" : provider === "openrouter" ? "/openrouter/models" : ["opencode","opencode-go"].includes(provider) ? "/opencode/"+provider+"/models" : provider.startsWith("custom-") ? "/providers/"+provider+"/models" : "/provider-cli/"+provider+"/models",
-    ["codex","claude-code","kimi-code"].includes(provider) || provider.startsWith('custom-')&&refresh ? "POST" : "GET",
-    ["codex","claude-code","kimi-code"].includes(provider) || provider.startsWith('custom-')&&refresh ? {} : undefined,
-  )
+function accountCacheKey(provider, id) { return id ? provider+'#'+id : provider; }
+function accountApi(provider,action,id='',payload={}) {
+  if(provider==='codex')return api('/codex/'+action+(id?'?account_id='+encodeURIComponent(id):''),'POST',payload);
+  return api('/provider-cli/'+provider+'/'+action,'POST',id?{...payload,account_id:id}:payload);
+}
+async function loadModels(provider, refresh = false, accountId='') {
+  const key=accountCacheKey(provider,accountId);
+  if (!refresh && modelCache.has(key)) return modelCache.get(key);
+  const request = (['codex','claude-code','kimi-code'].includes(provider) ? accountApi(provider,'models',accountId) : api(
+    provider === "openrouter" ? "/openrouter/models" : ["opencode","opencode-go"].includes(provider) ? "/opencode/"+provider+"/models" : "/providers/"+provider+"/models",
+    provider.startsWith('custom-')&&refresh ? "POST" : "GET",
+    provider.startsWith('custom-')&&refresh ? {} : undefined,
+  ))
     .then((result) => {if(result.catalog?.error)notice(result.catalog.error+(result.data?.length?' Using the saved catalogue.':''),true);return result.data || [];})
     .catch((e) => {
-      modelCache.delete(provider);
+      modelCache.delete(key);
       throw e;
     });
-  modelCache.set(provider, request);
+  modelCache.set(key, request);
   return request;
 }
-function modelControls(initialProvider, initialModel, initialEffort, configuringDefault=false) {
+function modelControls(initialProvider, initialModel, initialEffort, configuringDefault=false, accountId='') {
   const root = node("div", "model-controls"),
     model = select([], ""),
     effort = select([], "");
@@ -2225,7 +2234,7 @@ function modelControls(initialProvider, initialModel, initialEffort, configuring
     effort.disabled = false;
     help.textContent = '';help.hidden = true;
     try {
-      const data = await loadModels(provider, force);
+      const data = await loadModels(provider, force,accountId);
       if (ticket !== generation) return;
       catalog = data.filter((m) => !m.hidden);
       model.replaceChildren();
@@ -2286,8 +2295,9 @@ function modelControls(initialProvider, initialModel, initialEffort, configuring
     effort.setCustomValidity("");
     wantedEffort = effort.value;
   };
-  function changeProvider(next) {
+  function changeProvider(next,nextId='') {
     drafts.set(provider, [model.value, effort.value]);
+    accountId=nextId;
     provider = next;
     [wantedModel, wantedEffort] = drafts.get(next) || ["", ""];
     model.required = provider !== "codex";
@@ -2496,7 +2506,7 @@ function livePreferences(form, read, write, accepted) {
     clearTimeout(timer);
     if (running || revision === saved) return;
     clearTimeout(statusTimer);status.hidden=false;
-    if (form.querySelector(".model-controls select:disabled")) { status.textContent = "Waiting for models…"; timer = setTimeout(flush, 150); return; }
+    if (form.querySelector(".model-controls select[name=model]:disabled")) { status.textContent = "Waiting for models…"; timer = setTimeout(flush, 150); return; }
     if (!form.checkValidity()) { status.textContent = "Complete the highlighted fields to save."; return; }
     running = true; const ticket = revision, value = read();
     status.textContent = "Saving…"; status.classList.remove("error"); retry.hidden = true;
@@ -2755,6 +2765,88 @@ async function recordedProviderUsage(provider,force=false) {
 }
 setInterval(()=>{if(!document.hidden)void warmUsageCache();},60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void warmUsageCache();});
+// Keep the native form value for provider validation and existing preference saves.
+// The account ID is independent of the editable label shown to the person.
+function botProviderPicker(select, initialAccount = '') {
+  select.dataset.accountId = initialAccount;
+  const holder = node('span','bot-provider-picker');
+  const trigger = node('button','provider-picker-trigger');
+  trigger.type = 'button';
+  trigger.setAttribute('aria-label','Choose provider and account');
+  trigger.setAttribute('aria-expanded','false');
+  const menu = node('div','provider-picker-menu');
+  menu.popover = 'auto';
+  const choices = node('div','provider-picker-list'), accounts = node('div','provider-picker-list');
+  menu.append(choices,accounts);
+  holder.append(trigger,menu);
+  select.after(holder);
+  select.hidden = true;
+  let browsing = '';
+  const providers = () => state.providerAccounts || builtinProviders;
+  function display() {
+    const enabled = providers().some(p=>p.accounts?.length) || !!select.dataset.accountId;
+    holder.hidden = !enabled;select.hidden = enabled;
+    const p = providers().find(p=>p.id===select.value);
+    const account = p?.accounts?.find(a=>a.id===select.dataset.accountId);
+    const name = account?.nickname || (select.dataset.accountId ? 'Saved account' : '');
+    trigger.replaceChildren(node('span','',[p?.name || select.value,name].filter(Boolean).join(' · ')),icon('chevron',13));
+  }
+  function choose(provider,id) {
+    select.value = provider;
+    select.dataset.accountId = id;
+    display();
+    menu.hidePopover();
+    trigger.focus({preventScroll:true});
+    select.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+  function browse(provider,enter=false) {
+    browsing = provider.id;
+    accounts.replaceChildren();
+    const rows = provider.accounts || [];
+    accounts.hidden = !rows.length;
+    menu.classList.toggle('with-accounts',!!rows.length);
+    for(const item of choices.children)item.classList.toggle('current',item.dataset.provider===browsing);
+    if(!rows.length)return;
+    const back = button('Providers',()=>{menu.classList.remove('drilled');choices.querySelector('.current')?.focus();},'provider-picker-back');
+    accounts.append(back);
+    for(const a of rows) {
+      const row=button(a.nickname,()=>choose(provider.id,a.id),'provider-picker-choice');
+      row.setAttribute('aria-pressed',String(provider.id===select.value && a.id===select.dataset.accountId));
+      accounts.append(row);
+    }
+    if(enter){menu.classList.add('drilled');accounts.querySelector('.provider-picker-choice')?.focus({preventScroll:true});}
+  }
+  function open() {
+    choices.replaceChildren();menu.classList.remove('drilled');
+    for(const p of providers()) {
+      const row=button(p.name,()=>p.accounts?.length?browse(p,true):choose(p.id,''),'provider-picker-choice');
+      row.dataset.provider=p.id;
+      if(p.accounts?.length)row.append(icon('chevron',12));
+      row.onpointerenter=e=>{if(e.pointerType==='mouse' && browsing!==p.id)browse(p);};
+      row.onfocus=()=>{if(browsing!==p.id)browse(p);};
+      choices.append(row);
+    }
+    browse(providers().find(p=>p.id===select.value)||providers()[0]);
+    menu.showPopover();
+    const r=trigger.getBoundingClientRect(),w=menu.offsetWidth,h=menu.offsetHeight;
+    menu.style.left=Math.max(8,Math.min(r.left,innerWidth-w-8))+'px';
+    menu.style.top=Math.max(8,r.bottom+h+12<=innerHeight?r.bottom+4:r.top-h-4)+'px';
+    trigger.setAttribute('aria-expanded','true');
+  }
+  trigger.onclick=()=>menu.matches(':popover-open')?menu.hidePopover():open();
+  menu.addEventListener('toggle',()=>trigger.setAttribute('aria-expanded',String(menu.matches(':popover-open'))));
+  menu.onkeydown=e=>{
+    const rows=[...e.target.parentElement.querySelectorAll('button')].filter(b=>b.offsetWidth);
+    const index=rows.indexOf(e.target);
+    if(['ArrowDown','ArrowUp'].includes(e.key)&&index>=0){e.preventDefault();rows[(index+(e.key==='ArrowDown'?1:-1)+rows.length)%rows.length].focus();}
+    if(e.key==='ArrowRight'&&e.target.dataset.provider){e.preventDefault();e.target.click();}
+    if(e.key==='ArrowLeft'&&accounts.contains(e.target)){e.preventDefault();menu.classList.remove('drilled');choices.querySelector('.current')?.focus();}
+  };
+  trigger.onkeydown=e=>{if(e.key==='ArrowDown'){e.preventDefault();if(!menu.matches(':popover-open'))open();choices.querySelector('.current')?.focus();}};
+  display();
+  return display;
+}
+
 function providerOptions(current) {const options=(state.providerAccounts || builtinProviders).map(p=>[p.id,p.name]);if(current&&!options.some(([id])=>id===current))options.push([current,current]);return options;}
 function accountCard(provider) {
   const card=node('details','ai-account'), summary=node('summary','ai-account-summary'), check=node('span','account-check'),
@@ -2769,28 +2861,29 @@ function accountCard(provider) {
   status(provider.connected===true, provider.connected ? (provider.kind==='api'?(provider.no_auth?'Configured':'Key saved'):'Connected') : 'Not connected');
   return {card,body,status};
 }
-async function subscriptionStatus(provider,force=false) {
-  const cached=accountStatuses.get(provider.id)||{};
+async function subscriptionStatus(provider,force=false,id='') {
+  const key=accountCacheKey(provider.id,id);
+  const cached=accountStatuses.get(key)||{};
   if(cached.pending){if(!force)return cached.pending;await cached.pending.catch(()=>{});}
   if(!force&&cached.data&&Date.now()-cached.updated<60000)return cached.data;
-  accountStatuses.set(provider.id,cached);
+  accountStatuses.set(key,cached);
   cached.pending=(async()=>{
     let data;
     if(provider.id==='codex') {
-      const result=await api('/codex/account','POST',{});
+      const result=await accountApi(provider.id,'account',id);
       data={...result,connected:result.account?.type==='chatgpt',message:result.account?.email || result.message || 'Sign in to your ChatGPT subscription.'};
-    }else data=await api('/provider-cli/'+provider.id+'/account','POST',{});
+    }else data=await accountApi(provider.id,'account',id);
     cached.data=data;cached.updated=Date.now();
     provider.connected=data.connected;
-    const current=state.providerAccounts?.find(p=>p.id===provider.id);if(current)current.connected=data.connected;
+    const current=state.providerAccounts?.find(p=>p.id===provider.id);if(current&&!id)current.connected=data.connected;
     providerCatalogChanged();return data;
   })();
   try{return await cached.pending;}finally{cached.pending=null;}
 }
-async function claudeBrowserSignIn(row,message,check) {
+async function claudeBrowserSignIn(row,message,check,id='') {
   const popup=authPopup();let attempt='',opened='',stopped=false,timer=null,phase='starting',revision=0;
   row.body.querySelector('.claude-login')?.remove();
-  const root=node('div','claude-login'),help=node('p','muted small','Authorize Claude in your browser. This connection is shared by the bots in this workspace.');
+  const root=node('div','claude-login'),help=node('p','muted small','Authorize Claude in your browser. Bots assigned to this account use this sign-in.');
   const link=node('a','outline-button oauth-link','Open Claude sign-in');link.target='_blank';link.rel='noopener noreferrer';link.hidden=true;
   const form=node('form','claude-login-code'),code=field('Claude authorization code','','input',{type:'password',autocomplete:'off',spellcheck:'false',placeholder:'Paste the code Claude shows after sign-in'});
   const hint=node('p','muted small','If Claude shows a code after you authorize, paste it here to finish. If it completes automatically, no code is needed.');form.hidden=true;
@@ -2799,12 +2892,12 @@ async function claudeBrowserSignIn(row,message,check) {
     let value=code.input.value.trim();code.input.value='';
     if(!value)return;
     submit.disabled=true;revision++;
-    try{await paint(await api('/provider-cli/claude-code/login-complete','POST',{attempt,code:value}));}
+    try{await paint(await accountApi('claude-code','login-complete',id,{attempt,code:value}));}
     catch(e){message.textContent=e.message+' Check connection before submitting another code.';}
     finally{value='';submit.disabled=phase!=='waiting';}
   };
   form.append(code.label,hint,submit);
-  const cancel=button('Cancel sign-in',async()=>{revision++;await paint(await api('/provider-cli/claude-code/login-cancel','POST',{attempt}));closePendingPopup();});cancel.hidden=true;
+  const cancel=button('Cancel sign-in',async()=>{revision++;await paint(await accountApi('claude-code','login-cancel',id,{attempt}));closePendingPopup();});cancel.hidden=true;
   root.append(help,link,form,cancel);row.body.append(root);
   message.textContent='Preparing Claude sign-in. First computer setup can take several minutes…';
   // Once handed to Claude, the browser owns this window. Closing a disowned
@@ -2815,7 +2908,7 @@ async function claudeBrowserSignIn(row,message,check) {
     if(!root.isConnected){stop();return;}
     phase=result.state;
     attempt=result.attempt||attempt;message.textContent=result.message||'Waiting for Claude sign-in…';
-    if(result.state==='connected'&&result.connected===true){stop();closePendingPopup();help.textContent='Claude is connected for this workspace’s bots.';await check(true);return;}
+    if(result.state==='connected'&&result.connected===true){stop();closePendingPopup();help.textContent='Claude is connected.';await check(true);return;}
     if(['failed','expired','cancelled','idle'].includes(result.state)||!result.state){stop();closePendingPopup();return;}
     if(result.state==='waiting'&&result.url){
       const url=new URL(result.url),params=url.searchParams;
@@ -2828,14 +2921,158 @@ async function claudeBrowserSignIn(row,message,check) {
   }
   async function poll(){
     if(stopped||!root.isConnected){stop();return;}
-    try{const started=revision,result=await api('/provider-cli/claude-code/login-status','POST',{});if(started===revision)await paint(result);}
+    try{const started=revision,result=await accountApi('claude-code','login-status',id,{});if(started===revision)await paint(result);}
     catch(e){stop();message.textContent=e.message+' Choose Sign in to resume.';return;}
     if(!stopped)timer=setTimeout(poll,1500);
   }
   try{
-    await paint(await api('/provider-cli/claude-code/login','POST',{}));
+    await paint(await accountApi('claude-code','login',id,{}));
     if(!stopped)timer=setTimeout(poll,1500);
   }catch(e){stop();closePendingPopup();message.textContent=e.message;throw e;}
+}
+function subscriptionAccounts(row,provider) {
+  const list=node('div','subscription-accounts'), editor=node('div');
+  const add=button('Add account',()=>edit(editor),'subtle-button','plus');
+  row.body.append(list,add,editor);
+  const refreshers=[];
+  const count=()=>{const n=provider.accounts.length;row.status(true,n+' '+(n===1?'account':'accounts'));};
+  function edit(target,account,accepted) {
+    if(target.childElementCount){target.replaceChildren();return;}
+    const input=field('Nickname',account?.nickname || '','input',{maxLength:48,required:true,placeholder:'Work'}), form=node('form','subscription-editor');
+    const submit=node('button','outline-button',account?'Save':'Add account');submit.type='submit';
+    const status=node('span','muted small');status.setAttribute('role','status');
+    form.append(input.label,submit,button('Cancel',()=>target.replaceChildren()),status);
+    form.onsubmit=async e=>{
+      e.preventDefault();if(submit.disabled)return;submit.disabled=true;
+      try {
+        const body={nickname:input.input.value.trim()};
+        if(account)body.id=account.id;
+        const saved=await api('/providers/'+provider.id+'/accounts','POST',body);
+        if(account){account.nickname=saved.nickname;accepted();}
+        else {provider.accounts.push(saved);const item=appendAccount(saved);item.open=true;count();}
+        target.replaceChildren();
+      }catch(error){status.textContent=error.message;}finally{submit.disabled=false;}
+    };
+    target.append(form);input.input.focus();
+  }
+  function appendAccount(account) {
+    const card=node('details','subscription-account'),summary=node('summary','subscription-summary');
+    const name=node('strong','',account.nickname), identity=node('div','subscription-identity'), secondary=node('small','muted');
+    const meters=node('div','subscription-meters'),body=node('div','subscription-body');
+    identity.append(name,secondary);summary.append(identity,meters,icon('chevron',13));card.append(summary,body);list.append(card);
+    const bots=state.bots.filter(b=>b.provider===provider.id&&(b.profile?.provider_account_id || '')===account.id).map(b=>b.name);
+    secondary.textContent=bots.join(', ');secondary.title=secondary.textContent;
+    const usage=node('p','muted small',account.reported_requests?'In Kindred · '+usageNumber(account.tokens)+' tokens recorded':'No tokens recorded in Kindred yet.');
+    const rename=node('div');body.append(usage,button('Rename',()=>edit(rename,account,()=>name.textContent=account.nickname)),rename);
+    let cycle=0;
+    async function quota() {
+      const mine=++cycle;
+      try{
+        const data=await accountApi(provider.id,'usage',account.id);
+        if(mine!==cycle||!card.isConnected)return;
+        let windows=[];
+        if(provider.id==='codex'){
+          const limits=data.limits, buckets=limits?.rateLimitsByLimitId;
+          const bucket=limits?.rateLimits || buckets?.codex || Object.values(buckets || {})[0];
+          windows=[bucket?.primary,bucket?.secondary].filter(w=>w && Number.isFinite(w.usedPercent)).map(w=>({mins:w.windowDurationMins,left:100-w.usedPercent,reset:w.resetsAt}));
+          secondary.textContent=[data.account?.email,...bots].filter(Boolean).join(' · ');
+        }else{
+          windows=(data.windows || []).filter(w=>w.limit>0).map(w=>({mins:w.minutes,left:100-100*w.used/w.limit,reset:w.resets_at}));
+          secondary.textContent=[data.email,...bots].filter(Boolean).join(' · ');
+        }
+        secondary.title=secondary.textContent;
+        meters.replaceChildren();
+        for(const window of windows){
+          const left=Math.min(100,Math.max(0,Math.round(window.left))),meter=node('div','subscription-window');
+          const title=window.mins===300?'5h':window.mins===10080?'Week':window.mins+'m';
+          meter.append(node('span','',title+' · '+left+'% left'));
+          const bar=node('span','usage-meter'),fill=node('i');fill.style.width=left+'%';bar.append(fill);meter.append(bar);
+          if(window.reset)meter.append(node('small','muted','Resets '+new Date(window.reset*1000).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})));
+          meters.append(meter);
+        }
+        if(!windows.length)meters.textContent='Limits unavailable';
+      }catch{if(mine===cycle)meters.textContent='Limits unavailable';}
+    }
+    const check=subscriptionControls({card,body,status:()=>{}},{...provider},account);
+    body.append(button('Refresh usage',quota));
+    if(provider.id==='claude-code'){
+      const link=node('a','usage-provider-link','View Claude usage');link.href='https://claude.ai/settings/usage';link.target='_blank';link.rel='noopener noreferrer';body.append(link);
+    }
+    card.addEventListener('toggle',()=>{if(card.open)void check(false);});
+    refreshers.push(quota);
+    if(row.card.open)void quota();
+    return card;
+  }
+  provider.accounts.forEach(appendAccount);count();
+  row.card.addEventListener('toggle',()=>{if(row.card.open)refreshers.forEach(refresh=>void refresh());});
+}
+
+function subscriptionControls(row,provider,account) {
+  const id=account?.id || '';
+  const message=node('p','muted small','Checking account…'), actions=node('div','row-actions');row.body.append(message,actions);
+  let revision=0,signingIn=false;
+  const check=async(force=true)=>{if(signingIn)return;const started=++revision;try{const data=await subscriptionStatus(provider,force,id);if(!row.card.isConnected||started!==revision)return;row.status(data.connected,data.preparing?'Setting up':data.setup==='failed'?'Setup failed':undefined);message.textContent=data.message || (data.connected?'Subscription connected.':'Sign in to connect.');modelCache.delete(accountCacheKey(provider.id,id));}catch(e){if(!row.card.isConnected||started!==revision)return;row.status(false,'Unavailable');message.textContent=e.message;}};
+  actions.append(button('Sign in',async()=>{
+    revision++;signingIn=true;
+    for(const control of actions.children)control.disabled=true;
+    row.body.querySelectorAll('.login-info').forEach(info=>info.remove());
+    try{
+    if(provider.id==='claude-code')return await claudeBrowserSignIn(row,message,async force=>{signingIn=false;return check(force);},id);
+    message.textContent='Starting your computer. First setup can take several minutes…';
+    if(provider.id==='codex') {
+      const result=await accountApi(provider.id,'login',id),info=node('div','login-info');message.textContent='Complete the official sign-in, then check connection.';
+      const codeRow=node('div','login-code-row'),codeLabel=node('p','','Enter this code: ');
+      codeLabel.append(node('code','',result.userCode));
+      const copy=button('Copy code',async()=>{await copyText(result.userCode);notice('Activation code copied.');},'outline-button','copy');
+      copy.setAttribute('aria-label','Copy activation code');codeRow.append(codeLabel,copy);info.append(codeRow);
+      const link=node('a','','Open OpenAI sign-in');
+      link.href=result.verificationUrl;link.target='_blank';link.rel='noopener';info.append(link,node('p','muted small','After signing in, choose Check connection.'));row.body.append(info);
+    } else {
+      const result=await api('/provider-cli/'+provider.id+'/login','POST',{bot_id:screenBotId()});
+      message.textContent=result.message;notice('Sign-in opened on the bot computer.');
+      row.body.append(button('Open bot computer',async()=>{ $('settings-dialog').close(); await openComputer(); }));
+    }
+    }catch(e){message.textContent=e.message;throw e;}
+    finally{signingIn=false;for(const control of actions.children)control.disabled=false;}
+  }),button('Check connection',check),button('Sign out',async()=>{
+    if(!confirm('Sign out of '+(account?.nickname || provider.name)+'?'))return;
+    await accountApi(provider.id,'logout',id);await check();
+  }));
+  if(['claude-code','codex'].includes(provider.id)) {
+    const codex=provider.id==='codex',source=codex?'Codex':'Claude';
+    const inherited=node('div','provider-catalog connection-section'),status=node('p','muted small',codex?'Refresh to check connected apps.':source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
+    status.setAttribute('role','status');
+    const refreshConnectors=async()=>{
+      refresh.disabled=true;status.hidden=false;status.classList.remove('run-error');status.textContent='Checking '+source+' account connectors…';items.replaceChildren();
+      try {
+        const result=await accountApi(provider.id,'connectors',id);
+        if(!inherited.isConnected)return;
+        const rows=(codex?result.connections:result.data)||[];
+        status.hidden=rows.length>0&&!result.warning;status.textContent=rows.length?(codex?'':'Available through this workspace’s '+source+' sign-in. Kindred-connected apps remain available to all providers.'):'No connectors were returned by this '+source+' account. Connect an app in '+source+', then refresh.';
+        if(result.warning){status.textContent=connectorRefreshMessage(result.warning,source);status.classList.add('run-error');}
+        for(const connection of rows){
+          const item=node('div','connector-setting-row account-connector-row'),info=node('div'),brand=connectorBrand(connection.display_name||''),heading=connectorHeading(connection.display_name||'','');
+          if(!CONNECTOR_ICONS[brand.key])heading.querySelector('.connector-logo').replaceChildren(icon(brand.key==='calendar'?'calendar':'link',16));
+          info.append(heading);
+          if(connection.status!=='connected'){
+            info.append(node('p','muted small',connection.status==='needs-auth'?'Reconnect in '+source:'Unavailable'));
+            if(connection.availability_message)info.append(node('p','muted small',connection.availability_message));
+          }
+          item.append(info);items.append(item);
+        }
+      }catch(e){if(inherited.isConnected){status.textContent=connectorRefreshMessage(e,source);status.classList.add('run-error');}}
+      finally{refresh.disabled=false;}
+    };
+    const refresh=button('Refresh '+source+' connectors',refreshConnectors);
+    const heading=node('div','connection-section-heading');heading.append(node('strong','',source+' account connectors'),refresh);
+    inherited.append(heading,status,items);
+    if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Verified connections follow your bot’s access settings; provider restrictions and email-send reviews still apply.'));
+    else{const manage=node('a','outline-button','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';inherited.append(manage);}
+    row.body.append(inherited);
+
+  }
+  if(!account)void check(false);
+  return check;
 }
 async function settingsConnections(revision) {
   if(state.settings!=='connections'||!$('settings-dialog').open)return;
@@ -2850,7 +3087,6 @@ async function settingsConnections(revision) {
   state.connections=connections;
   const decisions=await decisionsConnection();
   if(settingsRevision!==revision||state.settings!=='connections'||!$('settings-dialog').open)return;
-  ai.append(decisions);
   const openCodePlans=providers.filter(provider=>['opencode','opencode-go'].includes(provider.id));
   for(const provider of providers) {
     if(openCodePlans.includes(provider)){
@@ -2859,69 +3095,13 @@ async function settingsConnections(revision) {
     }
     const row=accountCard(provider);row.card.dataset.provider=provider.id;ai.append(row.card);
     if(provider.kind==='subscription') {
-      const message=node('p','muted small','Checking account…'), actions=node('div','row-actions');row.body.append(message,actions);
-      let revision=0,signingIn=false;
-      const check=async(force=true)=>{if(signingIn)return;const started=++revision;try{const data=await subscriptionStatus(provider,force);if(!row.card.isConnected||started!==revision)return;row.status(data.connected,data.preparing?'Setting up':data.setup==='failed'?'Setup failed':undefined);message.textContent=data.message || (data.connected?'Subscription connected.':'Sign in to connect.');modelCache.delete(provider.id);}catch(e){if(!row.card.isConnected||started!==revision)return;row.status(false,'Unavailable');message.textContent=e.message;}};
-      actions.append(button('Sign in',async()=>{
-        revision++;signingIn=true;
-        for(const control of actions.children)control.disabled=true;
-        row.body.querySelectorAll('.login-info').forEach(info=>info.remove());
-        try{
-        if(provider.id==='claude-code')return await claudeBrowserSignIn(row,message,async force=>{signingIn=false;return check(force);});
-        message.textContent='Starting your computer. First setup can take several minutes…';
-        if(provider.id==='codex') {
-          const result=await api('/codex/login','POST',{}),info=node('div','login-info');message.textContent='Complete the official sign-in, then check connection.';
-          const codeRow=node('div','login-code-row'),codeLabel=node('p','','Enter this code: ');
-          codeLabel.append(node('code','',result.userCode));
-          const copy=button('Copy code',async()=>{await copyText(result.userCode);notice('Activation code copied.');},'outline-button','copy');
-          copy.setAttribute('aria-label','Copy activation code');codeRow.append(codeLabel,copy);info.append(codeRow);
-          const link=node('a','','Open OpenAI sign-in');
-          link.href=result.verificationUrl;link.target='_blank';link.rel='noopener';info.append(link,node('p','muted small','After signing in, choose Check connection.'));row.body.append(info);
-        } else {
-          const result=await api('/provider-cli/'+provider.id+'/login','POST',{bot_id:screenBotId()});
-          message.textContent=result.message;notice('Sign-in opened on the bot computer.');
-          row.body.append(button('Open bot computer',async()=>{ $('settings-dialog').close(); await openComputer(); }));
-        }
-        }catch(e){message.textContent=e.message;throw e;}
-        finally{signingIn=false;for(const control of actions.children)control.disabled=false;}
-      }),button('Check connection',check),button('Sign out',async()=>{
-        if(!confirm('Sign out of '+provider.name+' for your bots?'))return;
-        await api(provider.id==='codex'?'/codex/logout':'/provider-cli/'+provider.id+'/logout','POST',{});await check();
-      }));
-      if(['claude-code','codex'].includes(provider.id)) {
-        const codex=provider.id==='codex',source=codex?'Codex':'Claude';
-        const inherited=node('div','provider-catalog connection-section'),status=node('p','muted small',codex?'Refresh to check connected apps.':source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
-        status.setAttribute('role','status');
-        const refreshConnectors=async()=>{
-          refresh.disabled=true;status.hidden=false;status.classList.remove('run-error');status.textContent='Checking '+source+' account connectors…';items.replaceChildren();
-          try {
-            const result=await api(codex?'/codex/connectors':'/provider-cli/claude-code/connectors','POST',{});
-            if(!inherited.isConnected)return;
-            const rows=(codex?result.connections:result.data)||[];
-            status.hidden=rows.length>0&&!result.warning;status.textContent=rows.length?(codex?'':'Available through this workspace’s '+source+' sign-in. Kindred-connected apps remain available to all providers.'):'No connectors were returned by this '+source+' account. Connect an app in '+source+', then refresh.';
-            if(result.warning){status.textContent=connectorRefreshMessage(result.warning,source);status.classList.add('run-error');}
-            for(const connection of rows){
-              const item=node('div','connector-setting-row account-connector-row'),info=node('div'),brand=connectorBrand(connection.display_name||''),heading=connectorHeading(connection.display_name||'','');
-              if(!CONNECTOR_ICONS[brand.key])heading.querySelector('.connector-logo').replaceChildren(icon(brand.key==='calendar'?'calendar':'link',16));
-              info.append(heading);
-              if(connection.status!=='connected'){
-                info.append(node('p','muted small',connection.status==='needs-auth'?'Reconnect in '+source:'Unavailable'));
-                if(connection.availability_message)info.append(node('p','muted small',connection.availability_message));
-              }
-              item.append(info);items.append(item);
-            }
-          }catch(e){if(inherited.isConnected){status.textContent=connectorRefreshMessage(e,source);status.classList.add('run-error');}}
-          finally{refresh.disabled=false;}
-        };
-        const refresh=button('Refresh '+source+' connectors',refreshConnectors);
-        const heading=node('div','connection-section-heading');heading.append(node('strong','',source+' account connectors'),refresh);
-        inherited.append(heading,status,items);
-        if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Verified connections follow your bot’s access settings; provider restrictions and email-send reviews still apply.'));
-        else{const manage=node('a','outline-button','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';inherited.append(manage);}
-        row.body.append(inherited);
-
+      if(provider.accounts?.length) {
+        subscriptionAccounts(row,provider);
+        if(provider.id==='codex')row.body.append(decisions);
+      } else {
+        subscriptionControls(row,provider);
+        if(provider.id==='codex')row.body.append(decisions);
       }
-      void check(false);
     } else if(provider.id==='openrouter') {
       row.body.append(node('p','muted small','API key stored on your Kindred server. Requests require zero data retention support.'));
       const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'sk-or-…'});
@@ -4734,6 +4914,7 @@ $("bot-form").onsubmit = (e) => {
       approval_mode: "inherit",
       profile: {
         ...state.newProfile,
+        provider_account_id:f.provider.dataset.accountId || '',
         label: f.label.value,
         description: f.description.value,
       },
@@ -8209,8 +8390,8 @@ function toggleIdentityMenu() {
   function showUsage() {
     fly.hidden=false;entry.setAttribute('aria-expanded','true');place(fly,branch,210);
       const providers=state.providerAccounts||[];
-      const connected=providers.filter(p=>p.connected||p.has_usage);
-      const signature=JSON.stringify(connected.map(p=>[p.id,p.name,p.connected,p.has_usage]));
+      const connected=providers.filter(p=>p.connected||p.has_usage||p.accounts?.length>1);
+      const signature=JSON.stringify(connected.map(p=>[p.id,p.name,p.connected,p.has_usage,p.accounts?.length]));
       if(signature===catalogSignature||fly.contains(document.activeElement))return;
       catalogSignature=signature;fly.replaceChildren();
       if(!connected.length)fly.append(node('p','muted small',state.providerAccounts?'No providers connected. Add one in Settings → Connections.':'Provider status will appear here when connected.'));
@@ -8335,6 +8516,10 @@ function renderCodexUsage(fly,data) {
 }
 async function renderProviderUsage(root,provider) {
   root.replaceChildren(node('strong','usage-plan',provider.name));
+  if(provider.accounts?.length>1){
+    root.append(button('Account usage in Connections',()=>openSettings('connections'),'usage-view-all'));
+    return;
+  }
   if(provider.id==='codex') {const data=await api('/codex/usage','POST',{});root.replaceChildren();renderCodexUsage(root,data);return;}
   if(provider.kind==='subscription') {
     let data;
@@ -10001,7 +10186,7 @@ function botConnectorPreferences(bot) {
   root.open=expandedBotConnectors.has(bot.id);
   root.ontoggle=()=>{if(root.isConnected)root.open?expandedBotConnectors.add(bot.id):expandedBotConnectors.delete(bot.id);};
   const content=node('div');root.append(heading,content);let provider=bot.provider,revision=0;
-  const refresh=iconButton('refresh','Refresh connectors',async()=>{try{let result;if(provider==='claude-code')result=await api('/provider-cli/claude-code/connectors','POST',{});else if(provider==='codex')result=await api('/codex/connectors','POST',{});if(result?.warning)notice(connectorRefreshMessage(result.warning,connectorSourceLabel(provider)),true);await load();}catch(e){await load();throw new Error(connectorRefreshMessage(e,connectorSourceLabel(provider)));}});heading.append(refresh);refresh.hidden=!['claude-code','codex'].includes(provider);
+  const refresh=iconButton('refresh','Refresh connectors',async()=>{try{let result;if(['claude-code','codex'].includes(provider))result=await accountApi(provider,'connectors',bot.profile?.provider_account_id);if(result?.warning)notice(connectorRefreshMessage(result.warning,connectorSourceLabel(provider)),true);await load();}catch(e){await load();throw new Error(connectorRefreshMessage(e,connectorSourceLabel(provider)));}});heading.append(refresh);refresh.hidden=!['claude-code','codex'].includes(provider);
   refresh.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();});
   async function render(value){
     content.replaceChildren();const claude=provider==='claude-code';refresh.hidden=!['claude-code','codex'].includes(provider);

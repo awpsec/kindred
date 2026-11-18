@@ -6555,3 +6555,42 @@ html[data-motion=off] .composer-file-remove{transition:none;}
 /* The document handles pinch zoom; native scrolling still owns one-finger pan. */
 .document-touch-surface{touch-action:pan-x pan-y;}
 .document-touch-surface[data-document-pinching]{overflow-anchor:none;scroll-behavior:auto;}
+
+.bot-provider-picker {display:block;min-width:0}
+.provider-picker-trigger {display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;text-align:start}
+.provider-picker-trigger span {overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.provider-picker-menu:popover-open {position:fixed;inset:auto;margin:0;display:flex;align-items:flex-start;max-width:calc(100vw - 16px);max-height:min(320px,45dvh);padding:4px;overflow:auto;border:1px solid var(--line);border-radius:12px;color:var(--fg);background:var(--surface);box-shadow:0 8px 32px #0003}
+.provider-picker-list {min-width:0;width:170px;max-width:42vw}
+.provider-picker-list + .provider-picker-list:not([hidden]) {border-inline-start:1px solid var(--line);padding-inline-start:4px}
+.provider-picker-menu button {display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;border:0;border-radius:7px;padding:7px 9px;text-align:start;color:inherit;background:transparent;overflow-wrap:anywhere}
+.provider-picker-menu button:is(:hover,:focus-visible,.current,[aria-pressed=true]) {background:var(--hover)}
+.provider-picker-choice[aria-pressed=true]::after {content:'✓';color:var(--muted)}
+.provider-picker-menu .provider-picker-back {display:none}
+.subscription-summary {display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer;list-style:none}
+.subscription-summary::-webkit-details-marker {display:none}
+.subscription-account + .subscription-account {border-top:1px solid var(--line)}
+.subscription-identity {display:grid;flex:1;min-width:0;gap:3px}
+.subscription-identity strong {font-weight:550;overflow-wrap:anywhere}
+.subscription-identity small {overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subscription-meters {display:flex;gap:12px;color:var(--muted);font-size:.8em}
+.subscription-window {display:grid;gap:2px}
+.subscription-window .usage-meter {display:block;margin:0;height:3px}
+.subscription-summary svg {flex-shrink:0}
+.subscription-account[open] > summary svg {transform:rotate(90deg)}
+.subscription-body {display:grid;gap:8px;padding:2px 0 12px;justify-items:start}
+.subscription-body>p,.subscription-body>.row-actions {margin:0}
+.subscription-editor {display:flex;flex-wrap:wrap;align-items:end;gap:6px}
+.subscription-editor label {flex:1 1 120px;min-width:0}
+@media (max-width:600px),(pointer:coarse) {
+  .provider-picker-list {width:min(230px,80vw);max-width:100%}
+  .provider-picker-menu:not(.drilled) .provider-picker-list:nth-child(2),.provider-picker-menu.drilled .provider-picker-list:first-child {display:none}
+  .provider-picker-menu .provider-picker-back {display:block;color:var(--muted)}
+  .provider-picker-menu button {min-height:40px}
+  .provider-picker-list + .provider-picker-list:not([hidden]) {border:0;padding:0}
+  .subscription-meters {flex-wrap:wrap;gap:5px 10px}
+}
+@media (max-width:480px) {
+  .subscription-summary {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px}
+  .subscription-meters {grid-row:2;grid-column:1}
+  .subscription-summary>svg {grid-column:2;grid-row:1 / span 2}
+}
