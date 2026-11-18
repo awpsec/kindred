@@ -6397,11 +6397,10 @@ html[data-system-text-size] :is(.settings-dialog,.voice-call-options,.app-detail
 html[data-motion="off"] .client-update span{transition:none}
 @media(prefers-reduced-motion:reduce){.client-update span{transition:none}}
 
-/* The device preference applies to completed bot answers on every platform.
-   Identity, progress, handoffs and decisions keep their own treatments. */
-:root[data-bot-message-style="prose"] #content .conversation-answer>.message-row.assistant>.message-bubble{background:transparent;border:0;box-shadow:none;border-radius:0;padding:4px 0;max-width:100%}
+/* Inline bot prose follows the device preference until a note joins its job timeline. */
+:root[data-bot-message-style="prose"] #content :is(.conversation-answer,.progress-commentary:not(.task-commentary))>.message-row.assistant>.message-bubble{background:transparent;border:0;box-shadow:none;border-radius:0;padding:4px 0;max-width:100%}
 /* Preserve the quote destination cue on prose outcomes without changing layout. */
-:root[data-bot-message-style="prose"] #content .conversation-answer.quoted-highlight>.message-row.assistant>.message-bubble{box-shadow:0 0 0 2px var(--muted);border-radius:6px}
+:root[data-bot-message-style="prose"] #content :is(.conversation-answer,.progress-commentary:not(.task-commentary)).quoted-highlight>.message-row.assistant>.message-bubble{box-shadow:0 0 0 2px var(--muted);border-radius:6px}
 
 /* One stable email action row, with optional actions in a local popover. */
 .connector-artifact.email-notice{border:1px solid var(--line);border-radius:16px;background:var(--panel);box-shadow:none}

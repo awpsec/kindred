@@ -6,11 +6,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
  const browser=await({chromium,webkit}[engine]).launch();let passed=0;
  try{for(const width of [1100,390]){
   const context=await browser.newContext({viewport:{width,height:844},...(out&&width===1100?{recordVideo:{dir:out,size:{width,height:844}}}:{})}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.addInitScript(t=>{sessionStorage.setItem('kindred-token',t);window.gatherAnimations=[];const animate=Element.prototype.animate;Element.prototype.animate=function(frames,options){if(this.matches('.progress-gather-ghost,.summary-progress'))window.gatherAnimations.push({ghost:this.matches('.progress-gather-ghost'),frames});return animate.call(this,frames,options);};},token);
-  const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};let count=3,backendCount=0,partial=false,omitMarker=false,visibleOffset=0,finished=false,attention=false,unrelated=false,otherCount=1,mode='summaries',history=false;
+  await page.addInitScript(t=>{sessionStorage.setItem('kindred-token',t);localStorage.setItem('kindred-bot-message-style','prose');window.gatherAnimations=[];const animate=Element.prototype.animate;Element.prototype.animate=function(frames,options){if(this.matches('.progress-gather-ghost,.summary-progress'))window.gatherAnimations.push({ghost:this.matches('.progress-gather-ghost'),frames});return animate.call(this,frames,options);};},token);
+  const now=Math.floor(Date.now()/1000),chat={id:'dm-piper',name:'Piper',members:['piper']};let count=3,backendCount=0,partial=false,omitMarker=false,visibleOffset=0,finished=false,attention=false,unrelated=false,otherCount=1,mode='summaries',history=false,qualified=true,planned=false;
   const run=()=>({id:'work',bot_id:'piper',chat_id:chat.id,status:finished?'completed':attention?'awaiting_user':'running',created:now-100,progress_started:now-100,task_title:'Review client records',output:'',error:''});
   const marker={seq:2,created:now-90,sender:'piper',run_id:'work',task_title:'Review client records'};
-  const progress=()=>({mode,phase:'commentary',run_id:'work',group_id:'client-review',work_qualified:true,task_title:'Review client records',marker,...(backendCount?{commentary_count:backendCount}:{}),activity:{seconds:70,completed:2,last_at:now}});
+  const progress=()=>({mode,phase:'commentary',run_id:'work',group_id:'client-review',work_qualified:qualified,...(planned?{presentation:{mode:'compact',promoted:false,current_stage:0,stages:['Inspect','Verify','Deliver']}}:{}),task_title:'Review client records',marker,...(backendCount?{commentary_count:backendCount}:{}),activity:{seconds:70,completed:2,last_at:now}});
   const texts=['Checking the client records.','The contact details are current.','Comparing the final attachments.','The remaining records are consistent.','Verifying the last reference.'];
   const approval={id:'review-approval',run_id:'work',bot_id:'piper',chat_id:chat.id,task_group_id:'client-review',status:'pending',tool:'guest_exec',args:{command:'echo fixture'},created:now-5};
   const handoff={id:'review-login',run_id:'work',bot_id:'piper',title:'Sign in to the client portal',instructions:'Please sign in on the bot computer.',authentication:{method:'signin',service:'the client portal'},status:'pending',created:now-3};
@@ -23,9 +23,14 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    ...(attention?[{seq:22,sender:'piper',kind:'approval',run_id:'work',created:now-5,text:'Approve action',approval}]:[]),
    ...(finished?[{seq:25,sender:'piper',kind:'result',run_id:'work',created:now,text:'Review complete. All records checked.',progress:{...progress(),phase:'final_answer'}}]:[])
   ];
-  await page.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nwindow.gatherRefresh=async()=>{while(state.refreshing)await new Promise(r=>setTimeout(r,10));await refresh(true);};window.gatherHistoryRefresh=async()=>{while(state.refreshing)await new Promise(r=>setTimeout(r,10));conversationHistory(currentConversationId()).historyChanged=true;await refresh(true);};'}));
+  await page.route(origin+'/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.resolve(__dirname,'../../ui/app.js'),'utf8')+'\nwindow.gatherCachedRender=()=>{state.chatKey="";return renderChat(true,"cached");};window.gatherRefresh=async()=>{while(state.refreshing)await new Promise(r=>setTimeout(r,10));await refresh(true);};window.gatherHistoryRefresh=async()=>{while(state.refreshing)await new Promise(r=>setTimeout(r,10));conversationHistory(currentConversationId()).historyChanged=true;await refresh(true);};'}));
   await page.route(origin+'/api/**',r=>{const p=new URL(r.request().url()).pathname,send=json=>r.fulfill({json});if(p==='/api/runs')return send([run()]);if(p==='/api/runs/other')return send({run:{...run(),id:'other',status:'completed'},events:[],attachments:[],approvals:[]});if(p==='/api/runs/work')return send({run:run(),events:attention?[{seq:10,kind:'user_action',body:{id:handoff.id},created:handoff.created}]:[],attachments:[],approvals:[]});if(p==='/api/chats')return send([chat]);if(p==='/api/chats/'+chat.id)return send({chat,messages:messages(),page:{has_before:false,has_after:false}});if(p==='/api/approvals')return send(attention?[approval]:[]);if(p==='/api/questions')return send([]);if(p==='/api/user-tasks')return send(attention?[handoff]:[]);if(p==='/api/activity')return send({});return r.continue();});
   await page.goto(origin);await page.getByText(texts[2],{exact:false}).waitFor();assert.equal(await page.locator('.summary-progress').count(),0);assert.equal(await page.locator('.progress-commentary:visible').count(),3);passed++;
+  const bubble=page.locator('.progress-commentary .message-bubble').first(),background=()=>bubble.evaluate(n=>getComputedStyle(n).backgroundColor);
+  assert.equal(await background(),'rgba(0, 0, 0, 0)','Inline progress uses open text');
+  await page.evaluate(()=>KindredBotMessageStyle.set('bubbles'));
+  assert.notEqual(await background(),'rgba(0, 0, 0, 0)','Bubble preference still applies');
+  await page.evaluate(()=>KindredBotMessageStyle.set('prose'));
   if(out)await page.screenshot({path:path.join(out,engine+'-'+width+'-inline.png')});
   unrelated=true;otherCount=3;await page.evaluate(()=>window.gatherRefresh());assert.equal(await page.locator('.summary-progress').count(),0,'Separate tasks never combine their counts');passed++;otherCount=1;unrelated=false;await page.evaluate(()=>window.gatherRefresh());
   await page.locator('#prompt').fill('Keep this unsent draft');await page.evaluate(()=>{window.originalUpdates=[...document.querySelectorAll('.progress-commentary[data-progress-candidate="client-review"]')];window.gatherAnimations=[];});
@@ -50,6 +55,25 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   }
   // Reading old history retains its visible anchor; the composer stays untouched.
   history=true;count=3;await page.reload();await page.getByText(texts[2],{exact:false}).waitFor();await page.locator('#content').evaluate(n=>{n.scrollTop=300;n.dispatchEvent(new Event('scroll'));});await page.waitForTimeout(100);const before=await page.locator('[data-message="-40"]').evaluate(n=>n.getBoundingClientRect().top);count=4;await page.evaluate(()=>window.gatherRefresh());await page.waitForTimeout(300);const after=await page.locator('[data-message="-40"]').evaluate(n=>n.getBoundingClientRect().top);assert(Math.abs(before-after)<2,'Reading position retained');passed++;
+  // A poll can deliver the marker and plan together, after plain text was
+  // already rendered. The same single note should visibly fold exactly once.
+  history=false;count=1;qualified=false;omitMarker=true;
+  await page.reload();await page.locator('.conversation-answer[data-message="3"]').waitFor();
+  assert.equal(await page.locator('.summary-progress').count(),0);
+  qualified=true;omitMarker=false;planned=true;
+  await page.evaluate(()=>window.gatherRefresh());
+  await page.locator('.task-gather').waitFor();
+  const survived=await page.evaluate(async()=>{
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+    const ghost=document.querySelector('.progress-gather-ghost');
+    if(!ghost)return false;
+    await window.gatherCachedRender();
+    return ghost.isConnected;
+  });
+  assert(survived,'A cached repaint during the fold retains the moving note');
+  assert.equal(await page.evaluate(()=>gatherAnimations.filter(a=>a.ghost).length),1,'Late ownership gathers the existing reply once');
+  await page.waitForFunction(()=>!document.querySelector('.progress-gather-ghost'));
+  planned=false;count=4;
   mode='balanced';await page.reload();await page.getByText(texts[3],{exact:false}).waitFor();assert.equal(await page.locator('.summary-progress').count(),0);passed++;
   assert.deepEqual(errors,[]);await context.close();
  }

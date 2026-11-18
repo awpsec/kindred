@@ -7613,15 +7613,18 @@ function prepareProgressGather(target,desired,animate){
   for(const header of desired.querySelectorAll(':scope > [data-progress-group]')){
     const key=header.dataset.progressGroup;
     if(target.querySelector('[data-progress-group="'+CSS.escape(key)+'"]'))continue;
-    const gatheredIds=new Set([...desired.querySelectorAll('.task-commentary[data-message]')].filter(n=>n.dataset.taskCommentary===key).map(n=>n.dataset.message));
-    const rows=[...target.querySelectorAll(':scope > .progress-commentary[data-progress-candidate]')].filter(n=>n.dataset.progressCandidate===key&&gatheredIds.has(n.dataset.message)&&n.getClientRects().length);
+    // The first reply can already be on screen when a later poll first binds it
+    // to this job. Match the persisted message and run in the new timeline.
+    const owned=new Map([...desired.querySelectorAll('.task-commentary[data-message]')].filter(n=>n.dataset.taskCommentary===key).map(n=>[n.dataset.message,n.dataset.run]));
+    const rows=[...target.querySelectorAll(':scope > .message-group[data-message][data-run]')].filter(n=>
+      owned.get(n.dataset.message)===n.dataset.run && (n.dataset.progressCandidate===key || n.matches('.conversation-answer:not([data-progress-candidate])')) && n.getClientRects().length);
     // A live transition needs previously rendered inline updates. History loads
     // and unrelated groups cannot create a gather animation.
     if(!rows.length)continue;
     const bounds=target.getBoundingClientRect();
     const visible=rows.slice(-3).filter(row=>row.textContent.length<=12000&&!row.querySelector('iframe,video,audio,img,canvas,[data-shard-signature],[data-file-signature],[data-visual-signature],.chat-media')).map(row=>{
       const ghost=row.cloneNode(true);
-      if(row._progressArrival){
+      if(row._progressArrival||row._replyArrival){
         const paint=row.querySelector(':scope > .message-row'),copy=ghost.querySelector(':scope > .message-row'),style=getComputedStyle(paint);
         copy.style.transform=style.transform;copy.style.opacity=style.opacity;
       }
@@ -7636,20 +7639,21 @@ function prepareProgressGather(target,desired,animate){
     if(!target.isConnected||chatMotionReduced())return;
     for(const {key,visible} of gathers){
       const header=target.querySelector('[data-progress-group="'+CSS.escape(key)+'"]');if(!header)continue;
-      const end=header.getBoundingClientRect();
+      const end=(header.querySelector('.summary-progress-heading')||header).getBoundingClientRect();
+      if(!end.width||!end.height)continue;
       if(end.bottom<target.getBoundingClientRect().top||end.top>target.getBoundingClientRect().bottom)continue;
       const motion=header.animate([{opacity:.2,transform:'translateY(6px)'},{opacity:1,transform:'translateY(0)'}],{duration:220,easing:'cubic-bezier(.23,1,.32,1)'});trackMotion(motion,220);
       for(const [index,{ghost,rect}] of visible.entries()){
-        ghost.hidden=false;ghost.inert=true;ghost.setAttribute('aria-hidden','true');ghost.classList.add('progress-gather-ghost');
+        ghost.hidden=false;ghost.inert=true;ghost.setAttribute('aria-hidden','true');ghost.classList.add('progress-gather-ghost');ghost.dataset.gatherDestination=key;
         for(const el of [ghost,...ghost.querySelectorAll('[id]')])el.removeAttribute('id');
-        for(const key of ['message','progressCandidate','taskCommentary','scrollMessages'])delete ghost.dataset[key];
+        for(const key of ['message','run','progressCandidate','taskCommentary','scrollMessages'])delete ghost.dataset[key];
         Object.assign(ghost.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',margin:'0',pointerEvents:'none',zIndex:'20'});
         target.append(ghost);
         // At most three text-only notes converge toward the new deck. The real
         // rows retain their identity; only these inert overlays move.
-        const duration=280,delay=index*20,dy=Math.max(-240,Math.min(240,end.top-rect.top));
+        const duration=280,delay=index*20,dx=Math.max(-240,Math.min(240,end.left+24-rect.left)),dy=Math.max(-240,Math.min(240,end.top+end.height/2-rect.top));
         ghost.style.transformOrigin='top left';
-        const effect=ghost.animate([{opacity:.8,transform:'translateY(0) scale(1)'},{opacity:0,transform:`translateY(${dy}px) scale(.88)`}],{duration,delay,easing:'cubic-bezier(.23,1,.32,1)',fill:'both'});
+        const effect=ghost.animate([{opacity:1,transform:'translate(0,0) scale(1)'},{opacity:0,transform:`translate(${dx}px,${dy}px) scale(.88)`}],{duration,delay,easing:'cubic-bezier(.23,1,.32,1)',fill:'both'});
         trackMotion(effect,duration+delay,()=>ghost.remove());
       }
     }
@@ -7743,6 +7747,13 @@ function reconcileConversation(target,desired,animate=true,priorCommentary=null)
     let following=source.nextElementSibling,index=-1;
     while(following&&index<0){index=nodes.findIndex(n=>n.dataset.message===following.dataset.message);following=following.nextElementSibling;}
     nodes.splice(index<0?nodes.length:index,0,placeholder);
+  }
+  // A live refresh may land during the fold. Keep its inert overlay until
+  // the animation finishes, provided the destination is still in this view.
+  if(target.id==='content' && !chatMotionReduced()){
+    for(const ghost of target.querySelectorAll(':scope > .progress-gather-ghost')){
+      if(nodes.some(n=>n.dataset.progressGroup===ghost.dataset.gatherDestination))nodes.push(ghost);
+    }
   }
   const keep=new Set(nodes);for(const child of [...target.children])if(!keep.has(child))child.remove();
   let cursor=target.firstChild;
