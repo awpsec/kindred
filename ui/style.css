@@ -3525,6 +3525,8 @@ html[data-motion="off"] #composer,html[data-motion="off"] .composer-reply .icon-
 .provider-usage-list {padding:6px;width:210px;overflow:auto;}
 .provider-usage-detail {max-height:min(560px,70vh);overflow:auto;padding:18px;}
 .provider-usage-detail .usage-plan {margin-bottom:12px;}
+.provider-usage-detail .usage-account + .usage-account {margin-top:12px}
+.provider-usage-detail .usage-account .usage-section-title {color:var(--fg);overflow-wrap:anywhere}
 .usage-account p {margin:0 0 10px;line-height:1.5;}
 .usage-provider-link {display:inline-flex;align-items:center;gap:8px;font-size:calc(12px * var(--text-scale, 1));color:var(--fg);text-decoration:none;padding:7px 0;}
 .usage-provider-link:hover {text-decoration:underline;}

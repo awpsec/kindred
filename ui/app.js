@@ -2930,6 +2930,23 @@ async function claudeBrowserSignIn(row,message,check,id='') {
     if(!stopped)timer=setTimeout(poll,1500);
   }catch(e){stop();closePendingPopup();message.textContent=e.message;throw e;}
 }
+function subscriptionWindows(provider,data) {
+  let windows;
+  if(provider==='codex'){
+    const limits=data.limits, buckets=limits?.rateLimitsByLimitId;
+    const bucket=limits?.rateLimits || buckets?.codex || Object.values(buckets || {})[0];
+    windows=[bucket?.primary,bucket?.secondary].filter(w=>Number.isFinite(w?.usedPercent))
+      .map(w=>({mins:w.windowDurationMins,remaining:100-w.usedPercent,reset:w.resetsAt}));
+  }else{
+    windows=(data.windows || []).filter(w=>w.limit>0 && Number.isFinite(w.used))
+      .map(w=>({mins:w.minutes,name:w.label,remaining:100-100*w.used/w.limit,reset:w.resets_at}));
+  }
+  return windows.map(w=>{
+    const left=Math.min(100,Math.max(0,Math.round(w.remaining)));
+    const title=w.mins===300?'5h':w.mins===10080?'Week':w.name || (w.mins?w.mins+'m':'Limit');
+    return {left,reset:w.reset,label:title+' · '+left+'% left'};
+  });
+}
 function subscriptionAccounts(row,provider) {
   const list=node('div','subscription-accounts'), editor=node('div');
   const add=button('Add account',()=>edit(editor),'subtle-button','plus');
@@ -2970,23 +2987,14 @@ function subscriptionAccounts(row,provider) {
       try{
         const data=await accountApi(provider.id,'usage',account.id);
         if(mine!==cycle||!card.isConnected)return;
-        let windows=[];
-        if(provider.id==='codex'){
-          const limits=data.limits, buckets=limits?.rateLimitsByLimitId;
-          const bucket=limits?.rateLimits || buckets?.codex || Object.values(buckets || {})[0];
-          windows=[bucket?.primary,bucket?.secondary].filter(w=>w && Number.isFinite(w.usedPercent)).map(w=>({mins:w.windowDurationMins,left:100-w.usedPercent,reset:w.resetsAt}));
-          secondary.textContent=[data.account?.email,...bots].filter(Boolean).join(' · ');
-        }else{
-          windows=(data.windows || []).filter(w=>w.limit>0).map(w=>({mins:w.minutes,left:100-100*w.used/w.limit,reset:w.resets_at}));
-          secondary.textContent=[data.email,...bots].filter(Boolean).join(' · ');
-        }
+        const windows=subscriptionWindows(provider.id,data);
+        secondary.textContent=[data.account?.email || data.email,...bots].filter(Boolean).join(' · ');
         secondary.title=secondary.textContent;
         meters.replaceChildren();
         for(const window of windows){
-          const left=Math.min(100,Math.max(0,Math.round(window.left))),meter=node('div','subscription-window');
-          const title=window.mins===300?'5h':window.mins===10080?'Week':window.mins+'m';
-          meter.append(node('span','',title+' · '+left+'% left'));
-          const bar=node('span','usage-meter'),fill=node('i');fill.style.width=left+'%';bar.append(fill);meter.append(bar);
+          const meter=node('div','subscription-window');
+          meter.append(node('span','',window.label));
+          const bar=node('span','usage-meter'),fill=node('i');fill.style.width=window.left+'%';bar.append(fill);meter.append(bar);
           if(window.reset)meter.append(node('small','muted','Resets '+new Date(window.reset*1000).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})));
           meters.append(meter);
         }
@@ -3097,6 +3105,7 @@ async function settingsConnections(revision) {
     if(provider.kind==='subscription') {
       if(provider.accounts?.length) {
         subscriptionAccounts(row,provider);
+        if(connectionView.providerId===provider.id)row.card.open=true;
         if(provider.id==='codex')row.body.append(decisions);
       } else {
         subscriptionControls(row,provider);
@@ -8391,7 +8400,7 @@ function toggleIdentityMenu() {
     fly.hidden=false;entry.setAttribute('aria-expanded','true');place(fly,branch,210);
       const providers=state.providerAccounts||[];
       const connected=providers.filter(p=>p.connected||p.has_usage||p.accounts?.length>1);
-      const signature=JSON.stringify(connected.map(p=>[p.id,p.name,p.connected,p.has_usage,p.accounts?.length]));
+      const signature=JSON.stringify(connected.map(p=>[p.id,p.name,p.connected,p.has_usage,p.accounts?.map(a=>[a.id,a.nickname,a.tokens,a.reported_requests])]));
       if(signature===catalogSignature||fly.contains(document.activeElement))return;
       catalogSignature=signature;fly.replaceChildren();
       if(!connected.length)fly.append(node('p','muted small',state.providerAccounts?'No providers connected. Add one in Settings → Connections.':'Provider status will appear here when connected.'));
@@ -8517,7 +8526,22 @@ function renderCodexUsage(fly,data) {
 async function renderProviderUsage(root,provider) {
   root.replaceChildren(node('strong','usage-plan',provider.name));
   if(provider.accounts?.length>1){
-    root.append(button('Account usage in Connections',()=>openSettings('connections'),'usage-view-all'));
+    const rows=provider.accounts.map(account=>{
+      const row=node('section','usage-account'),name=node('strong','usage-section-title',account.nickname);
+      const summary=node('div','muted small','Loading limits…');
+      row.append(name,summary);root.append(row);
+      return {account,summary};
+    });
+    root.append(button('Account usage in Connections',()=>{
+      closeIdentityMenu();
+      return openSettings('connections',{providerId:provider.id});
+    },'usage-view-all'));
+    await Promise.all(rows.map(async({account,summary})=>{
+      let windows=[];
+      try{windows=subscriptionWindows(provider.id,await accountApi(provider.id,'usage',account.id));}catch{}
+      summary.textContent=windows.length?windows.map(w=>w.label).join('  /  '):'Limits unavailable';
+      if(!windows.length && account.reported_requests)summary.append(node('div','','In Kindred · '+usageNumber(account.tokens)+' tokens recorded'));
+    }));
     return;
   }
   if(provider.id==='codex') {const data=await api('/codex/usage','POST',{});root.replaceChildren();renderCodexUsage(root,data);return;}

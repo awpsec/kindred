@@ -14,6 +14,7 @@ async function check(mobile,duo) {
     const page=await browser.newPage({viewport:mobile?{width:390,height:800}:{width:1200,height:900},hasTouch:mobile,isMobile:mobile});
     page.setDefaultTimeout(10000);
     const errors=[],modelAccounts=[],writes=[],claudeCalls=[],codexCalls=[];
+    let workLimitsUnavailable=false;
     const service='37cbfb37-57f1-4b2b-ac57-eebd152d9fe3';
     page.on('pageerror',e=>errors.push(e.message));
     const ui=name=>fs.readFileSync(path.join(root,'mobile/ios/KindredCompanion/Web',name),'utf8');
@@ -37,6 +38,7 @@ async function check(mobile,duo) {
     await page.route('**/api/codex/**',r=>{
       const url=new URL(r.request().url()),id=url.searchParams.get('account_id')||'';
       codexCalls.push([url.pathname,id]);
+      if(workLimitsUnavailable && id===work && url.pathname.endsWith('/usage'))return r.fulfill({status:503,json:{error:'Temporarily unavailable'}});
       if(url.pathname.endsWith('/login'))return r.fulfill({json:{userCode:'TEST',verificationUrl:'https://example.test/activate'}});
       if(url.pathname.endsWith('/models')){modelAccounts.push(id);return r.fulfill({json:{data:[{model:'test',displayName:'Test model',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'high'}]}]}});}
       return r.fulfill({json:{account:{type:'chatgpt',email:id?'work@example.test':'personal@example.test'},limits:{rateLimits:{primary:{usedPercent:id?100:10,windowDurationMins:300}}}}});
@@ -50,6 +52,28 @@ async function check(mobile,duo) {
     await page.route('**/api/bots/piper',r=>{const bot=r.request().postDataJSON();writes.push(bot);return r.fulfill({json:bot});});
     await page.route('**/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,'ui/app.js'),'utf8')+'\nexport {openSettings,newBot};'}));
     await page.goto(origin+'/#kindred-chat=dm-piper');await page.locator('#prompt').waitFor();
+    if(!mobile){
+      await page.locator('#identity-button').click();
+      await page.getByRole('menuitem',{name:'Usage',exact:true}).hover();
+      await page.locator('.provider-usage-list').getByRole('button',{name:'Codex',exact:true}).hover();
+      const detail=page.locator('.provider-usage-detail:not([hidden])');
+      for(const [nickname,remaining] of [['Personal',90],['Work',0]]){
+        const row=detail.locator('.usage-account').filter({has:page.getByText(nickname,{exact:true})});
+        await row.getByText('5h · '+remaining+'% left',{exact:true}).waitFor();
+      }
+      await page.keyboard.press('Escape');
+      workLimitsUnavailable=true;
+      await page.locator('#identity-button').click();
+      await page.getByRole('menuitem',{name:'Usage',exact:true}).hover();
+      await page.locator('.provider-usage-list').getByRole('button',{name:'Codex',exact:true}).hover();
+      await detail.getByText('5h · 90% left',{exact:true}).waitFor();
+      await detail.getByText('Limits unavailable',{exact:false}).first().waitFor();
+      await detail.getByText('In Kindred · 31 tokens recorded',{exact:true}).waitFor();
+      workLimitsUnavailable=false;
+      await detail.getByRole('button',{name:'Account usage in Connections'}).click();
+      await page.locator('.ai-account[data-provider=codex][open]').waitFor();
+      await page.evaluate(()=>document.querySelector('#settings-dialog').close());
+    }
     await page.evaluate(async()=>{const app=await import('/app.js');await app.openSettings('connections');});
     const codex=page.locator('.ai-account[data-provider=codex]');
     await codex.locator(':scope>summary').click();
