@@ -1,0 +1,91 @@
+{
+  "at": "2026-11-20T15:53:49.972747+00:00",
+  "source": {
+    "at": "2026-11-20T15:01:05.366298+00:00",
+    "source": "57e44a2150b4b34a5ed02abaf0db9f7e7f0556a4",
+    "version": "0.90.9",
+    "build": "16",
+    "matching_published_server_version_verified": true,
+    "server_source_from_frozen_release": "6a8166fbb84ad50f3224b7a632698ec8394a11ee",
+    "native_code_unchanged_from_tested_build14_source": "d5b1a4f0fe57ff406b07c0f84cddb4d7e4e1dd8a",
+    "ios_changed_files": [
+      "mobile/ios/Config/Shared.xcconfig",
+      "mobile/ios/VOICE_CALL_QA.md"
+    ],
+    "validation_scope": "Published source parity, signed build, existing signing identity, account preservation, installed version and launch; no repeated native suite because native source is unchanged."
+  },
+  "signed_build": {
+    "source": "57e44a2150b4b34a5ed02abaf0db9f7e7f0556a4",
+    "version": "0.90.9",
+    "build": "16",
+    "bundle_id": "dev.kindred.companion",
+    "same_signing_identity": true,
+    "certificate_sha256": "581b0ee4c93775fc21b7728da362d6d382d769a94928172dbf1798cb54e60131",
+    "native_binary_sha256": {
+      "Kindred": "81f20125e729ead233e99037269b8326d53082a44a2c0d3277b9d96c8473da14",
+      "Kindred.debug.dylib": "6dfda456891ae368cb716efdd2bd5624da110b65ce7466acad6b06110143a94f",
+      "PlugIns/KindredVoiceActivity.appex/KindredVoiceActivity": "3778d9e67408b364a62664d986d36bbf36e94f14864e3797c6f5c7eda5d7e27e"
+    },
+    "same_developer_certificate": true,
+    "main": {
+      "team": [
+        "92Y82K5BUS"
+      ],
+      "expires": "2026-11-27T15:04:19+00:00",
+      "application_identifier": "92Y82K5BUS.dev.kindred.companion"
+    },
+    "voice": {
+      "team": [
+        "92Y82K5BUS"
+      ],
+      "expires": "2026-11-27T15:04:21+00:00",
+      "application_identifier": "92Y82K5BUS.dev.kindred.companion.voice"
+    }
+  },
+  "validation": {
+    "codesign_deep_strict_valid": true,
+    "targets": {
+      "main": {
+        "profile_valid": true,
+        "device_in_profile": true,
+        "same_certificate_authorized": true,
+        "entitlements_authorized": true,
+        "mismatched_entitlement_names": []
+      },
+      "voice": {
+        "profile_valid": true,
+        "device_in_profile": true,
+        "same_certificate_authorized": true,
+        "entitlements_authorized": true,
+        "mismatched_entitlement_names": []
+      }
+    }
+  },
+  "installation": {
+    "version": "0.90.9",
+    "build": "16",
+    "bundle_id": "dev.kindred.companion",
+    "installed": true,
+    "launched": true,
+    "accounts_preserved": true,
+    "account_count_before": 2,
+    "account_count_after": 2,
+    "active_selection_unchanged": true,
+    "account_metadata_byte_identical": true,
+    "installed_version_verified": true,
+    "owner_confirmed_app_opens": true,
+    "uninstalled_or_reset": false,
+    "accounts_or_keychain_edited": false,
+    "verified_utc": "2026-11-20T15:53:19.528673+00:00"
+  },
+  "renewed_profile_verification": "Initial iOS launch was rejected. Signature, profile certificate, device eligibility and entitlements validated locally; owner verified the Developer App profile and confirmed Kindred opens. Subsequent CoreDevice launch succeeded.",
+  "evidence_directory": "ios-qa/20261120-0909-install",
+  "earlier_attempts_preserved": [
+    "install-attempt-device-locked.json",
+    "install-attempt-missing-developer-account.json",
+    "install-receipt.json",
+    "device-install/launch.log"
+  ],
+  "ci_runs_started": false,
+  "live_provider_calls_started": false
+}
