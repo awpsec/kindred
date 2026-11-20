@@ -13,8 +13,8 @@ links. Durable action receipts prevent duplicate work after reconnects or
 hangup. Approvals and choices still require the normal visible cards.
 
 The dropdown consumes `/api/voice/settings`. That endpoint explicitly identifies
-its source as OpenAI's documented GPT-Live catalog (31 built-in voices, verified
-against the Live session API reference on 2026-10-29). OpenAI currently has no
+its source as OpenAI's documented GPT-Live-1.1 catalog (38 built-in voices, verified
+against the Live session API reference on 2026-11-20). OpenAI currently has no
 public built-in voice-list endpoint; this is not live upstream discovery.
 
 ## Native implementation
