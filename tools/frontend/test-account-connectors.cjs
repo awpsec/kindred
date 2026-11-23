@@ -10,9 +10,9 @@ const {server,token}=require('./fixtures/desktop.cjs'),assert=require('node:asse
   return r.fulfill({json:{connections:mode==='empty'?[]:[{display_name:'Gmail',status:'connected',availability_message:'Each call needs review; Codex does not identify the linked service account.'},{display_name:'Calendar',status:'unavailable',availability_message:'Refresh or reconnect this app in Codex.'}]}});
  });
  await p.route(origin+'/api/composio',r=>r.fulfill({json:{configured:false,apps:[]}}));
- await p.goto(origin);await p.locator('#settings-button').click();await p.getByRole('button',{name:'Connections',exact:true}).click();
- const account=p.locator('.ai-account').filter({has:p.locator('summary strong',{hasText:/^Codex$/})});await account.locator('summary').click();
- const refresh=account.getByRole('button',{name:'Refresh Codex connectors',exact:true});await refresh.click();assert(await refresh.isDisabled());releaseFirst();await account.getByRole('heading',{name:'Gmail',exact:true}).waitFor();assert(!(await account.innerText()).includes('Each call needs review'));assert((await account.innerText()).includes('Unavailable'));
+ await p.goto(origin);await p.locator('#identity-button').click();await p.getByRole('menuitem',{name:'Settings',exact:true}).click();await p.getByRole('button',{name:'Connections',exact:true}).click();
+ const account=p.locator('.ai-account').filter({has:p.locator('summary strong',{hasText:/^Codex$/})});await account.locator(':scope>summary').click();
+ const refresh=account.getByRole('button',{name:'Refresh Codex connectors',exact:true});assert(await refresh.isHidden());assert.equal(calls,0);await account.getByText('Codex account connectors',{exact:true}).click();await p.waitForFunction(()=>document.querySelector('.account-connectors button:disabled'));assert(await refresh.isDisabled());releaseFirst();await account.getByRole('heading',{name:'Gmail',exact:true}).waitFor();assert(!(await account.innerText()).includes('Each call needs review'));assert((await account.innerText()).includes('Unavailable'));
  mode='empty';await refresh.click();await account.getByText('No connectors were returned', {exact:false}).waitFor();assert.equal(await account.getByRole('heading',{name:'Gmail',exact:true}).count(),0);
  mode='error';await refresh.click();await account.getByText('Connector refresh failed',{exact:false}).waitFor();assert.equal(await refresh.isDisabled(),false);assert.equal(calls,3);
  const status=account.locator('.provider-catalog:not(.decisions-connection) [role="status"]');

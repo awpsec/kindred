@@ -14,7 +14,7 @@ async function check(mobile,duo) {
     const page=await browser.newPage({viewport:mobile?{width:390,height:800}:{width:1200,height:900},hasTouch:mobile,isMobile:mobile});
     page.setDefaultTimeout(10000);
     const errors=[],modelAccounts=[],writes=[],claudeCalls=[],codexCalls=[];
-    let workLimitsUnavailable=false;
+    let workLimitsUnavailable=false,workConnected=true,serviceConnected=false;
     const service='37cbfb37-57f1-4b2b-ac57-eebd152d9fe3';
     page.on('pageerror',e=>errors.push(e.message));
     const ui=name=>fs.readFileSync(path.join(root,'mobile/ios/KindredCompanion/Web',name),'utf8');
@@ -39,6 +39,8 @@ async function check(mobile,duo) {
       const url=new URL(r.request().url()),id=url.searchParams.get('account_id')||'';
       codexCalls.push([url.pathname,id]);
       if(workLimitsUnavailable && id===work && url.pathname.endsWith('/usage'))return r.fulfill({status:503,json:{error:'Temporarily unavailable'}});
+      if(url.pathname.endsWith('/logout')){workConnected=false;return r.fulfill({json:{}});}
+      if(url.pathname.endsWith('/account') && id===work && !workConnected)return r.fulfill({json:{account:null}});
       if(url.pathname.endsWith('/login'))return r.fulfill({json:{userCode:'TEST',verificationUrl:'https://example.test/activate'}});
       if(url.pathname.endsWith('/models')){modelAccounts.push(id);return r.fulfill({json:{data:[{model:'test',displayName:'Test model',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'high'}]}]}});}
       return r.fulfill({json:{account:{type:'chatgpt',email:id?'work@example.test':'personal@example.test'},limits:{rateLimits:{primary:{usedPercent:id?100:10,windowDurationMins:300}}}}});
@@ -47,7 +49,8 @@ async function check(mobile,duo) {
     await page.route('**/api/provider-cli/**',r=>{
       const action=new URL(r.request().url()).pathname.split('/').at(-1);
       claudeCalls.push([action,r.request().postDataJSON()?.account_id]);
-      return r.fulfill({json:action==='login'?{state:'connected',connected:true}:{connected:true,windows:[],data:[{model:'sonnet',displayName:'Sonnet'}]}});
+      if(action==='login')serviceConnected=true;
+      return r.fulfill({json:action==='account'?{connected:serviceConnected}:action==='login'?{state:'connected',connected:true}:{connected:true,windows:[],data:[{model:'sonnet',displayName:'Sonnet'}]}});
     });
     await page.route('**/api/bots/piper',r=>{const bot=r.request().postDataJSON();writes.push(bot);return r.fulfill({json:bot});});
     await page.route('**/app.js',r=>r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,'ui/app.js'),'utf8')+'\nexport {openSettings,newBot};'}));
@@ -68,7 +71,7 @@ async function check(mobile,duo) {
       await page.locator('.provider-usage-list').getByRole('button',{name:'Codex',exact:true}).hover();
       await detail.getByText('5h · 90% left',{exact:true}).waitFor();
       await detail.getByText('Limits unavailable',{exact:false}).first().waitFor();
-      await detail.getByText('In Kindred · 31 tokens recorded',{exact:true}).waitFor();
+      assert.equal(await detail.getByText(/tokens recorded/).count(),0);
       workLimitsUnavailable=false;
       assert.equal(await detail.locator('button, a').count(),0);
       await page.keyboard.press('Escape');
@@ -77,10 +80,37 @@ async function check(mobile,duo) {
     const codex=page.locator('.ai-account[data-provider=codex]');
     await codex.locator(':scope>summary').click();
     const personal=codex.locator('.subscription-account').nth(0),team=codex.locator('.subscription-account').nth(1);
-    await personal.getByText('5h · 90% left',{exact:true}).waitFor();
+    await page.waitForFunction(()=>document.querySelectorAll('.subscription-meters .subscription-window').length>=2);
+    assert.deepEqual(await codex.locator('.subscription-summary').allTextContents(),['Personal','Work']);
+    assert(await personal.getByText('5h · 90% left',{exact:true}).isHidden());
+    const apiRow=page.locator('.ai-account[data-provider=openai-api]');
+    assert(await apiRow.locator(':scope>summary').isVisible());
+    assert.equal(await codex.locator('.decisions-connection').count(),0);
+    const headerHeight=async row=>(await row.locator(':scope>summary').boundingBox()).height;
+    assert(Math.abs((await apiRow.boundingBox()).height-2-await headerHeight(codex))<1,'Closed API row matches the other provider headers');
+    const logos=await page.locator('.ai-account-summary>.connector-logo').evaluateAll(nodes=>nodes.map(n=>[n.offsetWidth,n.offsetHeight,getComputedStyle(n).backgroundColor]));
+    assert.deepEqual(logos,[[18,18,'rgba(0, 0, 0, 0)'],[18,18,'rgba(0, 0, 0, 0)']]);
+    assert(await team.locator(':scope>summary').evaluate(s=>{
+      const center=n=>{const r=n.getBoundingClientRect();return r.y+r.height/2;};
+      return getComputedStyle(s,'::before').content==='none' && Math.abs(center(s.querySelector('svg'))-center(s.querySelector('strong')))<1;
+    }));
+    await team.locator(':scope>summary').click();
     await team.getByText('5h · 0% left',{exact:true}).waitFor();
-    assert(await codex.getByText('OpenAI API',{exact:true}).isVisible());
-    await team.locator('summary').click();await team.getByText('In Kindred · 31 tokens recorded').waitFor();
+    const signOut=team.getByRole('button',{name:'Sign out',exact:true});
+    await signOut.waitFor();
+    assert.equal(await team.getByText(/tokens recorded/).count(),0);
+    assert(await team.getByRole('button',{name:'Sign in',exact:true}).isHidden());
+    assert(await team.getByRole('button',{name:'Refresh Codex connectors'}).isHidden());
+    if(process.env.KINDRED_TEST_ARTIFACTS){
+      await team.scrollIntoViewIfNeeded();
+      const view=duo?'duo':mobile?'ios':'desktop';
+      await page.locator('#settings-dialog').screenshot({path:path.join(process.env.KINDRED_TEST_ARTIFACTS,'connections-'+view+'.png')});
+    }
+    await team.getByText('Codex account connectors',{exact:true}).click();
+    await team.getByText('No connectors were returned',{exact:false}).waitFor();
+    assert(codexCalls.some(([path,id])=>path.endsWith('/connectors') && id===work));
+    page.once('dialog',dialog=>dialog.accept());await signOut.click();
+    assert(codexCalls.some(([path,id])=>path.endsWith('/logout') && id===work));
     await team.getByRole('button',{name:'Sign in',exact:true}).click();
     await team.getByText('TEST',{exact:true}).waitFor();
     assert(codexCalls.some(([path,id])=>path.endsWith('/login') && id===work));
@@ -91,7 +121,7 @@ async function check(mobile,duo) {
     await claude.locator('form').getByRole('button',{name:'Add account',exact:true}).click();
     const serviceRow=claude.locator('.subscription-account').filter({has:page.locator('summary strong',{hasText:'Service'})});
     await serviceRow.getByRole('button',{name:'Sign in',exact:true}).click();
-    await serviceRow.getByText('Claude is connected.',{exact:true}).waitFor();
+    await serviceRow.getByRole('button',{name:'Sign out',exact:true}).waitFor();
     assert(claudeCalls.some(([action,id])=>action==='login' && id===service));
     await serviceRow.getByRole('button',{name:'Rename'}).click();
     await serviceRow.getByLabel('Nickname').fill('Team');

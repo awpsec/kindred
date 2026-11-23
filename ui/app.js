@@ -2871,7 +2871,7 @@ async function subscriptionStatus(provider,force=false,id='') {
     let data;
     if(provider.id==='codex') {
       const result=await accountApi(provider.id,'account',id);
-      data={...result,connected:result.account?.type==='chatgpt',message:result.account?.email || result.message || 'Sign in to your ChatGPT subscription.'};
+      data={...result,connected:result.account?.type==='chatgpt',message:result.account?.email || result.message};
     }else data=await accountApi(provider.id,'account',id);
     cached.data=data;cached.updated=Date.now();
     provider.connected=data.connected;
@@ -2908,12 +2908,14 @@ async function claudeBrowserSignIn(row,message,check,id='') {
     if(!root.isConnected){stop();return;}
     phase=result.state;
     attempt=result.attempt||attempt;message.textContent=result.message||'Waiting for Claude sign-in…';
-    if(result.state==='connected'&&result.connected===true){stop();closePendingPopup();help.textContent='Claude is connected.';await check(true);return;}
-    if(['failed','expired','cancelled','idle'].includes(result.state)||!result.state){stop();closePendingPopup();return;}
+    if(result.state==='connected'&&result.connected===true){stop();closePendingPopup();root.remove();await check(true);return;}
+    if(['failed','expired','cancelled','idle'].includes(result.state)||!result.state){stop();closePendingPopup();root.remove();return;}
     if(result.state==='waiting'&&result.url){
       const url=new URL(result.url),params=url.searchParams;
       const official=(url.hostname==='claude.com'&&url.pathname==='/cai/oauth/authorize')||(url.hostname==='claude.ai'&&url.pathname==='/oauth/authorize');
-      if(url.protocol!=='https:'||url.username||url.password||url.port||url.hash||!official||params.get('response_type')!=='code'||!['client_id','state','code_challenge'].every(k=>params.get(k)))throw new Error('Claude returned an unexpected sign-in address.');
+      const compact=url.hostname==='claude.ai'&&url.pathname==='/oauth/authorize'&&/^\?z-[A-Za-z0-9_-]{43}$/.test(url.search);
+      const oauth=params.get('response_type')==='code'&&['client_id','state','code_challenge'].every(k=>params.get(k));
+      if(url.protocol!=='https:'||url.username||url.password||url.port||url.hash||!official||!(compact||oauth))throw new Error('Claude returned an unexpected sign-in address.');
       link.href=url.href;link.hidden=false;form.hidden=false;
       if(opened!==url.href){opened=url.href;if(popup&&!popup.closed)popup.location.replace(url.href);else if(window.__KINDRED_DESKTOP_VERSION)window.open(url.href,'_blank','noopener,noreferrer');}
     }
@@ -2948,7 +2950,7 @@ function subscriptionWindows(provider,data) {
   });
 }
 function subscriptionAccounts(row,provider) {
-  const list=node('div','subscription-accounts'), editor=node('div');
+  const list=node('div','subscription-accounts'), editor=node('div','subscription-add-editor');
   const add=button('Add account',()=>edit(editor),'subtle-button','plus');
   row.body.append(list,add,editor);
   const refreshers=[];
@@ -2974,13 +2976,10 @@ function subscriptionAccounts(row,provider) {
   }
   function appendAccount(account) {
     const card=node('details','subscription-account'),summary=node('summary','subscription-summary');
-    const name=node('strong','',account.nickname), identity=node('div','subscription-identity'), secondary=node('small','muted');
-    const meters=node('div','subscription-meters'),body=node('div','subscription-body');
-    identity.append(name,secondary);summary.append(identity,meters,icon('chevron',13));card.append(summary,body);list.append(card);
-    const bots=state.bots.filter(b=>b.provider===provider.id&&(b.profile?.provider_account_id || '')===account.id).map(b=>b.name);
-    secondary.textContent=bots.join(', ');secondary.title=secondary.textContent;
-    const usage=node('p','muted small',account.reported_requests?'In Kindred · '+usageNumber(account.tokens)+' tokens recorded':'No tokens recorded in Kindred yet.');
-    const rename=node('div');body.append(usage,button('Rename',()=>edit(rename,account,()=>name.textContent=account.nickname)),rename);
+    const name=node('strong','',account.nickname),body=node('div','subscription-body');
+    const meters=node('div','subscription-meters','Loading limits…');
+    summary.append(icon('chevron',13),name);body.append(meters);card.append(summary,body);list.append(card);
+    const rename=node('div','subscription-rename');
     let cycle=0;
     async function quota() {
       const mine=++cycle;
@@ -2988,8 +2987,6 @@ function subscriptionAccounts(row,provider) {
         const data=await accountApi(provider.id,'usage',account.id);
         if(mine!==cycle||!card.isConnected)return;
         const windows=subscriptionWindows(provider.id,data);
-        secondary.textContent=[data.account?.email || data.email,...bots].filter(Boolean).join(' · ');
-        secondary.title=secondary.textContent;
         meters.replaceChildren();
         for(const window of windows){
           const meter=node('div','subscription-window');
@@ -3001,10 +2998,14 @@ function subscriptionAccounts(row,provider) {
         if(!windows.length)meters.textContent='Limits unavailable';
       }catch{if(mine===cycle)meters.textContent='Limits unavailable';}
     }
-    const check=subscriptionControls({card,body,status:()=>{}},{...provider},account);
-    body.append(button('Refresh usage',quota));
+    const renameButton=iconButton('edit','Rename '+account.nickname,()=>edit(rename,account,()=>{
+      name.textContent=account.nickname;
+      renameButton.title='Rename '+account.nickname;renameButton.setAttribute('aria-label',renameButton.title);
+    }));
+    const check=subscriptionControls({card,body,status:()=>{}},{...provider},account,quota);
+    const actions=body.querySelector('.row-actions');actions.append(renameButton);actions.after(rename);
     if(provider.id==='claude-code'){
-      const link=node('a','usage-provider-link','View Claude usage');link.href='https://claude.ai/settings/usage';link.target='_blank';link.rel='noopener noreferrer';body.append(link);
+      const link=node('a','usage-provider-link','View Claude usage');link.href='https://claude.ai/settings/usage';link.target='_blank';link.rel='noopener noreferrer';actions.append(link);
     }
     card.addEventListener('toggle',()=>{if(card.open)void check(false);});
     refreshers.push(quota);
@@ -3015,12 +3016,33 @@ function subscriptionAccounts(row,provider) {
   row.card.addEventListener('toggle',()=>{if(row.card.open)refreshers.forEach(refresh=>void refresh());});
 }
 
-function subscriptionControls(row,provider,account) {
+function subscriptionControls(row,provider,account,refreshUsage) {
   const id=account?.id || '';
-  const message=node('p','muted small','Checking account…'), actions=node('div','row-actions');row.body.append(message,actions);
+  const message=node('p','muted small subscription-status'), actions=node('div','row-actions subscription-actions');
+  message.setAttribute('role','status');row.body.append(message,actions);
   let revision=0,signingIn=false;
-  const check=async(force=true)=>{if(signingIn)return;const started=++revision;try{const data=await subscriptionStatus(provider,force,id);if(!row.card.isConnected||started!==revision)return;row.status(data.connected,data.preparing?'Setting up':data.setup==='failed'?'Setup failed':undefined);message.textContent=data.message || (data.connected?'Subscription connected.':'Sign in to connect.');modelCache.delete(accountCacheKey(provider.id,id));}catch(e){if(!row.card.isConnected||started!==revision)return;row.status(false,'Unavailable');message.textContent=e.message;}};
-  actions.append(button('Sign in',async()=>{
+  const check=async(force=true)=>{
+    if(signingIn)return;
+    const started=++revision;
+    if(force && refreshUsage)void refreshUsage();
+    try{
+      const data=await subscriptionStatus(provider,force,id);
+      if(!row.card.isConnected||started!==revision)return;
+      row.status(data.connected,data.preparing?'Setting up':data.setup==='failed'?'Setup failed':undefined);
+      signIn.hidden=!!data.connected;signOut.hidden=!data.connected;
+      if(data.connected)row.body.querySelector('.login-info')?.remove();
+      // Keep setup failures and provider diagnostics. The sign-in button already explains the idle state.
+      const detail=data.message || '';
+      const ordinaryClaudeStatus=data.connected && provider.id==='claude-code' && detail.startsWith('Claude sign-in is saved for this profile.');
+      const boilerplate=/^sign in (?:with Claude in your browser|to your ChatGPT subscription|to Kimi Code|to connect)\b/i.test(detail);
+      message.textContent=data.email || (boilerplate||ordinaryClaudeStatus?'':detail);
+      modelCache.delete(accountCacheKey(provider.id,id));
+    }catch(e){
+      if(!row.card.isConnected||started!==revision)return;
+      row.status(false,'Unavailable');message.textContent=e.message;
+    }
+  };
+  const signIn=button('Sign in',async()=>{
     revision++;signingIn=true;
     for(const control of actions.children)control.disabled=true;
     row.body.querySelectorAll('.login-info').forEach(info=>info.remove());
@@ -3042,13 +3064,16 @@ function subscriptionControls(row,provider,account) {
     }
     }catch(e){message.textContent=e.message;throw e;}
     finally{signingIn=false;for(const control of actions.children)control.disabled=false;}
-  }),button('Check connection',check),button('Sign out',async()=>{
+  });
+  const signOut=button('Sign out',async()=>{
     if(!confirm('Sign out of '+(account?.nickname || provider.name)+'?'))return;
     await accountApi(provider.id,'logout',id);await check();
-  }));
+  });
+  signOut.hidden=true;actions.append(signIn,button('Check connection',check),signOut);
   if(['claude-code','codex'].includes(provider.id)) {
     const codex=provider.id==='codex',source=codex?'Codex':'Claude';
-    const inherited=node('div','provider-catalog connection-section'),status=node('p','muted small',codex?'Refresh to check connected apps.':source+' account connectors are available to '+source+' bots. Refresh to check connected apps.'),items=node('div','catalog-model-list');
+    const inherited=node('details','account-connectors'),summary=node('summary','',source+' account connectors');
+    const panel=node('div','provider-catalog'),status=node('p','muted small'),items=node('div','catalog-model-list');
     status.setAttribute('role','status');
     const refreshConnectors=async()=>{
       refresh.disabled=true;status.hidden=false;status.classList.remove('run-error');status.textContent='Checking '+source+' account connectors…';items.replaceChildren();
@@ -3072,10 +3097,13 @@ function subscriptionControls(row,provider,account) {
       finally{refresh.disabled=false;}
     };
     const refresh=button('Refresh '+source+' connectors',refreshConnectors);
-    const heading=node('div','connection-section-heading');heading.append(node('strong','',source+' account connectors'),refresh);
-    inherited.append(heading,status,items);
-    if(codex)inherited.append(node('p','muted small','Manage connected apps in Codex, then refresh here. Verified connections follow your bot’s access settings; provider restrictions and email-send reviews still apply.'));
-    else{const manage=node('a','outline-button','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';inherited.append(manage);}
+    panel.append(status,items,refresh);
+    if(!codex){const manage=node('a','usage-provider-link','Manage in Claude');manage.href='https://claude.ai/customize/connectors';manage.target='_blank';manage.rel='noopener noreferrer';panel.append(manage);}
+    inherited.append(summary,panel);
+    inherited.addEventListener('toggle',function firstOpen(){
+      if(!inherited.open)return;
+      inherited.removeEventListener('toggle',firstOpen);void refreshConnectors();
+    });
     row.body.append(inherited);
 
   }
@@ -3103,13 +3131,9 @@ async function settingsConnections(revision) {
     }
     const row=accountCard(provider);row.card.dataset.provider=provider.id;ai.append(row.card);
     if(provider.kind==='subscription') {
-      if(provider.accounts?.length) {
-        subscriptionAccounts(row,provider);
-        if(provider.id==='codex')row.body.append(decisions);
-      } else {
-        subscriptionControls(row,provider);
-        if(provider.id==='codex')row.body.append(decisions);
-      }
+      if(provider.accounts?.length)subscriptionAccounts(row,provider);
+      else subscriptionControls(row,provider);
+      if(provider.id==='codex')ai.append(decisions);
     } else if(provider.id==='openrouter') {
       row.body.append(node('p','muted small','API key stored on your Kindred server. Requests require zero data retention support.'));
       const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'sk-or-…'});
@@ -3117,6 +3141,7 @@ async function settingsConnections(revision) {
       if(provider.connected)row.body.append(button('Disconnect',async()=>{await api('/connections/openrouter','POST',{key:''});await settingsConnections();}));
     } else customProviderEditor(row.body,provider);
   }
+  if(!decisions.parentNode)ai.append(decisions);
   const add=accountCard({name:'Add custom provider',connected:false});add.status(false,'OpenAI-compatible API');
   customProviderEditor(add.body);ai.append(add.card);
   try{await settingsComposio(root,()=>settingsRevision===revision&&state.settings==='connections'&&$('settings-dialog').open);}
@@ -8546,7 +8571,6 @@ async function renderProviderUsage(root,provider) {
       let windows=[];
       try{windows=subscriptionWindows(provider.id,await accountApi(provider.id,'usage',account.id));}catch{}
       summary.textContent=windows.length?windows.map(w=>w.label).join('  /  '):'Limits unavailable';
-      if(!windows.length && account.reported_requests)summary.append(node('div','','In Kindred · '+usageNumber(account.tokens)+' tokens recorded'));
     }));
     return;
   }
@@ -10747,13 +10771,19 @@ function workflowOptions(chatId,panel){return {
 function animateWorkflowDetails(root){for(const details of root.querySelectorAll('.workflow-details')){const body=node('div','chat-disclosure-body');for(const child of [...details.children])if(child.tagName!=='SUMMARY')body.append(child);details.append(body);animateChatDisclosure(details,body);}}
 
 async function decisionsConnection() {
-  const root=node('div','provider-catalog connection-section decisions-connection'),heading=node('div','connection-section-heading');
-  heading.append(node('strong','','OpenAI API'),node('span','muted small','Optional'),button('Usage',()=>openProviderUsage({id:'openai-api',name:'OpenAI API',kind:'api'}),'subtle-button'));root.append(heading);
-  root.append(node('p','muted small','Recorded usage includes call tool work, follow-ups and Decisions requests. Live audio and voice previews may not report tokens here; check OpenAI for complete billing.'));
+  const row=accountCard({name:'OpenAI API',kind:'api'}),root=row.body;
+  row.card.dataset.provider='openai-api';row.card.classList.add('decisions-connection');
+  root.append(node('p','muted small','API key for Live Voice and Decisions browser tasks.'));
   const status=node('p','muted small');status.setAttribute('role','status');
   const key=field('API key','','input',{type:'password',autocomplete:'off',placeholder:'Paste your OpenAI API key'}),actions=node('div','row-actions');
   key.input.spellcheck=false;key.input.autocapitalize='off';
-  const paint=result=>{status.textContent=result.last_error?('Last browser task failed: '+result.last_error):result.configured?(result.source==='environment'?'Provided by this server':'Key saved · available for voice and browser tasks'):'Not set up';key.input.placeholder=result.source==='environment'?'Paste your own key to use it instead':result.configured?'Saved · paste a replacement key':'Paste your OpenAI API key';remove.hidden=!result.configured||result.source==='environment';};
+  const paint=result=>{
+    const serverKey=result.source==='environment';
+    row.status(result.configured,serverKey?'Server key':result.configured?'Key saved':'Not set up');
+    status.textContent=result.last_error?'Last browser task failed: '+result.last_error:'';
+    key.input.placeholder=serverKey?'Paste your own key to use it instead':result.configured?'Saved · paste a replacement key':'Paste your OpenAI API key';
+    remove.hidden=!result.configured||serverKey;
+  };
   const save=button('Save key',async()=>{
     if(!key.input.value.trim()){status.textContent='Paste your API key first.';return;}
     const value=key.input.value;key.input.value='';save.disabled=true;remove.disabled=true;
@@ -10767,9 +10797,9 @@ async function decisionsConnection() {
     try{paint(await api('/connections/decisions','DELETE'));void voiceUI.init();}catch(e){status.textContent=e.message;}
     finally{save.disabled=false;remove.disabled=false;}
   },'subtle-button');remove.hidden=true;
-  actions.append(save,remove);root.append(status,key.label,actions);
-  try{paint(await api('/connections/decisions'));}catch(e){status.textContent=e.message;}
-  return root;
+  actions.append(save,remove,button('Usage',()=>openProviderUsage({id:'openai-api',name:'OpenAI API',kind:'api'})));root.append(status,key.label,actions);
+  try{paint(await api('/connections/decisions'));}catch(e){row.status(false,'Unavailable');status.textContent=e.message;}
+  return row.card;
 }
 
 installMobileNavigation({
