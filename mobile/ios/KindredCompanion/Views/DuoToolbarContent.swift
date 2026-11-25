@@ -1,213 +1,246 @@
 import SwiftUI
 
-/// A bounded native glass toolbar keeps every action directly reachable rather
-/// than handing the last actions to UIKit’s automatic overflow menu.
-@available(iOS 27.1, *)
-@MainActor
-struct DuoToolbarContent: ToolbarContent {
-    let session: WebSession
-    let manageAccounts: () -> Void
-    @ToolbarContentBuilder
-    var body: some ToolbarContent {
-        if !session.presentation.toolbarVertical {
-        ToolbarItem(placement: .topBarTrailing) {
-            DuoRailButtons(session: session, manageAccounts: manageAccounts)
-        }
-        .sharedBackgroundVisibility(.hidden)
-        .axisBehavior(.horizontalOnly)
-        }
-    }
-}
-
 @available(iOS 27.1, *)
 @MainActor
 struct DuoRailButtons: View {
     @Environment(\.displayScale) private var displayScale
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let session: WebSession
     let manageAccounts: () -> Void
-    private var artifacts: Bool { ["artifacts", "artifact"].contains(session.presentation.route) }
-    private var showsCreate: Bool { artifacts || session.presentation.route == "chat-list" }
-    private var vertical: Bool { session.presentation.toolbarVertical }
-    private var showsComputer: Bool {
-        let p = session.presentation
-        return (p.route == "bot-chat" && p.isDuoInner) || (p.route == "computer" && !p.hasBotCenter)
-    }
-    private var length: CGFloat { min(session.presentation.toolbarLength, CGFloat(buttonCount) * 44 + 8) }
-    private var buttonCount: Int {
-        let p = session.presentation, controls = p.artifactControls
-        let back = !["chat-list", "artifacts"].contains(p.route) && !(["bot-chat", "artifact"].contains(p.route) && (p.listVisible || p.listToggleAvailable))
-        return 3 + [
-            showsCreate,
-            p.toolbarIdentity && p.route == "bot-chat" && p.botDetailsAvailable,
-            back, p.route == "details" && p.botSettingsAvailable,
-            p.route == "computer" && p.computerExpandAvailable, p.listToggleAvailable,
-            showsComputer,
-            artifacts && p.artifactLibraryVisible && !(controls?.filters.isEmpty ?? true),
-            artifacts && p.route == "artifact" && controls?.zoom != nil,
-            artifacts && p.route == "artifact" && controls?.actions.contains(where: { $0.id == "refresh" }) == true,
-            artifacts && p.route == "artifact" && controls?.actions.contains(where: { $0.id != "refresh" }) == true
-        ].filter { $0 }.count
-    }
+
     var body: some View {
-        ScrollView(vertical ? .vertical : .horizontal) {
-            (vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))) {
-                buttons
-            }
-            .padding(4)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .scrollIndicators(.hidden)
-        .frame(width: vertical ? 52 : length, height: vertical ? length : 52)
-        .glassEffect(.regular, in: .capsule)
-        .buttonStyle(.plain)
-        .labelStyle(.iconOnly)
-        .tint(.primary)
-        .accessibilityIdentifier("kindred-duo-navigation-rail")
-        .animation(reduceMotion || session.presentation.reduceMotion ? nil : .smooth(duration: 0.25), value: vertical)
-        .animation(reduceMotion || session.presentation.reduceMotion ? nil : .smooth(duration: 0.25), value: length)
+        let items = controls
+        let vertical = session.presentation.toolbarVertical
+        let length = min(session.presentation.toolbarLength, CGFloat(items.count) * 44 + 8)
+        DuoRailStrip(items: items, session: session, vertical: vertical)
+            .frame(width: vertical ? 52 : length, height: vertical ? length : 52)
+            .glassEffect(.regular.interactive(), in: .capsule)
     }
-    private func railLabel(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.title3)
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
-    }
-    @ViewBuilder
-    private var buttons: some View {
-            Button {
-                session.performDuoAction(.search)
-            } label: { railLabel(artifacts ? "Search artifacts" : "Search chats", systemImage: "magnifyingglass") }
-            .accessibilityIdentifier("kindred-duo-search")
-            if artifacts {
-                Button {
-                    session.performDuoAction(.newChat)
-                } label: { railLabel("New artifact", systemImage: "plus") }
-                .accessibilityIdentifier("kindred-duo-new")
-            } else if showsCreate {
-                Menu {
-                    Button("New bot", systemImage: "plus") { session.performDuoAction(.newBot) }
-                    Button("New chat", systemImage: "bubble.left.and.bubble.right") { session.performDuoAction(.newConversation) }
-                } label: { railLabel("New conversation", systemImage: "plus") }
-                .accessibilityIdentifier("kindred-duo-new")
-            }
-        if session.presentation.toolbarIdentity,
-           session.presentation.route == "bot-chat", session.presentation.botDetailsAvailable {
-                ToolbarAvatarButton(image: BotToolbarAvatar(shape: session.presentation.botAvatarShape, color: session.presentation.botAvatarColor).image(scale: displayScale),
-                                    title: session.presentation.chatTitle + " details",
-                                    action: { session.performDuoAction(.botDetails) },
-                                    frameChanged: { session.updateToolbarIdentityFrame(inWindow: $0) },
-                                    collaboration: session.presentation.collaboration,
-                                    interrupt: { session.interruptCollaboration(key: $0) })
-                    .frame(width: 44, height: 44)
+
+    private var controls: [RailItem] {
+        let p = session.presentation
+        let artifacts = ["artifacts", "artifact"].contains(p.route)
+        var items: [RailItem] = []
+        func action(_ id: String, _ title: String, _ icon: String, _ command: WebSession.DuoAction) {
+            items.append(RailItem(id: id, title: title, image: UIImage(systemName: icon),
+                                  activate: { session.performDuoAction(command) }))
         }
-            if !["chat-list", "artifacts"].contains(session.presentation.route) && !(["bot-chat", "artifact"].contains(session.presentation.route) && (session.presentation.listVisible || session.presentation.listToggleAvailable)) {
-                Button {
-                    session.performDuoAction(.back)
-                } label: { railLabel(artifacts ? "Artifact list" : session.presentation.route == "bot-chat" ? "Chat list" : "Back",
-                               systemImage: ["bot-chat", "artifact"].contains(session.presentation.route) ? "line.3.horizontal" : "chevron.backward") }
-            }
-            if session.presentation.route == "details" && session.presentation.botSettingsAvailable {
-                Button {
-                    session.performDuoAction(.botSettings)
-                } label: { railLabel("Bot settings", systemImage: "gearshape") }
-            }
-            if session.presentation.route == "computer" && session.presentation.computerExpandAvailable {
-                Button {
-                    session.performDuoAction(.expandComputer)
-                } label: {
-                    railLabel(session.presentation.computerExpanded ? "Collapse computer" : "Expand computer",
-                          systemImage: session.presentation.computerExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                }
-            }
-            if session.presentation.listToggleAvailable {
-                Button {
-                    session.performDuoAction(.chats)
-                } label: { railLabel(artifacts ? (session.presentation.listVisible ? "Hide artifact list" : "Show artifact list") : (session.presentation.listVisible ? "Hide chat list" : "Show chat list"), systemImage: "sidebar.left") }
-            }
-            if showsComputer {
-                Button {
-                    session.performDuoAction(.computer)
-                } label: { railLabel(session.presentation.route == "computer" ? "Close computer" : "Bot computer", systemImage: "desktopcomputer") }
-                .accessibilityIdentifier("kindred-duo-computer")
-            }
-            if artifacts, let controls = session.presentation.artifactControls {
-                if session.presentation.artifactLibraryVisible, !controls.filters.isEmpty {
-                    Menu {
-                        ForEach(controls.filters) { filter in
-                            Picker(filter.label, selection: Binding(
-                                get: { filter.value },
-                                set: { session.performArtifactControl("filter", snapshot: controls, filter: filter.id, value: $0) }
-                            )) {
-                                ForEach(filter.options) { option in
-                                    Text(option.label).tag(option.value).disabled(!option.enabled)
-                                }
-                            }
+        func menu(_ id: String, _ title: String, _ icon: String?, _ children: [UIMenuElement], text: String? = nil) {
+            items.append(RailItem(id: id, title: title, image: icon.flatMap { UIImage(systemName: $0) },
+                                  text: text, menu: UIMenu(children: children)))
+        }
+        action("search", artifacts ? "Search artifacts" : "Search chats", "magnifyingglass", .search)
+        if artifacts { action("new", "New artifact", "plus", .newChat) }
+        else if p.route == "chat-list" {
+            menu("new", "New conversation", "plus", [
+                UIAction(title: "New bot", image: UIImage(systemName: "plus")) { _ in session.performDuoAction(.newBot) },
+                UIAction(title: "New chat", image: UIImage(systemName: "bubble.left.and.bubble.right")) { _ in session.performDuoAction(.newConversation) }
+            ])
+        }
+        if p.toolbarIdentity && p.route == "bot-chat" && p.botDetailsAvailable {
+            let image = BotToolbarAvatar(shape: p.botAvatarShape, color: p.botAvatarColor).image(scale: displayScale)
+            items.append(RailItem(id: "identity", title: p.chatTitle + " details", image: image ?? UIImage(systemName: "person.crop.circle"),
+                                  activate: { session.performDuoAction(.botDetails) }))
+        }
+        if !["chat-list", "artifacts"].contains(p.route) &&
+            !(["bot-chat", "artifact"].contains(p.route) && (p.listVisible || p.listToggleAvailable)) {
+            let list = ["bot-chat", "artifact"].contains(p.route)
+            action("back", artifacts ? "Artifact list" : list ? "Chat list" : "Back", list ? "line.3.horizontal" : "chevron.backward", .back)
+        }
+        if p.route == "details" && p.botSettingsAvailable { action("bot-settings", "Bot settings", "gearshape", .botSettings) }
+        if p.route == "computer" && p.computerExpandAvailable {
+            action("expand", p.computerExpanded ? "Collapse computer" : "Expand computer",
+                   p.computerExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right", .expandComputer)
+        }
+        if p.listToggleAvailable {
+            action("list", (p.listVisible ? "Hide " : "Show ") + (artifacts ? "artifact list" : "chat list"), "sidebar.left", .chats)
+        }
+        if (p.route == "bot-chat" && p.isDuoInner) || (p.route == "computer" && !p.hasBotCenter) {
+            action("computer", p.route == "computer" ? "Close computer" : "Bot computer", "desktopcomputer", .computer)
+        }
+        if artifacts, let controls = p.artifactControls {
+            if p.artifactLibraryVisible && !controls.filters.isEmpty {
+                menu("artifact-filter", "Filter and sort artifacts", "line.3.horizontal.decrease", controls.filters.map { filter in
+                    UIMenu(title: filter.label, options: .displayInline, children: filter.options.map { option in
+                        UIAction(title: option.label, attributes: option.enabled ? [] : .disabled,
+                                 state: option.value == filter.value ? .on : .off) { _ in
+                            session.performArtifactControl("filter", snapshot: controls, filter: filter.id, value: option.value)
                         }
-                    } label: { railLabel("Filter and sort artifacts", systemImage: "line.3.horizontal.decrease") }
-                    .accessibilityIdentifier("kindred-duo-artifact-filter")
-                }
-                if session.presentation.route == "artifact", let zoom = controls.zoom {
-                    Menu {
-                        ForEach(controls.zoomOptions) { option in
-                            Button {
-                                session.performArtifactControl("zoom", snapshot: controls, value: option.id)
-                            } label: {
-                                if option.selected { Label(option.label, systemImage: "checkmark") }
-                                else { Text(option.label) }
-                            }
-                            .disabled(!option.enabled)
-                        }
-                    } label: {
-                        Text(zoom).font(.callout.monospacedDigit()).frame(minWidth: 36, minHeight: 44)
-                    }
-                    .accessibilityLabel("Document zoom, " + zoom)
-                    .accessibilityIdentifier("kindred-duo-artifact-zoom")
-                }
-                if session.presentation.route == "artifact", let refresh = controls.actions.first(where: { $0.id == "refresh" }) {
-                    Button {
-                        session.performArtifactControl("refresh", snapshot: controls)
-                    } label: { railLabel(refresh.label, systemImage: "arrow.clockwise") }
-                    .disabled(!refresh.enabled)
-                    .accessibilityIdentifier("kindred-duo-artifact-refresh")
-                }
+                    })
+                })
             }
-            if artifacts, session.presentation.route == "artifact", let controls = session.presentation.artifactControls,
-               controls.actions.contains(where: { $0.id != "refresh" }) {
-                Menu {
-                    ForEach(controls.actions.filter { $0.id != "refresh" }) { action in
-                        Button(action.label, systemImage: action.id == "edit" ? "pencil" : "square.and.arrow.down") {
+            if p.route == "artifact" {
+                if let zoom = controls.zoom {
+                    menu("artifact-zoom", "Document zoom, " + zoom, nil, controls.zoomOptions.map { option in
+                        UIAction(title: option.label, attributes: option.enabled ? [] : .disabled, state: option.selected ? .on : .off) { _ in
+                            session.performArtifactControl("zoom", snapshot: controls, value: option.id)
+                        }
+                    }, text: zoom)
+                }
+                if let refresh = controls.actions.first(where: { $0.id == "refresh" }) {
+                    items.append(RailItem(id: "artifact-refresh", title: refresh.label, image: UIImage(systemName: "arrow.clockwise"),
+                                          enabled: refresh.enabled, activate: { session.performArtifactControl("refresh", snapshot: controls) }))
+                }
+                let other = controls.actions.filter { $0.id != "refresh" }
+                if !other.isEmpty {
+                    menu("artifact-more", "Document actions", "ellipsis", other.map { action in
+                        UIAction(title: action.label, image: UIImage(systemName: action.id == "edit" ? "pencil" : "square.and.arrow.down"),
+                                 attributes: action.enabled ? [] : .disabled) { _ in
                             session.performArtifactControl(action.id, snapshot: controls)
                         }
-                        .disabled(!action.enabled)
-                    }
-                } label: { railLabel("Document actions", systemImage: "ellipsis") }
-                .accessibilityIdentifier("kindred-duo-artifact-more")
+                    })
+                }
             }
-            if artifacts {
-                Button {
-                    session.performDuoAction(.chatHome)
-                } label: { railLabel("Chats", systemImage: "bubble.left.and.bubble.right") }
-                .accessibilityIdentifier("kindred-duo-chats")
+        }
+        if artifacts { action("chats", "Chats", "bubble.left.and.bubble.right", .chatHome) }
+        else { action("artifacts", "Artifacts", "folder", .artifacts) }
+        let accounts = UIAction(title: "Accounts", image: UIImage(systemName: "person.crop.circle")) { _ in manageAccounts() }
+        let settings = UIAction(title: "Settings", image: UIImage(systemName: "gearshape")) { _ in session.performDuoAction(.settings) }
+        let marketplace = UIAction(title: "Marketplace", image: UIImage(systemName: "square.grid.2x2"),
+                                   attributes: p.route == "marketplace" ? .disabled : []) { _ in session.performDuoAction(.marketplace) }
+        accounts.accessibilityIdentifier = "kindred-duo-manage-accounts"
+        settings.accessibilityIdentifier = "kindred-duo-settings"
+        marketplace.accessibilityIdentifier = "kindred-duo-marketplace"
+        menu("accounts", "Accounts, settings and marketplace", "person.crop.circle", [accounts, settings, marketplace])
+        return items
+    }
+}
+
+private struct RailItem {
+    let id: String
+    let title: String
+    let image: UIImage?
+    var text: String? = nil
+    var enabled = true
+    var menu: UIMenu? = nil
+    var activate: (() -> Void)? = nil
+}
+
+@available(iOS 27.1, *)
+private struct DuoRailStrip: UIViewRepresentable {
+    let items: [RailItem]
+    let session: WebSession
+    let vertical: Bool
+
+    func makeUIView(context: Context) -> RailScrollView { RailScrollView() }
+    func updateUIView(_ view: RailScrollView, context: Context) {
+        view.configure(items, vertical: vertical, session: session)
+    }
+}
+
+/// Buttons own taps, menus, long presses and accessibility. A pan takes over
+/// only on a rail that fits, cancelling the initial button before release.
+@available(iOS 27.1, *)
+private final class RailScrollView: UIScrollView {
+    private var items: [RailItem] = []
+    private var buttons: [UIButton] = []
+    private let lens = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+    private lazy var scrub = UIPanGestureRecognizer(target: self, action: #selector(track))
+    private var vertical = false
+    private weak var highlightedButton: UIButton?
+    private var route = ""
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        accessibilityIdentifier = "kindred-duo-navigation-rail"
+        showsHorizontalScrollIndicator = false
+        showsVerticalScrollIndicator = false
+        delaysContentTouches = false
+        contentInsetAdjustmentBehavior = .never
+        lens.layer.cornerRadius = 22
+        lens.clipsToBounds = true
+        lens.isHidden = true
+        lens.isUserInteractionEnabled = false
+        lens.accessibilityElementsHidden = true
+        addSubview(lens)
+        scrub.maximumNumberOfTouches = 1
+        addGestureRecognizer(scrub)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    func configure(_ next: [RailItem], vertical: Bool, session: WebSession) {
+        let changed = items.map(\.id) != next.map(\.id)
+        if changed || self.vertical != vertical || route != session.presentation.route {
+            scrub.isEnabled = false
+            highlight(nil)
+            setContentOffset(.zero, animated: false)
+        }
+        self.vertical = vertical
+        route = session.presentation.route
+        items = next
+        if changed {
+            buttons.forEach { $0.removeFromSuperview() }
+            buttons = items.map { item in
+                let button: UIButton = item.id == "identity" ? MeasuredAvatarButton() : UIButton(type: .system)
+                var config = UIButton.Configuration.plain()
+                config.contentInsets = .zero
+                config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20)
+                button.configuration = config
+                button.tintColor = .label
+                button.addTarget(self, action: #selector(pressed(_:)), for: [.touchDown, .touchDragEnter])
+                button.addTarget(self, action: #selector(released), for: [.touchDragExit, .touchCancel, .touchUpInside, .touchUpOutside])
+                button.addTarget(self, action: #selector(activate(_:)), for: .primaryActionTriggered)
+                addSubview(button)
+                return button
+            }
+        }
+        for (index, item) in items.enumerated() {
+            let b = buttons[index]
+            b.configuration?.image = item.image
+            b.configuration?.title = item.text
+            b.isEnabled = item.enabled
+            b.accessibilityLabel = item.title
+            b.accessibilityIdentifier = item.id == "identity" ? "kindred-bot-identity" : "kindred-duo-" + item.id
+            if let avatar = b as? MeasuredAvatarButton {
+                avatar.frameChanged = { [weak session] in session?.updateToolbarIdentityFrame(inWindow: $0) }
+                avatar.apply(collaboration: session.presentation.collaboration) { [weak session] in session?.interruptCollaboration(key: $0) }
             } else {
-                Button {
-                    session.performDuoAction(.artifacts)
-                } label: { railLabel("Artifacts", systemImage: "folder") }
-                .accessibilityIdentifier("kindred-duo-artifacts")
+                b.menu = item.menu
+                b.showsMenuAsPrimaryAction = item.menu != nil
             }
-            Menu {
-                Button("Accounts", systemImage: "person.crop.circle", action: manageAccounts)
-                    .accessibilityIdentifier("kindred-duo-manage-accounts")
-                Button("Settings", systemImage: "gearshape") {
-                    session.performDuoAction(.settings)
-                }
-                .accessibilityIdentifier("kindred-duo-settings")
-                Button("Marketplace", systemImage: "square.grid.2x2") {
-                    session.performDuoAction(.marketplace)
-                }
-                .disabled(session.presentation.route == "marketplace")
-                .accessibilityIdentifier("kindred-duo-marketplace")
-            } label: { railLabel("Accounts, settings and marketplace", systemImage: "person.crop.circle") }
-            .accessibilityIdentifier("kindred-duo-accounts")
+        }
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let length = CGFloat(buttons.count) * 44 + 8
+        let size = vertical ? CGSize(width: 52, height: length) : CGSize(width: length, height: 52)
+        if contentSize != size { contentSize = size }
+        let overflows = length > (vertical ? bounds.height : bounds.width) + 0.5
+        if panGestureRecognizer.isEnabled != overflows { panGestureRecognizer.isEnabled = overflows }
+        if scrub.isEnabled == overflows { scrub.isEnabled = !overflows }
+        for (index, button) in buttons.enumerated() {
+            let offset = 4 + CGFloat(index) * 44
+            button.frame = CGRect(x: vertical ? 4 : offset, y: vertical ? offset : 4, width: 44, height: 44)
+        }
+    }
+
+    private func highlight(_ button: UIButton?) {
+        guard highlightedButton !== button else { return }
+        let moving = !lens.isHidden
+        highlightedButton = button
+        lens.isHidden = button == nil
+        guard let button else { lens.layer.removeAllAnimations(); return }
+        if moving && !UIAccessibility.isReduceMotionEnabled {
+            UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]) { self.lens.frame = button.frame }
+        } else { lens.frame = button.frame }
+    }
+
+    @objc private func pressed(_ button: UIButton) { highlight(button) }
+    @objc private func released() { if scrub.state != .changed && scrub.state != .began { highlight(nil) } }
+    @objc private func activate(_ button: UIButton) {
+        guard let index = buttons.firstIndex(of: button) else { return }
+        items[index].activate?()
+    }
+    @objc private func track() {
+        let location = scrub.location(in: self)
+        let target = buttons.first { $0.isEnabled && bounds.contains(location) && $0.frame.contains(location) }
+        switch scrub.state {
+        case .began, .changed: highlight(target)
+        case .ended:
+            highlight(nil)
+            target?.performPrimaryAction()
+        default: highlight(nil)
+        }
     }
 }

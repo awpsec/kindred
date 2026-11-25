@@ -122,8 +122,26 @@ final class NativeComposer: UIView, UITextViewDelegate {
         var insertingNewline=false,hasSuggestions=false
         var key:((String)->Void)?
         var pastePayload: (([String:Any])->Void)?
+        private(set) var applyingListEdit = false
+        var markdownText: String { ComposerListEditing.markdown(text ?? "") }
+        func apply(_ edit: ComposerListEditing.Edit) {
+            guard isEditable, markedTextRange == nil else { return }
+            applyingListEdit = true
+            defer { applyingListEdit = false }
+            selectedRange = edit.range
+            if edit.text.isEmpty && edit.range.length > 0 { super.deleteBackward() }
+            else { super.insertText(edit.text) }
+            if let range = edit.selection { selectedRange = range }
+        }
+        func formatList(_ kind: ComposerListEditing.Format) {
+            if let edit = ComposerListEditing.format(kind, in: text ?? "", at: selectedRange) { apply(edit) }
+        }
         override func insertText(_ text:String) {
             if text=="\n",hasSuggestions,!insertingNewline,markedTextRange==nil { key?("Enter");return }
+            if markedTextRange == nil, let edit = ComposerListEditing.insertion(text, in: self.text ?? "", at: selectedRange) {
+                apply(edit)
+                return
+            }
             super.insertText(text)
         }
         override func paste(_ sender: Any?) {
@@ -136,8 +154,23 @@ final class NativeComposer: UIView, UITextViewDelegate {
             super.paste(sender)
         }
         override var keyCommands: [UIKeyCommand]? {
-            (super.keyCommands ?? [])+[UIKeyCommand(input:"\r",modifierFlags:.shift,action:#selector(newline))]+(hasSuggestions ? [UIKeyCommand.inputUpArrow,UIKeyCommand.inputDownArrow,UIKeyCommand.inputEscape,"\t"].map { UIKeyCommand(input:$0,modifierFlags:[],action:#selector(navigate(_:))) } : [])
+            var commands = (super.keyCommands ?? []) + [
+                UIKeyCommand(input:"\r",modifierFlags:.shift,action:#selector(newline)),
+                UIKeyCommand(input:"7",modifierFlags:[.command,.shift],action:#selector(numberedList)),
+                UIKeyCommand(input:"8",modifierFlags:[.command,.shift],action:#selector(bulletList))
+            ]
+            if hasSuggestions {
+                commands += [UIKeyCommand.inputUpArrow,UIKeyCommand.inputDownArrow,UIKeyCommand.inputEscape,"\t"].map { UIKeyCommand(input:$0,modifierFlags:[],action:#selector(navigate(_:))) }
+            } else if ComposerListEditing.isList(in: text ?? "", at: selectedRange) {
+                commands += [UIKeyCommand(input:"\t",modifierFlags:[],action:#selector(indentList)),
+                             UIKeyCommand(input:"\t",modifierFlags:.shift,action:#selector(outdentList))]
+            }
+            return commands
         }
+        @objc private func numberedList() { formatList(.numbers) }
+        @objc private func bulletList() { formatList(.bullets) }
+        @objc private func indentList() { formatList(.indent) }
+        @objc private func outdentList() { formatList(.outdent) }
         @objc private func navigate(_ command:UIKeyCommand) {
             let keys=[UIKeyCommand.inputUpArrow:"ArrowUp",UIKeyCommand.inputDownArrow:"ArrowDown",UIKeyCommand.inputEscape:"Escape","\t":"Tab"]
             if let input=command.input,let value=keys[input] { key?(value) }
@@ -200,10 +233,10 @@ final class NativeComposer: UIView, UITextViewDelegate {
         }
         self.document=document;self.web=web;model=next
         applying=true
-        let textChanged=next.ack>=revision && editor.markedTextRange==nil && editor.text != next.text
+        let textChanged=next.ack>=revision && editor.markedTextRange==nil && editor.text != next.text && editor.markdownText != next.text
         if textChanged {
             let selection=editor.selectedRange
-            editor.text=next.text
+            editor.text=ComposerListEditing.display(next.text)
             editor.selectedRange=next.selection ?? NSRange(location:min(selection.location,(next.text as NSString).length),length:0)
         }
         if editor.isEditable != next.editing { editor.isEditable=next.editing }
@@ -389,11 +422,28 @@ final class NativeComposer: UIView, UITextViewDelegate {
     func textViewDidBeginEditing(_ textView:UITextView) { if !applying { emit("focus",extra:["focused":true]) } }
     func textViewDidEndEditing(_ textView:UITextView) { if !applying { emit("focus",extra:["focused":false]) } }
     func textView(_ textView:UITextView,shouldChangeTextIn range:NSRange,replacementText text:String)->Bool {
-        if text=="\n",editor.hasSuggestions,!editor.insertingNewline,textView.markedTextRange==nil { emit("key",extra:["key":"Enter"]);return false };return true
+        guard !editor.applyingListEdit, textView.markedTextRange == nil else { return true }
+        if text=="\n",editor.hasSuggestions,!editor.insertingNewline { emit("key",extra:["key":"Enter"]);return false }
+        if let edit = ComposerListEditing.insertion(text, in: textView.text, at: range) {
+            editor.apply(edit)
+            return false
+        }
+        return true
+    }
+    func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+        guard textView.isEditable, textView.markedTextRange == nil else { return UIMenu(children: suggestedActions) }
+        func action(_ title: String, _ symbol: String, _ kind: ComposerListEditing.Format) -> UIAction {
+            UIAction(title: title, image: UIImage(systemName: symbol)) { [weak self] _ in self?.editor.formatList(kind) }
+        }
+        var actions = [action("Bulleted list","list.bullet",.bullets),action("Numbered list","list.number",.numbers)]
+        if ComposerListEditing.isList(in: textView.text, at: range) {
+            actions += [action("Indent","increase.indent",.indent),action("Outdent","decrease.indent",.outdent)]
+        }
+        return UIMenu(children: suggestedActions + [UIMenu(title:"Lists",children:actions)])
     }
     func emit(_ action:String,extra:[String:Any]=[:]) {
         guard let model,let document,confirmed else { return }
-        var value:[String:Any]=["action":action,"document":document,"context":model.context,"revision":revision,"text":editor.text ?? "",
+        var value:[String:Any]=["action":action,"document":document,"context":model.context,"revision":revision,"text":editor.markdownText,
             "selection":[editor.selectedRange.location,editor.selectedRange.length],"composing":editor.markedTextRange != nil]
         value.merge(extra,uniquingKeysWith:{$1});command?(value)
     }

@@ -37,6 +37,17 @@ enum DisplayCornerContour {
 }
 
 enum DuoRailGeometry {
+    static func horizontalFrame(in bounds: CGRect, bar: CGRect, width: CGFloat, safeArea: UIEdgeInsets) -> CGRect {
+        // The top-bar fitting guide already excludes the hardware status cluster.
+        let usable = bar.intersection(bounds)
+        let hasGuide = !usable.isNull && usable.width >= 52 && usable.height >= 44
+        let lane = hasGuide ? usable : bounds.inset(by: safeArea)
+        let length = min(max(0, lane.width - 16), width)
+        let x = min(max(bounds.midX - length / 2, lane.minX + 8), lane.maxX - 8 - length)
+        let y = hasGuide ? max(0, lane.minY + (min(lane.height, 52) - 52) / 2) : lane.minY + 4
+        return CGRect(x: x, y: y, width: length, height: 52)
+    }
+
     /// The compact hardware occlusion and the system controls share a column.
     /// A bar's fitted rectangle can have asymmetric corner padding, so its
     /// midpoint alone is not a reliable anchor for a custom glass capsule.
@@ -213,7 +224,7 @@ final class WebHostView: UIView {
 
     @available(iOS 27.1, *)
     private func updateDuoRail(session: WebSession, vertical: Bool, insets: UIEdgeInsets, area: CGRect) {
-        guard vertical, session.presentation.hasChatInterface, session.loadState.failure == nil else {
+        guard session.presentation.hasChatInterface, session.loadState.failure == nil else {
             duoRailController?.view.isHidden = true; return
         }
         let controller: UIHostingController<AnyView>
@@ -237,7 +248,16 @@ final class WebHostView: UIView {
         if controller.view.superview !== self { addSubview(controller.view) }
         controller.view.isHidden = false
         let web = session.webView
-        let size = controller.sizeThatFits(in: CGSize(width: 52, height: session.presentation.toolbarLength))
+        let proposal = vertical ? CGSize(width: 52, height: session.presentation.toolbarLength)
+                                : CGSize(width: session.presentation.toolbarLength, height: 52)
+        let size = controller.sizeThatFits(in: proposal)
+        if !vertical {
+            let frame = DuoRailGeometry.horizontalFrame(in: web.bounds, bar: area, width: size.width,
+                safeArea: web.safeAreaInsets)
+            controller.view.frame = convert(frame, from: web)
+            bringSubviewToFront(controller.view)
+            return
+        }
         let fitted = !area.isNull && [area.minX, area.minY, area.width, area.height].allSatisfy(\.isFinite)
             && area.width >= 52 && area.height >= 60 && web.bounds.insetBy(dx: -0.5, dy: -0.5).contains(area)
         let hardwareOcclusions = web.reservedRegions(kind: .occlusion).filter(\.isActive)

@@ -77,39 +77,8 @@ struct ShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
-/// Native toolbar identity shares the web catalog's static neutral silhouettes.
-@MainActor
-struct ToolbarAvatarButton: UIViewRepresentable {
-    let image: UIImage?
-    let title: String
-    let action: () -> Void
-    let frameChanged: (CGRect) -> Void
-    var collaboration: NativeCollaborationStatus? = nil
-    var interrupt: (String) -> Void = { _ in }
-
-    func makeUIView(context: Context) -> MeasuredAvatarButton {
-        let button = MeasuredAvatarButton()
-        var configuration = UIButton.Configuration.plain()
-        configuration.contentInsets = .zero
-        button.configuration = configuration
-        button.accessibilityIdentifier = "kindred-bot-identity"
-        button.addAction(UIAction { [weak button] _ in button?.activate?() }, for: .primaryActionTriggered)
-        return button
-    }
-
-    func updateUIView(_ button: MeasuredAvatarButton, context: Context) {
-        button.configuration?.image = image ?? UIImage(systemName: "person.crop.circle")
-        button.accessibilityLabel = title
-        button.apply(collaboration: collaboration, interrupt: interrupt)
-        button.activate = action
-        button.frameChanged = frameChanged
-        button.setNeedsLayout()
-    }
-}
-
 @MainActor
 final class MeasuredAvatarButton: UIButton {
-    var activate: (() -> Void)?
     var frameChanged: ((CGRect) -> Void)?
     let status = UIImageView()
     override init(frame: CGRect) {

@@ -1599,6 +1599,10 @@
       setContentInset(node,'--ios-content-right',inset.right);
     }
     const toolbar = window.__KINDRED_IOS_TOOLBAR;
+    const horizontalRail = nativeDuo && value.isDuoInner === true && side === 'none';
+    const railBottom = horizontalRail && toolbar && toolbar.width >= toolbar.height
+      ? toolbar.y + toolbar.height : 0;
+    setContentInset(html,'--ios-top-rail-bottom',Number.isFinite(railBottom) ? Math.max(0,railBottom) : 0);
     const flow = nativeDuo && html.dataset.iosDuoInner !== 'true';
     html.toggleAttribute('data-ios-message-flow',!!flow);
     const zones = flow ? [toolbar,...(window.__KINDRED_NATIVE_GEOMETRY?.reservedRegions || []).filter(region => region.kind === 'occlusion' && region.active !== false)].filter(region => region && ['x','y','width','height'].every(key => Number.isFinite(region[key])) && region.width > 0 && region.height > 0) : [];

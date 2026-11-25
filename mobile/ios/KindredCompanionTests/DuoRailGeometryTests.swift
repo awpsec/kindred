@@ -3,6 +3,20 @@ import XCTest
 @testable import Kindred
 
 final class DuoRailGeometryTests: XCTestCase {
+    func testTopCapsuleCentersWhenPossibleAndClearsSystemControls() {
+        let bounds = CGRect(x: 0, y: 0, width: 669, height: 951)
+        let guide = CGRect(x: 20, y: 22, width: 452, height: 52)
+        let capsule = DuoRailGeometry.horizontalFrame(in: bounds, bar: guide, width: 272, safeArea: .zero)
+        XCTAssertEqual(capsule.maxX, guide.maxX - 8)
+        XCTAssertEqual(capsule.minY, 22)
+        XCTAssertEqual(capsule.height, 52)
+        let short = DuoRailGeometry.horizontalFrame(in: bounds, bar: guide, width: 140, safeArea: .zero)
+        XCTAssertEqual(short.midX, bounds.midX)
+        let many = DuoRailGeometry.horizontalFrame(in: bounds, bar: guide, width: 800, safeArea: .zero)
+        XCTAssertEqual(many.width, guide.width - 16)
+        XCTAssertTrue(guide.contains(many))
+    }
+
     func testSystemColumnWinsOverAsymmetricBarPadding() {
         let bounds = CGRect(x: 0, y: 0, width: 466, height: 678)
         let camera = CGRect(x: 399.6667, y: 29.3333, width: 37, height: 37)

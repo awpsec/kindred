@@ -443,7 +443,12 @@ final class ComposerUIKitTests: XCTestCase, WebSessionHost {
         XCTAssertTrue(composer.editor.isFirstResponder)
         _ = try await js("document.querySelector('[data-message=\"1\"] [data-message-action=\"reply\"]').click();true")
         try await waitFor("native reply cancellation control") { try await self.boolean("!!document.querySelector('#composer-reply:not([hidden])')") }
-        let draft=composer.editor.text!
+        for input in ["\n", "-", " ", "First 🦋", "\n", "Second"] { composer.editor.insertText(input) }
+        XCTAssertTrue(composer.editor.text.hasSuffix("• First 🦋\n• Second"))
+        try await waitFor("list reaches draft as Markdown") {
+            try await self.boolean("document.querySelector('#prompt').value.endsWith('- First 🦋\\n- Second') && window.__composerSends.length===0")
+        }
+        let draft=composer.editor.markdownText
         try tapComposerButton("arrow.up")
         try await waitFor("one native send through original handler") { try await self.boolean("window.__composerSends.length===1 && document.querySelector('#prompt').value==='' ") }
         let sent=try await js("window.__composerSends[0].prompt") as? String

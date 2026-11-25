@@ -18,15 +18,22 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-duo-sidebar-hitbox';
     localStorage.setItem('kindred-ios-sidebar-v1:'+profileID,JSON.stringify({width:rail?76:210,hidden:false}));
     Object.assign(window,{__KINDRED_MOBILE:true,__KINDRED_MOBILE_PLATFORM:'ios',__KINDRED_MOBILE_PROFILE:profileID,__KINDRED_NATIVE_SESSION_BOOTSTRAP:true});
     window.webkit={messageHandlers:{kindredAccounts:{postMessage:()=>{}},kindredNavigation:{postMessage:()=>{}},kindredSession:{postMessage:()=>{}}}};
-    window.__KINDRED_IOS_LAYOUT={topInset:82,bottomInset:34,leftInset:0,rightInset:0,railSide:'none',isDuo:true,isDuoInner:true,usesNativeRail:true,isSlab:false,isPortrait:true,viewportHeight:951};
+    window.__KINDRED_IOS_TOOLBAR={x:180,y:30,width:272,height:52};
+    window.__KINDRED_IOS_LAYOUT={topInset:24,bottomInset:34,leftInset:0,rightInset:0,railSide:'none',isDuo:true,isDuoInner:true,usesNativeRail:true,isSlab:false,isPortrait:true,viewportHeight:951};
     const contour=open.displayContour.map(([command,...points])=>[command,...points.map((_,i)=>points[i%2?i-1:i+1])]);
     window.__KINDRED_NATIVE_GEOMETRY={width:669,height:951,windowWidth:669,windowHeight:951,displayCorners:open.displayCorners,displayContour:contour,reservedRegions:[{kind:'division',active:false,x:334.5,y:0,width:0,height:951}]};
     document.addEventListener('DOMContentLoaded',()=>{
      const style=document.createElement('style');style.textContent=css;document.head.append(style);(0,eval)(js);
      const toolbar=document.createElement('div');toolbar.id='fixture-native-toolbar';toolbar.setAttribute('aria-hidden','true');
-     toolbar.style.cssText='position:fixed;inset:0 0 auto;height:82px;z-index:2147483647';document.body.append(toolbar);
+     toolbar.style.cssText='position:fixed;left:180px;top:30px;width:272px;height:52px;z-index:2147483647';document.body.append(toolbar);
     },{once:true});
    },{token,profileID,rail,open,css:fs.readFileSync(path.join(bundle,'MobileLayout.css'),'utf8'),js:fs.readFileSync(path.join(bundle,'MobileLayout.js'),'utf8')});
+   // Render a real pinned tile and a normal row in the same portrait rail.
+   await page.route('**/api/bots',async route=>{
+    const response=await route.fetch(),bots=await response.json();
+    bots.find(bot=>bot.id==='izabella').profile.pinned=true;
+    await route.fulfill({response,json:bots});
+   });
    await page.goto('http://127.0.0.1:'+server.address().port+'/#kindred-chat=dm-vivienne',{waitUntil:'domcontentloaded',timeout:60000});
    await page.locator('#content [data-message="72"]').waitFor({state:'attached'});
    await page.locator('#startup-status').waitFor({state:'hidden'});
@@ -42,6 +49,24 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-duo-sidebar-hitbox';
     if(getComputedStyle(link.querySelector('.bot-info')).display!=='none')points.push({x:r.right-20,y:r.top+r.height/2});
     return {top:r.top,bottom:r.bottom,points:points.map(point=>({...point,hit:document.elementFromPoint(point.x,point.y)?.closest('.bot-link')===link})),label:link.getAttribute('aria-label'),padding:getComputedStyle(document.querySelector('.sidebar')).paddingTop};
    });
+   const chrome=await page.evaluate(()=>{
+    const frost=document.querySelector('.chat-top-frost'),history=document.querySelector('#content');
+    const rect=frost.getBoundingClientRect();
+    return {edge:rect.top,depth:rect.height,history:history.getBoundingClientRect().top,
+      clearance:getComputedStyle(history).scrollPaddingTop,
+      layers:[...frost.children].filter(el=>getComputedStyle(el).backdropFilter.includes('blur')&&getComputedStyle(el).webkitMaskImage.includes('gradient')).length};
+   });
+   assert.equal(chrome.edge,0,'the portrait blur reaches the physical viewport edge');
+   assert.equal(chrome.history,0,'history can scroll behind the capsule');
+   assert.equal(chrome.depth,126,'the blur extends below the measured 82-point rail bottom');
+   assert.equal(chrome.clearance,'90px','first message clears the actual controls');
+   assert.equal(chrome.layers,4);
+   if(rail){
+    const pinned=await page.locator('.pinned-bot .character').first().boundingBox();
+    const normal=await first.locator('.character').boundingBox();
+    assert(pinned&&normal&&Math.abs(pinned.x+pinned.width/2-normal.x-normal.width/2)<1,
+      'pinned and unpinned avatars share one center line');
+   }
    const before=await proof();
    fs.writeFileSync(path.join(out,`portrait-${rail?'rail':'list'}.json`),JSON.stringify(before,null,2));
    await page.screenshot({path:path.join(out,`portrait-${rail?'rail':'list'}.png`)});
@@ -62,7 +87,8 @@ const out=process.env.KINDRED_TEST_ARTIFACTS||'/tmp/kindred-duo-sidebar-hitbox';
    for(const portrait of [false,true,false,true]) {
     const width=portrait?669:951,height=portrait?951:669;await page.setViewportSize({width,height});
     await page.evaluate(({portrait,width,height,open})=>{
-     Object.assign(__KINDRED_IOS_LAYOUT,{topInset:portrait?82:24,rightInset:portrait?0:84,railSide:portrait?'none':'right',isPortrait:portrait,viewportHeight:height});
+     Object.assign(__KINDRED_IOS_LAYOUT,{topInset:24,rightInset:portrait?0:84,railSide:portrait?'none':'right',isPortrait:portrait,viewportHeight:height});
+     window.__KINDRED_IOS_TOOLBAR=portrait?{x:180,y:30,width:272,height:52}:{x:876,y:180,width:52,height:272};
      const contour=portrait?open.displayContour.map(([command,...points])=>[command,...points.map((_,i)=>points[i%2?i-1:i+1])]):open.displayContour;
      Object.assign(__KINDRED_NATIVE_GEOMETRY,{width,height,windowWidth:width,windowHeight:height,displayContour:contour,reservedRegions:[{kind:'division',active:false,x:width/2,y:0,width:0,height}]});
      document.querySelector('#fixture-native-toolbar').style.display=portrait?'block':'none';

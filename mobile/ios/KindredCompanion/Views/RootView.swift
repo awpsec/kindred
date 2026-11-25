@@ -54,11 +54,11 @@ struct RootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(pageCanvas)
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar { if !isOpeningWorkspace { toolbar } }
+                .toolbar { if !isOpeningWorkspace && !usesDuoNavigation { toolbar } }
                 .tint(usesDuoNavigation ? Color.primary : Theme.accent)
                 .toolbarBackground(Theme.chrome, for: .navigationBar)
                 .toolbarBackground(isOpeningWorkspace || isShowingConversation ? .hidden : .visible, for: .navigationBar)
-                .toolbar(isOpeningWorkspace || (isShowingConversation && !usesDuoNavigation) ? .hidden : .visible, for: .navigationBar)
+                .toolbar(isOpeningWorkspace || (isShowingConversation && activeSession?.presentation.toolbarVertical != true) ? .hidden : .visible, for: .navigationBar)
                 .sheet(item: $model.download) { file in
                     ShareSheet(items: [file.url])
                 }
@@ -137,9 +137,6 @@ struct RootView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if #available(iOS 27.1, *), usesDuoNavigation, let session = activeSession {
-            DuoToolbarContent(session: session, manageAccounts: { model.sheet = .accounts })
-        } else {
         ToolbarItem(placement: .principal) {
             if let account = model.activeAccount {
                 VStack(spacing: 0) {
@@ -161,7 +158,6 @@ struct RootView: View {
                 .axisBehavior(.verticalPreferred)
         } else {
             ToolbarItem(placement: .topBarTrailing) { accountsButton }
-        }
         }
     }
 

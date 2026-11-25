@@ -138,6 +138,7 @@ schemes:
         - name: KindredCompanionUITests
           selectedTests:
             - ArtifactPhysicalAcceptanceTests
+            - DuoRailScrubTests
   KindredVoiceCaptureTests:
     build:
       targets:
